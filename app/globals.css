@@ -2,25 +2,72 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #1a1a2e;
+  --sidebar-bg: #f8f9fa;
+  --sidebar-active: #e9ecef;
+  --sidebar-hover: #f1f3f5;
+  --sidebar-border: #e5e7eb;
+  --card-bg: #ffffff;
+  --card-border: #e5e7eb;
+  --table-header-bg: #f8f9fa;
+  --table-row-hover: #f8f9fa;
+  --profit: #16a34a;
+  --loss: #dc2626;
+  --muted: #6b7280;
+  --muted-bg: #f3f4f6;
+  --accent: #6366f1;
+  --accent-light: #e0e7ff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0b0e17;
+    --foreground: #e5e7eb;
+    --sidebar-bg: #111827;
+    --sidebar-active: rgba(255, 255, 255, 0.08);
+    --sidebar-hover: rgba(255, 255, 255, 0.04);
+    --sidebar-border: #1f2937;
+    --card-bg: #151c2c;
+    --card-border: #1e293b;
+    --table-header-bg: #1a2236;
+    --table-row-hover: rgba(255, 255, 255, 0.02);
+    --profit: #4ade80;
+    --loss: #f87171;
+    --muted: #9ca3af;
+    --muted-bg: #1e293b;
+    --accent: #818cf8;
+    --accent-light: rgba(99, 102, 241, 0.15);
+  }
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-sidebar-bg: var(--sidebar-bg);
+  --color-sidebar-active: var(--sidebar-active);
+  --color-sidebar-hover: var(--sidebar-hover);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-card-bg: var(--card-bg);
+  --color-card-border: var(--card-border);
+  --color-table-header-bg: var(--table-header-bg);
+  --color-table-row-hover: var(--table-row-hover);
+  --color-profit: var(--profit);
+  --color-loss: var(--loss);
+  --color-muted: var(--muted);
+  --color-muted-bg: var(--muted-bg);
+  --color-accent: var(--accent);
+  --color-accent-light: var(--accent-light);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sidebar-border) transparent;
 }
