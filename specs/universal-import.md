@@ -21,31 +21,60 @@ The columns, naming, and ordering differ across brokers — the system must hand
 
 ## Core Idea
 
-All import paths funnel into one intermediate format (`NormalizedTransaction[]`), which then gets mapped to the existing `TransactionRecord` and stored in IndexedDB. The pipeline:
+All import paths funnel into one intermediate format (`NormalizedTransaction[]`), which then gets mapped to the existing `TransactionRecord` and stored in IndexedDB.
+
+### Input Methods (all first-class)
+
+Users can get data into the app via **any** of these methods:
+
+| Method | What it handles |
+|--------|----------------|
+| **File drop / browse** | `.tlg`, `.csv`, `.tsv`, `.txt`, `.png`, `.jpg`, `.jpeg`, `.webp` |
+| **Clipboard paste (text)** | Tab-separated or comma-separated text copied from a spreadsheet, web table, or plain text |
+| **Clipboard paste (image)** | Screenshot pasted via Ctrl+V / Cmd+V — e.g. snip of a brokerage trade history |
+
+All three methods are supported from day one — clipboard paste is **not** a secondary feature.
+
+### Pipeline
 
 ```
- Input (CSV / Image / TLG / paste)
-          │
-          ▼
-   ┌─────────────┐
-   │   Extractor  │  (per-format: CSV parser, Vision LLM, TLG parser)
-   └──────┬──────┘
-          │  raw rows / text
-          ▼
-   ┌─────────────┐
-   │   Mapper     │  (auto-detect columns → NormalizedTransaction)
-   └──────┬──────┘
-          │
-          ▼
-   ┌─────────────┐
-   │  Preview UI  │  (user reviews, corrects mapping, filters rows)
-   └──────┬──────┘
-          │  confirmed
-          ▼
-   ┌─────────────┐
-   │   Importer   │  (NormalizedTransaction → TransactionRecord → IndexedDB)
-   └─────────────┘
+ CLIENT (browser)                              SERVER (Next.js API routes)
+ ────────────────                              ────────────────────────────
+
+ Input
+ ├─ File/.csv/.tsv/.txt  ─┐
+ ├─ Clipboard paste (text) ┤──▶ CSV Extractor (papaparse)
+ │                         │         │
+ │                         │    { headers, sampleRows }
+ │                         │         │
+ │                         │         ├──▶ POST /api/ai/map-columns ──▶ LLM (OpenRouter)
+ │                         │         │         │
+ │                         │         │    { mapping, sideValues }
+ │                         │         │
+ │                         │         └──▶ Alias Mapper (offline fallback)
+ │                         │
+ ├─ File/.png/.jpg/.webp  ─┤
+ ├─ Clipboard paste (image)┤──▶ POST /api/ai/extract-image ──▶ Vision LLM (OpenRouter)
+ │                         │         │
+ │                         │    { headers, rows }
+ │                         │
+ └─ File/.tlg             ─────▶ TLG Extractor (existing parser, client-only)
+                           │
+                           ▼
+                    { headers, rows } + mapping
+                           │
+                           ▼
+                    ┌─────────────┐
+                    │  Preview UI  │  (user reviews, corrects mapping)
+                    └──────┬──────┘
+                           │  confirmed
+                           ▼
+                    ┌─────────────┐
+                    │   Importer   │  (→ TransactionRecord → IndexedDB)
+                    └─────────────┘
 ```
+
+**Key architecture decision:** LLM calls go through Next.js API routes (server-side) so API keys are never exposed in the browser. CSV parsing and TLG parsing happen entirely client-side — no server needed for those.
 
 ---
 
@@ -145,9 +174,12 @@ Changes to `packages/ai-connect`:
 3. **Add OpenRouter case** in `createVercelAIModel()` in `services/aiService.ts`:
    ```ts
    case 'openrouter': {
-     const { createOpenRouter } = await import('@openrouter/ai-sdk-provider');
-     const openrouter = createOpenRouter({ apiKey });
-     return openrouter(model);
+     // OpenRouter uses OpenAI-compatible API — no extra dependency needed
+     const { openai } = await import('@ai-sdk/openai');
+     return openai(model, {
+       apiKey,
+       baseURL: baseUrl || 'https://openrouter.ai/api/v1',
+     });
    }
    ```
 4. **Add provider entry** in `providers/index.ts`:
@@ -163,85 +195,100 @@ Changes to `packages/ai-connect`:
      docsUrl: 'https://openrouter.ai/keys',
    },
    ```
-5. **Install** `@openrouter/ai-sdk-provider` as a peer/dev dependency
+5. **No new dependency needed** — uses existing `@ai-sdk/openai` with OpenRouter's base URL (same pattern as Perplexity)
 
 #### Contribution 2: Add vision/image support
 
 Currently `generateText()` only accepts a `prompt: string`. We need image input for screenshot extraction.
 
-Add a new method to `AIService` and a new hook:
+Added to `AIService`:
 
 ```ts
-// New method on AIService
-async generateTextWithImage(options: AICallOptions & {
-  image: string | ArrayBuffer;  // base64 data URL or raw bytes
-  imageMediaType?: 'image/png' | 'image/jpeg' | 'image/webp';
-}): Promise<AICallResult> {
-  // Uses Vercel AI SDK's message content array:
-  // [{ type: 'image', image: ... }, { type: 'text', text: prompt }]
+// New interface
+export interface AIVisionCallOptions extends AICallOptions {
+  image: string | Uint8Array;  // base64 data URL or raw bytes
+  mimeType?: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
 }
 
-// New hook
-export function useAIVisionService() {
-  // Wraps generateTextWithImage with loading/error states
-  return { extractFromImage, isProcessing, error };
+// New method on AIService
+async generateTextWithImage<T = string>(options: AIVisionCallOptions): Promise<AICallResult<T>> {
+  // Uses Vercel AI SDK's multimodal message format:
+  // messages: [{ role: 'user', content: [
+  //   { type: 'image', image: ..., mimeType: ... },
+  //   { type: 'text', text: prompt },
+  // ]}]
 }
+
+// New hook: useAIVisionService
+export function useAIVisionService() {
+  return { generateTextWithImage, isProcessing, error, config, isConfigured };
+}
+
+// Also added to existing useAIService hook
 ```
 
-This uses the Vercel AI SDK's built-in multimodal support — no new dependencies needed.
+Uses the Vercel AI SDK's built-in multimodal support — no new dependencies needed.
 
 ### How the trading diary app uses ai-connect
 
-```tsx
-// app/(journal)/layout.tsx or a wrapper
-import { AIManagementProvider } from '@/packages/ai-connect';
+ai-connect is used **server-side** in Next.js API routes, not directly in the browser. This keeps API keys secure.
 
-<AIManagementProvider>
-  {children}
-</AIManagementProvider>
+```ts
+// app/api/ai/map-columns/route.ts (server-side)
+import { createVercelAIModel } from '@/packages/ai-connect';
+import { generateText } from 'ai';
 
-// In the import flow:
-import { useAIService } from '@/packages/ai-connect';
-
-const { generateText } = useAIService();
-
-// For CSV header mapping:
-const result = await generateText({
-  prompt: `Given these CSV headers and 3 sample rows, return a JSON mapping...`,
-  systemPrompt: 'You are a data mapping assistant...',
-  temperature: 0,
+const model = await createVercelAIModel({
+  provider: 'openrouter',
+  model: 'google/gemini-2.0-flash-exp:free',
+  apiKey,  // from x-api-key header or env var
 });
 
-// For image extraction (after contribution 2):
-const result = await generateTextWithImage({
-  prompt: 'Extract trade data from this screenshot...',
-  image: base64Screenshot,
-  temperature: 0,
-});
+const result = await generateText({ model, prompt: '...', temperature: 0 });
+```
+
+```ts
+// Client-side — thin fetch wrappers, no direct LLM calls
+import { mapColumnsWithLLM } from '@/lib/import/llm-mapper';
+import { extractFromImage } from '@/lib/import/image-extractor';
+
+// CSV column mapping:
+const { mapping, sideValues } = await mapColumnsWithLLM(headers, sampleRows, userApiKey);
+
+// Image extraction:
+const { headers, rows } = await extractFromImage(base64Screenshot, userApiKey);
 ```
 
 ### Default provider: OpenRouter (free)
 
-The app ships with OpenRouter as the default/recommended provider. The `.env.local` stores the default API key:
+OpenRouter is the only supported provider for now (simplicity). Users bring their own API key — free tier is available at https://openrouter.ai/keys.
 
+Optionally, a server-side default key can be set in `.env.local`:
 ```
-NEXT_PUBLIC_OPENROUTER_API_KEY=sk-or-v1-...
+OPENROUTER_API_KEY=sk-or-v1-...
 ```
 
-If the env var is present, the app auto-configures OpenRouter with a free model — zero setup for the user. They can override with their own key or switch providers via the AI settings UI.
+If present, users don't need to enter their own key. But most deployments should have users provide their own key in the Settings page.
 
 ---
 
 ## 3. Extractors
 
-### 3a. CSV Extractor
+### 3a. CSV / Text Extractor
 
-**Input:** Raw CSV text (from file upload or paste)
+**Input:** Raw text — from file upload (.csv/.tsv/.txt) OR clipboard paste (Ctrl+V)
 **Output:** `{ headers: string[], rows: Record<string, string>[] }`
+
+Sources:
+- **File drop/browse**: User drops or selects a `.csv`, `.tsv`, or `.txt` file
+- **Clipboard paste**: User copies a table from a spreadsheet (Excel, Google Sheets), web page, or plain text and presses Ctrl+V / Cmd+V in the import area
+
+Both sources produce raw text. The extractor doesn't care where the text came from.
 
 Implementation:
 - Use a lightweight CSV parser (e.g. `papaparse` — already well-known, handles edge cases like quoted fields, different delimiters)
 - Detect delimiter automatically (comma, semicolon, tab, pipe)
+- For clipboard text: spreadsheets typically copy as tab-separated; web tables may copy as tab or space-separated
 
 ### 3b. CSV Column Mapper (LLM-powered)
 
@@ -275,11 +322,17 @@ If no API key is configured, fall back to the English alias table (see Section 4
 
 ### 3c. Image Extractor (Vision LLM)
 
-**Input:** Image file (PNG, JPG, screenshot)
+**Input:** Image data — from file upload (.png/.jpg/.webp) OR clipboard paste (Ctrl+V / Cmd+V of a screenshot)
 **Output:** Same `{ headers, rows }` format as CSV extractor
 
+Sources:
+- **File drop/browse**: User drops or selects an image file
+- **Clipboard paste (image)**: User takes a screenshot (e.g. Cmd+Shift+4 on Mac, Win+Shift+S on Windows) and pastes directly into the import area. The browser's `paste` event provides the image as a `Blob` in `clipboardData.items`.
+
+Both sources produce image data (File/Blob). The extractor doesn't care where it came from.
+
 Implementation via ai-connect's vision support:
-- Convert image to base64
+- Convert image to base64 data URL
 - Call `generateTextWithImage()` with a structured extraction prompt
 - Prompt instructs the LLM to:
   - Extract column headers and all data rows
@@ -297,13 +350,274 @@ Implementation via ai-connect's vision support:
 
 The existing `parseTLGFile()` already works. We wrap it to output `NormalizedTransaction[]` directly, bypassing the mapper since TLG fields map 1:1.
 
-### 3e. Paste Extractor (bonus, easy win)
+### 3e. Clipboard Detection Logic
 
-Users can copy-paste a table from a webpage or spreadsheet. Detect tab-separated or whitespace-separated data and parse like CSV with tab delimiter. This is free since it reuses the CSV extractor.
+When the user presses Ctrl+V / Cmd+V in the import area, the DropZone inspects `clipboardData`:
+
+```ts
+function handlePaste(e: ClipboardEvent) {
+  // Check for image first (higher priority)
+  const imageItem = Array.from(e.clipboardData.items)
+    .find(item => item.type.startsWith('image/'));
+
+  if (imageItem) {
+    const blob = imageItem.getAsFile();
+    // → Route to Image Extractor (3c)
+    return;
+  }
+
+  // Check for text (CSV/TSV/tab-separated)
+  const text = e.clipboardData.getData('text/plain');
+  if (text?.trim()) {
+    // → Route to CSV/Text Extractor (3a)
+    return;
+  }
+}
+```
+
+Priority: image > text (if both are on the clipboard, prefer the image since it's more likely the user's intent when pasting a screenshot).
 
 ---
 
-## 4. Column Mapper (alias fallback + manual override)
+## 4. API Routes (server-side LLM proxy)
+
+LLM calls are proxied through Next.js API routes so that API keys stay server-side. The client never calls OpenRouter directly.
+
+### API Key Flow
+
+```
+ ┌─────────────────────────────────┐
+ │ Server env: OPENROUTER_API_KEY  │  ← default key (server-only, no NEXT_PUBLIC_ prefix)
+ └────────────┬────────────────────┘
+              │ fallback
+              ▼
+ ┌─────────────────────────────────┐
+ │ User's key from Settings page   │  ← stored in localStorage, sent via x-api-key header
+ └────────────┬────────────────────┘
+              │ takes priority if present
+              ▼
+         API route uses whichever key is available
+```
+
+- **`OPENROUTER_API_KEY`** (no `NEXT_PUBLIC_` prefix) — server-only env var, never sent to the browser
+- User can enter their own key in the Settings page → stored in localStorage → sent to API routes via `x-api-key` request header
+- API route: if `x-api-key` header is present, use it; otherwise fall back to env var
+- If neither exists, return 401 with a message to configure an API key in Settings
+
+### `POST /api/ai/map-columns`
+
+Maps CSV column headers to `NormalizedTransaction` fields using an LLM. Supports any language.
+
+```ts
+// Request
+{
+  headers: string[];              // e.g. ["日期", "股票名称", "买卖方向", ...]
+  sampleRows: Record<string, string>[]; // 2-3 rows for context
+}
+
+// Response
+{
+  mapping: Record<string, string>;    // { "日期": "date", "股票名称": "symbol", ... }
+  sideValues: Record<string, string>; // { "买入": "BUY", "卖出": "SELL" }
+}
+```
+
+Implementation:
+```ts
+// app/api/ai/map-columns/route.ts
+import { createVercelAIModel } from '@/packages/ai-connect';
+import { generateText } from 'ai';
+
+export async function POST(request: NextRequest) {
+  const apiKey = request.headers.get('x-api-key') || process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    return NextResponse.json({ error: 'No API key configured' }, { status: 401 });
+  }
+
+  const { headers, sampleRows } = await request.json();
+
+  const model = await createVercelAIModel({
+    provider: 'openrouter',
+    model: 'google/gemini-2.0-flash-exp:free',
+    apiKey,
+  });
+
+  const result = await generateText({
+    model,
+    system: 'You map CSV columns to a trading journal schema. Return JSON only.',
+    prompt: `Map these CSV columns to our schema fields.
+
+Schema fields (required): symbol, side, date, quantity, price
+Schema fields (optional): time, orderId, companyName, currency, orderType, commission, totalValue, stockCode
+
+CSV headers: ${JSON.stringify(headers)}
+Sample row: ${JSON.stringify(sampleRows[0])}
+
+Return: { "mapping": { "<header>": "<field>", ... }, "sideValues": { "<value>": "BUY"|"SELL", ... } }`,
+    temperature: 0,
+  });
+
+  const parsed = JSON.parse(result.text);
+  return NextResponse.json(parsed);
+}
+```
+
+### `POST /api/ai/extract-image`
+
+Extracts tabular trade data from a screenshot using Vision LLM.
+
+```ts
+// Request
+{
+  image: string;  // base64 data URL ("data:image/png;base64,...")
+}
+
+// Response
+{
+  headers: string[];
+  rows: Record<string, string>[];
+}
+```
+
+Implementation:
+```ts
+// app/api/ai/extract-image/route.ts
+import { createVercelAIModel } from '@/packages/ai-connect';
+import { generateText } from 'ai';
+
+export async function POST(request: NextRequest) {
+  const apiKey = request.headers.get('x-api-key') || process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    return NextResponse.json({ error: 'No API key configured' }, { status: 401 });
+  }
+
+  const { image } = await request.json();
+
+  const model = await createVercelAIModel({
+    provider: 'openrouter',
+    model: 'google/gemini-2.0-flash-exp:free',
+    apiKey,
+  });
+
+  const result = await generateText({
+    model,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'image', image },
+        { type: 'text', text: `Extract trade data from this screenshot.
+Only include fully executed orders (skip cancelled/rejected).
+Return JSON: { "headers": [...], "rows": [{ "<header>": "<value>", ... }, ...] }
+Return JSON only, no markdown fences.` },
+      ],
+    }],
+    temperature: 0,
+  });
+
+  const parsed = JSON.parse(result.text);
+  return NextResponse.json(parsed);
+}
+```
+
+### Client-side helpers
+
+Thin wrappers that call the API routes:
+
+```ts
+// lib/import/llm-mapper.ts
+export async function mapColumnsWithLLM(
+  headers: string[],
+  sampleRows: Record<string, string>[],
+  apiKey?: string
+): Promise<{ mapping: Record<string, string>; sideValues: Record<string, string> }> {
+  const res = await fetch('/api/ai/map-columns', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(apiKey ? { 'x-api-key': apiKey } : {}),
+    },
+    body: JSON.stringify({ headers, sampleRows }),
+  });
+
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// lib/import/image-extractor.ts
+export async function extractFromImage(
+  imageBase64: string,
+  apiKey?: string
+): Promise<{ headers: string[]; rows: Record<string, string>[] }> {
+  const res = await fetch('/api/ai/extract-image', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(apiKey ? { 'x-api-key': apiKey } : {}),
+    },
+    body: JSON.stringify({ image: imageBase64 }),
+  });
+
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+```
+
+---
+
+## 5. Settings Page (API Key Configuration)
+
+### UI
+
+The Settings page lives at `/settings` and lets users configure their OpenRouter API key.
+
+```
+┌──────────────────────────────────────────────────────┐
+│  AI Settings                                          │
+│                                                       │
+│  Provider: OpenRouter (free models available)         │
+│                                                       │
+│  API Key:  [sk-or-v1-••••••••••••••••••••]  [Save]   │
+│                                                       │
+│  ✓ Key saved. Using free model: Gemini 2.0 Flash      │
+│                                                       │
+│  Get a free API key at: https://openrouter.ai/keys    │
+│                                                       │
+│  ─────────────────────────────────────────            │
+│  Status:                                              │
+│  • Server default key: ✓ configured                   │
+│  • Your personal key:  ✓ saved (takes priority)       │
+│                                                       │
+│  Tip: Without an API key, CSV import falls back to    │
+│  English-only column matching. Image import requires  │
+│  an API key.                                          │
+└──────────────────────────────────────────────────────┘
+```
+
+### Key Storage
+
+- User's key stored in **localStorage** under `tradingdiary:openrouter-api-key`
+- Never stored in IndexedDB (keep it separate from trade data)
+- Key is sent to API routes via `x-api-key` header (same-origin only)
+- A `GET /api/ai/status` endpoint tells the client whether a server default key exists (without revealing it)
+
+### Status endpoint
+
+```ts
+// app/api/ai/status/route.ts
+export async function GET() {
+  return NextResponse.json({
+    hasServerKey: !!process.env.OPENROUTER_API_KEY,
+    provider: 'openrouter',
+    model: 'google/gemini-2.0-flash-exp:free',
+  });
+}
+```
+
+This lets the UI show whether the user needs to provide their own key or if the server default is available.
+
+---
+
+## 6. Column Mapper (alias fallback + manual override)
 
 The alias table is the **offline fallback** when no LLM is available. When an LLM is available, Section 3b handles mapping instead. Both paths feed into the same manual override UI.
 
@@ -451,26 +765,46 @@ For non-TLG imports, create a synthetic `AccountRecord`:
 
 ## 6. Updated DropZone / Import Page
 
-### File Type Support
+### Input Support
 
-Expand the DropZone to accept:
-- `.tlg` — existing flow (unchanged)
-- `.csv` / `.tsv` / `.txt` — CSV extractor
-- `.png` / `.jpg` / `.jpeg` / `.webp` — Image extractor
-- Paste from clipboard (Ctrl+V) — paste extractor
+The DropZone accepts three types of input:
 
-The `accept` attribute becomes: `.tlg,.csv,.tsv,.txt,.png,.jpg,.jpeg,.webp`
+| Input Method | Triggers | Routes To |
+|-------------|----------|-----------|
+| **File drop/browse** (.tlg) | `onDrop` / `<input>` | TLG Extractor (existing) |
+| **File drop/browse** (.csv/.tsv/.txt) | `onDrop` / `<input>` | CSV/Text Extractor → Mapper |
+| **File drop/browse** (.png/.jpg/.webp) | `onDrop` / `<input>` | Image Extractor (Vision LLM) → Mapper |
+| **Clipboard paste (text)** | `onPaste` → `getData('text/plain')` | CSV/Text Extractor → Mapper |
+| **Clipboard paste (image)** | `onPaste` → `items[type='image/*']` | Image Extractor (Vision LLM) → Mapper |
 
-### Import Flow (updated)
+The file input `accept` attribute: `.tlg,.csv,.tsv,.txt,.png,.jpg,.jpeg,.webp`
+
+The DropZone UI should clearly communicate all three methods:
+```
+┌─────────────────────────────────────────────────┐
+│                                                   │
+│      Drop files here, browse, or paste            │
+│                                                   │
+│   📄 CSV / TSV / TXT    🖼️ Screenshots (PNG/JPG)  │
+│   📋 Paste from clipboard (Ctrl+V / Cmd+V)       │
+│   📁 TLG (existing format)                        │
+│                                                   │
+│              [ Browse Files ]                     │
+│                                                   │
+└─────────────────────────────────────────────────┘
+```
+
+### Import Flow
 
 ```
-1. User drops/selects file (or pastes)
-2. Detect type by extension or content
-3. Route to appropriate extractor
+1. User drops file, browses for file, or pastes from clipboard
+2. Detect type:
+   - File: by extension (.tlg / .csv / .png etc.)
+   - Paste: by clipboardData content (image items vs text)
+3. Route to appropriate extractor:
    - .tlg → TLG parser (existing, import directly as before)
-   - .csv → CSV extractor → column mapper UI
-   - image → check for API key → Vision LLM → column mapper UI
-   - paste → CSV extractor (tab delimiter) → column mapper UI
+   - .csv/.tsv/.txt or pasted text → CSV/Text Extractor → Column Mapper UI
+   - .png/.jpg/.webp or pasted image → Vision LLM → Column Mapper UI
 4. Show column mapping screen (skip for .tlg)
 5. Show preview & validation
 6. User confirms → import to IndexedDB
@@ -479,41 +813,43 @@ The `accept` attribute becomes: `.tlg,.csv,.tsv,.txt,.png,.jpg,.jpeg,.webp`
 
 ### AI Provider Setup
 
-The app uses ai-connect's `AIProviderSelector` component for provider configuration. The recommended flow:
+LLM calls go through server-side API routes (see Section 4). The API key flow:
 
-**If `NEXT_PUBLIC_OPENROUTER_API_KEY` env var is set:**
-- Auto-configure OpenRouter with `google/gemini-2.0-flash-exp:free` — no user action needed
-- Works for both CSV mapping and image extraction
-- User can override in Settings page
+**User enters their API key in Settings page (`/settings`):**
+- Key is stored in localStorage and sent to API routes via header
+- Works for both CSV column mapping and image extraction
+- OpenRouter recommended — free models like Gemini 2.0 Flash cost nothing
 
-**If no env var (or user wants to change):**
-- Settings page embeds `<AIProviderSelector />` from ai-connect
-- User picks provider (OpenRouter recommended — free models), enters API key
-- Config persists in localStorage via ai-connect's built-in storage
-
-**If no AI configured at all:**
+**If no API key configured:**
 - CSV import falls back to alias matching (English only) + manual column mapping
-- Image import shows a prompt to configure AI in Settings first
+- Image import shows a prompt: "To import from screenshots, add your OpenRouter API key in Settings. It's free!"
+- A banner on the import page links to Settings if no key is detected
 
 ---
 
 ## 7. File Structure
 
 ```
-packages/ai-connect/                    # Existing package — contributions here
+packages/ai-connect/                    # Git submodule — contributions done (Phase 0 ✅)
   src/
-    types.ts                            # Add 'openrouter' to LLMProvider
-    providers/index.ts                  # Add OpenRouter models + provider entry
-    services/aiService.ts               # Add openrouter case + generateTextWithImage()
-    hooks/useAIVisionService.ts         # NEW: hook for vision/image calls
+    types.ts                            # ✅ 'openrouter' added to LLMProvider
+    providers/index.ts                  # ✅ OpenRouter models + provider entry
+    services/aiService.ts               # ✅ OpenRouter case + generateTextWithImage()
+    hooks/useAIVisionService.ts         # ✅ Hook for vision/image calls
+    hooks/useAIService.ts               # ✅ Added generateTextWithImage wrapper
+
+app/api/ai/                             # Server-side LLM proxy routes
+  map-columns/route.ts                  # POST: CSV header → NormalizedTransaction field mapping
+  extract-image/route.ts                # POST: screenshot → { headers, rows } via Vision LLM
+  status/route.ts                       # GET: check if server default key exists
 
 lib/
   import/
     types.ts              # NormalizedTransaction, ExtractedData, ColumnMapping
-    csv-extractor.ts      # Parse CSV → { headers, rows }
-    llm-mapper.ts         # LLM-powered column mapping (any language)
-    alias-mapper.ts       # Offline alias-based column mapping (English)
-    image-extractor.ts    # Vision LLM → { headers, rows } (uses ai-connect)
+    csv-extractor.ts      # Parse CSV/TSV/pasted text → { headers, rows } (client-side)
+    llm-mapper.ts         # Client helper: calls POST /api/ai/map-columns
+    alias-mapper.ts       # Offline alias-based column mapping (English, client-side)
+    image-extractor.ts    # Client helper: calls POST /api/ai/extract-image
     date-parser.ts        # Flexible date parsing → YYYYMMDD
     side-inferrer.ts      # BUY/SELL → BUYTOOPEN/SELLTOCLOSE with position tracking
     normalizer.ts         # Apply mapping: rows → NormalizedTransaction[]
@@ -521,13 +857,15 @@ lib/
 
 components/
   import/
-    DropZone.tsx          # Updated: accept more file types
+    DropZone.tsx          # Updated: file drop + browse + clipboard paste (text & image)
     ColumnMapper.tsx      # Mapping UI with dropdowns + preview
     ImportPreview.tsx     # Validation, row toggle, confirm
+  settings/
+    APIKeyInput.tsx       # API key input with save/validate/status
 
 app/(journal)/
   import/page.tsx         # Updated: multi-step import flow
-  settings/page.tsx       # NEW: AI provider settings (uses AIProviderSelector)
+  settings/page.tsx       # NEW: API key settings + status display
 ```
 
 ---
@@ -536,38 +874,50 @@ app/(journal)/
 
 ### Trading diary app
 - **papaparse** — robust CSV parsing with auto-delimiter detection (~7KB gzipped)
-- **packages/ai-connect** — already local, just wire it up
+- **packages/ai-connect** — git submodule, used server-side in API routes via `createVercelAIModel`
+- **ai** (Vercel AI SDK) — already a dependency of ai-connect, used in API routes for `generateText`
 
-### Contributions to ai-connect
-- **@openrouter/ai-sdk-provider** — official Vercel AI SDK provider for OpenRouter
+### ai-connect (no new dependencies needed)
+- OpenRouter uses existing `@ai-sdk/openai` with a custom base URL
+- Vision support uses Vercel AI SDK's built-in multimodal message format
+
+### Environment variables
+- **`OPENROUTER_API_KEY`** — server-only env var (no `NEXT_PUBLIC_` prefix), optional default key in `.env.local`
 
 ---
 
 ## 9. Scope & Phases
 
-### Phase 0 — ai-connect contributions (prerequisite)
-- Add OpenRouter provider to ai-connect (types, models, factory)
-- Add vision/image support (`generateTextWithImage`, `useAIVisionService`)
-- Install `@openrouter/ai-sdk-provider`
-- Test with free model + the OpenRouter API key in `.env.local`
+### Phase 0 — ai-connect contributions ✅ DONE
+- ✅ Added OpenRouter provider (types, models, factory via `@ai-sdk/openai` + base URL)
+- ✅ Added vision/image support (`generateTextWithImage`, `useAIVisionService`)
+- ✅ No new dependencies needed (reuses `@ai-sdk/openai`)
+- ✅ OpenRouter API key stored in `.env.local`
+- ✅ Updated Storybook stories for OpenRouter
+- ✅ ai-connect set up as git submodule
 
-### Phase 1 — CSV Import with LLM mapping
-- CSV extractor (papaparse, auto-delimiter)
-- LLM-powered column mapping (any language, via ai-connect)
-- Alias-based fallback (English, offline)
+### Phase 1 — CSV + Text Import (file & clipboard paste)
+- **Settings page** (`/settings`) — API key input, save to localStorage, status display
+- **`GET /api/ai/status`** — check if server default key exists
+- **`POST /api/ai/map-columns`** — server-side LLM proxy for column mapping
+- CSV/Text extractor (papaparse, auto-delimiter)
+- DropZone: accept file drop, file browse, AND clipboard paste (text)
+- Clipboard paste detection (`onPaste` → `getData('text/plain')`)
+- LLM-powered column mapping (any language, via API route → OpenRouter)
+- Alias-based fallback (English, offline — no API key needed)
 - Column mapping review UI
 - Preview with validation
 - Import to IndexedDB
 - Side inference (BUY/SELL → open/close)
-- AI settings page (uses `AIProviderSelector` from ai-connect)
 
-### Phase 2 — Image Import
-- Vision LLM extraction (uses ai-connect vision support)
+### Phase 2 — Image Import (file & clipboard paste)
+- **`POST /api/ai/extract-image`** — server-side Vision LLM proxy
+- DropZone: accept image file drop AND clipboard paste (image/screenshot)
+- Clipboard paste detection (`onPaste` → `clipboardData.items` with `type='image/*'`)
 - Image → structured data → column mapper (same UI as CSV)
 - Support for multi-page screenshots (process each image)
 
 ### Phase 3 — Polish
-- Clipboard paste support
 - Duplicate detection
 - Import history (which files were imported when)
 - Saved mappings (remember column mapping per broker/format)
