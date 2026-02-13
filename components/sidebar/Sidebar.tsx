@@ -9,6 +9,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   TrendingUp,
+  Settings,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -20,6 +21,7 @@ const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/journal', label: 'Journal', icon: BookOpen },
   { href: '/import', label: 'Import', icon: Upload },
+  { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
 export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
@@ -27,9 +29,8 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   return (
     <aside
-      className={`flex flex-col h-screen bg-sidebar-bg border-r border-sidebar-border transition-all duration-200 ease-in-out ${
-        collapsed ? 'w-[60px]' : 'w-[220px]'
-      }`}
+      className={`flex flex-col h-screen bg-sidebar-bg border-r border-sidebar-border transition-all duration-200 ease-in-out ${collapsed ? 'w-[60px]' : 'w-[220px]'
+        }`}
     >
       <div className={`flex items-center h-14 px-3 border-b border-sidebar-border gap-2 ${collapsed ? 'justify-center' : ''}`}>
         <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-accent text-white shrink-0">
@@ -50,11 +51,10 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                isActive
-                  ? 'bg-sidebar-active text-foreground font-medium'
-                  : 'text-muted hover:bg-sidebar-hover hover:text-foreground'
-              } ${collapsed ? 'justify-center px-0' : ''}`}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${isActive
+                ? 'bg-sidebar-active text-foreground font-medium'
+                : 'text-muted hover:bg-sidebar-hover hover:text-foreground'
+                } ${collapsed ? 'justify-center px-0' : ''}`}
               title={collapsed ? item.label : undefined}
             >
               <Icon size={18} className="shrink-0" />

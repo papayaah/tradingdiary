@@ -9,12 +9,17 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.28",
+    "@types/papaparse": "^5.5.2",
+    "ai": "^6.0.85",
     "idb": "^8.0.3",
     "lightweight-charts": "^5.1.0",
     "lucide-react": "^0.563.0",
     "next": "16.1.6",
+    "papaparse": "^5.5.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-dropzone": "^15.0.0",
     "recharts": "^3.7.0"
   },
   "devDependencies": {
