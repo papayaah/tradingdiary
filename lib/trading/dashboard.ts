@@ -102,11 +102,11 @@ export function computeDashboard(summaries: DailySummary[]): DashboardData {
     });
   }
 
-  // Collect all closed trades across all days
+  // Collect all trades with realized P&L (including partially-open positions)
   const allClosed: AggregatedTrade[] = [];
   for (const s of sorted) {
     for (const t of s.trades) {
-      if (!t.isOpen) allClosed.push(t);
+      if (!t.isOpen || Math.abs(t.grossPnL) > 0.01) allClosed.push(t);
     }
   }
 

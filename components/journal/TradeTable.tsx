@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { AggregatedTrade } from '@/lib/trading/aggregator';
-import { pnlColorClass, formatVolume } from '@/lib/utils/format';
+import { pnlColorClass, formatVolume, formatCurrency } from '@/lib/utils/format';
 import TradeChart from './TradeChart';
 
 interface TradeTableProps {
@@ -77,11 +77,7 @@ function TradeRow({
           {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </td>
         <td className="px-5 py-3 text-foreground">
-          {trade.isOpen ? (
-            <span className="text-muted italic">open</span>
-          ) : (
-            trade.firstTradeTime.substring(0, 8)
-          )}
+          {trade.firstTradeTime.substring(0, 8)}
         </td>
         <td className="px-5 py-3 font-medium text-foreground">
           {trade.symbol}
@@ -104,18 +100,22 @@ function TradeRow({
           {trade.executions}
         </td>
         <td className="px-5 py-3 text-right">
-          {trade.isOpen ? (
-            <span className="text-xs text-muted italic">
-              {formatVolume(Math.abs(trade.netQuantity))} shares held
-            </span>
-          ) : (
-            <span className={`font-medium ${pnlColorClass(trade.netPnL)}`}>
-              {trade.netPnL < 0 ? '-' : ''}$
-              {Math.abs(trade.netPnL).toLocaleString('en-US', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
-            </span>
+          <span className={`font-medium ${pnlColorClass(trade.netPnL)}`}>
+            {trade.netPnL < 0 ? '-' : ''}$
+            {Math.abs(trade.netPnL).toLocaleString('en-US', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
+          </span>
+          {trade.isOpen && (
+            <div className="text-[10px] text-muted italic mt-0.5">
+              {formatVolume(Math.abs(trade.netQuantity))} held
+              {trade.unrealizedPnL != null && (
+                <span className={`ml-1 ${pnlColorClass(trade.unrealizedPnL)}`}>
+                  (unrl: {formatCurrency(trade.unrealizedPnL)})
+                </span>
+              )}
+            </div>
           )}
         </td>
         <td className="px-5 py-3 text-muted">-</td>

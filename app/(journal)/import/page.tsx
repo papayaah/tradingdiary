@@ -9,6 +9,8 @@ import { useAIManagementContextOptional } from '@/packages/ai-connect/src/compon
 import { parseCSVOrText } from '@/lib/import/csv-extractor';
 import { mapColumnsWithLLM } from '@/lib/import/llm-mapper';
 import { mapColumnsOffline } from '@/lib/import/alias-mapper';
+import { parseTLGFile } from '@/lib/parser/tlg-parser';
+import { importData } from '@/lib/db/trades';
 import { NormalizedTransaction, ColumnMapping, SideValueMapping } from '@/lib/import/types';
 
 export default function ImportPage() {
@@ -70,6 +72,23 @@ export default function ImportPage() {
     setError(null);
 
     try {
+      // Detect TLG format and use dedicated parser (skip column mapping entirely)
+      if (type !== 'image') {
+        let content = '';
+        if (data instanceof File) {
+          content = await data.text();
+        } else {
+          content = data as string;
+        }
+
+        if (content.includes('ACT_INF|') && content.includes('STK_TRD|')) {
+          const parsed = parseTLGFile(content);
+          await importData(parsed.account, parsed.transactions, parsed.positions);
+          router.push('/journal');
+          return;
+        }
+      }
+
       let parsedHeaders: string[] = [];
       let parsedRows: Record<string, string>[] = [];
 

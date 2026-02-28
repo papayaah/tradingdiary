@@ -10,6 +10,7 @@ const COLUMN_ALIASES: Record<keyof NormalizedTransaction, string[]> = {
     orderId: ['order id', 'trade id', 'id', 'ref', 'reference', 'order no'],
     companyName: ['company', 'company name', 'stock name', 'name', 'description'],
     currency: ['currency', 'ccy', 'cur'],
+    exchanges: ['exchange', 'exchanges', 'market', 'venue'],
     orderType: ['order type', 'type', 'order kind'],
     commission: ['commission', 'fee', 'fees', 'brokerage'],
     stockCode: ['stock code', 'code', 'isin', 'sedol'],

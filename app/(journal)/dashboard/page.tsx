@@ -4,13 +4,17 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Upload, LayoutDashboard } from 'lucide-react';
 import { getAllTransactions } from '@/lib/db/trades';
-import { aggregateByDay } from '@/lib/trading/aggregator';
+import { getTradeDateCutoff } from '@/lib/settings';
+import { aggregateByDay, type DailySummary } from '@/lib/trading/aggregator';
 import { computeDashboard, type DashboardData } from '@/lib/trading/dashboard';
-import CalendarStrip from '@/components/dashboard/CalendarStrip';
+import { timeToSeconds, computePnLTimeline } from '@/lib/replay/engine';
+import type { TransactionRecord } from '@/lib/db/schema';
+import MonthlyCalendar from '@/components/dashboard/MonthlyCalendar';
 import CumulativePnLChart from '@/components/dashboard/CumulativePnLChart';
 import WinLossDonut from '@/components/dashboard/WinLossDonut';
 import ComparisonBar from '@/components/dashboard/ComparisonBar';
 import LargestGainLossDonut from '@/components/dashboard/LargestGainLossDonut';
+import ReplayTimeline from '@/components/replay/ReplayTimeline';
 
 function formatMinutes(minutes: number): string {
   if (minutes < 60) return `${minutes} minutes`;
@@ -20,8 +24,19 @@ function formatMinutes(minutes: number): string {
   return `about ${h} hour${h > 1 ? 's' : ''} ${m}m`;
 }
 
+interface LatestDayTimeline {
+  transactions: TransactionRecord[];
+  symbols: string[];
+  startTime: number;
+  endTime: number;
+  snapshots: ReturnType<typeof computePnLTimeline>;
+  formattedDate: string;
+}
+
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [summaries, setSummaries] = useState<DailySummary[]>([]);
+  const [latestDay, setLatestDay] = useState<LatestDayTimeline | null>(null);
   const [empty, setEmpty] = useState(false);
 
   useEffect(() => {
@@ -31,8 +46,45 @@ export default function DashboardPage() {
         setEmpty(true);
         return;
       }
-      const summaries = aggregateByDay(transactions);
-      setData(computeDashboard(summaries));
+      const agg = aggregateByDay(transactions, getTradeDateCutoff());
+      setSummaries(agg);
+      setData(computeDashboard(agg));
+
+      // Build timeline data for the most recent day
+      if (agg.length > 0) {
+        const latest = agg[0]; // sorted desc by date
+        const dayTxns: TransactionRecord[] = [];
+        for (const trade of latest.trades) {
+          dayTxns.push(...trade.transactions);
+        }
+        const sorted = dayTxns.sort(
+          (a, b) => timeToSeconds(a.time) - timeToSeconds(b.time)
+        );
+        if (sorted.length > 0) {
+          const times = sorted.map((t) => timeToSeconds(t.time));
+          const min = Math.min(...times);
+          const max = Math.max(...times);
+          const seen = new Map<string, number>();
+          for (const t of sorted) {
+            const ts = timeToSeconds(t.time);
+            if (!seen.has(t.symbol) || ts < seen.get(t.symbol)!) {
+              seen.set(t.symbol, ts);
+            }
+          }
+          const symbols = [...seen.entries()]
+            .sort((a, b) => a[1] - b[1])
+            .map(([sym]) => sym);
+
+          setLatestDay({
+            transactions: sorted,
+            symbols,
+            startTime: Math.max(0, min - 300),
+            endTime: Math.min(86400, max + 300),
+            snapshots: computePnLTimeline(sorted),
+            formattedDate: latest.formattedDate,
+          });
+        }
+      }
     }
     load();
   }, []);
@@ -72,25 +124,13 @@ export default function DashboardPage() {
     );
   }
 
-  const monthLabel = data.calendar.length > 0
-    ? (() => {
-        const d = data.calendar.find((c) => c.hasData) ?? data.calendar[0];
-        const date = new Date(
-          parseInt(d.date.substring(0, 4)),
-          parseInt(d.date.substring(4, 6)) - 1,
-          parseInt(d.date.substring(6, 8))
-        );
-        return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-      })()
-    : '';
-
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
       </div>
 
-      <CalendarStrip days={data.calendar} monthLabel={monthLabel} />
+      <MonthlyCalendar summaries={summaries} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2">
@@ -122,6 +162,23 @@ export default function DashboardPage() {
         />
         <LargestGainLossDonut gain={data.largestGain} loss={data.largestLoss} />
       </div>
+
+      {latestDay && (
+        <div className="rounded-xl border border-card-border bg-card-bg p-5">
+          <h3 className="text-sm font-semibold text-foreground mb-3">
+            Latest Day Activity — {latestDay.formattedDate}
+          </h3>
+          <ReplayTimeline
+            transactions={latestDay.transactions}
+            symbols={latestDay.symbols}
+            currentTimeSeconds={latestDay.endTime}
+            startTimeSeconds={latestDay.startTime}
+            endTimeSeconds={latestDay.endTime}
+            snapshots={latestDay.snapshots}
+            prevVisibleCount={latestDay.transactions.length}
+          />
+        </div>
+      )}
     </div>
   );
 }

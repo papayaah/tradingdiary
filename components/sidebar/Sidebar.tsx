@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import {
   BookOpen,
   LayoutDashboard,
+  Play,
   Upload,
   PanelLeftClose,
   PanelLeftOpen,
@@ -20,6 +21,7 @@ interface SidebarProps {
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/journal', label: 'Journal', icon: BookOpen },
+  { href: '/replay', label: 'Replay', icon: Play },
   { href: '/import', label: 'Import', icon: Upload },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];

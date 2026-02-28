@@ -35,12 +35,17 @@ export default function DayStats({ summary }: DayStatsProps) {
     ? ((summary.winCount / (summary.winCount + summary.lossCount)) * 100).toFixed(0) + '%'
     : '-';
 
+  const totalUnrealized = summary.trades.reduce(
+    (sum, t) => sum + (t.unrealizedPnL ?? 0), 0
+  );
+  const hasUnrealized = summary.trades.some((t) => t.unrealizedPnL != null);
+  const combinedPnL = summary.netPnL + totalUnrealized;
+
   return (
     <div className="grid grid-cols-3 md:grid-cols-6 gap-4 px-5 py-4 bg-card-bg border-b border-card-border">
       <StatCard label="Total Trades" value={summary.totalTrades.toString()} />
       <StatCard label="Total Volume" value={formatVolume(summary.totalVolume)} />
       <StatCard label="Win %" value={winPct} />
-      <StatCard label="MFE/MAE Ratio" locked />
       <StatCard
         label="Commissions/Fees"
         value={formatCurrency(summary.totalCommissions)}
@@ -51,6 +56,15 @@ export default function DayStats({ summary }: DayStatsProps) {
         value={formatCurrency(summary.netPnL)}
         colorClass={pnlColorClass(summary.netPnL)}
       />
+      {hasUnrealized ? (
+        <StatCard
+          label="Incl. Unrealized"
+          value={formatCurrency(combinedPnL)}
+          colorClass={pnlColorClass(combinedPnL)}
+        />
+      ) : (
+        <StatCard label="MFE/MAE Ratio" locked />
+      )}
     </div>
   );
 }

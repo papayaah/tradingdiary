@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Upload, BookOpen } from 'lucide-react';
 import { getAllTransactions } from '@/lib/db/trades';
-import { aggregateByDay, type DailySummary } from '@/lib/trading/aggregator';
+import { getTradeDateCutoff } from '@/lib/settings';
+import { aggregateByDay, applyMarketPrices, type DailySummary } from '@/lib/trading/aggregator';
 import DayGroup from '@/components/journal/DayGroup';
 
 export default function JournalPage() {
@@ -16,7 +17,39 @@ export default function JournalPage() {
       const transactions = await getAllTransactions();
       if (transactions.length > 0) {
         setAccountId(transactions[0].accountId);
-        setSummaries(aggregateByDay(transactions));
+        const agg = aggregateByDay(transactions, getTradeDateCutoff());
+
+        // Fetch historical market prices for open positions
+        const openSymbols = new Set<string>();
+        let minDate = '';
+        let maxDate = '';
+        for (const day of agg) {
+          for (const trade of day.trades) {
+            if (trade.isOpen) {
+              openSymbols.add(trade.symbol);
+              if (!minDate || day.date < minDate) minDate = day.date;
+              if (!maxDate || day.date > maxDate) maxDate = day.date;
+            }
+          }
+        }
+        if (openSymbols.size > 0) {
+          try {
+            const params = new URLSearchParams({
+              symbols: [...openSymbols].join(','),
+              from: minDate,
+              to: maxDate,
+            });
+            const res = await fetch(`/api/quotes?${params}`);
+            if (res.ok) {
+              const prices = await res.json();
+              applyMarketPrices(agg, prices);
+            }
+          } catch {
+            // Silently fail — unrealized just won't show
+          }
+        }
+
+        setSummaries(agg);
       } else {
         setSummaries([]);
       }
