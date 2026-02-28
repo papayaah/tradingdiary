@@ -3,6 +3,8 @@ import type { OHLCCandle, CachedChartData } from './types';
 
 const DB_NAME = 'tradingdiary-charts';
 const STORE_NAME = 'ohlc';
+// Bump this when the candle fetch logic changes to invalidate stale cache entries
+const CACHE_VERSION = 2;
 
 async function getChartDB() {
   return openDB(DB_NAME, 1, {
@@ -13,7 +15,7 @@ async function getChartDB() {
 }
 
 function cacheKey(symbol: string, date: string, interval: string): string {
-  return `${symbol}|${date}|${interval}`;
+  return `v${CACHE_VERSION}|${symbol}|${date}|${interval}`;
 }
 
 export async function getCachedCandles(

@@ -14,12 +14,11 @@ export async function GET(request: NextRequest) {
   const month = parseInt(date.substring(4, 6)) - 1;
   const day = parseInt(date.substring(6, 8));
 
-  // Build period range: from market open to close for that day
-  // Use day start (4:00 AM ET pre-market) to day end (8:00 PM ET after-hours)
-  const startDate = new Date(year, month, day, 0, 0, 0);
-  const endDate = new Date(year, month, day + 1, 0, 0, 0);
-  const period1 = Math.floor(startDate.getTime() / 1000);
-  const period2 = Math.floor(endDate.getTime() / 1000);
+  // Build period range covering the full US trading day in UTC.
+  // Pre-market starts 4:00 AM ET (earliest 08:00 UTC), after-hours ends 8:00 PM ET (latest 01:00 UTC next day).
+  // Use 4:00 UTC to 4:00 UTC+1d to guarantee full coverage regardless of server timezone.
+  const period1 = Math.floor(Date.UTC(year, month, day, 4, 0, 0) / 1000);
+  const period2 = Math.floor(Date.UTC(year, month, day + 1, 4, 0, 0) / 1000);
 
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=${interval}&includePrePost=true`;
 

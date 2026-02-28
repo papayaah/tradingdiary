@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useEffect, useMemo } from 'react';
+import { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import type { TransactionRecord } from '@/lib/db/schema';
 import { timeToSeconds, type PnLSnapshot } from '@/lib/replay/engine';
 
@@ -25,6 +25,7 @@ interface ReplayTimelineProps {
   endTimeSeconds: number;
   snapshots: PnLSnapshot[];
   prevVisibleCount: number;
+  onSeek?: (timeSeconds: number) => void;
 }
 
 export default function ReplayTimeline({
@@ -35,6 +36,7 @@ export default function ReplayTimeline({
   endTimeSeconds,
   snapshots,
   prevVisibleCount,
+  onSeek,
 }: ReplayTimelineProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
@@ -124,9 +126,30 @@ export default function ReplayTimeline({
 
   const cursorX = timeToX(currentTimeSeconds);
 
+  const handleClick = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      if (!onSeek) return;
+      const svg = e.currentTarget;
+      const rect = svg.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      // Only respond to clicks in the timeline area
+      if (clickX < LEFT_LABEL_WIDTH || clickX > width - RIGHT_PADDING) return;
+      const fraction = (clickX - LEFT_LABEL_WIDTH) / timelineWidth;
+      const timeSeconds = startTimeSeconds + fraction * timeRange;
+      onSeek(Math.round(Math.max(startTimeSeconds, Math.min(endTimeSeconds, timeSeconds))));
+    },
+    [onSeek, width, timelineWidth, startTimeSeconds, endTimeSeconds, timeRange]
+  );
+
   return (
     <div ref={containerRef} className="w-full">
-      <svg width={width} height={totalHeight} className="select-none">
+      <svg
+        width={width}
+        height={totalHeight}
+        className="select-none"
+        style={onSeek ? { cursor: 'crosshair' } : undefined}
+        onClick={handleClick}
+      >
         {/* Row backgrounds */}
         {symbols.map((sym, i) => (
           <g key={sym}>

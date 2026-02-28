@@ -13,7 +13,6 @@ import {
   type Time,
 } from 'lightweight-charts';
 import { fetchCandles } from '@/lib/chart/fetch';
-import type { OHLCCandle } from '@/lib/chart/types';
 import type { TransactionRecord } from '@/lib/db/schema';
 import { Loader2 } from 'lucide-react';
 
@@ -25,6 +24,26 @@ interface TradeChartProps {
 }
 
 const INTERVALS = ['1m', '5m', '15m', '1h'] as const;
+
+/**
+ * Compute the UTC→ET offset in seconds for a given date.
+ * Returns a negative value (e.g. -18000 for EST, -14400 for EDT)
+ * that when added to a UTC timestamp gives an ET-display timestamp.
+ */
+function getETOffsetSeconds(dateStr: string): number {
+  const year = parseInt(dateStr.substring(0, 4));
+  const month = parseInt(dateStr.substring(4, 6)) - 1;
+  const day = parseInt(dateStr.substring(6, 8));
+  const refUTC = new Date(Date.UTC(year, month, day, 12, 0, 0));
+  const etParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    hour12: false,
+    hour: 'numeric',
+  }).formatToParts(refUTC);
+  const etHourAtNoonUTC = parseInt(etParts.find((p) => p.type === 'hour')?.value ?? '7');
+  // etHourAtNoonUTC is 7 for EST (UTC-5) or 8 for EDT (UTC-4)
+  return (etHourAtNoonUTC - 12) * 3600; // -18000 (EST) or -14400 (EDT)
+}
 
 export default function TradeChart({ symbol, date, transactions, interval: defaultInterval = '5m' }: TradeChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -48,15 +67,29 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
       setError('');
 
       try {
-        const candles = await fetchCandles(symbol, date, interval);
+        const rawCandles = await fetchCandles(symbol, date, interval);
 
         if (cancelled || !containerRef.current) return;
 
-        if (candles.length === 0) {
+        if (rawCandles.length === 0) {
           setError('No chart data available for this symbol/date');
           setLoading(false);
           return;
         }
+
+        // Shift all timestamps from UTC to ET so the x-axis shows Eastern Time.
+        // lightweight-charts displays unix timestamps as UTC, so we offset to fake ET display.
+        const etOffset = getETOffsetSeconds(date);
+        const candles = rawCandles.map((c) => ({ ...c, time: c.time + etOffset }));
+
+        // Filter to only the relevant trading day (4 AM ET to 8 PM ET)
+        const year = parseInt(date.substring(0, 4));
+        const month = parseInt(date.substring(4, 6)) - 1;
+        const day = parseInt(date.substring(6, 8));
+        const dayStartET = Math.floor(Date.UTC(year, month, day, 4, 0, 0) / 1000) + etOffset;
+        const dayEndET = Math.floor(Date.UTC(year, month, day, 20, 0, 0) / 1000) + etOffset;
+        const filteredCandles = candles.filter((c) => c.time >= dayStartET && c.time <= dayEndET);
+        const chartCandles = filteredCandles.length > 0 ? filteredCandles : candles;
 
         const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
@@ -98,7 +131,7 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
           wickDownColor: isDark ? '#f87171' : '#dc2626',
         });
 
-        const candleData: CandlestickData[] = candles.map((c) => ({
+        const candleData: CandlestickData[] = chartCandles.map((c) => ({
           time: c.time as Time,
           open: c.open,
           high: c.high,
@@ -118,7 +151,7 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
           scaleMargins: { top: 0.8, bottom: 0 },
         });
 
-        const volumeData: HistogramData[] = candles.map((c) => ({
+        const volumeData: HistogramData[] = chartCandles.map((c) => ({
           time: c.time as Time,
           value: c.volume,
           color: c.close >= c.open
@@ -128,10 +161,11 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
 
         volumeSeries.setData(volumeData);
 
-        // Add buy/sell markers on the candlestick series
+        // Add buy/sell markers on the candlestick series.
+        // Trade times are ET — match against ET-shifted candle timestamps.
         const markers = transactions
           .map((t) => {
-            const tradeTime = findClosestCandleTime(candles, t.time, date);
+            const tradeTime = findClosestCandleTime(chartCandles, t.time, date);
             if (tradeTime === null) return null;
 
             const isBuy = t.side === 'BUYTOOPEN' || t.side === 'BUYTOCLOSE';
@@ -228,14 +262,21 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
   );
 }
 
-function findClosestCandleTime(candles: OHLCCandle[], tradeTime: string, date: string): number | null {
+/**
+ * Find the candle whose timestamp is closest to (but not after) the trade time.
+ * Both candle timestamps and trade time are in ET (candles were pre-shifted).
+ */
+function findClosestCandleTime(candles: { time: number }[], tradeTime: string, date: string): number | null {
   if (candles.length === 0) return null;
 
+  // Trade time from TLG is in ET. Build a matching ET timestamp using Date.UTC
+  // (which just gives us the numeric value — since candles are also ET-shifted via
+  // the same Date.UTC base, they'll match).
   const [h, m, s] = tradeTime.split(':').map(Number);
   const year = parseInt(date.substring(0, 4));
   const month = parseInt(date.substring(4, 6)) - 1;
   const day = parseInt(date.substring(6, 8));
-  const tradeTimestamp = Math.floor(new Date(year, month, day, h, m, s).getTime() / 1000);
+  const tradeTimestamp = Math.floor(Date.UTC(year, month, day, h, m, s || 0) / 1000);
 
   let closest = candles[0].time;
   for (const c of candles) {

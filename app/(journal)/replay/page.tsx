@@ -208,6 +208,7 @@ export default function ReplayPage() {
           endTimeSeconds={timeRange.end}
           snapshots={snapshots}
           prevVisibleCount={prevVisible}
+          onSeek={actions.seek}
         />
       </div>
 
