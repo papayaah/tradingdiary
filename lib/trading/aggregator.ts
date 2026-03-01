@@ -50,164 +50,200 @@ function timeToMinutes(time: string): number {
   return h * 3600 + m * 60 + s;
 }
 
-function nextCalendarDay(dateStr: string): string {
+function nextTradingDay(dateStr: string): string {
   const y = parseInt(dateStr.substring(0, 4));
   const m = parseInt(dateStr.substring(4, 6)) - 1;
   const d = parseInt(dateStr.substring(6, 8));
   const next = new Date(y, m, d);
-  next.setDate(next.getDate() + 1);
+  do {
+    next.setDate(next.getDate() + 1);
+  } while (next.getDay() === 0 || next.getDay() === 6); // skip Sun/Sat
   return `${next.getFullYear()}${String(next.getMonth() + 1).padStart(2, '0')}${String(next.getDate()).padStart(2, '0')}`;
 }
 
 function effectiveDate(t: TransactionRecord, cutoffTime?: string | null): string {
   if (!cutoffTime) return t.date;
-  if (t.time >= cutoffTime) return nextCalendarDay(t.date);
+  if (t.time >= cutoffTime) return nextTradingDay(t.date);
   return t.date;
 }
 
-interface FIFOResult {
-  realizedGross: number;
-  realizedCommission: number;
-  openQuantity: number;
-  openAvgCost: number;
+interface FIFOLot {
+  qty: number;
+  costPerShare: number;
+  commission: number;
 }
 
 /**
- * FIFO matching: match closing transactions against opening transactions
- * in chronological order to compute realized P&L.
- *
- * For LONG trades: opening = BUYTOOPEN, closing = SELLTOCLOSE
- * For SHORT trades: opening = SELLTOOPEN, closing = BUYTOCLOSE
+ * Per-date accumulator for cross-day FIFO results.
  */
-function computeRealizedPnL(transactions: TransactionRecord[]): FIFOResult {
-  // Build a queue of opening lots: { qty (always positive), price, totalValue, commission }
-  const openLots: { qty: number; costPerShare: number; commission: number }[] = [];
-  let realizedGross = 0;
-  let realizedCommission = 0;
-
-  for (const t of transactions) {
-    const isOpening = t.side === 'BUYTOOPEN' || t.side === 'SELLTOOPEN';
-    const qty = Math.abs(t.quantity);
-
-    if (isOpening) {
-      // Add to the FIFO queue
-      openLots.push({
-        qty,
-        costPerShare: Math.abs(t.totalValue) / qty,
-        commission: t.commission,
-      });
-    } else {
-      // Closing transaction — match against open lots FIFO
-      let remaining = qty;
-      const closePrice = Math.abs(t.totalValue) / qty;
-      // Proportion of this close's commission allocated so far
-      let commAllocated = 0;
-
-      while (remaining > 0.001 && openLots.length > 0) {
-        const lot = openLots[0];
-        const matched = Math.min(remaining, lot.qty);
-        const fraction = matched / qty;
-
-        // For LONG: realized = (sell price - buy price) * matched
-        // For SHORT: realized = (open sell price - close buy price) * matched
-        // Both simplify to: proceeds - cost
-        const isLong = t.side === 'SELLTOCLOSE';
-        if (isLong) {
-          realizedGross += (closePrice - lot.costPerShare) * matched;
-        } else {
-          // SHORT: BUYTOCLOSE — profit when open price > close price
-          realizedGross += (lot.costPerShare - closePrice) * matched;
-        }
-
-        // Allocate commissions proportionally
-        const lotFraction = matched / (matched + (lot.qty - matched));
-        realizedCommission += lot.commission * lotFraction;
-        lot.commission -= lot.commission * lotFraction;
-
-        commAllocated += fraction;
-
-        lot.qty -= matched;
-        remaining -= matched;
-
-        if (lot.qty < 0.001) {
-          openLots.shift();
-        }
-      }
-
-      // Add closing transaction's commission
-      realizedCommission += t.commission;
-    }
-  }
-
-  const openQuantity = openLots.reduce((sum, lot) => sum + lot.qty, 0);
-  const openTotalCost = openLots.reduce((sum, lot) => sum + lot.qty * lot.costPerShare, 0);
-  const openAvgCost = openQuantity > 0.001 ? openTotalCost / openQuantity : 0;
-
-  return { realizedGross, realizedCommission, openQuantity, openAvgCost };
+interface DateAccum {
+  symbol: string;
+  companyName: string;
+  date: string;
+  transactions: TransactionRecord[];
+  realizedGross: number;
+  realizedCommission: number;
+  // Snapshot of the running position at the END of this date
+  endPosition: number;
+  endAvgCost: number;
+  // The first opening side seen for this symbol (across all dates)
+  side: 'LONG' | 'SHORT';
 }
 
 export function aggregateByDay(
   transactions: TransactionRecord[],
   cutoffTime?: string | null
 ): DailySummary[] {
-  const byDateSymbol = new Map<string, TransactionRecord[]>();
+  // ── Step 1: Group transactions by symbol ──
+  const bySymbol = new Map<string, { t: TransactionRecord; eDate: string }[]>();
 
   for (const t of transactions) {
     const eDate = effectiveDate(t, cutoffTime);
-    const key = `${eDate}|${t.symbol}`;
-    const existing = byDateSymbol.get(key);
+    const existing = bySymbol.get(t.symbol);
     if (existing) {
-      existing.push(t);
+      existing.push({ t, eDate });
     } else {
-      byDateSymbol.set(key, [t]);
+      bySymbol.set(t.symbol, [{ t, eDate }]);
     }
   }
 
-  const byDate = new Map<string, AggregatedTrade[]>();
+  // ── Step 2: Cross-day FIFO per symbol ──
+  const allDateAccums: DateAccum[] = [];
 
-  for (const [key, txns] of byDateSymbol) {
-    const [date] = key.split('|');
-    const sorted = txns.sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time));
+  for (const [symbol, entries] of bySymbol) {
+    // Sort chronologically: by effective date, then by time within the day
+    entries.sort((a, b) => {
+      const dateCmp = a.eDate.localeCompare(b.eDate);
+      if (dateCmp !== 0) return dateCmp;
+      return timeToMinutes(a.t.time) - timeToMinutes(b.t.time);
+    });
 
-    const firstEntry = sorted.find(
-      (t) => t.side === 'BUYTOOPEN' || t.side === 'SELLTOOPEN'
+    // Determine overall side from the first opening transaction
+    const firstOpening = entries.find(
+      (e) => e.t.side === 'BUYTOOPEN' || e.t.side === 'SELLTOOPEN'
     );
     const side: 'LONG' | 'SHORT' =
-      firstEntry?.side === 'SELLTOOPEN' ? 'SHORT' : 'LONG';
+      firstOpening?.t.side === 'SELLTOOPEN' ? 'SHORT' : 'LONG';
 
-    const volume = sorted.reduce((sum, t) => sum + Math.abs(t.quantity), 0);
-    const netQuantity = sorted.reduce((sum, t) => sum + t.quantity, 0);
+    // FIFO lot queue carried across all dates
+    const openLots: FIFOLot[] = [];
+    let runningPosition = 0;
 
-    // FIFO matching for realized P&L
-    const fifo = computeRealizedPnL(sorted);
-    const grossPnL = fifo.realizedGross;
-    const netPnL = grossPnL + fifo.realizedCommission;
+    // Sub-group entries by effective date (preserving chronological order)
+    const dateGroups: { date: string; items: { t: TransactionRecord; eDate: string }[] }[] = [];
+    for (const entry of entries) {
+      const last = dateGroups[dateGroups.length - 1];
+      if (last && last.date === entry.eDate) {
+        last.items.push(entry);
+      } else {
+        dateGroups.push({ date: entry.eDate, items: [entry] });
+      }
+    }
+
+    for (const group of dateGroups) {
+      let dayRealizedGross = 0;
+      let dayRealizedCommission = 0;
+      const dayTxns: TransactionRecord[] = [];
+
+      for (const { t } of group.items) {
+        dayTxns.push(t);
+        const isOpening = t.side === 'BUYTOOPEN' || t.side === 'SELLTOOPEN';
+        const qty = Math.abs(t.quantity);
+
+        if (isOpening) {
+          openLots.push({
+            qty,
+            costPerShare: Math.abs(t.totalValue) / qty,
+            commission: t.commission,
+          });
+          runningPosition += t.quantity;
+        } else {
+          // Closing transaction — match against open lots FIFO
+          let remaining = qty;
+          const closePrice = Math.abs(t.totalValue) / qty;
+
+          while (remaining > 0.001 && openLots.length > 0) {
+            const lot = openLots[0];
+            const matched = Math.min(remaining, lot.qty);
+
+            const isLong = t.side === 'SELLTOCLOSE';
+            if (isLong) {
+              dayRealizedGross += (closePrice - lot.costPerShare) * matched;
+            } else {
+              dayRealizedGross += (lot.costPerShare - closePrice) * matched;
+            }
+
+            // Allocate opening lot commission proportionally
+            const lotFraction = matched / (matched + (lot.qty - matched));
+            dayRealizedCommission += lot.commission * lotFraction;
+            lot.commission -= lot.commission * lotFraction;
+
+            lot.qty -= matched;
+            remaining -= matched;
+
+            if (lot.qty < 0.001) {
+              openLots.shift();
+            }
+          }
+
+          // Add closing transaction's commission
+          dayRealizedCommission += t.commission;
+          runningPosition += t.quantity;
+        }
+      }
+
+      // Snapshot of open lots at end of this date
+      const openQty = openLots.reduce((s, l) => s + l.qty, 0);
+      const openCost = openLots.reduce((s, l) => s + l.qty * l.costPerShare, 0);
+
+      allDateAccums.push({
+        symbol,
+        companyName: dayTxns[0].companyName,
+        date: group.date,
+        transactions: dayTxns,
+        realizedGross: dayRealizedGross,
+        realizedCommission: dayRealizedCommission,
+        endPosition: Math.round(runningPosition * 100) / 100,
+        endAvgCost: openQty > 0.001 ? openCost / openQty : 0,
+        side,
+      });
+    }
+  }
+
+  // ── Step 3: Build AggregatedTrade per date+symbol ──
+  const byDate = new Map<string, AggregatedTrade[]>();
+
+  for (const acc of allDateAccums) {
+    const volume = acc.transactions.reduce((s, t) => s + Math.abs(t.quantity), 0);
+    const grossPnL = acc.realizedGross;
+    const netPnL = grossPnL + acc.realizedCommission;
 
     const trade: AggregatedTrade = {
-      symbol: sorted[0].symbol,
-      companyName: sorted[0].companyName,
-      date,
-      firstTradeTime: sorted[0].time,
+      symbol: acc.symbol,
+      companyName: acc.companyName,
+      date: acc.date,
+      firstTradeTime: acc.transactions[0].time,
       volume,
-      executions: sorted.length,
+      executions: acc.transactions.length,
       grossPnL,
-      totalCommissions: fifo.realizedCommission,
+      totalCommissions: acc.realizedCommission,
       netPnL,
-      side,
-      isOpen: Math.abs(netQuantity) > 0.01,
-      netQuantity: Math.round(netQuantity * 100) / 100,
-      openAvgCost: fifo.openAvgCost,
-      transactions: sorted,
+      side: acc.side,
+      isOpen: Math.abs(acc.endPosition) > 0.01,
+      netQuantity: acc.endPosition,
+      openAvgCost: acc.endAvgCost,
+      transactions: acc.transactions,
     };
 
-    const existing = byDate.get(date);
+    const existing = byDate.get(acc.date);
     if (existing) {
       existing.push(trade);
     } else {
-      byDate.set(date, [trade]);
+      byDate.set(acc.date, [trade]);
     }
   }
 
+  // ── Step 4: Build DailySummary per date ──
   const summaries: DailySummary[] = [];
 
   for (const [date, trades] of byDate) {
