@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Sidebar from '@/components/sidebar/Sidebar';
+import { MediaLibraryProvider } from '@/packages/react-media-library/src/components/MediaLibraryProvider';
 
 export default function JournalLayout({
   children,
@@ -35,11 +36,13 @@ export default function JournalLayout({
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar collapsed={collapsed} onToggle={toggle} />
-      <main className="flex-1 overflow-y-auto bg-background">
-        {children}
-      </main>
-    </div>
+    <MediaLibraryProvider>
+      <div className="flex h-screen overflow-hidden">
+        <Sidebar collapsed={collapsed} onToggle={toggle} />
+        <main className="flex-1 overflow-y-auto bg-background">
+          {children}
+        </main>
+      </div>
+    </MediaLibraryProvider>
   );
 }

@@ -17,7 +17,7 @@ export default function DayGroup({ summary, accountId }: DayGroupProps) {
       <DayHeader formattedDate={summary.formattedDate} netPnL={summary.netPnL} />
       <DayStats summary={summary} />
       <NotesArea date={summary.date} accountId={accountId} />
-      <TradeTable trades={summary.trades} />
+      <TradeTable trades={summary.trades} accountId={accountId} />
     </section>
   );
 }

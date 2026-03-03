@@ -1,3 +1,6 @@
 [submodule "packages/ai-connect"]
 	path = packages/ai-connect
 	url = git@github.com:papayaah/ai-connect.git
+[submodule "packages/react-media-library"]
+	path = packages/react-media-library
+	url = git@github.com:papayaah/react-media-library

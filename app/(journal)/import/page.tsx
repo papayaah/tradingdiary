@@ -12,6 +12,7 @@ import { mapColumnsOffline } from '@/lib/import/alias-mapper';
 import { parseTLGFile } from '@/lib/parser/tlg-parser';
 import { importData } from '@/lib/db/trades';
 import { NormalizedTransaction, ColumnMapping, SideValueMapping } from '@/lib/import/types';
+import { importFileToLibrary } from '@/packages/react-media-library/src/services/storage';
 
 export default function ImportPage() {
   const router = useRouter();
@@ -26,6 +27,7 @@ export default function ImportPage() {
   const [mapping, setMapping] = useState<ColumnMapping>({} as any);
   const [sideMap, setSideMap] = useState<SideValueMapping>({});
   const [previewTransactions, setPreviewTransactions] = useState<NormalizedTransaction[]>([]);
+  const [importFile, setImportFile] = useState<File | null>(null);
 
 
 
@@ -84,6 +86,11 @@ export default function ImportPage() {
         if (content.includes('ACT_INF|') && content.includes('STK_TRD|')) {
           const parsed = parseTLGFile(content);
           await importData(parsed.account, parsed.transactions, parsed.positions);
+          // Save original file to media library
+          const fileToSave = data instanceof File
+            ? data
+            : new File([content], 'pasted-import.tlg', { type: 'text/plain' });
+          importFileToLibrary(fileToSave).catch(console.error);
           router.push('/journal');
           return;
         }
@@ -91,6 +98,14 @@ export default function ImportPage() {
 
       let parsedHeaders: string[] = [];
       let parsedRows: Record<string, string>[] = [];
+
+      // Store original file for later archival
+      if (data instanceof File) {
+        setImportFile(data);
+      } else if (typeof data === 'string') {
+        const ext = type === 'image' ? 'png' : 'txt';
+        setImportFile(new File([data], `pasted-import.${ext}`, { type: type === 'image' ? 'image/png' : 'text/plain' }));
+      }
 
       // 1. Extract Data (Text vs Image)
       if (type === 'image') {
@@ -225,6 +240,11 @@ export default function ImportPage() {
       // We pass empty positions array.
       await importData(account, transactions, []);
 
+      // Save original file to media library
+      if (importFile) {
+        importFileToLibrary(importFile).catch(console.error);
+      }
+
       alert(`Successfully imported ${transactions.length} trades to account "${account.name}"!`);
 
       // Reset
@@ -232,6 +252,7 @@ export default function ImportPage() {
       setHeaders([]);
       setRows([]);
       setPreviewTransactions([]);
+      setImportFile(null);
     } catch (err: any) {
       console.error('Import failed', err);
       alert(`Import failed: ${err.message}`);

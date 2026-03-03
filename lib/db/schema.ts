@@ -46,6 +46,7 @@ export interface DailyNoteRecord {
   date: string;
   accountId: string;
   content: string;
+  screenshotIds?: number[];
   updatedAt: number;
 }
 
@@ -55,6 +56,7 @@ export interface TradeNoteRecord {
   accountId: string;
   content: string;
   tags: string[];
+  screenshotIds?: number[];
   updatedAt: number;
 }
 

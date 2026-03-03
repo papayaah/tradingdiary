@@ -1,16 +1,23 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { AggregatedTrade } from '@/lib/trading/aggregator';
 import { pnlColorClass, formatVolume, formatCurrency } from '@/lib/utils/format';
+import {
+  getTradeNote,
+  addScreenshotToTrade,
+  removeScreenshotFromTrade,
+} from '@/lib/db/notes';
 import TradeChart from './TradeChart';
+import ScreenshotAttachment from './ScreenshotAttachment';
 
 interface TradeTableProps {
   trades: AggregatedTrade[];
+  accountId: string;
 }
 
-export default function TradeTable({ trades }: TradeTableProps) {
+export default function TradeTable({ trades, accountId }: TradeTableProps) {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const toggle = (key: string) => {
@@ -46,6 +53,7 @@ export default function TradeTable({ trades }: TradeTableProps) {
                   rowKey={key}
                   isExpanded={isExpanded}
                   onToggle={toggle}
+                  accountId={accountId}
                 />
               );
             })}
@@ -61,12 +69,39 @@ function TradeRow({
   rowKey,
   isExpanded,
   onToggle,
+  accountId,
 }: {
   trade: AggregatedTrade;
   rowKey: string;
   isExpanded: boolean;
   onToggle: (key: string) => void;
+  accountId: string;
 }) {
+  const [screenshotIds, setScreenshotIds] = useState<number[]>([]);
+
+  useEffect(() => {
+    if (!isExpanded) return;
+    getTradeNote(trade.date, trade.symbol, accountId).then((note) => {
+      setScreenshotIds(note?.screenshotIds ?? []);
+    });
+  }, [isExpanded, trade.date, trade.symbol, accountId]);
+
+  const handleAddScreenshot = useCallback(
+    async (assetId: number) => {
+      await addScreenshotToTrade(trade.date, trade.symbol, accountId, assetId);
+      setScreenshotIds((prev) => [...prev, assetId]);
+    },
+    [trade.date, trade.symbol, accountId]
+  );
+
+  const handleRemoveScreenshot = useCallback(
+    async (assetId: number) => {
+      await removeScreenshotFromTrade(trade.date, trade.symbol, accountId, assetId);
+      setScreenshotIds((prev) => prev.filter((id) => id !== assetId));
+    },
+    [trade.date, trade.symbol, accountId]
+  );
+
   return (
     <>
       <tr
@@ -122,15 +157,27 @@ function TradeRow({
         <td className="px-5 py-3 text-muted">-</td>
       </tr>
       {isExpanded && (
-        <tr>
-          <td colSpan={9} className="p-0">
-            <TradeChart
-              symbol={trade.symbol}
-              date={trade.date}
-              transactions={trade.transactions}
-            />
-          </td>
-        </tr>
+        <>
+          <tr>
+            <td colSpan={9} className="p-0">
+              <TradeChart
+                symbol={trade.symbol}
+                date={trade.date}
+                transactions={trade.transactions}
+              />
+            </td>
+          </tr>
+          <tr>
+            <td colSpan={9} className="px-5 py-3 border-t border-card-border">
+              <div className="text-xs text-muted mb-1.5 font-medium uppercase tracking-wider">Screenshots</div>
+              <ScreenshotAttachment
+                screenshotIds={screenshotIds}
+                onAdd={handleAddScreenshot}
+                onRemove={handleRemoveScreenshot}
+              />
+            </td>
+          </tr>
+        </>
       )}
     </>
   );
