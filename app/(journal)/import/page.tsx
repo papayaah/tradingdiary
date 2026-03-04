@@ -40,7 +40,25 @@ export default function ImportPage() {
     return currentRows.map((row, idx) => {
       const get = (key: keyof NormalizedTransaction) => {
         const header = currentMapping[key];
-        return header ? row[header] : undefined;
+        const val = header ? row[header] : undefined;
+        return val === '' ? undefined : val;
+      };
+
+      const parseAmount = (val: string | undefined): number => {
+        if (!val) return 0;
+        let clean = val.replace(/[$,()]/g, '').trim();
+        let multiplier = 1;
+        if (clean.toUpperCase().endsWith('K')) {
+          multiplier = 1000;
+          clean = clean.slice(0, -1);
+        } else if (clean.toUpperCase().endsWith('M')) {
+          multiplier = 1000000;
+          clean = clean.slice(0, -1);
+        }
+        const num = parseFloat(clean);
+        // Handle negative amounts indicated by parentheses (e.g., ($134) -> -134)
+        const isNegative = val.includes('(') && val.includes(')');
+        return (isNaN(num) ? 0 : num * multiplier) * (isNegative ? -1 : 1);
       };
 
       const rawSide = get('side');
@@ -52,19 +70,38 @@ export default function ImportPage() {
         else if (/sell|short|s/i.test(s)) side = 'SELL';
       }
 
-      const qty = parseFloat(get('quantity')?.replace(/,/g, '') || '0');
-      const price = parseFloat(get('price')?.replace(/,/g, '') || '0');
+      const cleanSymbol = (val: string | undefined): string => {
+        if (!val) return 'UNKNOWN';
+        // Handle formats like "730283097+NQ(NQ)" or "445423543+U(U)"
+        // Prioritize part inside parentheses, then part after '+', then the whole thing
+        let match = val.match(/\(([^)]+)\)/); // Look for (...)
+        if (match) return match[1].toUpperCase();
+
+        match = val.match(/\+([^()]+)/); // Look for +...
+        if (match) return match[1].toUpperCase();
+
+        return val.trim().toUpperCase();
+      };
+
+      const qty = parseAmount(get('quantity'));
+      const price = parseAmount(get('price'));
+      const pnl = parseAmount(get('realizedPnL'));
+      const total = get('totalValue') ? parseAmount(get('totalValue')) : undefined;
+
+      const symbol = cleanSymbol(get('symbol'));
 
       return {
         date: get('date') || new Date().toISOString().split('T')[0],
         time: get('time'),
-        symbol: get('symbol') || 'UNKNOWN',
+        symbol: symbol,
         side,
         quantity: Math.abs(qty),
         price: Math.abs(price),
         orderId: get('orderId'),
-        currency: get('currency'),
-        totalValue: get('totalValue') ? parseFloat(get('totalValue')!.replace(/,/g, '')) : undefined,
+        companyName: symbol,
+        currency: get('currency') || 'USD',
+        totalValue: total,
+        realizedPnL: pnl,
       };
     });
   };
@@ -107,11 +144,13 @@ export default function ImportPage() {
         setImportFile(new File([data], `pasted-import.${ext}`, { type: type === 'image' ? 'image/png' : 'text/plain' }));
       }
 
+      // Build LLM config from user's BYOK settings
+      const llmConfig = aiContext?.config?.customLLM;
+
       // 1. Extract Data (Text vs Image)
       if (type === 'image') {
-        const apiKey = aiContext?.config?.customLLM?.apiKey;
-        if (!apiKey) {
-          setError("You need an API Key (OpenRouter) in Settings to use Image Import.");
+        if (!llmConfig?.apiKey) {
+          setError("You need an API Key in Settings to use Image Import.");
           setLoading(false);
           return;
         }
@@ -127,7 +166,21 @@ export default function ImportPage() {
         }
 
         const { extractFromImage } = await import('@/lib/import/image-extractor');
-        const result = await extractFromImage(base64Image, apiKey);
+        const result = await extractFromImage(base64Image, llmConfig);
+
+        // Record usage for cost tracking
+        if (result.usage && aiContext?.recordUsage) {
+          aiContext.recordUsage(
+            (llmConfig.provider as any) || 'google',
+            llmConfig.model || 'gemini-1.5-flash',
+            {
+              inputTokens: result.usage.promptTokens,
+              outputTokens: result.usage.completionTokens,
+              totalTokens: result.usage.totalTokens
+            }
+          );
+        }
+
         parsedHeaders = result.headers;
         parsedRows = result.rows;
 
@@ -158,13 +211,24 @@ export default function ImportPage() {
       let detectedMapping: ColumnMapping = {} as any;
       let detectedSideMap: SideValueMapping = {};
 
-      const apiKey = aiContext?.config?.customLLM?.apiKey;
-
-      if (apiKey) {
+      if (llmConfig?.apiKey) {
         try {
-          const response = await mapColumnsWithLLM(parsedHeaders, parsedRows.slice(0, 3), apiKey);
+          const response = await mapColumnsWithLLM(parsedHeaders, parsedRows.slice(0, 3), llmConfig);
           detectedMapping = response.mapping as ColumnMapping;
           detectedSideMap = response.sideValues || {};
+
+          // Record usage for cost tracking
+          if (response.usage && aiContext?.recordUsage) {
+            aiContext.recordUsage(
+              (llmConfig.provider as any) || 'google',
+              llmConfig.model || 'gemini-1.5-flash',
+              {
+                inputTokens: response.usage.promptTokens,
+                outputTokens: response.usage.completionTokens,
+                totalTokens: response.usage.totalTokens
+              }
+            );
+          }
         } catch (err) {
           console.warn('LLM mapping failed, falling back to offline:', err);
           detectedMapping = mapColumnsOffline(parsedHeaders);
@@ -177,8 +241,9 @@ export default function ImportPage() {
       setSideMap(detectedSideMap);
 
       // 3. Check if we have all required fields to Auto-Skip
-      const requiredFields: (keyof NormalizedTransaction)[] = ['date', 'symbol', 'side', 'quantity', 'price'];
-      const hasAllRequired = requiredFields.every(field => detectedMapping[field]);
+      const hasStandardInfo = !!(detectedMapping.symbol && detectedMapping.quantity && detectedMapping.price);
+      const hasPnLInfo = !!(detectedMapping.symbol && detectedMapping.realizedPnL);
+      const hasAllRequired = hasStandardInfo || hasPnLInfo;
 
       if (hasAllRequired) {
         // Auto-advance to preview

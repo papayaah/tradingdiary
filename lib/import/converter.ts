@@ -36,5 +36,6 @@ export function toTransactionRecord(
         totalValue: n.totalValue ?? (Math.abs(n.quantity) * Math.abs(n.price)),
         commission: n.commission || 0,
         feeMultiplier: 1,
+        realizedPnL: n.realizedPnL,
     };
 }

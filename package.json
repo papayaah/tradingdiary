@@ -9,9 +9,11 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^3.0.28",
+    "@ai-sdk/anthropic": "^3.0.53",
+    "@ai-sdk/google": "^3.0.36",
+    "@ai-sdk/openai": "^3.0.39",
     "@types/papaparse": "^5.5.2",
-    "ai": "^6.0.85",
+    "ai": "^6.0.108",
     "cropperjs": "^2.1.0",
     "idb": "^8.0.3",
     "lightweight-charts": "^5.1.0",

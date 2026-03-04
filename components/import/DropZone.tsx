@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 
 interface DropZoneProps {
@@ -9,7 +9,13 @@ interface DropZoneProps {
 
 export default function DropZone({ onData }: DropZoneProps) {
   const [isDragActive, setIsDragActive] = useState(false);
+  const [pasteDetected, setPasteDetected] = useState(false);
   const dropzoneRef = useRef<HTMLDivElement>(null);
+
+  // Auto-focus the dropzone on mount so paste works immediately
+  useEffect(() => {
+    dropzoneRef.current?.focus();
+  }, []);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
@@ -40,41 +46,64 @@ export default function DropZone({ onData }: DropZoneProps) {
 
     if (imageItem) {
       const blob = imageItem.getAsFile();
-      if (blob) onData(blob, 'image');
+      if (blob) {
+        setPasteDetected(true);
+        onData(blob, 'image');
+      }
       return;
     }
 
     // 2. Check for text
     const text = e.clipboardData.getData('text/plain');
     if (text && text.trim().length > 0) {
+      setPasteDetected(true);
       onData(text, 'text');
     }
   }, [onData]);
 
-  // Focus the div on mount to capture paste events? 
-  // Probably better if the user clicks inside, but we can try to make it focusable.
+  const rootProps = getRootProps();
 
   return (
     <div
-      {...getRootProps()}
+      {...rootProps}
+      ref={(node: HTMLDivElement | null) => {
+        // react-dropzone may use a ref callback or a ref object
+        if (typeof rootProps.ref === 'function') {
+          rootProps.ref(node);
+        } else if (rootProps.ref) {
+          (rootProps.ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
+        }
+        (dropzoneRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+      }}
+      tabIndex={0}
       onPaste={handlePaste}
       className={`
         border-2 border-dashed rounded-xl p-12 text-center transition-colors cursor-pointer outline-none
-        ${isDragActive ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-muted/50'}
+        ${pasteDetected ? 'border-primary bg-primary/10' : isDragActive ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-muted/50'}
       `}
     >
       <input {...getInputProps()} />
-      <div className="space-y-4">
-        <div className="flex justify-center text-4xl mb-4">
-          📄 🖼️
+      {pasteDetected ? (
+        <div className="space-y-4">
+          <div className="flex justify-center text-4xl mb-4">
+            📋
+          </div>
+          <h3 className="text-xl font-medium text-primary">Paste received!</h3>
+          <p className="text-muted-foreground text-sm animate-pulse">Processing your data...</p>
         </div>
-        <h3 className="text-xl font-medium">Drop files here or click to browse</h3>
-        <p className="text-muted-foreground text-sm max-w-sm mx-auto">
-          Supports CSV, TSV, TXT, TLG (legacy), and Screenshots (PNG/JPG).
-          <br />
-          <span className="font-semibold text-foreground">Tip:</span> You can also <span className="keyboard-shortcut kbd">Ctrl+V</span> / <span className="keyboard-shortcut kbd">Cmd+V</span> to paste data directly!
-        </p>
-      </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex justify-center text-4xl mb-4">
+            📄 🖼️
+          </div>
+          <h3 className="text-xl font-medium">Drop files here or click to browse</h3>
+          <p className="text-muted-foreground text-sm max-w-sm mx-auto">
+            Supports CSV, TSV, TXT, TLG (legacy), and Screenshots (PNG/JPG).
+            <br />
+            <span className="font-semibold text-foreground">Tip:</span> You can also <span className="keyboard-shortcut kbd">Ctrl+V</span> / <span className="keyboard-shortcut kbd">Cmd+V</span> to paste data directly!
+          </p>
+        </div>
+      )}
     </div>
   );
 }

@@ -25,6 +25,7 @@ export interface TransactionRecord {
   totalValue: number;
   commission: number;
   feeMultiplier: number;
+  realizedPnL?: number;
 }
 
 export interface PositionRecord {

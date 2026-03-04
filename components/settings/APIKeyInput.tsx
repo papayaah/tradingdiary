@@ -1,15 +1,11 @@
 'use client';
 
-
-
-'use client';
-
 import {
     AIProviderSelector,
     UsageStats,
     useAIManagementContextOptional
 } from '@/packages/ai-connect/src/components';
-import { defaultPreset } from '@/packages/ai-connect/src/presets/default';
+import { tailwindPreset } from '@/packages/ai-connect/src/presets/tailwind';
 import { AIProviderConfig } from '@/packages/ai-connect/src/types';
 
 export default function APIKeyInput() {
@@ -30,9 +26,9 @@ export default function APIKeyInput() {
 
                 <AIProviderSelector
                     onProviderSelect={handleProviderSelect}
-                    enabledProviders={['openrouter']}
+                    enabledProviders={['openrouter', 'google', 'openai', 'anthropic']}
                     defaultProvider="custom-llm"
-                    preset={defaultPreset}
+                    preset={tailwindPreset}
                     showCostComparison={false}
                 />
             </div>
@@ -42,7 +38,7 @@ export default function APIKeyInput() {
                 <UsageStats
                     stats={aiContext.usageStats}
                     onReset={aiContext.resetUsageStats}
-                    preset={defaultPreset}
+                    preset={tailwindPreset}
                 />
             </div>
         </div>

@@ -150,14 +150,19 @@ export function aggregateByDay(
         const isOpening = t.side === 'BUYTOOPEN' || t.side === 'SELLTOOPEN';
         const qty = Math.abs(t.quantity);
 
-        if (isOpening) {
+        // If transaction has manual realized P&L, add it directly
+        if (t.realizedPnL != null) {
+          dayRealizedGross += t.realizedPnL;
+        }
+
+        if (isOpening && qty > 0) {
           openLots.push({
             qty,
             costPerShare: Math.abs(t.totalValue) / qty,
             commission: t.commission,
           });
           runningPosition += t.quantity;
-        } else {
+        } else if (!isOpening && qty > 0) {
           // Closing transaction — match against open lots FIFO
           let remaining = qty;
           const closePrice = Math.abs(t.totalValue) / qty;

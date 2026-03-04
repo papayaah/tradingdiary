@@ -15,12 +15,18 @@ export interface NormalizedTransaction {
     orderType?: string;     // defaults to "MARKET"
     totalValue?: number;    // defaults to qty * price
     commission?: number;    // defaults to 0
+    realizedPnL?: number;   // realized profit/loss
     stockCode?: string;     // broker-specific code, e.g. "HK 01810"
 }
 
 export type ExtractedData = {
     headers: string[];
     rows: Record<string, string>[];
+    usage?: {
+        promptTokens: number;
+        completionTokens: number;
+        totalTokens: number;
+    };
 };
 
 export type ColumnMapping = Record<keyof NormalizedTransaction, string | undefined>;

@@ -12,10 +12,10 @@ interface ColumnMapperProps {
     onCancel: () => void;
 }
 
-const SCHEMA_FIELDS: { key: keyof NormalizedTransaction; label: string; recommended?: boolean }[] = [
-    { key: 'date', label: 'Date', recommended: true },
+const SCHEMA_FIELDS: { key: keyof NormalizedTransaction; label: string; recommended?: boolean; defaultLabel?: string }[] = [
+    { key: 'date', label: 'Date', defaultLabel: '(Defaults to Today)' },
     { key: 'symbol', label: 'Symbol / Stock', recommended: true },
-    { key: 'side', label: 'Side (Buy/Sell)', recommended: true },
+    { key: 'side', label: 'Side (Buy/Sell)', defaultLabel: '(Defaults to BUY)' },
     { key: 'quantity', label: 'Quantity', recommended: true },
     { key: 'price', label: 'Price', recommended: true },
     { key: 'time', label: 'Time' },
@@ -25,6 +25,7 @@ const SCHEMA_FIELDS: { key: keyof NormalizedTransaction; label: string; recommen
     { key: 'orderType', label: 'Order Type' },
     { key: 'exchanges', label: 'Exchange' },
     { key: 'totalValue', label: 'Total Value' },
+    { key: 'realizedPnL', label: 'Realized P&L' },
 ];
 
 export default function ColumnMapper({
@@ -55,9 +56,14 @@ export default function ColumnMapper({
     const isMapped = (header: string) => Object.values(mapping).includes(header);
 
     const isValid = () => {
-        // Check required fields
-        const required: (keyof NormalizedTransaction)[] = ['date', 'symbol', 'side', 'quantity', 'price'];
-        return required.every(k => mapping[k]);
+        // Symbol is always required
+        if (!mapping.symbol) return false;
+
+        // If PnL is mapped, we can proceed even without Qty/Price
+        if (mapping.realizedPnL) return true;
+
+        // Otherwise, need standard trade info
+        return !!(mapping.quantity && mapping.price);
     };
 
     return (
@@ -85,10 +91,11 @@ export default function ColumnMapper({
 
                 {/* Mapping Form */}
                 <div className="space-y-4">
-                    {SCHEMA_FIELDS.map(({ key, label, recommended }) => (
+                    {SCHEMA_FIELDS.map(({ key, label, recommended, defaultLabel }) => (
                         <div key={key} className="grid grid-cols-[140px_1fr] items-center gap-4">
                             <label className={`text-sm font-medium ${recommended ? 'text-foreground' : 'text-muted-foreground'}`}>
                                 {label} {recommended && <span className="text-red-500">*</span>}
+                                {defaultLabel && !mapping[key] && <div className="text-[10px] text-muted-foreground font-normal leading-tight">{defaultLabel}</div>}
                             </label>
                             <select
                                 className="p-2 border rounded bg-background"

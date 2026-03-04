@@ -1,9 +1,19 @@
 import { ExtractedData } from './types';
 
+interface LLMConfig {
+    apiKey: string;
+    provider?: string;
+    model?: string;
+}
+
 export async function extractFromImage(
     imageBase64: string,
-    apiKey?: string
+    config: LLMConfig | string
 ): Promise<ExtractedData> {
+    const { apiKey, provider, model } = typeof config === 'string'
+        ? { apiKey: config, provider: undefined, model: undefined }
+        : config;
+
     if (!apiKey) {
         throw new Error('No API key provided for image extraction');
     }
@@ -13,6 +23,8 @@ export async function extractFromImage(
         headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey,
+            ...(provider && { 'x-provider': provider }),
+            ...(model && { 'x-model': model }),
         },
         body: JSON.stringify({ image: imageBase64 }),
     });

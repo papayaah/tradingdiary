@@ -7,6 +7,8 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
     try {
         const apiKey = request.headers.get('x-api-key') || process.env.OPENROUTER_API_KEY;
+        const provider = request.headers.get('x-provider') || 'openrouter';
+        const modelId = request.headers.get('x-model') || (provider === 'openrouter' ? 'google/gemini-2.0-flash:free' : undefined);
 
         if (!apiKey) {
             return NextResponse.json(
@@ -21,10 +23,10 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'No image data provided' }, { status: 400 });
         }
 
-        // Using OpenRouter (free model with vision support)
+        // Use the user's configured provider and model
         const model = await createVercelAIModel({
-            provider: 'openrouter',
-            model: 'google/gemini-2.0-flash-exp:free',
+            provider: provider as any,
+            model: modelId || 'gemini-2.5-flash',
             apiKey,
         });
 
@@ -62,7 +64,14 @@ Rules:
         if (text.endsWith('```')) text = text.slice(0, -3);
 
         const parsed = JSON.parse(text);
-        return NextResponse.json(parsed);
+        return NextResponse.json({
+            ...parsed,
+            usage: {
+                promptTokens: result.usage.promptTokens,
+                completionTokens: result.usage.completionTokens,
+                totalTokens: result.usage.totalTokens
+            }
+        });
 
     } catch (error: any) {
         console.error('Image Extraction error:', error);

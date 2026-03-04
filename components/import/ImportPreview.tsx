@@ -77,6 +77,7 @@ export default function ImportPreview({
                                 <th className="p-3 font-medium text-right">Qty</th>
                                 <th className="p-3 font-medium text-right">Price</th>
                                 <th className="p-3 font-medium text-right">Total</th>
+                                <th className="p-3 font-medium text-right">Profit</th>
                                 <th className="p-3 font-medium">Account</th>
                             </tr>
                         </thead>
@@ -94,6 +95,15 @@ export default function ImportPreview({
                                     <td className="p-3 text-right">{t.price.toFixed(3)}</td>
                                     <td className="p-3 text-right font-medium">
                                         {(t.totalValue || (t.quantity * t.price)).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                    </td>
+                                    <td className={`p-3 text-right font-medium ${t.realizedPnL && t.realizedPnL > 0 ? 'text-green-600' : t.realizedPnL && t.realizedPnL < 0 ? 'text-red-600' : ''}`}>
+                                        {t.realizedPnL ? (
+                                            <span className="flex items-center justify-end">
+                                                {t.realizedPnL < 0 ? '-' : ''}${Math.abs(t.realizedPnL).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                            </span>
+                                        ) : (
+                                            <span className="text-muted-foreground">-</span>
+                                        )}
                                     </td>
                                     <td className="p-3 text-muted-foreground overflow-hidden text-ellipsis max-w-[100px]">
                                         {/* Placeholder for now */}

@@ -24,11 +24,26 @@
   },
   "include": [
     "next-env.d.ts",
-    "**/*.ts",
-    "**/*.tsx",
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "components/**/*.ts",
+    "components/**/*.tsx",
+    "lib/**/*.ts",
+    "lib/**/*.tsx",
+    "packages/ai-connect/src/**/*.ts",
+    "packages/ai-connect/src/**/*.tsx",
+    "packages/react-media-library/src/**/*.ts",
+    "packages/react-media-library/src/**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "packages/*/demo",
+    "packages/*/src/stories",
+    "packages/react-media-library/src/presets/mantine.tsx",
+    "packages/react-media-library/src/server",
+    "packages/react-media-library/src/server.ts"
+  ]
 }
