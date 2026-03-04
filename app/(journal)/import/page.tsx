@@ -13,6 +13,7 @@ import { parseTLGFile } from '@/lib/parser/tlg-parser';
 import { importData } from '@/lib/db/trades';
 import { NormalizedTransaction, ColumnMapping, SideValueMapping } from '@/lib/import/types';
 import { importFileToLibrary } from '@/packages/react-media-library/src/services/storage';
+import { normalizeDate, normalizeTime } from '@/lib/import/normalizer';
 
 export default function ImportPage() {
   const router = useRouter();
@@ -91,8 +92,8 @@ export default function ImportPage() {
       const symbol = cleanSymbol(get('symbol'));
 
       return {
-        date: get('date') || new Date().toISOString().split('T')[0],
-        time: get('time'),
+        date: normalizeDate(get('date') || new Date().toISOString().split('T')[0]),
+        time: normalizeTime(get('time') || '00:00:00'),
         symbol: symbol,
         side,
         quantity: Math.abs(qty),
@@ -174,9 +175,9 @@ export default function ImportPage() {
             (llmConfig.provider as any) || 'google',
             llmConfig.model || 'gemini-1.5-flash',
             {
-              inputTokens: result.usage.promptTokens,
-              outputTokens: result.usage.completionTokens,
-              totalTokens: result.usage.totalTokens
+              inputTokens: result.usage.promptTokens ?? 0,
+              outputTokens: result.usage.completionTokens ?? 0,
+              totalTokens: result.usage.totalTokens ?? 0
             }
           );
         }

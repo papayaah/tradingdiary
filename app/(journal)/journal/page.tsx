@@ -19,6 +19,10 @@ export default function JournalPage() {
         setAccountId(transactions[0].accountId);
         const agg = aggregateByDay(transactions, getTradeDateCutoff());
 
+        // --- 1. SET INITIAL DATA IMMEDIATELY ---
+        // Show the user their trades right away without waiting for network
+        setSummaries([...agg]);
+
         // Fetch historical market prices for open positions
         const openSymbols = new Set<string>();
         let minDate = '';
@@ -42,14 +46,15 @@ export default function JournalPage() {
             const res = await fetch(`/api/quotes?${params}`);
             if (res.ok) {
               const prices = await res.json();
+
+              // --- 2. UPDATE WITH MARKET PRICES ---
               applyMarketPrices(agg, prices);
+              setSummaries([...agg]);
             }
           } catch {
             // Silently fail — unrealized just won't show
           }
         }
-
-        setSummaries(agg);
       } else {
         setSummaries([]);
       }

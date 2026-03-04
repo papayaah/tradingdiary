@@ -33,9 +33,11 @@ export interface DailySummary {
 }
 
 function formatTradeDate(dateStr: string): string {
+  if (!dateStr || dateStr.length < 8) return dateStr;
   const year = parseInt(dateStr.substring(0, 4));
   const month = parseInt(dateStr.substring(4, 6)) - 1;
   const day = parseInt(dateStr.substring(6, 8));
+  if (isNaN(year) || isNaN(month) || isNaN(day)) return dateStr;
   const date = new Date(year, month, day);
   return date.toLocaleDateString('en-US', {
     weekday: 'short',
@@ -46,7 +48,12 @@ function formatTradeDate(dateStr: string): string {
 }
 
 function timeToMinutes(time: string): number {
-  const [h, m, s] = time.split(':').map(Number);
+  if (!time) return 0;
+  const parts = time.split(':').map(Number);
+  const h = parts[0] || 0;
+  const m = parts[1] || 0;
+  const s = parts[2] || 0;
+  if (isNaN(h) || isNaN(m) || isNaN(s)) return 0;
   return h * 3600 + m * 60 + s;
 }
 

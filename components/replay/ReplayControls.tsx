@@ -68,7 +68,7 @@ export default function ReplayControls({
   }, [onTogglePlay, onSkipBack, onSkipForward]);
 
   const progress =
-    endTimeSeconds > startTimeSeconds
+    endTimeSeconds > startTimeSeconds && !isNaN(currentTimeSeconds)
       ? ((currentTimeSeconds - startTimeSeconds) / (endTimeSeconds - startTimeSeconds)) * 100
       : 0;
 
@@ -138,11 +138,10 @@ export default function ReplayControls({
             <button
               key={s}
               onClick={() => onSetSpeed(s)}
-              className={`px-2 py-0.5 text-xs rounded transition-colors ${
-                speed === s
+              className={`px-2 py-0.5 text-xs rounded transition-colors ${speed === s
                   ? 'bg-accent text-white'
                   : 'text-muted hover:text-foreground hover:bg-sidebar-hover'
-              }`}
+                }`}
             >
               {s}x
             </button>
