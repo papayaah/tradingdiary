@@ -36,8 +36,16 @@ export async function POST(request: NextRequest) {
             system: 'You map CSV columns to a trading journal schema. Return JSON only.',
             prompt: `Map these CSV columns to our schema fields.
 
-Schema fields (required): symbol, side, date, quantity, price
-Schema fields (optional): time, orderId, companyName, currency, orderType, commission, totalValue, stockCode
+Schema fields:
+- symbol (required)
+- quantity (required unless realizedPnL is present)
+- price (required unless realizedPnL is present)
+- realizedPnL (optional, captures realized profit/loss)
+- date (optional, defaults to today)
+- time (optional)
+- side (optional, defaults to BUY)
+- companyName (optional, often called "Description")
+- totalValue, commission, currency, orderId, orderType, stockCode (optional)
 
 CSV headers: ${JSON.stringify(headers)}
 Sample rows: ${JSON.stringify(sampleRows.slice(0, 3))}

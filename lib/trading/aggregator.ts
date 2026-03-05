@@ -30,6 +30,7 @@ export interface DailySummary {
   totalCommissions: number;
   grossPnL: number;
   netPnL: number;
+  totalPnL: number;
 }
 
 function formatTradeDate(dateStr: string): string {
@@ -83,6 +84,7 @@ interface DateAccum {
   transactions: TransactionRecord[];
   realizedGross: number;
   realizedCommission: number;
+  unrealizedPnL?: number; // Capture imported value
   // Snapshot of the running position at the END of this date
   endPosition: number;
   endAvgCost: number;
@@ -143,6 +145,7 @@ export function aggregateByDay(
     for (const group of dateGroups) {
       let dayRealizedGross = 0;
       let dayRealizedCommission = 0;
+      let dayUnrealizedPnL: number | undefined = undefined;
       const dayTxns: TransactionRecord[] = [];
 
       for (const { t } of group.items) {
@@ -153,6 +156,11 @@ export function aggregateByDay(
         // If transaction has manual realized P&L, add it directly
         if (t.realizedPnL != null) {
           dayRealizedGross += t.realizedPnL;
+        }
+
+        // Capture imported unrealized P&L
+        if (t.unrealizedPnL != null) {
+          dayUnrealizedPnL = t.unrealizedPnL;
         }
 
         if (isOpening && qty > 0) {
@@ -208,6 +216,7 @@ export function aggregateByDay(
         transactions: dayTxns,
         realizedGross: dayRealizedGross,
         realizedCommission: dayRealizedCommission,
+        unrealizedPnL: dayUnrealizedPnL,
         endPosition: Math.round(runningPosition * 100) / 100,
         endAvgCost: openQty > 0.001 ? openCost / openQty : 0,
         side,
@@ -233,6 +242,7 @@ export function aggregateByDay(
       grossPnL,
       totalCommissions: acc.realizedCommission,
       netPnL,
+      unrealizedPnL: acc.unrealizedPnL,
       side: acc.side,
       isOpen: Math.abs(acc.endPosition) > 0.01,
       netQuantity: acc.endPosition,
@@ -256,12 +266,15 @@ export function aggregateByDay(
       (a, b) => timeToMinutes(a.firstTradeTime) - timeToMinutes(b.firstTradeTime)
     );
 
-    // Include all trades with realized P&L (including partially-open positions)
+    // Include all trades with realized OR unrealized P&L
     const tradesWithPnL = sorted.filter(
-      (t) => !t.isOpen || Math.abs(t.grossPnL) > 0.01
+      (t) => !t.isOpen || Math.abs(t.grossPnL) > 0.01 || (t.unrealizedPnL != null && Math.abs(t.unrealizedPnL) > 0.01)
     );
-    const winCount = tradesWithPnL.filter((t) => t.netPnL > 0).length;
-    const lossCount = tradesWithPnL.filter((t) => t.netPnL < 0).length;
+    const winCount = tradesWithPnL.filter((t) => (t.netPnL + (t.unrealizedPnL || 0)) > 0).length;
+    const lossCount = tradesWithPnL.filter((t) => (t.netPnL + (t.unrealizedPnL || 0)) < 0).length;
+
+    const netPnL = sorted.reduce((sum, t) => sum + t.netPnL, 0);
+    const totalUnrealized = sorted.reduce((sum, t) => sum + (t.unrealizedPnL || 0), 0);
 
     summaries.push({
       date,
@@ -274,7 +287,8 @@ export function aggregateByDay(
       winRate: tradesWithPnL.length > 0 ? (winCount / tradesWithPnL.length) * 100 : 0,
       totalCommissions: sorted.reduce((sum, t) => sum + t.totalCommissions, 0),
       grossPnL: sorted.reduce((sum, t) => sum + t.grossPnL, 0),
-      netPnL: sorted.reduce((sum, t) => sum + t.netPnL, 0),
+      netPnL,
+      totalPnL: netPnL + totalUnrealized,
     });
   }
 

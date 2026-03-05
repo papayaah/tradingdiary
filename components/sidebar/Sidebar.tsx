@@ -13,6 +13,7 @@ import {
   TrendingUp,
   Settings,
 } from 'lucide-react';
+import { useImport } from '@/contexts/ImportContext';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -30,6 +31,7 @@ const navItems = [
 
 export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname();
+  const { isProcessing } = useImport();
 
   return (
     <aside
@@ -50,7 +52,9 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
       <nav className="flex-1 py-2 px-2 space-y-0.5">
         {navItems.map((item) => {
           const isActive = pathname === item.href;
-          const Icon = item.icon;
+          const isImporting = item.href === '/import' && isProcessing;
+          const Icon = isImporting ? () => <div className="animate-spin rounded-full h-4 w-4 border-2 border-accent border-t-transparent" /> : item.icon;
+
           return (
             <Link
               key={item.href}
@@ -58,11 +62,16 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
               className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${isActive
                 ? 'bg-sidebar-active text-foreground font-medium'
                 : 'text-muted hover:bg-sidebar-hover hover:text-foreground'
-                } ${collapsed ? 'justify-center px-0' : ''}`}
+                } ${collapsed ? 'justify-center px-0' : ''} ${isImporting ? 'text-accent' : ''}`}
               title={collapsed ? item.label : undefined}
             >
               <Icon size={18} className="shrink-0" />
-              {!collapsed && <span>{item.label}</span>}
+              {!collapsed && (
+                <span className="flex items-center gap-2">
+                  {item.label}
+                  {isImporting && <span className="text-[10px] bg-accent/10 px-1 rounded animate-pulse">Analyzing...</span>}
+                </span>
+              )}
             </Link>
           );
         })}

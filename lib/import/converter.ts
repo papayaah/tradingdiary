@@ -37,5 +37,6 @@ export function toTransactionRecord(
         commission: n.commission || 0,
         feeMultiplier: 1,
         realizedPnL: n.realizedPnL,
+        unrealizedPnL: n.unrealizedPnL,
     };
 }

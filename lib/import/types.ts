@@ -16,6 +16,7 @@ export interface NormalizedTransaction {
     totalValue?: number;    // defaults to qty * price
     commission?: number;    // defaults to 0
     realizedPnL?: number;   // realized profit/loss
+    unrealizedPnL?: number; // unrealized profit/loss
     stockCode?: string;     // broker-specific code, e.g. "HK 01810"
 }
 

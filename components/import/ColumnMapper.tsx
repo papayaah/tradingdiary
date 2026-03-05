@@ -26,6 +26,8 @@ const SCHEMA_FIELDS: { key: keyof NormalizedTransaction; label: string; recommen
     { key: 'exchanges', label: 'Exchange' },
     { key: 'totalValue', label: 'Total Value' },
     { key: 'realizedPnL', label: 'Realized P&L' },
+    { key: 'unrealizedPnL', label: 'Unrealized P&L' },
+    { key: 'companyName', label: 'Company / Description' },
 ];
 
 export default function ColumnMapper({

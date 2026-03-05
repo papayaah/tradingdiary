@@ -52,15 +52,15 @@ export default function DayStats({ summary }: DayStatsProps) {
         colorClass="text-loss"
       />
       <StatCard
-        label="Net P&L"
+        label="Realized P&L"
         value={formatCurrency(summary.netPnL)}
         colorClass={pnlColorClass(summary.netPnL)}
       />
-      {hasUnrealized ? (
+      {summary.totalPnL !== summary.netPnL ? (
         <StatCard
-          label="Incl. Unrealized"
-          value={formatCurrency(combinedPnL)}
-          colorClass={pnlColorClass(combinedPnL)}
+          label="Total P&L (Inc. Unrealized)"
+          value={formatCurrency(summary.totalPnL)}
+          colorClass={pnlColorClass(summary.totalPnL)}
         />
       ) : (
         <StatCard label="MFE/MAE Ratio" locked />

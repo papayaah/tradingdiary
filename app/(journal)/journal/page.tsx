@@ -1,14 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { Upload, BookOpen } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import { Upload, BookOpen, ArrowLeft } from 'lucide-react';
 import { getAllTransactions } from '@/lib/db/trades';
 import { getTradeDateCutoff } from '@/lib/settings';
 import { aggregateByDay, applyMarketPrices, type DailySummary } from '@/lib/trading/aggregator';
 import DayGroup from '@/components/journal/DayGroup';
 
 export default function JournalPage() {
+  const searchParams = useSearchParams();
+  const filterDate = searchParams.get('date');
+
   const [summaries, setSummaries] = useState<DailySummary[] | null>(null);
   const [accountId, setAccountId] = useState('');
 
@@ -57,7 +61,13 @@ export default function JournalPage() {
     load();
   }, []);
 
+  const displaySummaries = useMemo(() => {
+    if (!summaries || !filterDate) return summaries;
+    return summaries.filter(s => s.date === filterDate);
+  }, [summaries, filterDate]);
+
   if (summaries === null) {
+    // ... animation placeholder
     return (
       <div className="p-6 space-y-4">
         {[1, 2, 3].map((i) => (
@@ -71,6 +81,7 @@ export default function JournalPage() {
   }
 
   if (summaries.length === 0) {
+    // ... empty state logic
     return (
       <div className="flex flex-col items-center justify-center min-h-full gap-4 text-center p-8">
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-muted-bg">
@@ -93,9 +104,37 @@ export default function JournalPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
-      {summaries.map((summary) => (
+      {filterDate && (
+        <div className="flex items-center justify-between bg-accent/5 p-4 rounded-xl border border-accent/10 mb-2">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-accent/10 rounded-lg text-accent">
+              <BookOpen size={20} />
+            </div>
+            <div>
+              <h3 className="font-semibold">Viewing trades for {filterDate.substring(0, 4)}-{filterDate.substring(4, 6)}-{filterDate.substring(6, 8)}</h3>
+              <p className="text-xs text-muted">Showing {displaySummaries?.length || 0} trading day</p>
+            </div>
+          </div>
+          <Link
+            href="/journal"
+            className="flex items-center gap-2 text-sm font-medium text-accent hover:underline"
+          >
+            <ArrowLeft size={16} />
+            Show All History
+          </Link>
+        </div>
+      )}
+
+      {displaySummaries?.map((summary) => (
         <DayGroup key={summary.date} summary={summary} accountId={accountId} />
       ))}
+
+      {filterDate && displaySummaries?.length === 0 && (
+        <div className="py-20 text-center">
+          <p className="text-muted">No trades found for this specific date.</p>
+          <Link href="/journal" className="text-accent hover:underline mt-2 inline-block">Back to full journal</Link>
+        </div>
+      )}
     </div>
   );
 }

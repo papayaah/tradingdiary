@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import DropZone from '@/components/import/DropZone';
 import ColumnMapper from '@/components/import/ColumnMapper';
 import ImportPreview from '@/components/import/ImportPreview';
@@ -13,50 +13,46 @@ import { parseTLGFile } from '@/lib/parser/tlg-parser';
 import { importData } from '@/lib/db/trades';
 import { NormalizedTransaction, ColumnMapping, SideValueMapping } from '@/lib/import/types';
 import { importFileToLibrary } from '@/packages/react-media-library/src/services/storage';
+import { useImport } from '@/contexts/ImportContext';
 
 export default function ImportPage() {
   const router = useRouter();
   const aiContext = useAIManagementContextOptional();
-  const [step, setStep] = useState<'upload' | 'mapping' | 'preview'>('upload');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    step, setStep,
+    headers, updateData,
+    rows,
+    mapping, setMapping,
+    sideMap, setSideMap,
+    previewTransactions, setPreviewTransactions,
+    importFile, setImportFile,
+    isProcessing,
+    error, setError,
+    startProcessing,
+    clearImportState
+  } = useImport();
 
-  // State for the import flow
-  const [headers, setHeaders] = useState<string[]>([]);
-  const [rows, setRows] = useState<Record<string, string>[]>([]);
-  const [mapping, setMapping] = useState<ColumnMapping>({} as any);
-  const [sideMap, setSideMap] = useState<SideValueMapping>({});
-  const [previewTransactions, setPreviewTransactions] = useState<NormalizedTransaction[]>([]);
-  const [importFile, setImportFile] = useState<File | null>(null);
-
-
-
-  // Helper to process rows with a given mapping
   const processRowsWithMapping = (
     currentMapping: ColumnMapping,
     currentSideMap: SideValueMapping,
     currentRows: Record<string, string>[]
-  ) => {
-    return currentRows.map((row, idx) => {
-      const get = (key: keyof NormalizedTransaction) => {
-        const header = currentMapping[key];
-        const val = header ? row[header] : undefined;
-        return val === '' ? undefined : val;
+  ): NormalizedTransaction[] => {
+    const get = (field: keyof ColumnMapping) => {
+      const col = currentMapping[field];
+      return col ? currentRows[0][col] : undefined; // This logic is slightly flawed in the old version (it only checks first row for existence? No, it's used inside a map)
+    };
+
+    return currentRows.flatMap((row) => {
+      const get = (field: keyof ColumnMapping): string | undefined => {
+        const header = currentMapping[field];
+        return header ? row[header] : undefined;
       };
 
       const parseAmount = (val: string | undefined): number => {
         if (!val) return 0;
-        let clean = val.replace(/[$,()]/g, '').trim();
-        let multiplier = 1;
-        if (clean.toUpperCase().endsWith('K')) {
-          multiplier = 1000;
-          clean = clean.slice(0, -1);
-        } else if (clean.toUpperCase().endsWith('M')) {
-          multiplier = 1000000;
-          clean = clean.slice(0, -1);
-        }
+        const clean = val.replace(/[$,\s]/g, '');
+        const multiplier = val.includes('%') ? 0.01 : 1;
         const num = parseFloat(clean);
-        // Handle negative amounts indicated by parentheses (e.g., ($134) -> -134)
         const isNegative = val.includes('(') && val.includes(')');
         return (isNaN(num) ? 0 : num * multiplier) * (isNegative ? -1 : 1);
       };
@@ -72,62 +68,75 @@ export default function ImportPage() {
 
       const cleanSymbol = (val: string | undefined): string => {
         if (!val) return 'UNKNOWN';
-        // Handle formats like "730283097+NQ(NQ)" or "445423543+U(U)"
-        // Prioritize part inside parentheses, then part after '+', then the whole thing
-        let match = val.match(/\(([^)]+)\)/); // Look for (...)
+        let match = val.match(/\(([^)]+)\)/);
         if (match) return match[1].toUpperCase();
-
-        match = val.match(/\+([^()]+)/); // Look for +...
+        match = val.match(/\+([^()]+)/);
         if (match) return match[1].toUpperCase();
-
         return val.trim().toUpperCase();
       };
 
+      const normalizeDate = (val: string | undefined): string => {
+        const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
+        if (!val) return today;
+        const clean = val.trim();
+        const digitsOnly = clean.replace(/[-/]/g, '');
+        if (/^\d{8}$/.test(digitsOnly)) return digitsOnly;
+        const isoMatch = clean.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+        if (isoMatch) return `${isoMatch[1]}${isoMatch[2].padStart(2, '0')}${isoMatch[3].padStart(2, '0')}`;
+        const slashMatch = clean.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+        if (slashMatch) {
+          let year = slashMatch[3];
+          let part1 = slashMatch[1].padStart(2, '0');
+          let part2 = slashMatch[2].padStart(2, '0');
+          if (parseInt(part1) > 12) return `${year}${part2}${part1}`;
+          return `${year}${part1}${part2}`;
+        }
+        return today;
+      };
+
+      const rawSymbol = get('symbol');
+      const companyName = get('companyName');
+
+      if (!rawSymbol || rawSymbol.trim() === '' || /total|summary|grand/i.test(rawSymbol)) return [];
+      if (companyName && /total\b|grand\s*total|all\s*assets/i.test(companyName)) return [];
+
+      const symbol = cleanSymbol(rawSymbol);
       const qty = parseAmount(get('quantity'));
       const price = parseAmount(get('price'));
       const pnl = parseAmount(get('realizedPnL'));
       const total = get('totalValue') ? parseAmount(get('totalValue')) : undefined;
 
-      const symbol = cleanSymbol(get('symbol'));
-
-      return {
-        date: get('date') || new Date().toISOString().split('T')[0],
-        time: get('time'),
+      return [{
+        date: normalizeDate(get('date')),
+        time: get('time') || '00:00:00',
         symbol: symbol,
         side,
         quantity: Math.abs(qty),
         price: Math.abs(price),
         orderId: get('orderId'),
-        companyName: symbol,
+        companyName: companyName ? cleanSymbol(companyName) : symbol,
         currency: get('currency') || 'USD',
         totalValue: total,
         realizedPnL: pnl,
-      };
+        unrealizedPnL: parseAmount(get('unrealizedPnL')),
+      }];
     });
   };
 
-  const handleData = async (data: File | string, type: 'file' | 'text' | 'image') => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Detect TLG format and use dedicated parser (skip column mapping entirely)
+  const handleData = (data: File | string, type: 'file' | 'text' | 'image') => {
+    startProcessing(async () => {
+      // TLG Quick Path
       if (type !== 'image') {
         let content = '';
-        if (data instanceof File) {
-          content = await data.text();
-        } else {
-          content = data as string;
-        }
+        if (data instanceof File) content = await data.text();
+        else content = data as string;
 
         if (content.includes('ACT_INF|') && content.includes('STK_TRD|')) {
           const parsed = parseTLGFile(content);
           await importData(parsed.account, parsed.transactions, parsed.positions);
-          // Save original file to media library
-          const fileToSave = data instanceof File
-            ? data
-            : new File([content], 'pasted-import.tlg', { type: 'text/plain' });
+          const fileToSave = data instanceof File ? data : new File([content], 'pasted-import.tlg', { type: 'text/plain' });
           importFileToLibrary(fileToSave).catch(console.error);
+          toast.success("TLG Import Successful");
           router.push('/journal');
           return;
         }
@@ -136,78 +145,48 @@ export default function ImportPage() {
       let parsedHeaders: string[] = [];
       let parsedRows: Record<string, string>[] = [];
 
-      // Store original file for later archival
-      if (data instanceof File) {
-        setImportFile(data);
-      } else if (typeof data === 'string') {
+      if (data instanceof File) setImportFile(data);
+      else if (typeof data === 'string') {
         const ext = type === 'image' ? 'png' : 'txt';
         setImportFile(new File([data], `pasted-import.${ext}`, { type: type === 'image' ? 'image/png' : 'text/plain' }));
       }
 
-      // Build LLM config from user's BYOK settings
       const llmConfig = aiContext?.config?.customLLM;
 
-      // 1. Extract Data (Text vs Image)
       if (type === 'image') {
-        if (!llmConfig?.apiKey) {
-          setError("You need an API Key in Settings to use Image Import.");
-          setLoading(false);
-          return;
-        }
-
+        if (!llmConfig?.apiKey) throw new Error("API Key required for image import");
         let base64Image = '';
         if (data instanceof File) {
           const { fileToBase64 } = await import('@/lib/import/image-extractor');
           base64Image = await fileToBase64(data);
-        } else {
-          if (typeof data === 'string') {
-            base64Image = data;
-          }
-        }
+        } else base64Image = data;
 
         const { extractFromImage } = await import('@/lib/import/image-extractor');
         const result = await extractFromImage(base64Image, llmConfig);
 
-        // Record usage for cost tracking
         if (result.usage && aiContext?.recordUsage) {
-          aiContext.recordUsage(
-            (llmConfig.provider as any) || 'google',
-            llmConfig.model || 'gemini-1.5-flash',
-            {
-              inputTokens: result.usage.promptTokens,
-              outputTokens: result.usage.completionTokens,
-              totalTokens: result.usage.totalTokens
-            }
-          );
+          aiContext.recordUsage(llmConfig.provider || 'google', llmConfig.model || 'gemini-1.5-flash', {
+            inputTokens: result.usage.promptTokens,
+            outputTokens: result.usage.completionTokens,
+            totalTokens: result.usage.totalTokens
+          });
         }
-
         parsedHeaders = result.headers;
         parsedRows = result.rows;
-
       } else {
-        // CSV / Text
         let content = '';
-        if (data instanceof File) {
-          content = await data.text();
-        } else {
-          content = data as string;
-        }
-
+        if (data instanceof File) content = await data.text();
+        else content = data as string;
         const result = await parseCSVOrText(content);
         parsedHeaders = result.headers;
         parsedRows = result.rows;
       }
 
-      if (parsedHeaders.length === 0 || parsedRows.length === 0) {
-        setError("No data found.");
-        setLoading(false);
-        return;
-      }
+      if (parsedHeaders.length === 0 || parsedRows.length === 0) throw new Error("No data found");
 
-      setHeaders(parsedHeaders);
-      setRows(parsedRows);
+      updateData(parsedHeaders, parsedRows);
 
-      // 2. Map columns (Try LLM -> Fallback Offline)
+      // LLM Mapping
       let detectedMapping: ColumnMapping = {} as any;
       let detectedSideMap: SideValueMapping = {};
 
@@ -216,21 +195,14 @@ export default function ImportPage() {
           const response = await mapColumnsWithLLM(parsedHeaders, parsedRows.slice(0, 3), llmConfig);
           detectedMapping = response.mapping as ColumnMapping;
           detectedSideMap = response.sideValues || {};
-
-          // Record usage for cost tracking
           if (response.usage && aiContext?.recordUsage) {
-            aiContext.recordUsage(
-              (llmConfig.provider as any) || 'google',
-              llmConfig.model || 'gemini-1.5-flash',
-              {
-                inputTokens: response.usage.promptTokens,
-                outputTokens: response.usage.completionTokens,
-                totalTokens: response.usage.totalTokens
-              }
-            );
+            aiContext.recordUsage(llmConfig.provider || 'google', llmConfig.model || 'gemini-1.5-flash', {
+              inputTokens: response.usage.promptTokens,
+              outputTokens: response.usage.completionTokens,
+              totalTokens: response.usage.totalTokens
+            });
           }
         } catch (err) {
-          console.warn('LLM mapping failed, falling back to offline:', err);
           detectedMapping = mapColumnsOffline(parsedHeaders);
         }
       } else {
@@ -240,31 +212,16 @@ export default function ImportPage() {
       setMapping(detectedMapping);
       setSideMap(detectedSideMap);
 
-      // 3. Check if we have all required fields to Auto-Skip
-      const hasStandardInfo = !!(detectedMapping.symbol && detectedMapping.quantity && detectedMapping.price);
-      const hasPnLInfo = !!(detectedMapping.symbol && detectedMapping.realizedPnL);
-      const hasAllRequired = hasStandardInfo || hasPnLInfo;
+      const hasRequired = (detectedMapping.symbol && detectedMapping.quantity && detectedMapping.price) || (detectedMapping.symbol && detectedMapping.realizedPnL);
 
-      if (hasAllRequired) {
-        // Auto-advance to preview
-        try {
-          const normalized = processRowsWithMapping(detectedMapping, detectedSideMap, parsedRows);
-          setPreviewTransactions(normalized);
-          setStep('preview');
-        } catch (err) {
-          console.error("Auto-conversion failed", err);
-          setStep('mapping'); // Fallback to mapping UI on error
-        }
+      if (hasRequired) {
+        const normalized = processRowsWithMapping(detectedMapping, detectedSideMap, parsedRows);
+        setPreviewTransactions(normalized);
+        setStep('preview');
       } else {
         setStep('mapping');
       }
-
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message || "Failed to process import");
-    } finally {
-      setLoading(false);
-    }
+    });
   };
 
   const handleMappingConfirm = (finalMapping: ColumnMapping, finalSideMap: SideValueMapping) => {
@@ -273,20 +230,14 @@ export default function ImportPage() {
       setPreviewTransactions(normalized);
       setStep('preview');
     } catch (err) {
-      console.error(err);
       setError("Failed to transform data");
     }
   };
 
-  const handleImport = async () => {
-    setLoading(true);
-    try {
-      // Lazy import converter and DB to avoid circular deps or server/client issues if any
+  const handleImport = async (selectedTransactions: NormalizedTransaction[]) => {
+    startProcessing(async () => {
       const { toTransactionRecord } = await import('@/lib/import/converter');
-      const { importData } = await import('@/lib/db/trades');
-      // Note: importData expects AccountRecord. We need to create or select one.
-      // For Phase 1, let's create a "Default Import" account or ask user.
-      // We'll auto-generate one for now.
+      const { importData: dbImport } = await import('@/lib/db/trades');
 
       const accountId = `import-${Date.now()}`;
       const account = {
@@ -297,56 +248,44 @@ export default function ImportPage() {
         importedAt: Date.now(),
       };
 
-      const transactions = previewTransactions.map((t, i) =>
-        toTransactionRecord(t, accountId, i)
-      );
+      const transactions = selectedTransactions.map((t, i) => toTransactionRecord(t, accountId, i));
+      await dbImport(account, transactions, []);
 
-      // positions calculation is skipped for Phase 1 as per spec (requires full history)
-      // We pass empty positions array.
-      await importData(account, transactions, []);
+      if (importFile) importFileToLibrary(importFile).catch(console.error);
 
-      // Save original file to media library
-      if (importFile) {
-        importFileToLibrary(importFile).catch(console.error);
-      }
+      toast.success(`Successfully imported ${transactions.length} trades!`, {
+        description: `Imported to account "${account.name}"`,
+      });
 
-      alert(`Successfully imported ${transactions.length} trades to account "${account.name}"!`);
-
-      // Reset
-      setStep('upload');
-      setHeaders([]);
-      setRows([]);
-      setPreviewTransactions([]);
-      setImportFile(null);
-    } catch (err: any) {
-      console.error('Import failed', err);
-      alert(`Import failed: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
+      clearImportState();
+      router.push('/journal');
+    });
   };
 
   return (
-    <div className="container mx-auto py-8 max-w-5xl">
-      <h1 className="text-3xl font-bold mb-8">Import Trades</h1>
-
-      {error && (
-        <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 border border-red-200">
-          ⚠️ {error}
-        </div>
-      )}
+    <div className="container mx-auto py-8 px-4 max-w-5xl">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-foreground">Import Trades</h1>
+        <p className="text-muted mt-2">
+          Upload CSV, TLG, or drop a screenshot of your trade history.
+        </p>
+      </div>
 
       {step === 'upload' && (
-        <>
-          <DropZone onData={handleData} />
-          {loading && <p className="text-center mt-4 text-muted-foreground animate-pulse">Analyzing file...</p>}
-        </>
+        <div className="space-y-6">
+          <DropZone onData={handleData} isProcessing={isProcessing} />
+          {error && (
+            <div className="p-4 bg-loss/10 border border-loss/20 rounded-lg text-loss text-sm text-center">
+              {error}
+            </div>
+          )}
+        </div>
       )}
 
       {step === 'mapping' && (
         <ColumnMapper
           headers={headers}
-          sampleRows={rows}
+          sampleRows={rows.slice(0, 5)}
           initialMapping={mapping}
           initialSideMap={sideMap}
           onConfirm={handleMappingConfirm}
@@ -358,10 +297,23 @@ export default function ImportPage() {
         <ImportPreview
           transactions={previewTransactions}
           onConfirm={handleImport}
-          onBack={() => setStep('upload')} // Back now goes to upload, Edit Mapping goes to mapping
-          onEditMapping={() => setStep('mapping')}
-          isImporting={loading}
+          onBack={() => setStep('mapping')}
+          isImporting={isProcessing}
         />
+      )}
+
+      {isProcessing && step !== 'upload' && step !== 'preview' && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-accent"></div>
+          <p className="mt-4 font-medium">Analyzing your trades...</p>
+          <p className="text-xs text-muted mt-1">This takes about 10-15 seconds</p>
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="mt-8 text-sm text-accent hover:underline"
+          >
+            You can view your dashboard while we finish this.
+          </button>
+        </div>
       )}
     </div>
   );

@@ -1,10 +1,11 @@
 'use client';
 
+import { useState, useMemo } from 'react';
 import { NormalizedTransaction } from '@/lib/import/types';
 
 interface ImportPreviewProps {
     transactions: NormalizedTransaction[];
-    onConfirm: () => void;
+    onConfirm: (selected: NormalizedTransaction[]) => void;
     onBack: () => void;
     onEditMapping?: () => void;
     isImporting: boolean;
@@ -17,12 +18,35 @@ export default function ImportPreview({
     onEditMapping,
     isImporting
 }: ImportPreviewProps) {
+    const [selectedIndices, setSelectedIndices] = useState<Set<number>>(
+        new Set(transactions.map((_, i) => i))
+    );
+
+    const selectedTransactions = useMemo(() =>
+        transactions.filter((_, i) => selectedIndices.has(i)),
+        [transactions, selectedIndices]
+    );
+
+    const toggleAll = () => {
+        if (selectedIndices.size === transactions.length) {
+            setSelectedIndices(new Set());
+        } else {
+            setSelectedIndices(new Set(transactions.map((_, i) => i)));
+        }
+    };
+
+    const toggleRow = (index: number) => {
+        const next = new Set(selectedIndices);
+        if (next.has(index)) next.delete(index);
+        else next.add(index);
+        setSelectedIndices(next);
+    };
 
     // Calculate summary stats
-    const totalTrades = transactions.length;
-    const symbols = Array.from(new Set(transactions.map(t => t.symbol)));
-    const dateRange = transactions.length > 0
-        ? `${transactions[0].date} — ${transactions[transactions.length - 1].date}`
+    const totalSelected = selectedTransactions.length;
+    const symbols = Array.from(new Set(selectedTransactions.map(t => t.symbol)));
+    const dateRange = selectedTransactions.length > 0
+        ? `${selectedTransactions[0].date} — ${selectedTransactions[selectedTransactions.length - 1].date}`
         : 'None';
 
     return (
@@ -31,9 +55,9 @@ export default function ImportPreview({
                 <div>
                     <h2 className="text-2xl font-bold mb-1">Preview Import</h2>
                     <div className="text-sm text-muted-foreground space-x-4">
-                        <span>Found <strong>{totalTrades}</strong> trades</span>
+                        <span>Selected <strong>{totalSelected}</strong> of {transactions.length} trades</span>
                         <span>•</span>
-                        <span>{symbols.length} Symbols ({symbols.slice(0, 3).join(', ')}{symbols.length > 3 ? '...' : ''})</span>
+                        <span>{symbols.length} Symbols</span>
                         <span>•</span>
                         <span>{dateRange}</span>
                     </div>
@@ -56,11 +80,21 @@ export default function ImportPreview({
                         Back
                     </button>
                     <button
-                        onClick={onConfirm}
-                        disabled={isImporting || totalTrades === 0}
-                        className="px-6 py-2 bg-primary text-primary-foreground rounded hover:opacity-90 disabled:opacity-50 font-medium flex items-center gap-2"
+                        onClick={() => onConfirm(selectedTransactions)}
+                        disabled={isImporting || totalSelected === 0}
+                        className="px-6 py-2 bg-accent text-white rounded-lg hover:opacity-90 hover:shadow-lg active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 disabled:shadow-none font-semibold flex items-center gap-2"
                     >
-                        {isImporting ? 'Importing...' : `Import ${totalTrades} Trades`}
+                        {isImporting ? (
+                            <>
+                                <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Importing...
+                            </>
+                        ) : (
+                            `Import ${totalSelected} Trades`
+                        )}
                     </button>
                 </div>
             </div>
@@ -70,6 +104,14 @@ export default function ImportPreview({
                     <table className="w-full text-sm text-left">
                         <thead className="bg-muted sticky top-0 z-10">
                             <tr>
+                                <th className="p-3 font-medium w-10 text-center">
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedIndices.size === transactions.length && transactions.length > 0}
+                                        onChange={toggleAll}
+                                        className="rounded border-gray-300 text-primary focus:ring-primary w-4 h-4 cursor-pointer"
+                                    />
+                                </th>
                                 <th className="p-3 font-medium">Date</th>
                                 <th className="p-3 font-medium">Time</th>
                                 <th className="p-3 font-medium">Symbol</th>
@@ -83,7 +125,15 @@ export default function ImportPreview({
                         </thead>
                         <tbody className="divide-y">
                             {transactions.map((t, i) => (
-                                <tr key={i} className="hover:bg-muted/50">
+                                <tr key={i} className={`hover:bg-muted/50 transition-opacity ${!selectedIndices.has(i) ? 'bg-muted/30 opacity-60' : ''}`}>
+                                    <td className="p-3 text-center">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedIndices.has(i)}
+                                            onChange={() => toggleRow(i)}
+                                            className="rounded border-gray-300 text-primary focus:ring-primary w-4 h-4 cursor-pointer"
+                                        />
+                                    </td>
                                     <td className="p-3 whitespace-nowrap">{t.date}</td>
                                     <td className="p-3 whitespace-nowrap text-muted-foreground">{t.time}</td>
                                     <td className="p-3 font-medium">{t.symbol}</td>
@@ -91,10 +141,13 @@ export default function ImportPreview({
                                         }`}>
                                         {t.side}
                                     </td>
-                                    <td className="p-3 text-right">{t.quantity.toLocaleString()}</td>
-                                    <td className="p-3 text-right">{t.price.toFixed(3)}</td>
+                                    <td className="p-3 text-right">{t.quantity !== 0 ? t.quantity.toLocaleString() : <span className="text-muted-foreground">-</span>}</td>
+                                    <td className="p-3 text-right">{t.price !== 0 ? t.price.toFixed(3) : <span className="text-muted-foreground">-</span>}</td>
                                     <td className="p-3 text-right font-medium">
-                                        {(t.totalValue || (t.quantity * t.price)).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                        {(t.totalValue || (t.quantity * t.price)) !== 0
+                                            ? (t.totalValue || (t.quantity * t.price)).toLocaleString(undefined, { maximumFractionDigits: 2 })
+                                            : <span className="text-muted-foreground">-</span>
+                                        }
                                     </td>
                                     <td className={`p-3 text-right font-medium ${t.realizedPnL && t.realizedPnL > 0 ? 'text-green-600' : t.realizedPnL && t.realizedPnL < 0 ? 'text-red-600' : ''}`}>
                                         {t.realizedPnL ? (
@@ -106,7 +159,6 @@ export default function ImportPreview({
                                         )}
                                     </td>
                                     <td className="p-3 text-muted-foreground overflow-hidden text-ellipsis max-w-[100px]">
-                                        {/* Placeholder for now */}
                                         Main
                                     </td>
                                 </tr>

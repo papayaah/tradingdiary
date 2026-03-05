@@ -5,9 +5,10 @@ import { useDropzone } from 'react-dropzone';
 
 interface DropZoneProps {
   onData: (data: File | string, type: 'file' | 'text' | 'image') => void;
+  isProcessing?: boolean;
 }
 
-export default function DropZone({ onData }: DropZoneProps) {
+export default function DropZone({ onData, isProcessing }: DropZoneProps) {
   const [isDragActive, setIsDragActive] = useState(false);
   const [pasteDetected, setPasteDetected] = useState(false);
   const dropzoneRef = useRef<HTMLDivElement>(null);
@@ -79,17 +80,19 @@ export default function DropZone({ onData }: DropZoneProps) {
       onPaste={handlePaste}
       className={`
         border-2 border-dashed rounded-xl p-12 text-center transition-colors cursor-pointer outline-none
-        ${pasteDetected ? 'border-primary bg-primary/10' : isDragActive ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-muted/50'}
+        ${(isProcessing || pasteDetected) ? 'border-primary bg-primary/10' : isDragActive ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-muted/50'}
       `}
     >
       <input {...getInputProps()} />
-      {pasteDetected ? (
+      {(isProcessing || pasteDetected) ? (
         <div className="space-y-4">
           <div className="flex justify-center text-4xl mb-4">
-            📋
+            {isProcessing ? '⏳' : '📋'}
           </div>
-          <h3 className="text-xl font-medium text-primary">Paste received!</h3>
-          <p className="text-muted-foreground text-sm animate-pulse">Processing your data...</p>
+          <h3 className="text-xl font-medium text-primary">
+            {isProcessing ? 'Analyzing Data...' : 'Paste received!'}
+          </h3>
+          <p className="text-muted-foreground text-sm animate-pulse">This will only take a moment</p>
         </div>
       ) : (
         <div className="space-y-4">

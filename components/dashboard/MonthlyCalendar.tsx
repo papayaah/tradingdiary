@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Fragment } from 'react';
+import { useRouter } from 'next/navigation';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { DailySummary } from '@/lib/trading/aggregator';
 import { pnlColorClass } from '@/lib/utils/format';
@@ -28,6 +29,7 @@ interface DayData {
 }
 
 export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
+  const router = useRouter();
   // Determine initial month from data (most recent)
   const defaultMonth = useMemo(() => {
     if (summaries.length === 0) return new Date();
@@ -49,7 +51,7 @@ export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
     const map = new Map<string, DayData>();
     for (const s of summaries) {
       map.set(s.date, {
-        pnl: s.netPnL,
+        pnl: s.totalPnL,
         tradeCount: s.totalTrades,
         winRate: s.winRate,
       });
@@ -154,13 +156,12 @@ export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
         <div className="flex items-center gap-3 text-sm">
           <span className="text-muted">Monthly stats:</span>
           <span
-            className={`font-bold px-2 py-0.5 rounded ${
-              monthStats.totalPnL > 0
-                ? 'bg-profit/15 text-profit'
-                : monthStats.totalPnL < 0
-                  ? 'bg-loss/15 text-loss'
-                  : 'text-muted'
-            }`}
+            className={`font-bold px-2 py-0.5 rounded ${monthStats.totalPnL > 0
+              ? 'bg-profit/15 text-profit'
+              : monthStats.totalPnL < 0
+                ? 'bg-loss/15 text-loss'
+                : 'text-muted'
+              }`}
           >
             {formatPnLShort(monthStats.totalPnL)}
           </span>
@@ -188,9 +189,13 @@ export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
 
         {/* Weeks */}
         {weeks.map((week, wi) => (
-          <>
+          <Fragment key={`wf-${wi}`}>
             {week.days.map((day) => (
-              <DayCell key={day.date} day={day} />
+              <DayCell
+                key={day.date}
+                day={day}
+                onClick={() => router.push(`/journal?date=${day.date}`)}
+              />
             ))}
             <WeekSummary
               key={`w${wi}`}
@@ -198,7 +203,7 @@ export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
               pnl={week.weekPnL}
               days={week.weekDays}
             />
-          </>
+          </Fragment>
         ))}
       </div>
     </div>
@@ -212,7 +217,7 @@ interface GridDay {
   data: DayData | null;
 }
 
-function DayCell({ day }: { day: GridDay }) {
+function DayCell({ day, onClick }: { day: GridDay; onClick?: () => void }) {
   if (!day.isCurrentMonth) {
     return <div className="bg-background min-h-[90px] p-2 opacity-30" />;
   }
@@ -222,12 +227,17 @@ function DayCell({ day }: { day: GridDay }) {
 
   let bgClass = 'bg-card-bg';
   if (hasData) {
-    bgClass = pnl > 0 ? 'bg-profit/10' : pnl < 0 ? 'bg-loss/10' : 'bg-card-bg';
+    bgClass = pnl > 0 ? 'bg-profit/10 hover:bg-profit/20' : pnl < 0 ? 'bg-loss/10 hover:bg-loss/20' : 'bg-card-bg hover:bg-sidebar-hover';
+  } else {
+    bgClass = 'bg-card-bg hover:bg-sidebar-hover';
   }
 
   return (
-    <div className={`${bgClass} min-h-[90px] p-2 flex flex-col`}>
-      <span className="text-xs text-muted self-end">{day.dayNum}</span>
+    <div
+      onClick={onClick}
+      className={`${bgClass} min-h-[90px] p-2 flex flex-col cursor-pointer transition-colors group`}
+    >
+      <span className="text-xs text-muted self-end group-hover:text-foreground">{day.dayNum}</span>
       {hasData && (
         <div className="flex-1 flex flex-col items-center justify-center gap-0.5">
           <span className={`text-sm font-bold ${pnlColorClass(pnl)}`}>
