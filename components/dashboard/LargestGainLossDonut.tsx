@@ -1,13 +1,15 @@
 'use client';
 
 import { ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { formatCurrency } from '@/lib/currency';
 
 interface LargestGainLossDonutProps {
   gain: number;
   loss: number;
+  currency?: string;
 }
 
-export default function LargestGainLossDonut({ gain, loss }: LargestGainLossDonutProps) {
+export default function LargestGainLossDonut({ gain, loss, currency = 'USD' }: LargestGainLossDonutProps) {
   const absGain = Math.abs(gain);
   const absLoss = Math.abs(loss);
   const total = absGain + absLoss;
@@ -52,13 +54,13 @@ export default function LargestGainLossDonut({ gain, loss }: LargestGainLossDonu
           <div className="flex items-center gap-1.5">
             <div className="w-2.5 h-2.5 rounded-full bg-profit" />
             <span className="text-muted">
-              ${absGain.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {formatCurrency(absGain, currency)}
             </span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-2.5 h-2.5 rounded-full bg-loss" />
             <span className="text-muted">
-              -${absLoss.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {formatCurrency(-absLoss, currency)}
             </span>
           </div>
         </div>

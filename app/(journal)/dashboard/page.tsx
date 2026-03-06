@@ -15,6 +15,9 @@ import WinLossDonut from '@/components/dashboard/WinLossDonut';
 import ComparisonBar from '@/components/dashboard/ComparisonBar';
 import LargestGainLossDonut from '@/components/dashboard/LargestGainLossDonut';
 import ReplayTimeline from '@/components/replay/ReplayTimeline';
+import { useAccount } from '@/contexts/AccountContext';
+import { getTransactionsByAccount } from '@/lib/db/trades';
+import { formatCurrency } from '@/lib/currency';
 
 function formatMinutes(minutes: number): string {
   if (minutes < 60) return `${minutes} minutes`;
@@ -34,6 +37,10 @@ interface LatestDayTimeline {
 }
 
 export default function DashboardPage() {
+  const { accounts, selectedAccountId } = useAccount();
+  const activeAccount = accounts.find(a => a.accountId === selectedAccountId);
+  const baseCurrency = activeAccount?.currency || 'USD';
+
   const [data, setData] = useState<DashboardData | null>(null);
   const [summaries, setSummaries] = useState<DailySummary[]>([]);
   const [latestDay, setLatestDay] = useState<LatestDayTimeline | null>(null);
@@ -41,7 +48,16 @@ export default function DashboardPage() {
 
   useEffect(() => {
     async function load() {
-      const transactions = await getAllTransactions();
+      if (!selectedAccountId) {
+        setEmpty(true);
+        return;
+      }
+
+      setData(null);
+      setLatestDay(null);
+      setEmpty(false);
+
+      const transactions = await getTransactionsByAccount(selectedAccountId);
       if (transactions.length === 0) {
         setEmpty(true);
         return;
@@ -87,7 +103,7 @@ export default function DashboardPage() {
       }
     }
     load();
-  }, []);
+  }, [selectedAccountId]);
 
   if (empty) {
     return (
@@ -158,9 +174,9 @@ export default function DashboardPage() {
           winValue={data.avgWin}
           lossLabel="Avg Loss"
           lossValue={data.avgLoss}
-          formatValue={(v) => `${v < 0 ? '-' : ''}$${Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          formatValue={(v) => formatCurrency(v, baseCurrency)}
         />
-        <LargestGainLossDonut gain={data.largestGain} loss={data.largestLoss} />
+        <LargestGainLossDonut gain={data.largestGain} loss={data.largestLoss} currency={baseCurrency} />
       </div>
 
       {latestDay && (

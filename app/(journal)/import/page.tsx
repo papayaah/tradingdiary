@@ -10,14 +10,19 @@ import { parseCSVOrText } from '@/lib/import/csv-extractor';
 import { mapColumnsWithLLM } from '@/lib/import/llm-mapper';
 import { mapColumnsOffline } from '@/lib/import/alias-mapper';
 import { parseTLGFile } from '@/lib/parser/tlg-parser';
-import { importData } from '@/lib/db/trades';
+import { getAccounts, importData as dbImportData } from '@/lib/db/trades';
 import { NormalizedTransaction, ColumnMapping, SideValueMapping } from '@/lib/import/types';
 import { importFileToLibrary } from '@/packages/react-media-library/src/services/storage';
 import { useImport } from '@/contexts/ImportContext';
+import { detectCurrency } from '@/lib/import/currency-detector';
+import { AccountRecord } from '@/lib/db/schema';
+import { useState, useEffect } from 'react';
 
 export default function ImportPage() {
   const router = useRouter();
   const aiContext = useAIManagementContextOptional();
+  const [accounts, setAccounts] = useState<AccountRecord[]>([]);
+
   const {
     step, setStep,
     headers, updateData,
@@ -27,21 +32,21 @@ export default function ImportPage() {
     previewTransactions, setPreviewTransactions,
     importFile, setImportFile,
     isProcessing,
+    detectedCurrency, setDetectedCurrency,
     error, setError,
     startProcessing,
     clearImportState
   } = useImport();
+
+  useEffect(() => {
+    getAccounts().then(setAccounts);
+  }, [step]); // Refetch when step changes or on mount
 
   const processRowsWithMapping = (
     currentMapping: ColumnMapping,
     currentSideMap: SideValueMapping,
     currentRows: Record<string, string>[]
   ): NormalizedTransaction[] => {
-    const get = (field: keyof ColumnMapping) => {
-      const col = currentMapping[field];
-      return col ? currentRows[0][col] : undefined; // This logic is slightly flawed in the old version (it only checks first row for existence? No, it's used inside a map)
-    };
-
     return currentRows.flatMap((row) => {
       const get = (field: keyof ColumnMapping): string | undefined => {
         const header = currentMapping[field];
@@ -133,7 +138,9 @@ export default function ImportPage() {
 
         if (content.includes('ACT_INF|') && content.includes('STK_TRD|')) {
           const parsed = parseTLGFile(content);
-          await importData(parsed.account, parsed.transactions, parsed.positions);
+          // For TLG, it specifies its own account usually, but we should make sure it has currency
+          const tlgAccount = { ...parsed.account, currency: parsed.account.currency || 'USD' };
+          await dbImportData(tlgAccount, parsed.transactions, parsed.positions);
           const fileToSave = data instanceof File ? data : new File([content], 'pasted-import.tlg', { type: 'text/plain' });
           importFileToLibrary(fileToSave).catch(console.error);
           toast.success("TLG Import Successful");
@@ -186,6 +193,10 @@ export default function ImportPage() {
 
       updateData(parsedHeaders, parsedRows);
 
+      // Auto-detect currency
+      const detected = detectCurrency(parsedHeaders, parsedRows);
+      if (detected) setDetectedCurrency(detected);
+
       // LLM Mapping
       let detectedMapping: ColumnMapping = {} as any;
       let detectedSideMap: SideValueMapping = {};
@@ -234,27 +245,42 @@ export default function ImportPage() {
     }
   };
 
-  const handleImport = async (selectedTransactions: NormalizedTransaction[]) => {
+  const handleImport = async (
+    selectedTransactions: NormalizedTransaction[],
+    accountData: { id?: string; name?: string; currency?: string; type?: string }
+  ) => {
     startProcessing(async () => {
       const { toTransactionRecord } = await import('@/lib/import/converter');
       const { importData: dbImport } = await import('@/lib/db/trades');
 
-      const accountId = `import-${Date.now()}`;
-      const account = {
-        accountId,
-        name: `Import ${new Date().toLocaleDateString()}`,
-        type: 'csv',
-        address: '',
-        importedAt: Date.now(),
-      };
+      let targetAccountId = accountData.id;
+      let targetAccount: AccountRecord;
 
-      const transactions = selectedTransactions.map((t, i) => toTransactionRecord(t, accountId, i));
-      await dbImport(account, transactions, []);
+      if (!targetAccountId) {
+        // Create new account
+        targetAccountId = `acc-${Date.now()}`;
+        targetAccount = {
+          accountId: targetAccountId,
+          name: accountData.name || `Account ${new Date().toLocaleDateString()}`,
+          currency: accountData.currency || 'USD',
+          type: accountData.type || 'Custom',
+          address: '',
+          importedAt: Date.now(),
+        };
+      } else {
+        // Use existing
+        const existing = accounts.find(a => a.accountId === targetAccountId);
+        if (!existing) throw new Error("Selected account not found");
+        targetAccount = existing;
+      }
+
+      const transactions = selectedTransactions.map((t, i) => toTransactionRecord(t, targetAccountId!, i, targetAccount.currency));
+      await dbImport(targetAccount, transactions, []);
 
       if (importFile) importFileToLibrary(importFile).catch(console.error);
 
       toast.success(`Successfully imported ${transactions.length} trades!`, {
-        description: `Imported to account "${account.name}"`,
+        description: `Imported to account "${targetAccount.name}" (${targetAccount.currency})`,
       });
 
       clearImportState();
@@ -296,6 +322,8 @@ export default function ImportPage() {
       {step === 'preview' && (
         <ImportPreview
           transactions={previewTransactions}
+          accounts={accounts}
+          suggestedCurrency={detectedCurrency || 'USD'}
           onConfirm={handleImport}
           onBack={() => setStep('mapping')}
           isImporting={isProcessing}

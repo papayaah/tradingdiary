@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { AggregatedTrade } from '@/lib/trading/aggregator';
-import { pnlColorClass, formatVolume, formatCurrency } from '@/lib/utils/format';
+import { pnlColorClass, formatVolume } from '@/lib/utils/format';
+import { formatCurrency } from '@/lib/currency';
 import {
   getTradeNote,
   addScreenshotToTrade,
@@ -15,9 +16,10 @@ import ScreenshotAttachment from './ScreenshotAttachment';
 interface TradeTableProps {
   trades: AggregatedTrade[];
   accountId: string;
+  currency?: string;
 }
 
-export default function TradeTable({ trades, accountId }: TradeTableProps) {
+export default function TradeTable({ trades, accountId, currency = 'USD' }: TradeTableProps) {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const toggle = (key: string) => {
@@ -54,6 +56,7 @@ export default function TradeTable({ trades, accountId }: TradeTableProps) {
                   isExpanded={isExpanded}
                   onToggle={toggle}
                   accountId={accountId}
+                  currency={currency}
                 />
               );
             })}
@@ -70,12 +73,14 @@ function TradeRow({
   isExpanded,
   onToggle,
   accountId,
+  currency,
 }: {
   trade: AggregatedTrade;
   rowKey: string;
   isExpanded: boolean;
   onToggle: (key: string) => void;
   accountId: string;
+  currency: string;
 }) {
   const [screenshotIds, setScreenshotIds] = useState<number[]>([]);
 
@@ -119,11 +124,10 @@ function TradeRow({
         </td>
         <td className="px-5 py-3">
           <span
-            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${
-              trade.side === 'LONG'
-                ? 'bg-profit/15 text-profit'
-                : 'bg-loss/15 text-loss'
-            }`}
+            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${trade.side === 'LONG'
+              ? 'bg-profit/15 text-profit'
+              : 'bg-loss/15 text-loss'
+              }`}
           >
             {trade.side}
           </span>
@@ -136,18 +140,14 @@ function TradeRow({
         </td>
         <td className="px-5 py-3 text-right">
           <span className={`font-medium ${pnlColorClass(trade.netPnL)}`}>
-            {trade.netPnL < 0 ? '-' : ''}$
-            {Math.abs(trade.netPnL).toLocaleString('en-US', {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
+            {formatCurrency(trade.netPnL, currency)}
           </span>
           {trade.isOpen && (
             <div className="text-[10px] text-muted italic mt-0.5">
               {formatVolume(Math.abs(trade.netQuantity))} held
               {trade.unrealizedPnL != null && (
                 <span className={`ml-1 ${pnlColorClass(trade.unrealizedPnL)}`}>
-                  (unrl: {formatCurrency(trade.unrealizedPnL)})
+                  (unrl: {formatCurrency(trade.unrealizedPnL, currency)})
                 </span>
               )}
             </div>

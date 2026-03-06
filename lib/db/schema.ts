@@ -3,7 +3,8 @@ import type { DBSchema } from 'idb';
 export interface AccountRecord {
   accountId: string;
   name: string;
-  type: string;
+  type: string; // e.g., "Charles Schwab", "IBKR", "Custom"
+  currency: string;
   address: string;
   importedAt: number;
 }

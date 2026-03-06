@@ -1,7 +1,9 @@
 'use client';
 
 import type { PositionInfo } from '@/lib/replay/engine';
-import { pnlColorClass, formatCurrency, formatVolume } from '@/lib/utils/format';
+import { pnlColorClass, formatVolume } from '@/lib/utils/format';
+import { useAccount } from '@/contexts/AccountContext';
+import { formatCurrency } from '@/lib/currency';
 
 interface ReplayStatsProps {
   netPnL: number;
@@ -18,6 +20,10 @@ export default function ReplayStats({
   positions,
   currentTime,
 }: ReplayStatsProps) {
+  const { accounts, selectedAccountId } = useAccount();
+  const activeAccount = accounts.find(a => a.accountId === selectedAccountId);
+  const currency = activeAccount?.currency || 'USD';
+
   const timeDisplay = formatTimeAmPm(currentTime);
 
   return (
@@ -26,7 +32,7 @@ export default function ReplayStats({
         <span
           className={`text-lg font-bold transition-colors duration-200 ${pnlColorClass(netPnL)}`}
         >
-          {formatCurrency(netPnL)}
+          {formatCurrency(netPnL, currency)}
         </span>
       </StatCard>
 

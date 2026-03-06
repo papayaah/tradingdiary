@@ -12,8 +12,11 @@ import {
   PanelLeftOpen,
   TrendingUp,
   Settings,
+  Wallet,
+  ChevronDown
 } from 'lucide-react';
 import { useImport } from '@/contexts/ImportContext';
+import { useAccount } from '@/contexts/AccountContext';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -32,20 +35,53 @@ const navItems = [
 export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname();
   const { isProcessing } = useImport();
+  const { accounts, selectedAccountId, setSelectedAccountId } = useAccount();
+
+  const selectedAccount = accounts.find(a => a.accountId === selectedAccountId);
 
   return (
     <aside
       className={`flex flex-col h-screen bg-sidebar-bg border-r border-sidebar-border transition-all duration-200 ease-in-out ${collapsed ? 'w-[60px]' : 'w-[220px]'
         }`}
     >
-      <div className={`flex items-center h-14 px-3 border-b border-sidebar-border gap-2 ${collapsed ? 'justify-center' : ''}`}>
-        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-accent text-white shrink-0">
-          <TrendingUp size={18} />
+      <div className={`flex flex-col border-b border-sidebar-border ${collapsed ? 'py-4' : 'p-3'}`}>
+        <div className={`flex items-center gap-2 mb-4 ${collapsed ? 'justify-center' : ''}`}>
+          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-accent text-white shrink-0">
+            <TrendingUp size={18} />
+          </div>
+          {!collapsed && (
+            <span className="text-sm font-semibold text-foreground truncate">
+              Trading Diary
+            </span>
+          )}
         </div>
-        {!collapsed && (
-          <span className="text-sm font-semibold text-foreground truncate">
-            Trading Diary
-          </span>
+
+        {/* Account Switcher */}
+        {accounts.length > 0 && (
+          <div className="relative group">
+            <select
+              value={selectedAccountId || ''}
+              onChange={(e) => setSelectedAccountId(e.target.value)}
+              className={`w-full appearance-none bg-muted/30 border border-sidebar-border rounded-lg text-xs font-medium cursor-pointer focus:ring-1 ring-accent outline-none transition-all hover:bg-muted/50 ${collapsed ? 'p-2 text-center' : 'py-2 pl-8 pr-6'}`}
+            >
+              {accounts.map(acc => (
+                <option key={acc.accountId} value={acc.accountId}>
+                  {collapsed ? acc.name.charAt(0) : acc.name}
+                </option>
+              ))}
+            </select>
+            {!collapsed && (
+              <>
+                <Wallet size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              </>
+            )}
+            {collapsed && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <Wallet size={14} className="text-muted-foreground opacity-50 group-hover:opacity-100" />
+              </div>
+            )}
+          </div>
         )}
       </div>
 

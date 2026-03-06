@@ -4,7 +4,8 @@ import { TransactionRecord } from '@/lib/db/schema';
 export function toTransactionRecord(
     n: NormalizedTransaction,
     accountId: string,
-    index: number
+    index: number,
+    defaultCurrency: string = 'USD'
 ): TransactionRecord {
     const dateStr = n.date; // assuming validated date string
     const time = n.time || '00:00:00';
@@ -29,7 +30,7 @@ export function toTransactionRecord(
         orderType: n.orderType || 'MARKET',
         date: dateStr,
         time,
-        currency: n.currency || 'USD',
+        currency: n.currency || defaultCurrency,
         quantity: Math.abs(n.quantity),
         multiplier: 1,
         price: Math.abs(n.price),

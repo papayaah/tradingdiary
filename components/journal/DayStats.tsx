@@ -2,10 +2,12 @@
 
 import { Lock } from 'lucide-react';
 import type { DailySummary } from '@/lib/trading/aggregator';
-import { formatCurrency, formatVolume, pnlColorClass } from '@/lib/utils/format';
+import { formatVolume, pnlColorClass } from '@/lib/utils/format';
+import { formatCurrency } from '@/lib/currency';
 
 interface DayStatsProps {
   summary: DailySummary;
+  currency?: string;
 }
 
 interface StatCardProps {
@@ -30,7 +32,7 @@ function StatCard({ label, value, locked, colorClass }: StatCardProps) {
   );
 }
 
-export default function DayStats({ summary }: DayStatsProps) {
+export default function DayStats({ summary, currency = 'USD' }: DayStatsProps) {
   const winPct = summary.winCount + summary.lossCount > 0
     ? ((summary.winCount / (summary.winCount + summary.lossCount)) * 100).toFixed(0) + '%'
     : '-';
@@ -48,18 +50,18 @@ export default function DayStats({ summary }: DayStatsProps) {
       <StatCard label="Win %" value={winPct} />
       <StatCard
         label="Commissions/Fees"
-        value={formatCurrency(summary.totalCommissions)}
+        value={formatCurrency(summary.totalCommissions, currency)}
         colorClass="text-loss"
       />
       <StatCard
         label="Realized P&L"
-        value={formatCurrency(summary.netPnL)}
+        value={formatCurrency(summary.netPnL, currency)}
         colorClass={pnlColorClass(summary.netPnL)}
       />
       {summary.totalPnL !== summary.netPnL ? (
         <StatCard
           label="Total P&L (Inc. Unrealized)"
-          value={formatCurrency(summary.totalPnL)}
+          value={formatCurrency(summary.totalPnL, currency)}
           colorClass={pnlColorClass(summary.totalPnL)}
         />
       ) : (

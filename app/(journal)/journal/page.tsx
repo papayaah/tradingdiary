@@ -8,22 +8,30 @@ import { getAllTransactions } from '@/lib/db/trades';
 import { getTradeDateCutoff } from '@/lib/settings';
 import { aggregateByDay, applyMarketPrices, type DailySummary } from '@/lib/trading/aggregator';
 import DayGroup from '@/components/journal/DayGroup';
+import { useAccount } from '@/contexts/AccountContext';
+import { getTransactionsByAccount } from '@/lib/db/trades';
 
 export default function JournalPage() {
   const searchParams = useSearchParams();
   const filterDate = searchParams.get('date');
+  const { selectedAccountId } = useAccount();
 
   const [summaries, setSummaries] = useState<DailySummary[] | null>(null);
-  const [accountId, setAccountId] = useState('');
 
   useEffect(() => {
     async function load() {
-      const transactions = await getAllTransactions();
+      if (!selectedAccountId) {
+        setSummaries([]);
+        return;
+      }
+
+      setSummaries(null); // Show loading state on switch
+      const transactions = await getTransactionsByAccount(selectedAccountId);
+
       if (transactions.length > 0) {
-        setAccountId(transactions[0].accountId);
         const agg = aggregateByDay(transactions, getTradeDateCutoff());
 
-        // Fetch historical market prices for open positions
+        // ... prices logic remains same ...
         const openSymbols = new Set<string>();
         let minDate = '';
         let maxDate = '';
@@ -49,17 +57,16 @@ export default function JournalPage() {
               applyMarketPrices(agg, prices);
             }
           } catch {
-            // Silently fail — unrealized just won't show
+            // Silently fail
           }
         }
-
         setSummaries(agg);
       } else {
         setSummaries([]);
       }
     }
     load();
-  }, []);
+  }, [selectedAccountId]);
 
   const displaySummaries = useMemo(() => {
     if (!summaries || !filterDate) return summaries;
@@ -126,7 +133,7 @@ export default function JournalPage() {
       )}
 
       {displaySummaries?.map((summary) => (
-        <DayGroup key={summary.date} summary={summary} accountId={accountId} />
+        <DayGroup key={summary.date} summary={summary} accountId={selectedAccountId || ''} />
       ))}
 
       {filterDate && displaySummaries?.length === 0 && (

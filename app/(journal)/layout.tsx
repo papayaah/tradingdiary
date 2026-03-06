@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Sidebar from '@/components/sidebar/Sidebar';
 import { MediaLibraryProvider } from '@/packages/react-media-library/src/components/MediaLibraryProvider';
 import { ImportProvider } from '@/contexts/ImportContext';
+import { AccountProvider } from '@/contexts/AccountContext';
 
 export default function JournalLayout({
   children,
@@ -37,15 +38,17 @@ export default function JournalLayout({
   }
 
   return (
-    <MediaLibraryProvider>
-      <ImportProvider>
-        <div className="flex h-screen overflow-hidden">
-          <Sidebar collapsed={collapsed} onToggle={toggle} />
-          <main className="flex-1 overflow-y-auto bg-background">
-            {children}
-          </main>
-        </div>
-      </ImportProvider>
-    </MediaLibraryProvider>
+    <AccountProvider>
+      <MediaLibraryProvider>
+        <ImportProvider>
+          <div className="flex h-screen overflow-hidden">
+            <Sidebar collapsed={collapsed} onToggle={toggle} />
+            <main className="flex-1 overflow-y-auto bg-background">
+              {children}
+            </main>
+          </div>
+        </ImportProvider>
+      </MediaLibraryProvider>
+    </AccountProvider>
   );
 }

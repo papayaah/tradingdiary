@@ -1,11 +1,13 @@
-'use client';
-
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { NormalizedTransaction } from '@/lib/import/types';
+import { AccountRecord } from '@/lib/db/schema';
+import { CreditCard, Plus, Wallet } from 'lucide-react';
 
 interface ImportPreviewProps {
     transactions: NormalizedTransaction[];
-    onConfirm: (selected: NormalizedTransaction[]) => void;
+    accounts: AccountRecord[];
+    suggestedCurrency?: string;
+    onConfirm: (selected: NormalizedTransaction[], accountData: { id?: string; name?: string; currency?: string; type?: string }) => void;
     onBack: () => void;
     onEditMapping?: () => void;
     isImporting: boolean;
@@ -13,6 +15,8 @@ interface ImportPreviewProps {
 
 export default function ImportPreview({
     transactions,
+    accounts,
+    suggestedCurrency = 'USD',
     onConfirm,
     onBack,
     onEditMapping,
@@ -21,6 +25,18 @@ export default function ImportPreview({
     const [selectedIndices, setSelectedIndices] = useState<Set<number>>(
         new Set(transactions.map((_, i) => i))
     );
+
+    // Account state
+    const [selectedAccountId, setSelectedAccountId] = useState<string>(accounts.length > 0 ? accounts[0].accountId : 'new');
+    const [newAccountName, setNewAccountName] = useState('');
+    const [newAccountCurrency, setNewAccountCurrency] = useState(suggestedCurrency);
+    const [newAccountType, setNewAccountType] = useState('Custom');
+
+    useEffect(() => {
+        if (suggestedCurrency) {
+            setNewAccountCurrency(suggestedCurrency);
+        }
+    }, [suggestedCurrency]);
 
     const selectedTransactions = useMemo(() =>
         transactions.filter((_, i) => selectedIndices.has(i)),
@@ -42,6 +58,18 @@ export default function ImportPreview({
         setSelectedIndices(next);
     };
 
+    const handleConfirm = () => {
+        if (selectedAccountId === 'new') {
+            onConfirm(selectedTransactions, {
+                name: newAccountName || `New Account ${new Date().toLocaleDateString()}`,
+                currency: newAccountCurrency,
+                type: newAccountType
+            });
+        } else {
+            onConfirm(selectedTransactions, { id: selectedAccountId });
+        }
+    };
+
     // Calculate summary stats
     const totalSelected = selectedTransactions.length;
     const symbols = Array.from(new Set(selectedTransactions.map(t => t.symbol)));
@@ -49,53 +77,165 @@ export default function ImportPreview({
         ? `${selectedTransactions[0].date} — ${selectedTransactions[selectedTransactions.length - 1].date}`
         : 'None';
 
+    const selectedAccount = accounts.find(a => a.accountId === selectedAccountId);
+
     return (
         <div className="space-y-6">
-            <div className="flex justify-between items-center bg-card p-6 rounded-lg border">
-                <div>
-                    <h2 className="text-2xl font-bold mb-1">Preview Import</h2>
-                    <div className="text-sm text-muted-foreground space-x-4">
-                        <span>Selected <strong>{totalSelected}</strong> of {transactions.length} trades</span>
-                        <span>•</span>
-                        <span>{symbols.length} Symbols</span>
-                        <span>•</span>
-                        <span>{dateRange}</span>
+            <div className="bg-card p-6 rounded-lg border shadow-sm space-y-6">
+                <div className="flex justify-between items-start">
+                    <div>
+                        <h2 className="text-2xl font-bold mb-1">Finalize Import</h2>
+                        <div className="text-sm text-muted-foreground space-x-3 flex items-center">
+                            <span className="bg-accent/10 text-accent px-2 py-0.5 rounded-full font-medium">Selected {totalSelected} Trades</span>
+                            <span>•</span>
+                            <span>{symbols.length} Symbols</span>
+                            <span>•</span>
+                            <span>{dateRange}</span>
+                        </div>
+                    </div>
+                    <div className="flex gap-2">
+                        {onEditMapping && (
+                            <button
+                                onClick={onEditMapping}
+                                disabled={isImporting}
+                                className="px-4 py-2 border rounded-lg hover:bg-muted disabled:opacity-50 text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                                Edit Columns
+                            </button>
+                        )}
+                        <button
+                            onClick={onBack}
+                            disabled={isImporting}
+                            className="px-4 py-2 border rounded-lg hover:bg-muted disabled:opacity-50 transition-colors"
+                        >
+                            Back
+                        </button>
+                        <button
+                            onClick={handleConfirm}
+                            disabled={isImporting || totalSelected === 0 || (selectedAccountId === 'new' && !newAccountName && accounts.length > 0)}
+                            className="px-6 py-2 bg-accent text-white rounded-lg hover:opacity-90 hover:shadow-lg active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 disabled:shadow-none font-semibold flex items-center gap-2"
+                        >
+                            {isImporting ? (
+                                <>
+                                    <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                                    Importing...
+                                </>
+                            ) : (
+                                `Import ${totalSelected} Trades`
+                            )}
+                        </button>
                     </div>
                 </div>
-                <div className="flex gap-2">
-                    {onEditMapping && (
-                        <button
-                            onClick={onEditMapping}
-                            disabled={isImporting}
-                            className="px-4 py-2 border rounded hover:bg-muted disabled:opacity-50 text-muted-foreground hover:text-foreground"
-                        >
-                            Edit Columns
-                        </button>
+
+                <div className="pt-4 border-t grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="space-y-3">
+                        <label className="text-sm font-semibold flex items-center gap-2">
+                            <Wallet size={16} className="text-accent" />
+                            Target Account
+                        </label>
+                        <div className="grid grid-cols-1 gap-2">
+                            {accounts.map(acc => (
+                                <button
+                                    key={acc.accountId}
+                                    onClick={() => setSelectedAccountId(acc.accountId)}
+                                    className={`flex items-center justify-between p-3 rounded-xl border text-left transition-all ${selectedAccountId === acc.accountId ? 'border-accent bg-accent/5 ring-1 ring-accent' : 'hover:border-accent/40 bg-muted/20'}`}
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className={`p-2 rounded-lg ${selectedAccountId === acc.accountId ? 'bg-accent text-white' : 'bg-muted text-muted-foreground'}`}>
+                                            <CreditCard size={18} />
+                                        </div>
+                                        <div>
+                                            <div className="font-medium">{acc.name}</div>
+                                            <div className="text-xs text-muted-foreground">{acc.type} • {acc.currency}</div>
+                                        </div>
+                                    </div>
+                                    {selectedAccountId === acc.accountId && <div className="w-2 h-2 rounded-full bg-accent" />}
+                                </button>
+                            ))}
+                            <button
+                                onClick={() => setSelectedAccountId('new')}
+                                className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-all ${selectedAccountId === 'new' ? 'border-accent bg-accent/5 ring-1 ring-accent' : 'hover:border-accent/40 bg-muted/20'}`}
+                            >
+                                <div className={`p-2 rounded-lg ${selectedAccountId === 'new' ? 'bg-accent text-white' : 'bg-muted text-muted-foreground'}`}>
+                                    <Plus size={18} />
+                                </div>
+                                <div className="font-medium">Create New Account</div>
+                            </button>
+                        </div>
+                    </div>
+
+                    {selectedAccountId === 'new' && (
+                        <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
+                            <label className="text-sm font-semibold flex items-center gap-2">
+                                New Account Details
+                            </label>
+                            <div className="space-y-3 bg-muted/30 p-4 rounded-xl border">
+                                <div>
+                                    <label className="text-[10px] uppercase font-bold text-muted-foreground mb-1 block">Account Name</label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. Schwab Main, IBKR HK"
+                                        value={newAccountName}
+                                        onChange={e => setNewAccountName(e.target.value)}
+                                        className="w-full p-2 bg-background border rounded-lg focus:ring-1 ring-accent outline-none text-sm"
+                                    />
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="text-[10px] uppercase font-bold text-muted-foreground mb-1 block">Broker / Type</label>
+                                        <select
+                                            value={newAccountType}
+                                            onChange={e => setNewAccountType(e.target.value)}
+                                            className="w-full p-2 bg-background border rounded-lg focus:ring-1 ring-accent outline-none text-sm"
+                                        >
+                                            <option>Charles Schwab</option>
+                                            <option>IBKR</option>
+                                            <option>E*TRADE</option>
+                                            <option>Fidelity</option>
+                                            <option>Robinhood</option>
+                                            <option>Webull</option>
+                                            <option>MetaTrader</option>
+                                            <option>Custom</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] uppercase font-bold text-muted-foreground mb-1 block">Base Currency</label>
+                                        <select
+                                            value={newAccountCurrency}
+                                            onChange={e => setNewAccountCurrency(e.target.value)}
+                                            className="w-full p-2 bg-background border rounded-lg focus:ring-1 ring-accent outline-none text-sm font-medium"
+                                        >
+                                            <option value="USD">USD ($)</option>
+                                            <option value="HKD">HKD (HK$)</option>
+                                            <option value="EUR">EUR (€)</option>
+                                            <option value="GBP">GBP (£)</option>
+                                            <option value="CAD">CAD (C$)</option>
+                                            <option value="AUD">AUD (A$)</option>
+                                            <option value="SGD">SGD (S$)</option>
+                                            <option value="JPY">JPY (¥)</option>
+                                            <option value="INR">INR (₹)</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                {suggestedCurrency && suggestedCurrency !== newAccountCurrency && (
+                                    <p className="text-[10px] text-accent font-medium mt-1">
+                                        💡 Suggested {suggestedCurrency} based on your data.
+                                    </p>
+                                )}
+                            </div>
+                        </div>
                     )}
-                    <button
-                        onClick={onBack}
-                        disabled={isImporting}
-                        className="px-4 py-2 border rounded hover:bg-muted disabled:opacity-50"
-                    >
-                        Back
-                    </button>
-                    <button
-                        onClick={() => onConfirm(selectedTransactions)}
-                        disabled={isImporting || totalSelected === 0}
-                        className="px-6 py-2 bg-accent text-white rounded-lg hover:opacity-90 hover:shadow-lg active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 disabled:shadow-none font-semibold flex items-center gap-2"
-                    >
-                        {isImporting ? (
-                            <>
-                                <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                Importing...
-                            </>
-                        ) : (
-                            `Import ${totalSelected} Trades`
-                        )}
-                    </button>
+
+                    {selectedAccountId !== 'new' && selectedAccount && (
+                        <div className="flex items-center justify-center bg-muted/20 border border-dashed rounded-xl p-8 text-center">
+                            <div className="space-y-2">
+                                <Wallet size={32} className="mx-auto text-muted-foreground opacity-50" />
+                                <p className="text-sm text-muted-foreground max-w-xs">
+                                    Importing trades into your existing <strong>{selectedAccount.name}</strong> account ({selectedAccount.currency}).
+                                </p>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 

@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { Upload, PlayCircle } from 'lucide-react';
-import { getAllTransactions } from '@/lib/db/trades';
+import { getTransactionsByAccount } from '@/lib/db/trades';
 import { getTradeDateCutoff } from '@/lib/settings';
 import { aggregateByDay } from '@/lib/trading/aggregator';
 import {
@@ -17,6 +17,7 @@ import type { TransactionRecord } from '@/lib/db/schema';
 import ReplayTimeline from '@/components/replay/ReplayTimeline';
 import ReplayControls from '@/components/replay/ReplayControls';
 import ReplayStats from '@/components/replay/ReplayStats';
+import { useAccount } from '@/contexts/AccountContext';
 
 interface DayOption {
   date: string;
@@ -26,14 +27,22 @@ interface DayOption {
 }
 
 export default function ReplayPage() {
+  const { selectedAccountId } = useAccount();
   const [dayOptions, setDayOptions] = useState<DayOption[] | null>(null);
   const [selectedDate, setSelectedDate] = useState('');
   const prevVisibleCountRef = useRef(0);
 
-  // Load all transactions and build day options
+  // Load transactions and build day options based on active account
   useEffect(() => {
     async function load() {
-      const transactions = await getAllTransactions();
+      if (!selectedAccountId) {
+        setDayOptions([]);
+        return;
+      }
+
+      setDayOptions(null); // Show loading state on switch
+      const transactions = await getTransactionsByAccount(selectedAccountId);
+
       if (transactions.length === 0) {
         setDayOptions([]);
         return;
@@ -42,7 +51,7 @@ export default function ReplayPage() {
       const cutoff = getTradeDateCutoff();
       const summaries = aggregateByDay(transactions, cutoff);
 
-      // Group raw transactions by date (using effective date from aggregator)
+      // Group raw transactions by date
       const txByDate = new Map<string, TransactionRecord[]>();
       for (const day of summaries) {
         const dateTxns: TransactionRecord[] = [];
@@ -65,7 +74,7 @@ export default function ReplayPage() {
       }
     }
     load();
-  }, []);
+  }, [selectedAccountId]);
 
   // Get selected day's data
   const selectedDay = dayOptions?.find((d) => d.date === selectedDate);

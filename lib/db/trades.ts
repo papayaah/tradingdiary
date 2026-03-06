@@ -30,6 +30,11 @@ export async function importData(
   await tx.done;
 }
 
+export async function getAccounts(): Promise<AccountRecord[]> {
+  const db = await getDB();
+  return db.getAll('accounts');
+}
+
 export async function getAllTransactions(): Promise<TransactionRecord[]> {
   const db = await getDB();
   return db.getAll('transactions');
@@ -38,6 +43,11 @@ export async function getAllTransactions(): Promise<TransactionRecord[]> {
 export async function getTransactionCount(): Promise<number> {
   const db = await getDB();
   return db.count('transactions');
+}
+
+export async function getTransactionsByAccount(accountId: string): Promise<TransactionRecord[]> {
+  const db = await getDB();
+  return db.getAllFromIndex('transactions', 'by-accountId', accountId);
 }
 
 export async function clearAllData() {

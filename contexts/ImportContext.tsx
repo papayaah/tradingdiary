@@ -13,6 +13,7 @@ interface ImportState {
     previewTransactions: NormalizedTransaction[];
     importFile: File | null;
     isProcessing: boolean;
+    detectedCurrency: string | null;
     error: string | null;
 }
 
@@ -22,6 +23,7 @@ interface ImportContextType extends ImportState {
     setSideMap: (sideMap: SideValueMapping) => void;
     setPreviewTransactions: (txs: NormalizedTransaction[]) => void;
     setImportFile: (file: File | null) => void;
+    setDetectedCurrency: (currency: string | null) => void;
     updateData: (headers: string[], rows: any[]) => void;
     startProcessing: (task: () => Promise<void>) => Promise<void>;
     clearImportState: () => void;
@@ -40,6 +42,7 @@ export function ImportProvider({ children }: { children: React.ReactNode }) {
         previewTransactions: [],
         importFile: null,
         isProcessing: false,
+        detectedCurrency: null,
         error: null,
     });
 
@@ -72,6 +75,7 @@ export function ImportProvider({ children }: { children: React.ReactNode }) {
     const setSideMap = (sideMap: SideValueMapping) => setState(p => ({ ...p, sideMap }));
     const setPreviewTransactions = (txs: NormalizedTransaction[]) => setState(p => ({ ...p, previewTransactions: txs }));
     const setImportFile = (file: File | null) => setState(p => ({ ...p, importFile: file }));
+    const setDetectedCurrency = (currency: string | null) => setState(p => ({ ...p, detectedCurrency: currency }));
     const updateData = (headers: string[], rows: any[]) => setState(p => ({ ...p, headers, rows }));
     const setError = (error: string | null) => setState(p => ({ ...p, error }));
 
@@ -85,6 +89,7 @@ export function ImportProvider({ children }: { children: React.ReactNode }) {
             previewTransactions: [],
             importFile: null,
             isProcessing: false,
+            detectedCurrency: null,
             error: null,
         });
         localStorage.removeItem('import_flow_state_v2');
@@ -110,6 +115,7 @@ export function ImportProvider({ children }: { children: React.ReactNode }) {
         setSideMap,
         setPreviewTransactions,
         setImportFile,
+        setDetectedCurrency,
         updateData,
         startProcessing,
         clearImportState,
