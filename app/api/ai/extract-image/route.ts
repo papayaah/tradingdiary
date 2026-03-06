@@ -51,7 +51,9 @@ Rules:
   ]
 }
 4. Ensure all rows have the same keys as the headers.
-5. Do not include markdown formatting (backticks). just raw JSON.
+5. Standardize dates to YYYY-MM-DD. If year is missing, use current year (2026).
+6. Standardize times to HH:mm:ss. If seconds are missing, use :00.
+7. Do not include markdown formatting (backticks). just raw JSON.
 ` }
                 ],
             }],

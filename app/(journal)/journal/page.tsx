@@ -31,7 +31,10 @@ export default function JournalPage() {
       if (transactions.length > 0) {
         const agg = aggregateByDay(transactions, getTradeDateCutoff());
 
-        // ... prices logic remains same ...
+        // --- 1. SET INITIAL DATA IMMEDIATELY ---
+        setSummaries([...agg]);
+
+        // Fetch historical market prices for open positions
         const openSymbols = new Set<string>();
         let minDate = '';
         let maxDate = '';
@@ -54,13 +57,15 @@ export default function JournalPage() {
             const res = await fetch(`/api/quotes?${params}`);
             if (res.ok) {
               const prices = await res.json();
+
+              // --- 2. UPDATE WITH MARKET PRICES ---
               applyMarketPrices(agg, prices);
+              setSummaries([...agg]);
             }
           } catch {
             // Silently fail
           }
         }
-        setSummaries(agg);
       } else {
         setSummaries([]);
       }

@@ -58,7 +58,7 @@ export default function ReplayTimeline({
   const totalHeight = TOP_PADDING + symbolsHeight + PNL_AREA_HEIGHT + AXIS_HEIGHT;
 
   const timeToX = (seconds: number) => {
-    if (timeRange <= 0) return LEFT_LABEL_WIDTH;
+    if (isNaN(seconds) || timeRange <= 0) return LEFT_LABEL_WIDTH;
     const fraction = (seconds - startTimeSeconds) / timeRange;
     return LEFT_LABEL_WIDTH + fraction * timelineWidth;
   };
@@ -307,16 +307,18 @@ export default function ReplayTimeline({
         )}
 
         {/* Current time cursor */}
-        <line
-          x1={cursorX}
-          y1={TOP_PADDING}
-          x2={cursorX}
-          y2={TOP_PADDING + symbolsHeight + PNL_AREA_HEIGHT}
-          stroke="var(--accent)"
-          strokeWidth={2}
-          strokeDasharray="4 4"
-          opacity={0.7}
-        />
+        {!isNaN(cursorX) && (
+          <line
+            x1={cursorX}
+            y1={TOP_PADDING}
+            x2={cursorX}
+            y2={TOP_PADDING + symbolsHeight + PNL_AREA_HEIGHT}
+            stroke="var(--accent)"
+            strokeWidth={2}
+            strokeDasharray="4 4"
+            opacity={0.7}
+          />
+        )}
       </svg>
     </div>
   );

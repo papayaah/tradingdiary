@@ -17,6 +17,7 @@ import { useImport } from '@/contexts/ImportContext';
 import { detectCurrency } from '@/lib/import/currency-detector';
 import { AccountRecord } from '@/lib/db/schema';
 import { useState, useEffect } from 'react';
+import { normalizeDate, normalizeTime } from '@/lib/import/normalizer';
 
 export default function ImportPage() {
   const router = useRouter();
@@ -80,25 +81,6 @@ export default function ImportPage() {
         return val.trim().toUpperCase();
       };
 
-      const normalizeDate = (val: string | undefined): string => {
-        const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
-        if (!val) return today;
-        const clean = val.trim();
-        const digitsOnly = clean.replace(/[-/]/g, '');
-        if (/^\d{8}$/.test(digitsOnly)) return digitsOnly;
-        const isoMatch = clean.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
-        if (isoMatch) return `${isoMatch[1]}${isoMatch[2].padStart(2, '0')}${isoMatch[3].padStart(2, '0')}`;
-        const slashMatch = clean.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
-        if (slashMatch) {
-          let year = slashMatch[3];
-          let part1 = slashMatch[1].padStart(2, '0');
-          let part2 = slashMatch[2].padStart(2, '0');
-          if (parseInt(part1) > 12) return `${year}${part2}${part1}`;
-          return `${year}${part1}${part2}`;
-        }
-        return today;
-      };
-
       const rawSymbol = get('symbol');
       const companyName = get('companyName');
 
@@ -112,8 +94,8 @@ export default function ImportPage() {
       const total = get('totalValue') ? parseAmount(get('totalValue')) : undefined;
 
       return [{
-        date: normalizeDate(get('date')),
-        time: get('time') || '00:00:00',
+        date: normalizeDate(get('date') || new Date().toISOString().split('T')[0]),
+        time: normalizeTime(get('time') || '00:00:00'),
         symbol: symbol,
         side,
         quantity: Math.abs(qty),
@@ -172,11 +154,15 @@ export default function ImportPage() {
         const result = await extractFromImage(base64Image, llmConfig);
 
         if (result.usage && aiContext?.recordUsage) {
-          aiContext.recordUsage(llmConfig.provider || 'google', llmConfig.model || 'gemini-1.5-flash', {
-            inputTokens: result.usage.promptTokens,
-            outputTokens: result.usage.completionTokens,
-            totalTokens: result.usage.totalTokens
-          });
+          aiContext.recordUsage(
+            (llmConfig.provider as any) || 'google',
+            llmConfig.model || 'gemini-1.5-flash',
+            {
+              inputTokens: result.usage.promptTokens ?? 0,
+              outputTokens: result.usage.completionTokens ?? 0,
+              totalTokens: result.usage.totalTokens ?? 0
+            }
+          );
         }
         parsedHeaders = result.headers;
         parsedRows = result.rows;

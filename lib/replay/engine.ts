@@ -6,8 +6,13 @@ import type { TransactionRecord } from '../db/schema';
 // --- Utilities ---
 
 export function timeToSeconds(time: string): number {
-  const [h, m, s] = time.split(':').map(Number);
-  return h * 3600 + m * 60 + (s || 0);
+  if (!time) return 0;
+  const parts = time.split(':').map(Number);
+  if (parts.some(isNaN)) return 0;
+  const h = parts[0] || 0;
+  const m = parts[1] || 0;
+  const s = parts[2] || 0;
+  return h * 3600 + m * 60 + s;
 }
 
 export function secondsToTime(seconds: number): string {
