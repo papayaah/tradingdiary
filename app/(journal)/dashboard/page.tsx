@@ -188,14 +188,17 @@ export default function DashboardPage() {
   const { stats, summaries } = filteredData;
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
+    <div className="p-6 space-y-8 max-w-7xl mx-auto">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div>
+          <h1 className="text-3xl font-black text-foreground tracking-tight mb-1">Trading Dashboard</h1>
+          <p className="text-sm text-muted font-medium">Analyze your performance and trading patterns.</p>
+        </div>
 
-        <div className="flex flex-wrap items-center gap-2 bg-card-bg border border-card-border p-1.5 rounded-xl shadow-sm">
-          <div className="flex items-center gap-1.5 px-2 border-r border-card-border mr-1 text-muted">
-            <Filter size={14} />
-            <span className="text-xs font-medium uppercase tracking-wider">Range</span>
+        <div className="flex flex-wrap items-center gap-2 bg-card-bg/50 backdrop-blur-sm border border-card-border p-1.5 rounded-2xl shadow-sm">
+          <div className="flex items-center gap-1.5 px-3 border-r border-card-border mr-1 text-muted">
+            <Filter size={14} className="text-accent" />
+            <span className="text-[10px] font-bold uppercase tracking-widest">Time Range</span>
           </div>
 
           {[
@@ -209,8 +212,8 @@ export default function DashboardPage() {
             <button
               key={r.id}
               onClick={() => setRangeType(r.id)}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${rangeType === r.id
-                ? 'bg-accent text-white shadow-sm'
+              className={`px-4 py-2 text-[11px] font-bold rounded-xl transition-all duration-200 ${rangeType === r.id
+                ? 'bg-accent text-white shadow-lg shadow-accent/20'
                 : 'text-muted hover:text-foreground hover:bg-sidebar-hover'
                 }`}
             >
@@ -219,28 +222,54 @@ export default function DashboardPage() {
           ))}
 
           {rangeType === 'custom' && (
-            <div className="flex items-center gap-2 ml-2 pl-3 border-l border-card-border animate-in fade-in slide-in-from-left-2 duration-200">
+            <div className="flex items-center gap-2 ml-2 pl-3 border-l border-card-border animate-in fade-in slide-in-from-left-2 duration-300">
               <input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="bg-background border border-card-border rounded-md px-2 py-1 text-xs outline-none focus:border-accent"
+                className="bg-background/50 border border-card-border rounded-lg px-2 py-1.5 text-[11px] font-medium outline-none focus:border-accent transition-colors"
               />
-              <span className="text-muted text-[10px] uppercase font-bold">to</span>
+              <span className="text-muted text-[10px] uppercase font-black">to</span>
               <input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="bg-background border border-card-border rounded-md px-2 py-1 text-xs outline-none focus:border-accent"
+                className="bg-background/50 border border-card-border rounded-lg px-2 py-1.5 text-[11px] font-medium outline-none focus:border-accent transition-colors"
               />
             </div>
           )}
         </div>
       </div>
 
+      {/* Summary Stats Row */}
+      {(() => {
+        const totalPnL = stats.cumulativePnL.length > 0 ? stats.cumulativePnL[stats.cumulativePnL.length - 1].value : 0;
+        const totalTrades = stats.totalWins + stats.totalLosses;
+        const avgTrade = totalTrades > 0 ? totalPnL / totalTrades : 0;
+        const winRate = totalTrades > 0 ? (stats.totalWins / totalTrades) * 100 : 0;
+
+        return (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { label: 'Total P&L', value: totalPnL, prefix: '$', color: totalPnL >= 0 ? 'text-profit' : 'text-loss' },
+              { label: 'Win Rate', value: winRate, suffix: '%', color: 'text-accent' },
+              { label: 'Total Trades', value: totalTrades, color: 'text-foreground' },
+              { label: 'Avg Trade', value: avgTrade, prefix: '$', color: avgTrade >= 0 ? 'text-profit' : 'text-loss' },
+            ].map((s, i) => (
+              <div key={i} className="bg-card-bg/50 backdrop-blur-sm border border-card-border p-5 rounded-2xl shadow-sm hover:shadow-md transition-all">
+                <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-1">{s.label}</p>
+                <p className={`text-xl font-black ${s.color}`}>
+                  {s.prefix}{Math.abs(s.value).toLocaleString('en-US', { minimumFractionDigits: s.prefix ? 2 : 0, maximumFractionDigits: s.prefix ? 2 : 1 })}{s.suffix}
+                </p>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
       <MonthlyCalendar summaries={summaries} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <CumulativePnLChart data={stats.cumulativePnL} />
         </div>
@@ -251,7 +280,7 @@ export default function DashboardPage() {
         />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <ComparisonBar
           title="Hold Time Winning vs Losing Trades"
           winLabel="Winning"
