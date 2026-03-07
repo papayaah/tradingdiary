@@ -57,7 +57,6 @@ export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
 
   const [viewMonth, setViewMonth] = useState(defaultMonth);
 
-  // Sync viewMonth when data changes significantly (e.g. range selection)
   useEffect(() => {
     setViewMonth(defaultMonth);
   }, [defaultMonth]);
@@ -75,34 +74,27 @@ export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
     return { totalPnL, totalDays };
   }, [summaries]);
 
-  // Determine which months to show. 
-  // If the summaries span across 1-4 months, we show all of them.
-  // Otherwise we show the single month navigation view.
-  const monthsToShow = useMemo(() => {
-    if (summaries.length === 0) return [viewMonth];
+  // If a range is selected that spans 2-4 months, we show a single contiguous grid
+  const rangeInfo = useMemo(() => {
+    if (summaries.length === 0) return null;
 
-    const sortedDates = [...summaries].map(s => s.date).sort();
-    const firstDateStr = sortedDates[0];
-    const lastDateStr = sortedDates[sortedDates.length - 1];
+    const sortedByDateAsc = [...summaries].map(s => s.date).sort();
+    const firstStr = sortedByDateAsc[0];
+    const lastStr = sortedByDateAsc[sortedByDateAsc.length - 1];
 
-    const startMonth = new Date(parseInt(firstDateStr.substring(0, 4)), parseInt(firstDateStr.substring(4, 6)) - 1, 1);
-    const endMonth = new Date(parseInt(lastDateStr.substring(0, 4)), parseInt(lastDateStr.substring(4, 6)) - 1, 1);
+    const d1 = new Date(parseInt(firstStr.substring(0, 4)), parseInt(firstStr.substring(4, 6)) - 1, parseInt(firstStr.substring(6, 8)));
+    const d2 = new Date(parseInt(lastStr.substring(0, 4)), parseInt(lastStr.substring(4, 6)) - 1, parseInt(lastStr.substring(6, 8)));
 
-    const months: Date[] = [];
-    let cur = new Date(startMonth);
-    while (cur <= endMonth) {
-      months.push(new Date(cur));
-      cur.setMonth(cur.getMonth() + 1);
-      if (months.length > 5) break; // Limit to 5 to avoid explosion
+    // Calculate months span
+    const monthsSpan = (d2.getFullYear() - d1.getFullYear()) * 12 + (d2.getMonth() - d1.getMonth()) + 1;
+
+    // We only use the contiguous view if it spans 2-4 months or is specifically a short range.
+    // If it's more, stick to single month view with nav.
+    if (monthsSpan > 1 && monthsSpan <= 4) {
+      return { firstDate: d1, lastDate: d2, span: monthsSpan };
     }
-
-    if (months.length > 0 && months.length <= 4) {
-      return months.reverse(); // Newest first
-    }
-    return [viewMonth];
-  }, [summaries, viewMonth]);
-
-  const isMultiMonth = monthsToShow.length > 1;
+    return null;
+  }, [summaries]);
 
   const goToThisMonth = () => {
     const now = new Date();
@@ -118,7 +110,7 @@ export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
       <div className="rounded-xl border border-card-border bg-card-bg p-5 shadow-sm">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            {!isMultiMonth && (
+            {!rangeInfo && (
               <div className="flex items-center gap-1 mr-2">
                 <button
                   onClick={prevMonth}
@@ -135,16 +127,16 @@ export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
               </div>
             )}
             <h3 className="text-lg font-bold text-foreground">
-              {isMultiMonth ? (
+              {rangeInfo ? (
                 <span className="flex items-center gap-2">
-                  <span className="text-accent underline underline-offset-4 decoration-2">Range View</span>
-                  <span className="text-muted text-sm font-medium">({monthsToShow.length} months)</span>
+                  <span className="text-accent underline underline-offset-4 decoration-2">Contiguous View</span>
+                  <span className="text-muted text-sm font-medium">({rangeInfo.span} months)</span>
                 </span>
               ) : (
                 viewMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
               )}
             </h3>
-            {!isMultiMonth && (
+            {!rangeInfo && (
               <button
                 onClick={goToThisMonth}
                 className="ml-2 px-2.5 py-1 text-xs font-semibold rounded-lg border border-card-border text-muted hover:text-foreground hover:bg-sidebar-hover transition-all"
@@ -171,26 +163,107 @@ export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
         </div>
       </div>
 
-      {/* Month Grids */}
-      <div className="space-y-6">
-        {monthsToShow.map((dt) => (
-          <div key={dt.toISOString()} className="rounded-xl border border-card-border bg-card-bg p-5 shadow-sm">
-            {isMultiMonth && (
-              <div className="mb-4 pb-2 border-b border-card-border flex items-center justify-between">
-                <h4 className="font-bold text-foreground">
-                  {dt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-                </h4>
-              </div>
-            )}
-            <MonthView
-              year={dt.getFullYear()}
-              month={dt.getMonth()}
-              dataByDate={dataByDate}
-              onDayClick={(date) => router.push(`/journal?date=${date}`)}
-            />
-          </div>
-        ))}
+      <div className="rounded-xl border border-card-border bg-card-bg p-5 shadow-sm">
+        {rangeInfo ? (
+          <ContiguousRangeView
+            startDate={rangeInfo.firstDate}
+            endDate={rangeInfo.lastDate}
+            dataByDate={dataByDate}
+            onDayClick={(date) => router.push(`/journal?date=${date}`)}
+          />
+        ) : (
+          <MonthView
+            year={year}
+            month={month}
+            dataByDate={dataByDate}
+            onDayClick={(date) => router.push(`/journal?date=${date}`)}
+          />
+        )}
       </div>
+    </div>
+  );
+}
+
+interface ContiguousRangeViewProps {
+  startDate: Date;
+  endDate: Date;
+  dataByDate: Map<string, DayData>;
+  onDayClick: (date: string) => void;
+}
+
+function ContiguousRangeView({ startDate, endDate, dataByDate, onDayClick }: ContiguousRangeViewProps) {
+  const weeks = useMemo(() => {
+    // Start from the Sunday of the week containing the start date
+    const gridStart = new Date(startDate);
+    gridStart.setDate(startDate.getDate() - startDate.getDay());
+
+    const weeks: { days: GridDay[]; weekPnL: number; weekDays: number }[] = [];
+    let currentDate = new Date(gridStart);
+
+    // Keep adding weeks until we pass the end date
+    while (currentDate <= endDate || currentDate.getDay() !== 0) {
+      const week: GridDay[] = [];
+      let weekPnL = 0;
+      let weekDays = 0;
+
+      for (let d = 0; d < 7; d++) {
+        const dateStr = `${currentDate.getFullYear()}${String(currentDate.getMonth() + 1).padStart(2, '0')}${String(currentDate.getDate()).padStart(2, '0')}`;
+        const data = dataByDate.get(dateStr);
+
+        week.push({
+          date: dateStr,
+          dayNum: currentDate.getDate(),
+          isCurrentMonth: true, // Always true for contiguous view as we only show relevant range
+          isFirstOfMonth: currentDate.getDate() === 1,
+          monthName: currentDate.toLocaleDateString('en-US', { month: 'short' }),
+          data: data ?? null,
+        });
+
+        if (data) {
+          weekPnL += data.pnl;
+          weekDays++;
+        }
+        currentDate = new Date(currentDate);
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+      weeks.push({ days: week, weekPnL, weekDays });
+
+      // If we finished a week and we've passed the end date, stop.
+      if (currentDate > endDate) break;
+      if (weeks.length > 20) break; // Safety
+    }
+    return weeks;
+  }, [startDate, endDate, dataByDate]);
+
+  return (
+    <div className="grid grid-cols-[repeat(7,1fr)_auto] gap-px bg-card-border rounded-lg overflow-hidden border border-card-border shadow-inner">
+      {DAY_HEADERS.map((day) => (
+        <div key={day} className="bg-table-header-bg px-2 py-2 text-center text-[10px] font-bold text-muted uppercase tracking-widest">
+          {day}
+        </div>
+      ))}
+      <div className="bg-table-header-bg px-3 py-2 text-center text-[10px] font-bold text-muted uppercase tracking-widest">
+        Week
+      </div>
+
+      {weeks.map((week, wi) => (
+        <Fragment key={`wf-${wi}`}>
+          {week.days.map((day) => (
+            <DayCell
+              key={day.date}
+              day={day}
+              showMonthLabel={day.isFirstOfMonth}
+              onClick={() => onDayClick(day.date)}
+            />
+          ))}
+          <WeekSummary
+            key={`w${wi}`}
+            weekNum={wi + 1}
+            pnl={week.weekPnL}
+            days={week.weekDays}
+          />
+        </Fragment>
+      ))}
     </div>
   );
 }
@@ -224,6 +297,8 @@ function MonthView({ year, month, dataByDate, onDayClick }: MonthViewProps) {
           date: dateStr,
           dayNum: currentDate.getDate(),
           isCurrentMonth,
+          isFirstOfMonth: false,
+          monthName: '',
           data: data ?? null,
         });
 
@@ -277,10 +352,12 @@ interface GridDay {
   date: string;
   dayNum: number;
   isCurrentMonth: boolean;
+  isFirstOfMonth: boolean;
+  monthName: string;
   data: DayData | null;
 }
 
-function DayCell({ day, onClick }: { day: GridDay; onClick?: () => void }) {
+function DayCell({ day, showMonthLabel, onClick }: { day: GridDay; showMonthLabel?: boolean; onClick?: () => void }) {
   if (!day.isCurrentMonth) {
     return <div className="bg-background min-h-[90px] p-2 opacity-30" />;
   }
@@ -298,20 +375,30 @@ function DayCell({ day, onClick }: { day: GridDay; onClick?: () => void }) {
   return (
     <div
       onClick={onClick}
-      className={`${bgClass} min-h-[90px] p-2 flex flex-col cursor-pointer transition-colors group`}
+      className={`${bgClass} min-h-[95px] p-2 flex flex-col cursor-pointer transition-colors group relative`}
     >
-      <span className="text-xs text-muted self-end group-hover:text-foreground">{day.dayNum}</span>
+      <div className="flex justify-between items-start">
+        {showMonthLabel && (
+          <span className="text-[10px] font-black uppercase text-accent bg-accent/10 px-1 rounded">
+            {day.monthName}
+          </span>
+        )}
+        <span className="text-xs text-muted ml-auto group-hover:text-foreground font-medium">{day.dayNum}</span>
+      </div>
+
       {hasData && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-0.5">
+        <div className="flex-1 flex flex-col items-center justify-center gap-0.5 mt-1">
           <span className={`text-sm font-bold ${pnlColorClass(pnl)}`}>
             {formatPnLShort(pnl)}
           </span>
-          <span className="text-[10px] text-muted">
-            {day.data!.tradeCount} trade{day.data!.tradeCount !== 1 ? 's' : ''}
-          </span>
-          <span className="text-[10px] text-muted">
-            {day.data!.winRate.toFixed(0)}%
-          </span>
+          <div className="flex flex-col items-center leading-tight">
+            <span className="text-[9px] text-muted opacity-80">
+              {day.data!.tradeCount} trades
+            </span>
+            <span className="text-[9px] text-muted font-bold">
+              {day.data!.winRate.toFixed(0)}%
+            </span>
+          </div>
         </div>
       )}
     </div>
