@@ -341,10 +341,13 @@ export function applyMarketPrices(
 
       if (marketPrice == null) continue;
 
+      const multiplier = trade.transactions[0]?.multiplier || 1;
+      const currentMarketValue = marketPrice * multiplier;
+
       if (trade.side === 'LONG') {
-        trade.unrealizedPnL = (marketPrice - trade.openAvgCost) * Math.abs(trade.netQuantity);
+        trade.unrealizedPnL = (currentMarketValue - trade.openAvgCost) * Math.abs(trade.netQuantity);
       } else {
-        trade.unrealizedPnL = (trade.openAvgCost - marketPrice) * Math.abs(trade.netQuantity);
+        trade.unrealizedPnL = (trade.openAvgCost - currentMarketValue) * Math.abs(trade.netQuantity);
       }
     }
   }

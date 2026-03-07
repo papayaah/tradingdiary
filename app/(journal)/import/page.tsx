@@ -17,11 +17,14 @@ import { useImport } from '@/contexts/ImportContext';
 import { detectCurrency } from '@/lib/import/currency-detector';
 import { AccountRecord } from '@/lib/db/schema';
 import { useState, useEffect } from 'react';
+import { useAccount } from '@/contexts/AccountContext';
 import { normalizeDate, normalizeTime } from '@/lib/import/normalizer';
+import { Link as LinkIcon } from 'lucide-react';
 
 export default function ImportPage() {
   const router = useRouter();
   const aiContext = useAIManagementContextOptional();
+  const { refreshAccounts } = useAccount();
   const [accounts, setAccounts] = useState<AccountRecord[]>([]);
 
   const {
@@ -112,19 +115,42 @@ export default function ImportPage() {
 
   const handleData = (data: File | string, type: 'file' | 'text' | 'image') => {
     startProcessing(async () => {
+      let processedData = data;
+      let processedType = type;
+
+      // URL Detection Path
+      if (typeof data === 'string' && /^https?:\/\//i.test(data.trim())) {
+        try {
+          const url = data.trim();
+          const response = await fetch(`/api/fetch-url?url=${encodeURIComponent(url)}`);
+          if (!response.ok) throw new Error("Failed to fetch from URL");
+          const content = await response.text();
+
+          const filename = url.split('/').pop() || 'imported-data';
+          const fileToSave = new File([content], filename, { type: 'text/plain' });
+
+          processedData = fileToSave;
+          processedType = 'file';
+        } catch (err) {
+          setError("Could not fetch from URL. Make sure it's public.");
+          return;
+        }
+      }
+
       // TLG Quick Path
-      if (type !== 'image') {
+      if (processedType !== 'image') {
         let content = '';
-        if (data instanceof File) content = await data.text();
-        else content = data as string;
+        if (processedData instanceof File) content = await processedData.text();
+        else content = processedData as string;
 
         if (content.includes('ACT_INF|') && content.includes('STK_TRD|')) {
           const parsed = parseTLGFile(content);
           // For TLG, it specifies its own account usually, but we should make sure it has currency
           const tlgAccount = { ...parsed.account, currency: parsed.account.currency || 'USD' };
           await dbImportData(tlgAccount, parsed.transactions, parsed.positions);
-          const fileToSave = data instanceof File ? data : new File([content], 'pasted-import.tlg', { type: 'text/plain' });
+          const fileToSave = processedData instanceof File ? processedData : new File([content], 'pasted-import.tlg', { type: 'text/plain' });
           importFileToLibrary(fileToSave).catch(console.error);
+          await refreshAccounts(tlgAccount.accountId);
           toast.success("TLG Import Successful");
           router.push('/journal');
           return;
@@ -134,21 +160,21 @@ export default function ImportPage() {
       let parsedHeaders: string[] = [];
       let parsedRows: Record<string, string>[] = [];
 
-      if (data instanceof File) setImportFile(data);
-      else if (typeof data === 'string') {
-        const ext = type === 'image' ? 'png' : 'txt';
-        setImportFile(new File([data], `pasted-import.${ext}`, { type: type === 'image' ? 'image/png' : 'text/plain' }));
+      if (processedData instanceof File) setImportFile(processedData);
+      else if (typeof processedData === 'string') {
+        const ext = processedType === 'image' ? 'png' : 'txt';
+        setImportFile(new File([processedData], `pasted-import.${ext}`, { type: processedType === 'image' ? 'image/png' : 'text/plain' }));
       }
 
       const llmConfig = aiContext?.config?.customLLM;
 
-      if (type === 'image') {
+      if (processedType === 'image') {
         if (!llmConfig?.apiKey) throw new Error("API Key required for image import");
         let base64Image = '';
-        if (data instanceof File) {
+        if (processedData instanceof File) {
           const { fileToBase64 } = await import('@/lib/import/image-extractor');
-          base64Image = await fileToBase64(data);
-        } else base64Image = data;
+          base64Image = await fileToBase64(processedData);
+        } else base64Image = processedData;
 
         const { extractFromImage } = await import('@/lib/import/image-extractor');
         const result = await extractFromImage(base64Image, llmConfig);
@@ -168,8 +194,8 @@ export default function ImportPage() {
         parsedRows = result.rows;
       } else {
         let content = '';
-        if (data instanceof File) content = await data.text();
-        else content = data as string;
+        if (processedData instanceof File) content = await processedData.text();
+        else content = processedData as string;
         const result = await parseCSVOrText(content);
         parsedHeaders = result.headers;
         parsedRows = result.rows;
@@ -269,6 +295,7 @@ export default function ImportPage() {
         description: `Imported to account "${targetAccount.name}" (${targetAccount.currency})`,
       });
 
+      await refreshAccounts(targetAccountId);
       clearImportState();
       router.push('/journal');
     });
@@ -286,6 +313,45 @@ export default function ImportPage() {
       {step === 'upload' && (
         <div className="space-y-6">
           <DropZone onData={handleData} isProcessing={isProcessing} />
+
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-border" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground font-medium">Or</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 max-w-xl mx-auto w-full">
+            <div className="relative flex-1">
+              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-muted-foreground">
+                <LinkIcon size={18} />
+              </div>
+              <input
+                type="text"
+                placeholder="Paste a URL (e.g. from dropfile.dev)..."
+                className="w-full bg-muted/50 border border-border rounded-xl pl-11 pr-4 py-3 text-sm outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all font-medium"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const url = e.currentTarget.value.trim();
+                    if (url) handleData(url, 'text');
+                  }
+                }}
+              />
+            </div>
+            <button
+              className="px-6 py-3 bg-primary text-primary-foreground rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors shadow-sm"
+              onClick={(e) => {
+                const input = e.currentTarget.previousElementSibling?.querySelector('input') as HTMLInputElement;
+                const url = input?.value.trim();
+                if (url) handleData(url, 'text');
+              }}
+            >
+              Import URL
+            </button>
+          </div>
+
           {error && (
             <div className="p-4 bg-loss/10 border border-loss/20 rounded-lg text-loss text-sm text-center">
               {error}

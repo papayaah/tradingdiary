@@ -101,9 +101,9 @@ export default function DropZone({ onData, isProcessing }: DropZoneProps) {
           </div>
           <h3 className="text-xl font-medium">Drop files here or click to browse</h3>
           <p className="text-muted-foreground text-sm max-w-sm mx-auto">
-            Supports CSV, TSV, TXT, TLG (legacy), and Screenshots (PNG/JPG).
+            Supports CSV, TSV, TXT, TLG, URLs, and Screenshots (PNG/JPG).
             <br />
-            <span className="font-semibold text-foreground">Tip:</span> You can also <span className="keyboard-shortcut kbd">Ctrl+V</span> / <span className="keyboard-shortcut kbd">Cmd+V</span> to paste data directly!
+            <span className="font-semibold text-foreground">Tip:</span> You can also <span className="keyboard-shortcut kbd">Ctrl+V</span> / <span className="keyboard-shortcut kbd">Cmd+V</span> to paste data or a URL directly!
           </p>
         </div>
       )}

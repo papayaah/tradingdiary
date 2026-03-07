@@ -23,17 +23,24 @@ export function parseTLGFile(content: string): ParsedTLGFile {
         name: parts[2],
         type: parts[3],
         address: parts[4] || '',
+        currency: 'USD', // Default to USD, will be overridden by import page if needed
         importedAt: Date.now(),
       };
-    } else if (line.startsWith('STK_TRD|')) {
+    } else if (line.startsWith('STK_TRD|') || line.startsWith('FUT_TRD|')) {
       const parts = line.split('|');
+      let side = parts[5];
+      if (side === 'BUY') side = 'BUYTOOPEN';
+      else if (side === 'SELL') side = 'SELLTOCLOSE';
+      else if (side === 'BOT') side = 'BUYTOOPEN';
+      else if (side === 'SLD') side = 'SELLTOCLOSE';
+
       transactions.push({
         tradeId: parts[1],
         accountId: account?.accountId || '',
         symbol: parts[2],
         companyName: parts[3],
         exchanges: parts[4],
-        side: parts[5] as Side,
+        side: side as Side,
         orderType: parts[6],
         date: parts[7],
         time: parts[8],
@@ -45,7 +52,7 @@ export function parseTLGFile(content: string): ParsedTLGFile {
         commission: parseFloat(parts[14]),
         feeMultiplier: parseFloat(parts[15]),
       });
-    } else if (line.startsWith('STK_LOT|')) {
+    } else if (line.startsWith('STK_LOT|') || line.startsWith('FUT_LOT|')) {
       const parts = line.split('|');
       positions.push({
         accountId: parts[1],

@@ -8,7 +8,7 @@ interface AccountContextType {
     accounts: AccountRecord[];
     selectedAccountId: string | null;
     setSelectedAccountId: (id: string | null) => void;
-    refreshAccounts: () => Promise<void>;
+    refreshAccounts: (preferredAccountId?: string) => Promise<void>;
     isLoading: boolean;
 }
 
@@ -19,14 +19,17 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
 
-    const refreshAccounts = async () => {
+    const refreshAccounts = async (preferredAccountId?: string) => {
         setIsLoading(true);
         try {
             const accs = await getAccounts();
             setAccounts(accs);
 
-            // Try to restore from localStorage or pick first
-            if (accs.length > 0) {
+            // Try to select the preferred ID if given and exists
+            if (preferredAccountId && accs.some(a => a.accountId === preferredAccountId)) {
+                setSelectedAccountId(preferredAccountId);
+            } else if (accs.length > 0) {
+                // Otherwise try to restore from localStorage or pick first
                 const savedId = localStorage.getItem('selected_account_id');
                 const exists = accs.some(a => a.accountId === savedId);
                 if (savedId && exists) {

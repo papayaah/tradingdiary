@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, Fragment } from 'react';
+import { useState, useMemo, Fragment, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { DailySummary } from '@/lib/trading/aggregator';
@@ -30,21 +30,6 @@ interface DayData {
 
 export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
   const router = useRouter();
-  // Determine initial month from data (most recent)
-  const defaultMonth = useMemo(() => {
-    if (summaries.length === 0) return new Date();
-    const latest = summaries[0].date; // sorted desc
-    return new Date(
-      parseInt(latest.substring(0, 4)),
-      parseInt(latest.substring(4, 6)) - 1,
-      1
-    );
-  }, [summaries]);
-
-  const [viewMonth, setViewMonth] = useState(defaultMonth);
-
-  const year = viewMonth.getFullYear();
-  const month = viewMonth.getMonth();
 
   // Build lookup from summaries
   const dataByDate = useMemo(() => {
@@ -59,21 +44,172 @@ export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
     return map;
   }, [summaries]);
 
-  // Build calendar grid
-  const { weeks, monthStats } = useMemo(() => {
-    const firstDay = new Date(year, month, 1);
-    const startDow = firstDay.getDay(); // 0=Sun
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
+  // Determine initial month from data (most recent)
+  const defaultMonth = useMemo(() => {
+    if (summaries.length === 0) return new Date();
+    const latest = summaries[0].date; // sorted desc
+    return new Date(
+      parseInt(latest.substring(0, 4)),
+      parseInt(latest.substring(4, 6)) - 1,
+      1
+    );
+  }, [summaries]);
 
-    // Grid starts from the Sunday of the first week
-    const gridStart = new Date(year, month, 1 - startDow);
+  const [viewMonth, setViewMonth] = useState(defaultMonth);
 
-    const weeks: { days: GridDay[]; weekPnL: number; weekDays: number }[] = [];
+  // Sync viewMonth when data changes significantly (e.g. range selection)
+  useEffect(() => {
+    setViewMonth(defaultMonth);
+  }, [defaultMonth]);
+
+  const year = viewMonth.getFullYear();
+  const month = viewMonth.getMonth();
+
+  const rangeStats = useMemo(() => {
     let totalPnL = 0;
     let totalDays = 0;
+    for (const s of summaries) {
+      totalPnL += s.totalPnL;
+      totalDays++;
+    }
+    return { totalPnL, totalDays };
+  }, [summaries]);
+
+  // Determine which months to show. 
+  // If the summaries span across 1-4 months, we show all of them.
+  // Otherwise we show the single month navigation view.
+  const monthsToShow = useMemo(() => {
+    if (summaries.length === 0) return [viewMonth];
+
+    const sortedDates = [...summaries].map(s => s.date).sort();
+    const firstDateStr = sortedDates[0];
+    const lastDateStr = sortedDates[sortedDates.length - 1];
+
+    const startMonth = new Date(parseInt(firstDateStr.substring(0, 4)), parseInt(firstDateStr.substring(4, 6)) - 1, 1);
+    const endMonth = new Date(parseInt(lastDateStr.substring(0, 4)), parseInt(lastDateStr.substring(4, 6)) - 1, 1);
+
+    const months: Date[] = [];
+    let cur = new Date(startMonth);
+    while (cur <= endMonth) {
+      months.push(new Date(cur));
+      cur.setMonth(cur.getMonth() + 1);
+      if (months.length > 5) break; // Limit to 5 to avoid explosion
+    }
+
+    if (months.length > 0 && months.length <= 4) {
+      return months.reverse(); // Newest first
+    }
+    return [viewMonth];
+  }, [summaries, viewMonth]);
+
+  const isMultiMonth = monthsToShow.length > 1;
+
+  const goToThisMonth = () => {
+    const now = new Date();
+    setViewMonth(new Date(now.getFullYear(), now.getMonth(), 1));
+  };
+
+  const prevMonth = () => setViewMonth(new Date(year, month - 1, 1));
+  const nextMonth = () => setViewMonth(new Date(year, month + 1, 1));
+
+  return (
+    <div className="space-y-4">
+      {/* Global Header */}
+      <div className="rounded-xl border border-card-border bg-card-bg p-5 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            {!isMultiMonth && (
+              <div className="flex items-center gap-1 mr-2">
+                <button
+                  onClick={prevMonth}
+                  className="p-1.5 rounded-lg text-muted hover:text-foreground hover:bg-sidebar-hover transition-colors"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <button
+                  onClick={nextMonth}
+                  className="p-1.5 rounded-lg text-muted hover:text-foreground hover:bg-sidebar-hover transition-colors"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            )}
+            <h3 className="text-lg font-bold text-foreground">
+              {isMultiMonth ? (
+                <span className="flex items-center gap-2">
+                  <span className="text-accent underline underline-offset-4 decoration-2">Range View</span>
+                  <span className="text-muted text-sm font-medium">({monthsToShow.length} months)</span>
+                </span>
+              ) : (
+                viewMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+              )}
+            </h3>
+            {!isMultiMonth && (
+              <button
+                onClick={goToThisMonth}
+                className="ml-2 px-2.5 py-1 text-xs font-semibold rounded-lg border border-card-border text-muted hover:text-foreground hover:bg-sidebar-hover transition-all"
+              >
+                Go to Today
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-4 text-sm bg-muted-bg/50 px-4 py-2 rounded-xl border border-card-border/50">
+            <div className="flex flex-col items-end">
+              <span className="text-[10px] uppercase font-bold text-muted tracking-wider">Net Range P&L</span>
+              <span className={`font-bold text-lg leading-tight ${pnlColorClass(rangeStats.totalPnL)}`}>
+                {formatPnLShort(rangeStats.totalPnL)}
+              </span>
+            </div>
+            <div className="w-px h-8 bg-card-border" />
+            <div className="flex flex-col">
+              <span className="text-[10px] uppercase font-bold text-muted tracking-wider">Active Days</span>
+              <span className="font-bold text-lg leading-tight text-foreground">
+                {rangeStats.totalDays}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Month Grids */}
+      <div className="space-y-6">
+        {monthsToShow.map((dt) => (
+          <div key={dt.toISOString()} className="rounded-xl border border-card-border bg-card-bg p-5 shadow-sm">
+            {isMultiMonth && (
+              <div className="mb-4 pb-2 border-b border-card-border flex items-center justify-between">
+                <h4 className="font-bold text-foreground">
+                  {dt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                </h4>
+              </div>
+            )}
+            <MonthView
+              year={dt.getFullYear()}
+              month={dt.getMonth()}
+              dataByDate={dataByDate}
+              onDayClick={(date) => router.push(`/journal?date=${date}`)}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+interface MonthViewProps {
+  year: number;
+  month: number;
+  dataByDate: Map<string, DayData>;
+  onDayClick: (date: string) => void;
+}
+
+function MonthView({ year, month, dataByDate, onDayClick }: MonthViewProps) {
+  const weeks = useMemo(() => {
+    const firstDay = new Date(year, month, 1);
+    const startDow = firstDay.getDay();
+    const gridStart = new Date(year, month, 1 - startDow);
+    const weeks: { days: GridDay[]; weekPnL: number; weekDays: number }[] = [];
     let currentDate = new Date(gridStart);
 
-    // Build 5-6 weeks to cover the full month
     while (true) {
       const week: GridDay[] = [];
       let weekPnL = 0;
@@ -94,118 +230,45 @@ export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
         if (data && isCurrentMonth) {
           weekPnL += data.pnl;
           weekDays++;
-          totalPnL += data.pnl;
-          totalDays++;
         }
-
         currentDate = new Date(currentDate);
         currentDate.setDate(currentDate.getDate() + 1);
       }
-
       weeks.push({ days: week, weekPnL, weekDays });
-
-      // Stop if we've passed the end of the month
       if (currentDate.getMonth() !== month && currentDate.getDate() > 1) break;
-      // Safety: max 6 weeks
       if (weeks.length >= 6) break;
     }
-
-    return { weeks, monthStats: { totalPnL, totalDays } };
+    return weeks;
   }, [year, month, dataByDate]);
 
-  const monthLabel = viewMonth.toLocaleDateString('en-US', {
-    month: 'long',
-    year: 'numeric',
-  });
-
-  const goToThisMonth = () => {
-    const now = new Date();
-    setViewMonth(new Date(now.getFullYear(), now.getMonth(), 1));
-  };
-
-  const prevMonth = () => setViewMonth(new Date(year, month - 1, 1));
-  const nextMonth = () => setViewMonth(new Date(year, month + 1, 1));
-
   return (
-    <div className="rounded-xl border border-card-border bg-card-bg p-5">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={prevMonth}
-            className="p-1.5 rounded-lg text-muted hover:text-foreground hover:bg-sidebar-hover transition-colors"
-          >
-            <ChevronLeft size={16} />
-          </button>
-          <h3 className="text-base font-semibold text-foreground min-w-[160px] text-center">
-            {monthLabel}
-          </h3>
-          <button
-            onClick={nextMonth}
-            className="p-1.5 rounded-lg text-muted hover:text-foreground hover:bg-sidebar-hover transition-colors"
-          >
-            <ChevronRight size={16} />
-          </button>
-          <button
-            onClick={goToThisMonth}
-            className="ml-2 px-2.5 py-1 text-xs rounded-md border border-card-border text-muted hover:text-foreground hover:bg-sidebar-hover transition-colors"
-          >
-            This month
-          </button>
+    <div className="grid grid-cols-[repeat(7,1fr)_auto] gap-px bg-card-border rounded-lg overflow-hidden border border-card-border shadow-inner">
+      {DAY_HEADERS.map((day) => (
+        <div key={day} className="bg-table-header-bg px-2 py-2 text-center text-[10px] font-bold text-muted uppercase tracking-widest">
+          {day}
         </div>
-        <div className="flex items-center gap-3 text-sm">
-          <span className="text-muted">Monthly stats:</span>
-          <span
-            className={`font-bold px-2 py-0.5 rounded ${monthStats.totalPnL > 0
-              ? 'bg-profit/15 text-profit'
-              : monthStats.totalPnL < 0
-                ? 'bg-loss/15 text-loss'
-                : 'text-muted'
-              }`}
-          >
-            {formatPnLShort(monthStats.totalPnL)}
-          </span>
-          <span className="text-muted">
-            {monthStats.totalDays} day{monthStats.totalDays !== 1 ? 's' : ''}
-          </span>
-        </div>
+      ))}
+      <div className="bg-table-header-bg px-3 py-2 text-center text-[10px] font-bold text-muted uppercase tracking-widest">
+        Week
       </div>
 
-      {/* Grid */}
-      <div className="grid grid-cols-[repeat(7,1fr)_auto] gap-px bg-card-border rounded-lg overflow-hidden">
-        {/* Day headers */}
-        {DAY_HEADERS.map((day) => (
-          <div
-            key={day}
-            className="bg-table-header-bg px-2 py-2 text-center text-xs font-medium text-muted uppercase"
-          >
-            {day}
-          </div>
-        ))}
-        {/* Week summary header */}
-        <div className="bg-table-header-bg px-3 py-2 text-center text-xs font-medium text-muted uppercase">
-          Week
-        </div>
-
-        {/* Weeks */}
-        {weeks.map((week, wi) => (
-          <Fragment key={`wf-${wi}`}>
-            {week.days.map((day) => (
-              <DayCell
-                key={day.date}
-                day={day}
-                onClick={() => router.push(`/journal?date=${day.date}`)}
-              />
-            ))}
-            <WeekSummary
-              key={`w${wi}`}
-              weekNum={wi + 1}
-              pnl={week.weekPnL}
-              days={week.weekDays}
+      {weeks.map((week, wi) => (
+        <Fragment key={`wf-${wi}`}>
+          {week.days.map((day) => (
+            <DayCell
+              key={day.date}
+              day={day}
+              onClick={() => onDayClick(day.date)}
             />
-          </Fragment>
-        ))}
-      </div>
+          ))}
+          <WeekSummary
+            key={`w${wi}`}
+            weekNum={wi + 1}
+            pnl={week.weekPnL}
+            days={week.weekDays}
+          />
+        </Fragment>
+      ))}
     </div>
   );
 }
