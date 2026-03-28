@@ -1,7 +1,12 @@
 import { useState, useMemo, useEffect } from 'react';
 import { NormalizedTransaction } from '@/lib/import/types';
 import { AccountRecord } from '@/lib/db/schema';
-import { CreditCard, Plus, Wallet } from 'lucide-react';
+import { CreditCard, Plus, Wallet, TrendingUp, TrendingDown, Activity, BarChart3, Info, Calendar } from 'lucide-react';
+import { toTransactionRecords } from '@/lib/import/converter';
+import { aggregateByDay } from '@/lib/trading/aggregator';
+import { formatCurrency } from '@/lib/currency';
+import ReplayTimeline from '@/components/replay/ReplayTimeline';
+import { computePnLTimeline, timeToSeconds } from '@/lib/replay/engine';
 
 interface ImportPreviewProps {
     transactions: NormalizedTransaction[];
@@ -72,12 +77,78 @@ export default function ImportPreview({
 
     // Calculate summary stats
     const totalSelected = selectedTransactions.length;
-    const symbols = Array.from(new Set(selectedTransactions.map(t => t.symbol)));
+    const symbols = Array.from(new Set(selectedTransactions.map((t: NormalizedTransaction) => t.symbol)));
     const dateRange = selectedTransactions.length > 0
         ? `${selectedTransactions[0].date} — ${selectedTransactions[selectedTransactions.length - 1].date}`
         : 'None';
 
     const selectedAccount = accounts.find(a => a.accountId === selectedAccountId);
+
+    // Group selected transactions into a daily summary for "Insights"
+    const insights = useMemo(() => {
+        if (selectedTransactions.length === 0) return null;
+        try {
+            const records = toTransactionRecords(selectedTransactions, 'preview', selectedAccount?.currency || 'USD');
+            const summaries = aggregateByDay(records, null);
+            if (summaries.length === 0) return null;
+
+            // If multi-day, aggregate the summaries
+            const totalPnL = summaries.reduce((s, d) => s + d.totalPnL, 0);
+            const totalVolume = summaries.reduce((s, d) => s + d.totalVolume, 0);
+            const totalCommissions = summaries.reduce((s, d) => s + d.totalCommissions, 0);
+            const winCount = summaries.reduce((s, d) => s + d.winCount, 0);
+            const lossCount = summaries.reduce((s, d) => s + d.lossCount, 0);
+            const totalTrades = winCount + lossCount;
+            const winRate = totalTrades > 0 ? (winCount / totalTrades) * 100 : 0;
+
+            return {
+                totalPnL,
+                totalVolume,
+                totalCommissions,
+                winRate,
+                totalTrades,
+                summaries
+            };
+        } catch (e) {
+            console.error("Failed to compute preview insights", e);
+            return null;
+        }
+    }, [selectedTransactions, selectedAccount]);
+
+    // Compute Timeline Data for the visual playback
+    const timelineData = useMemo(() => {
+        if (!insights || selectedTransactions.length === 0) return null;
+        try {
+            const txns = toTransactionRecords(selectedTransactions, 'preview', selectedAccount?.currency || 'USD');
+            const sorted = [...txns].sort((a, b) => timeToSeconds(a.time) - timeToSeconds(b.time));
+
+            if (sorted.length === 0) return null;
+
+            const times = sorted.map(t => timeToSeconds(t.time));
+            const min = Math.min(...times);
+            const max = Math.max(...times);
+
+            const seen = new Set<string>();
+            const symbols: string[] = [];
+            for (const t of sorted) {
+                if (!seen.has(t.symbol)) {
+                    seen.add(t.symbol);
+                    symbols.push(t.symbol);
+                }
+            }
+
+            return {
+                transactions: sorted,
+                symbols,
+                startTime: Math.max(0, min - 900), // 15m buffer
+                endTime: Math.min(86400, max + 900),  // 15m buffer
+                snapshots: computePnLTimeline(sorted)
+            };
+        } catch (e) {
+            console.error("Timeline computation failed", e);
+            return null;
+        }
+    }, [insights, selectedTransactions, selectedAccount]);
 
     return (
         <div className="space-y-6">
@@ -126,6 +197,76 @@ export default function ImportPreview({
                         </button>
                     </div>
                 </div>
+
+                {insights && (
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-xl border border-dashed animate-in fade-in duration-500">
+                        <div className="space-y-1">
+                            <span className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1.5">
+                                <Activity size={12} className="text-accent" />
+                                Est. Net P&L
+                            </span>
+                            <div className={`text-xl font-black ${insights.totalPnL >= 0 ? 'text-profit' : 'text-loss'}`}>
+                                {formatCurrency(insights.totalPnL, selectedAccount?.currency || 'USD')}
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            <span className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1.5">
+                                <BarChart3 size={12} className="text-accent" />
+                                Win Rate
+                            </span>
+                            <div className="text-xl font-black text-foreground">
+                                {insights.winRate.toFixed(1)}%
+                                <span className="text-[10px] text-muted-foreground ml-2 font-medium">({insights.totalTrades} trades)</span>
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            <span className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1.5">
+                                <TrendingUp size={12} className="text-accent" />
+                                Total Volume
+                            </span>
+                            <div className="text-xl font-black text-foreground">
+                                {insights.totalVolume.toLocaleString()}
+                                <span className="text-[10px] text-muted-foreground ml-2 font-medium">shares</span>
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            <span className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1.5">
+                                <TrendingDown size={12} className="text-accent" />
+                                Commissions
+                            </span>
+                            <div className="text-xl font-black text-muted-foreground">
+                                {formatCurrency(insights.totalCommissions, selectedAccount?.currency || 'USD')}
+                            </div>
+                        </div>
+                        <div className="col-span-full pt-2 flex items-start gap-2 text-[10px] text-muted-foreground italic">
+                            <Info size={12} className="mt-0.5 shrink-0" />
+                            <span>These calculations use your current position tracking logic to estimate performance. Results may vary once imported into the full account history.</span>
+                        </div>
+                    </div>
+                )}
+
+                {timelineData && (
+                    <div className="bg-card-bg/30 border border-card-border p-5 rounded-2xl shadow-inner mt-4 overflow-hidden animate-in zoom-in-95 duration-700">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest flex items-center gap-2">
+                                <Activity size={12} className="text-accent" />
+                                Session Activity Preview
+                            </h3>
+                            <div className="text-[10px] font-bold text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-full">
+                                {timelineData.symbols.length} Tickers Active
+                            </div>
+                        </div>
+                        <ReplayTimeline
+                            transactions={timelineData.transactions}
+                            symbols={timelineData.symbols}
+                            currentTimeSeconds={timelineData.endTime}
+                            startTimeSeconds={timelineData.startTime}
+                            endTimeSeconds={timelineData.endTime}
+                            snapshots={timelineData.snapshots}
+                            prevVisibleCount={timelineData.transactions.length}
+                        />
+                    </div>
+                )}
 
                 <div className="pt-4 border-t grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="space-y-3">

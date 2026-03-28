@@ -19,12 +19,12 @@ interface StatCardProps {
 
 function StatCard({ label, value, locked, colorClass }: StatCardProps) {
   return (
-    <div className="flex flex-col gap-1">
-      <span className="text-xs text-muted">{label}</span>
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[9px] font-bold text-muted uppercase tracking-wider">{label}</span>
       {locked ? (
-        <Lock size={14} className="text-muted" />
+        <Lock size={12} className="text-muted/40" />
       ) : (
-        <span className={`text-sm font-semibold ${colorClass || 'text-foreground'}`}>
+        <span className={`text-[13px] font-black ${colorClass || 'text-foreground'}`}>
           {value}
         </span>
       )}
@@ -37,19 +37,13 @@ export default function DayStats({ summary, currency = 'USD' }: DayStatsProps) {
     ? ((summary.winCount / (summary.winCount + summary.lossCount)) * 100).toFixed(0) + '%'
     : '-';
 
-  const totalUnrealized = summary.trades.reduce(
-    (sum, t) => sum + (t.unrealizedPnL ?? 0), 0
-  );
-  const hasUnrealized = summary.trades.some((t) => t.unrealizedPnL != null);
-  const combinedPnL = summary.netPnL + totalUnrealized;
-
   return (
-    <div className="grid grid-cols-3 md:grid-cols-6 gap-4 px-5 py-4 bg-card-bg border-b border-card-border">
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-x-8 gap-y-3 px-6 py-3 bg-card-bg border-b border-card-border">
       <StatCard label="Total Trades" value={summary.totalTrades.toString()} />
       <StatCard label="Total Volume" value={formatVolume(summary.totalVolume)} />
       <StatCard label="Win %" value={winPct} />
       <StatCard
-        label="Commissions/Fees"
+        label="Commissions"
         value={formatCurrency(summary.totalCommissions, currency)}
         colorClass="text-loss"
       />
@@ -60,7 +54,7 @@ export default function DayStats({ summary, currency = 'USD' }: DayStatsProps) {
       />
       {summary.totalPnL !== summary.netPnL ? (
         <StatCard
-          label="Total P&L (Inc. Unrealized)"
+          label="Total (Inc. Unrl)"
           value={formatCurrency(summary.totalPnL, currency)}
           colorClass={pnlColorClass(summary.totalPnL)}
         />

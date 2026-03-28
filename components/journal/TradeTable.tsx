@@ -31,16 +31,16 @@ export default function TradeTable({ trades, accountId, currency = 'USD' }: Trad
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-table-header-bg text-muted text-xs uppercase tracking-wider">
-              <th className="w-8 px-2 py-2.5" />
-              <th className="text-left px-5 py-2.5 font-medium">Time</th>
-              <th className="text-left px-5 py-2.5 font-medium">Symbol</th>
-              <th className="text-left px-5 py-2.5 font-medium">Side</th>
-              <th className="text-right px-5 py-2.5 font-medium">Volume</th>
-              <th className="text-right px-5 py-2.5 font-medium">Execs</th>
-              <th className="text-right px-5 py-2.5 font-medium">P&L</th>
-              <th className="text-left px-5 py-2.5 font-medium">Notes</th>
-              <th className="text-left px-5 py-2.5 font-medium">Tags</th>
+            <tr className="bg-table-header-bg text-muted text-[10px] uppercase font-bold tracking-tight">
+              <th className="w-8 px-2 py-2" />
+              <th className="text-left px-5 py-2 font-bold">Time</th>
+              <th className="text-left px-5 py-2 font-bold">Symbol</th>
+              <th className="text-left px-5 py-2 font-bold">Side</th>
+              <th className="text-right px-5 py-2 font-bold">Volume</th>
+              <th className="text-right px-5 py-2 font-bold">Execs</th>
+              <th className="text-right px-5 py-2 font-bold">P&L</th>
+              <th className="text-left px-5 py-2 font-bold">Notes</th>
+              <th className="text-left px-5 py-2 font-bold">Tags</th>
             </tr>
           </thead>
           <tbody>

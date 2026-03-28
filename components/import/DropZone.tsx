@@ -18,6 +18,13 @@ export default function DropZone({ onData, isProcessing }: DropZoneProps) {
     dropzoneRef.current?.focus();
   }, []);
 
+  // Reset paste detected when isProcessing finishes
+  useEffect(() => {
+    if (!isProcessing) {
+      setPasteDetected(false);
+    }
+  }, [isProcessing]);
+
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
       const file = acceptedFiles[0];
@@ -32,6 +39,8 @@ export default function DropZone({ onData, isProcessing }: DropZoneProps) {
 
   const { getRootProps, getInputProps } = useDropzone({
     onDrop,
+    onDragEnter: () => setIsDragActive(true),
+    onDragLeave: () => setIsDragActive(false),
     accept: {
       'text/csv': ['.csv'],
       'text/plain': ['.txt', '.tsv'],
@@ -40,9 +49,13 @@ export default function DropZone({ onData, isProcessing }: DropZoneProps) {
     }
   });
 
-  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+  const handlePaste = useCallback((e: ClipboardEvent | React.ClipboardEvent) => {
+    // Determine clipboard data source
+    const clipboardData = (e as ClipboardEvent).clipboardData || (e as React.ClipboardEvent).clipboardData;
+    if (!clipboardData) return;
+
     // 1. Check for image
-    const items = Array.from(e.clipboardData.items);
+    const items = Array.from(clipboardData.items);
     const imageItem = items.find(item => item.type.startsWith('image/'));
 
     if (imageItem) {
@@ -55,12 +68,30 @@ export default function DropZone({ onData, isProcessing }: DropZoneProps) {
     }
 
     // 2. Check for text
-    const text = e.clipboardData.getData('text/plain');
+    const text = clipboardData.getData('text/plain');
     if (text && text.trim().length > 0) {
       setPasteDetected(true);
       onData(text, 'text');
     }
   }, [onData]);
+
+  // Global paste listener to catch pastes even if dropzone isn't perfectly focused
+  useEffect(() => {
+    const handleGlobalPaste = (e: ClipboardEvent) => {
+      // Don't intercept if focus is in an input/textarea that is NOT the dropzone
+      const isInput = document.activeElement?.tagName === 'INPUT' || 
+                      document.activeElement?.tagName === 'TEXTAREA';
+      
+      // If it's a file input (like the dropzone's internal one), we DO want to catch it if it was triggered by paste
+      // But typically we want to catch global pastes when the user is just "on the page"
+      if (isInput && document.activeElement !== dropzoneRef.current) return;
+      
+      handlePaste(e);
+    };
+
+    window.addEventListener('paste', handleGlobalPaste);
+    return () => window.removeEventListener('paste', handleGlobalPaste);
+  }, [handlePaste]);
 
   const rootProps = getRootProps();
 
@@ -77,33 +108,35 @@ export default function DropZone({ onData, isProcessing }: DropZoneProps) {
         (dropzoneRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
       }}
       tabIndex={0}
-      onPaste={handlePaste}
+      onPaste={(e) => handlePaste(e as any)}
       className={`
         border-2 border-dashed rounded-xl p-12 text-center transition-colors cursor-pointer outline-none
-        ${(isProcessing || pasteDetected) ? 'border-primary bg-primary/10' : isDragActive ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-muted/50'}
+        ${(isProcessing || pasteDetected) ? 'border-primary bg-primary/10 shadow-[0_0_20px_-5px_rgba(var(--primary-rgb),0.3)]' : isDragActive ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-muted/50'}
       `}
     >
       <input {...getInputProps()} />
       {(isProcessing || pasteDetected) ? (
         <div className="space-y-4">
-          <div className="flex justify-center text-4xl mb-4">
+          <div className="flex justify-center text-4xl mb-4 animate-bounce">
             {isProcessing ? '⏳' : '📋'}
           </div>
-          <h3 className="text-xl font-medium text-primary">
-            {isProcessing ? 'Analyzing Data...' : 'Paste received!'}
+          <h3 className="text-xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+            {isProcessing ? 'Analyzing Data...' : 'Paste Received!'}
           </h3>
-          <p className="text-muted-foreground text-sm animate-pulse">This will only take a moment</p>
+          <p className="text-muted text-sm italic">This takes about 10-15 seconds for images</p>
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="flex justify-center text-4xl mb-4">
-            📄 🖼️
+          <div className="flex justify-center text-5xl mb-4 group-hover:scale-110 transition-transform">
+            📄 <span className="mx-2 opacity-50">/</span> 🖼️
           </div>
-          <h3 className="text-xl font-medium">Drop files here or click to browse</h3>
-          <p className="text-muted-foreground text-sm max-w-sm mx-auto">
-            Supports CSV, TSV, TXT, TLG, URLs, and Screenshots (PNG/JPG).
+          <h3 className="text-xl font-bold">Drop files here or click to browse</h3>
+          <p className="text-muted text-sm max-w-sm mx-auto leading-relaxed">
+            Supports <span className="text-foreground font-semibold">CSV, TSV, TXT, TLG, eSignal</span>, URLs, and <span className="text-foreground font-semibold">Screenshots</span> (PNG/JPG).
             <br />
-            <span className="font-semibold text-foreground">Tip:</span> You can also <span className="keyboard-shortcut kbd">Ctrl+V</span> / <span className="keyboard-shortcut kbd">Cmd+V</span> to paste data or a URL directly!
+            <span className="inline-block mt-3 px-3 py-1 bg-muted/50 rounded-lg border border-border">
+              <span className="font-semibold text-foreground">Tip:</span> Just <span className="keyboard-shortcut kbd">Cmd+V</span> anywhere to paste!
+            </span>
           </p>
         </div>
       )}

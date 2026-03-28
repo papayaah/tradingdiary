@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
         // Use the user's configured provider and model
         const model = await createVercelAIModel({
             provider: provider as any,
-            model: modelId || 'gemini-2.5-flash',
+            model: modelId || 'gemini-2.0-flash',
             apiKey,
         });
 

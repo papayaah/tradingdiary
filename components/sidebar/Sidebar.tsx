@@ -13,7 +13,8 @@ import {
   TrendingUp,
   Settings,
   Wallet,
-  ChevronDown
+  ChevronDown,
+  PieChart
 } from 'lucide-react';
 import { useImport } from '@/contexts/ImportContext';
 import { useAccount } from '@/contexts/AccountContext';
@@ -25,6 +26,7 @@ interface SidebarProps {
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/portfolio', label: 'Portfolio', icon: PieChart },
   { href: '/journal', label: 'Journal', icon: BookOpen },
   { href: '/replay', label: 'Replay', icon: Play },
   { href: '/import', label: 'Import', icon: Upload },

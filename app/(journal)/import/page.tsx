@@ -10,6 +10,7 @@ import { parseCSVOrText } from '@/lib/import/csv-extractor';
 import { mapColumnsWithLLM } from '@/lib/import/llm-mapper';
 import { mapColumnsOffline } from '@/lib/import/alias-mapper';
 import { parseTLGFile } from '@/lib/parser/tlg-parser';
+import { parseESignalTradeLog } from '@/lib/import/esignal-parser';
 import { getAccounts, importData as dbImportData } from '@/lib/db/trades';
 import { NormalizedTransaction, ColumnMapping, SideValueMapping } from '@/lib/import/types';
 import { importFileToLibrary } from '@/packages/react-media-library/src/services/storage';
@@ -67,12 +68,15 @@ export default function ImportPage() {
       };
 
       const rawSide = get('side');
+      const qty = parseAmount(get('quantity'));
       let side: 'BUY' | 'SELL' = 'BUY';
-      if (rawSide) {
+      if (rawSide && rawSide.trim()) {
         const s = rawSide.trim();
         if (currentSideMap[s]) side = currentSideMap[s];
         else if (/buy|long|b/i.test(s)) side = 'BUY';
         else if (/sell|short|s/i.test(s)) side = 'SELL';
+      } else if (qty < 0) {
+        side = 'SELL';
       }
 
       const cleanSymbol = (val: string | undefined): string => {
@@ -91,7 +95,6 @@ export default function ImportPage() {
       if (companyName && /total\b|grand\s*total|all\s*assets/i.test(companyName)) return [];
 
       const symbol = cleanSymbol(rawSymbol);
-      const qty = parseAmount(get('quantity'));
       const price = parseAmount(get('price'));
       const pnl = parseAmount(get('realizedPnL'));
       const total = get('totalValue') ? parseAmount(get('totalValue')) : undefined;
@@ -124,13 +127,18 @@ export default function ImportPage() {
           const url = data.trim();
           const response = await fetch(`/api/fetch-url?url=${encodeURIComponent(url)}`);
           if (!response.ok) throw new Error("Failed to fetch from URL");
-          const content = await response.text();
-
-          const filename = url.split('/').pop() || 'imported-data';
-          const fileToSave = new File([content], filename, { type: 'text/plain' });
-
-          processedData = fileToSave;
-          processedType = 'file';
+          
+          const contentType = response.headers.get('content-type') || '';
+          if (contentType.startsWith('image/')) {
+            const blob = await response.blob();
+            processedData = new File([blob], url.split('/').pop() || 'image', { type: contentType });
+            processedType = 'image';
+          } else {
+            const content = await response.text();
+            const filename = url.split('/').pop() || 'imported-data';
+            processedData = new File([content], filename, { type: 'text/plain' });
+            processedType = 'file';
+          }
         } catch (err) {
           setError("Could not fetch from URL. Make sure it's public.");
           return;
@@ -145,15 +153,53 @@ export default function ImportPage() {
 
         if (content.includes('ACT_INF|') && content.includes('STK_TRD|')) {
           const parsed = parseTLGFile(content);
-          // For TLG, it specifies its own account usually, but we should make sure it has currency
-          const tlgAccount = { ...parsed.account, currency: parsed.account.currency || 'USD' };
-          await dbImportData(tlgAccount, parsed.transactions, parsed.positions);
+          
+          // Map to NormalizedTransaction for preview consistency
+          const normalized: NormalizedTransaction[] = parsed.transactions.map(t => ({
+            symbol: t.symbol,
+            side: t.side.startsWith('BUY') ? 'BUY' : 'SELL',
+            date: t.date,
+            time: t.time,
+            quantity: Math.abs(t.quantity),
+            price: Math.abs(t.price),
+            orderId: t.tradeId,
+            companyName: t.companyName || t.symbol,
+            currency: t.currency || 'USD',
+            commission: t.commission,
+            totalValue: t.totalValue
+          }));
+
+          setPreviewTransactions(normalized);
+          setStep('preview');
+          
+          if (parsed.account.currency) setDetectedCurrency(parsed.account.currency);
+
           const fileToSave = processedData instanceof File ? processedData : new File([content], 'pasted-import.tlg', { type: 'text/plain' });
           importFileToLibrary(fileToSave).catch(console.error);
-          await refreshAccounts(tlgAccount.accountId);
-          toast.success("TLG Import Successful");
-          router.push('/journal');
           return;
+        }
+
+        // eSignal Trade Log Quick Path
+        if (content.includes('"Timestamp";"Category"') && content.includes('"Symbol"')) {
+          try {
+            const transactions = await parseESignalTradeLog(content);
+            if (transactions.length > 0) {
+              setPreviewTransactions(transactions);
+              setStep('preview');
+              
+              const fileToSave = processedData instanceof File ? processedData : new File([content], 'esignal-import.csv', { type: 'text/csv' });
+              importFileToLibrary(fileToSave).catch(console.error);
+              
+              // Try to find account ID in the log if possible
+              const firstWithAccount = transactions.find(t => (t as any).accountId);
+              // We could pre-select the account in preview, but the preview component handles it.
+              
+              return;
+            }
+          } catch (err) {
+            console.error("eSignal parsing failed, falling back to generic CSV:", err);
+            // Fall back to generic CSV logic below
+          }
         }
       }
 
@@ -166,23 +212,30 @@ export default function ImportPage() {
         setImportFile(new File([processedData], `pasted-import.${ext}`, { type: processedType === 'image' ? 'image/png' : 'text/plain' }));
       }
 
-      const llmConfig = aiContext?.config?.customLLM;
+      const config = aiContext?.config;
+      const llmConfig = config?.customLLM;
 
       if (processedType === 'image') {
-        if (!llmConfig?.apiKey) throw new Error("API Key required for image import");
+        // If it's an image, we need vision. If we are in hosted-api mode, the server handles the key.
+        // If we are in custom-llm mode, we need a key.
+        if (config?.type === 'custom-llm' && !llmConfig?.apiKey) {
+          throw new Error("API Key required for image import in Custom LLM mode");
+        }
+        
         let base64Image = '';
         if (processedData instanceof File) {
           const { fileToBase64 } = await import('@/lib/import/image-extractor');
           base64Image = await fileToBase64(processedData);
-        } else base64Image = processedData;
+        } else base64Image = processedData as string;
 
         const { extractFromImage } = await import('@/lib/import/image-extractor');
-        const result = await extractFromImage(base64Image, llmConfig);
+        // If llmConfig is missing (hosted-api), we pass the whole config or a dummy
+        const result = await extractFromImage(base64Image, llmConfig || { apiKey: 'SERVER_MANAGED' } as any);
 
         if (result.usage && aiContext?.recordUsage) {
           aiContext.recordUsage(
-            (llmConfig.provider as any) || 'google',
-            llmConfig.model || 'gemini-1.5-flash',
+            (llmConfig?.provider as any) || 'google',
+            llmConfig?.model || 'gemini-1.5-flash',
             {
               inputTokens: result.usage.promptTokens ?? 0,
               outputTokens: result.usage.completionTokens ?? 0,
@@ -262,7 +315,7 @@ export default function ImportPage() {
     accountData: { id?: string; name?: string; currency?: string; type?: string }
   ) => {
     startProcessing(async () => {
-      const { toTransactionRecord } = await import('@/lib/import/converter');
+      const { toTransactionRecords } = await import('@/lib/import/converter');
       const { importData: dbImport } = await import('@/lib/db/trades');
 
       let targetAccountId = accountData.id;
@@ -286,7 +339,7 @@ export default function ImportPage() {
         targetAccount = existing;
       }
 
-      const transactions = selectedTransactions.map((t, i) => toTransactionRecord(t, targetAccountId!, i, targetAccount.currency));
+      const transactions = toTransactionRecords(selectedTransactions, targetAccountId, targetAccount.currency);
       await dbImport(targetAccount, transactions, []);
 
       if (importFile) importFileToLibrary(importFile).catch(console.error);

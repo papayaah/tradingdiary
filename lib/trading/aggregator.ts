@@ -176,7 +176,7 @@ export function aggregateByDay(
             costPerShare: Math.abs(t.totalValue) / qty,
             commission: t.commission,
           });
-          runningPosition += t.quantity;
+          runningPosition += (t.side === 'BUYTOOPEN' ? qty : -qty);
         } else if (!isOpening && qty > 0) {
           // Closing transaction — match against open lots FIFO
           let remaining = qty;
@@ -208,7 +208,7 @@ export function aggregateByDay(
 
           // Add closing transaction's commission
           dayRealizedCommission += t.commission;
-          runningPosition += t.quantity;
+          runningPosition += (t.side === 'BUYTOCLOSE' ? qty : -qty);
         }
       }
 
