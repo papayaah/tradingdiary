@@ -2,11 +2,15 @@
   "name": "tradingdiary",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:migrate": "echo 'No migrations for this app'"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.53",

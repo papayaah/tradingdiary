@@ -1,0 +1,14 @@
+.git
+.next
+node_modules
+terraform
+.terraform
+docs
+*.tfstate
+*.tfstate.*
+*.log
+.DS_Store
+coverage
+npm-debug.log*
+yarn-error.log*
+

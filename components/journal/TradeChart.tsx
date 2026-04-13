@@ -14,7 +14,8 @@ import {
 } from 'lightweight-charts';
 import { fetchCandles } from '@/lib/chart/fetch';
 import type { TransactionRecord } from '@/lib/db/schema';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Play } from 'lucide-react';
+import Link from 'next/link';
 
 interface TradeChartProps {
   symbol: string;
@@ -23,7 +24,7 @@ interface TradeChartProps {
   interval?: string;
 }
 
-const INTERVALS = ['1m', '5m', '15m', '1h'] as const;
+const INTERVALS = ['1m', '5m', '10m', '15m', '1h'] as const;
 
 /**
  * Compute the UTC→ET offset in seconds for a given date.
@@ -86,8 +87,10 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
         const year = parseInt(date.substring(0, 4));
         const month = parseInt(date.substring(4, 6)) - 1;
         const day = parseInt(date.substring(6, 8));
-        const dayStartET = Math.floor(Date.UTC(year, month, day, 4, 0, 0) / 1000) + etOffset;
-        const dayEndET = Math.floor(Date.UTC(year, month, day, 20, 0, 0) / 1000) + etOffset;
+        
+        // Use "Display Time" (Fake UTC) for bounds to match shifted candles
+        const dayStartET = Math.floor(Date.UTC(year, month, day, 4, 0, 0) / 1000);
+        const dayEndET = Math.floor(Date.UTC(year, month, day, 20, 0, 0) / 1000);
         const filteredCandles = candles.filter((c) => c.time >= dayStartET && c.time <= dayEndET);
         const chartCandles = filteredCandles.length > 0 ? filteredCandles : candles;
 
@@ -161,8 +164,7 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
 
         volumeSeries.setData(volumeData);
 
-        // Add buy/sell markers on the candlestick series.
-        // Trade times are ET — match against ET-shifted candle timestamps.
+        // Add labels/markers on the candlestick series.
         const markers = transactions
           .map((t) => {
             const tradeTime = findClosestCandleTime(chartCandles, t.time, date);
@@ -176,7 +178,7 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
                 ? (isDark ? '#4ade80' : '#16a34a')
                 : (isDark ? '#f87171' : '#dc2626'),
               shape: isBuy ? ('arrowUp' as const) : ('arrowDown' as const),
-              text: `${isBuy ? 'B' : 'S'} ${Math.abs(t.quantity)}@${t.price.toFixed(2)}`,
+              text: `${isBuy ? 'B' : 'S'} ${Math.abs(t.quantity)}`,
             };
           })
           .filter((m): m is NonNullable<typeof m> => m !== null)
@@ -186,7 +188,30 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
           createSeriesMarkers(candleSeries, markers);
         }
 
-        chart.timeScale().fitContent();
+        // --- Smart Zoom: Center the view on the trades ---
+        // Find the time range of actual trades
+        const tradeTimes = transactions.map(t => {
+            const [h, m, s] = t.time.split(':').map(Number);
+            return Math.floor(Date.UTC(year, month, day, h, m, s || 0) / 1000);
+        });
+        const minTrade = Math.min(...tradeTimes);
+        const maxTrade = Math.max(...tradeTimes);
+
+        // Add padding (30-60 mins depending on interval)
+        // Center the view on the trades (ignore hard 4 AM floor for better readability)
+        const marginSeconds = interval.includes('m') ? parseInt(interval) * 60 * 20 : 3600; 
+        const zoomStart = minTrade - marginSeconds;
+        const zoomEnd = maxTrade + marginSeconds;
+
+        // Use a tiny timeout to ensure the chart has processed the data before zooming
+        setTimeout(() => {
+          if (chart) {
+            chart.timeScale().setVisibleRange({
+              from: zoomStart as Time,
+              to: zoomEnd as Time,
+            });
+          }
+        }, 50);
 
         // Handle resize
         const observer = new ResizeObserver(() => {
@@ -226,23 +251,31 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
         <div className="text-xs font-medium text-foreground">
           {symbol} &middot; {formatChartDate(date)} &middot; {interval} chart
         </div>
-        <div className="flex gap-1">
-          {INTERVALS.map((iv) => (
-            <button
-              key={iv}
-              onClick={(e) => {
-                e.stopPropagation();
-                setInterval(iv);
-              }}
-              className={`px-2 py-0.5 text-xs rounded transition-colors ${
-                iv === interval
+        <div className="flex gap-2 items-center">
+          <Link
+            href={`/replay?date=${date}&symbol=${symbol}`}
+            className="flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-accent/10 text-accent hover:bg-accent hover:text-white rounded transition-all mr-2"
+          >
+            <Play size={10} fill="currentColor" />
+            Replay Trade
+          </Link>
+          <div className="flex gap-1">
+            {INTERVALS.map((iv) => (
+              <button
+                key={iv}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setInterval(iv);
+                }}
+                className={`px-2 py-0.5 text-xs rounded transition-colors ${iv === interval
                   ? 'bg-accent text-white'
                   : 'text-muted hover:text-foreground hover:bg-sidebar-hover'
-              }`}
-            >
-              {iv}
-            </button>
-          ))}
+                  }`}
+              >
+                {iv}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       <div className="relative">
@@ -251,12 +284,12 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
             <Loader2 size={24} className="text-accent animate-spin" />
           </div>
         )}
-        {error && !loading && (
+        {!loading && error && (
           <div className="flex items-center justify-center h-[350px] text-sm text-muted">
             {error}
           </div>
         )}
-        <div ref={containerRef} className={error && !loading ? 'hidden' : ''} />
+        <div ref={containerRef} className={loading || error ? 'hidden' : ''} />
       </div>
     </div>
   );

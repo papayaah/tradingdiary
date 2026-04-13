@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getActiveProvider } from '@/lib/chart/providers';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
@@ -10,65 +11,24 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'symbol and date required' }, { status: 400 });
   }
 
-  const year = parseInt(date.substring(0, 4));
-  const month = parseInt(date.substring(4, 6)) - 1;
-  const day = parseInt(date.substring(6, 8));
-
-  // Build period range covering the full US trading day in UTC.
-  // Pre-market starts 4:00 AM ET (earliest 08:00 UTC), after-hours ends 8:00 PM ET (latest 01:00 UTC next day).
-  // Use 4:00 UTC to 4:00 UTC+1d to guarantee full coverage regardless of server timezone.
-  const period1 = Math.floor(Date.UTC(year, month, day, 4, 0, 0) / 1000);
-  const period2 = Math.floor(Date.UTC(year, month, day + 1, 4, 0, 0) / 1000);
-
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=${interval}&includePrePost=true`;
-
   try {
-    const response = await fetch(url, {
+    const provider = getActiveProvider();
+    const candles = await provider.fetchCandles(symbol, date, interval);
+
+    return NextResponse.json({ 
+      candles,
+      provider: provider.name 
+    }, {
       headers: {
-        'User-Agent': 'Mozilla/5.0',
-      },
-    });
-
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: `Yahoo Finance returned ${response.status}` },
-        { status: response.status }
-      );
-    }
-
-    const data = await response.json();
-    const result = data?.chart?.result?.[0];
-
-    if (!result) {
-      return NextResponse.json({ error: 'No data returned' }, { status: 404 });
-    }
-
-    const timestamps = result.timestamp || [];
-    const quote = result.indicators?.quote?.[0] || {};
-    const { open, high, low, close, volume } = quote;
-
-    const candles = [];
-    for (let i = 0; i < timestamps.length; i++) {
-      if (open[i] != null && high[i] != null && low[i] != null && close[i] != null) {
-        candles.push({
-          time: timestamps[i] as number,
-          open: open[i] as number,
-          high: high[i] as number,
-          low: low[i] as number,
-          close: close[i] as number,
-          volume: (volume?.[i] ?? 0) as number,
-        });
-      }
-    }
-
-    return NextResponse.json({ candles }, {
-      headers: {
-        'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
       },
     });
   } catch (error) {
+    console.error('Chart API error:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch chart data' },
+      { error: error instanceof Error ? error.message : 'Failed to fetch chart data' },
       { status: 500 }
     );
   }

@@ -1,0 +1,43 @@
+services:
+  web:
+    container_name: ${APP_NAME:-tradingdiary}
+    build:
+      context: .
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+      MEDIA_STORAGE_PATH: /srv/tradingdiary/media
+      DATABASE_URL: ${DATABASE_URL}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      ADMIN_EMAILS: ${ADMIN_EMAILS}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+    ports:
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
+    volumes:
+      - media_storage:/srv/tradingdiary/media
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-tradingdiary}
+      POSTGRES_USER: ${POSTGRES_USER:-tradingdiary}
+      # Required. Set in .env (server) or .env.local (dev). Do not commit secrets.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:25432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
+  media_storage:
+

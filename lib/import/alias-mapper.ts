@@ -15,6 +15,8 @@ const COLUMN_ALIASES: Record<keyof NormalizedTransaction, string[]> = {
     commission: ['commission', 'fee', 'fees', 'brokerage'],
     stockCode: ['stock code', 'code', 'isin', 'sedol'],
     totalValue: ['total', 'total value', 'amount', 'value', 'net amount', 'consideration'],
+    realizedPnL: ['realized pnl', 'pnl', 'profit', 'gain/loss', 'realised p&l', 'realized profit'],
+    unrealizedPnL: ['unrealized pnl', 'unrealized profit', 'mark to market', 'unrealised p&l'],
 };
 
 export function mapColumnsOffline(headers: string[]): ColumnMapping {

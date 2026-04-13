@@ -49,9 +49,11 @@ interface SymbolLot {
  * Uses per-symbol FIFO matching (same logic as aggregator.ts).
  */
 export function computePnLTimeline(transactions: TransactionRecord[]): PnLSnapshot[] {
-  const sorted = [...transactions].sort(
-    (a, b) => timeToSeconds(a.time) - timeToSeconds(b.time)
-  );
+  const sorted = [...transactions].sort((a, b) => {
+    const dateCmp = a.date.localeCompare(b.date);
+    if (dateCmp !== 0) return dateCmp;
+    return timeToSeconds(a.time) - timeToSeconds(b.time);
+  });
 
   const symbolLots = new Map<string, SymbolLot[]>();
   const symbolNetQty = new Map<string, number>();
@@ -71,14 +73,18 @@ export function computePnLTimeline(transactions: TransactionRecord[]): PnLSnapsh
     const lots = symbolLots.get(t.symbol)!;
     const prevNetQty = symbolNetQty.get(t.symbol)!;
 
+    // If transaction has manual realized P&L, add it directly
+    if (t.realizedPnL != null) {
+      cumulativePnL += t.realizedPnL;
+    }
+
     if (isOpening) {
       lots.push({
         qty,
         costPerShare: Math.abs(t.totalValue) / qty,
         commission: t.commission,
       });
-      // Commission on open reduces P&L
-      cumulativePnL += t.commission;
+      // Commission on open is tracked in the lot and realized on close
     } else {
       // Closing — FIFO match
       let remaining = qty;
@@ -95,9 +101,10 @@ export function computePnLTimeline(transactions: TransactionRecord[]): PnLSnapsh
           cumulativePnL += (lot.costPerShare - closePrice) * matched;
         }
 
-        // Allocate opening commission proportionally
+        // Realize opening commission proportionally
         const lotFraction = matched / (matched + (lot.qty - matched));
-        // Opening commission already counted when lot was added
+        cumulativePnL += lot.commission * lotFraction;
+        lot.commission -= lot.commission * lotFraction;
 
         lot.qty -= matched;
         remaining -= matched;

@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
-import { Upload, PlayCircle } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import { Upload, PlayCircle, Info } from 'lucide-react';
 import { getTransactionsByAccount } from '@/lib/db/trades';
 import { getTradeDateCutoff } from '@/lib/settings';
 import { aggregateByDay } from '@/lib/trading/aggregator';
@@ -12,11 +13,13 @@ import {
   computePnLTimeline,
   findSnapshot,
   usePlaybackEngine,
+  type PnLSnapshot,
 } from '@/lib/replay/engine';
 import type { TransactionRecord } from '@/lib/db/schema';
 import ReplayTimeline from '@/components/replay/ReplayTimeline';
 import ReplayControls from '@/components/replay/ReplayControls';
 import ReplayStats from '@/components/replay/ReplayStats';
+import ReplayChart from '@/components/replay/ReplayChart';
 import { useAccount } from '@/contexts/AccountContext';
 
 interface DayOption {
@@ -28,8 +31,14 @@ interface DayOption {
 
 export default function ReplayPage() {
   const { selectedAccountId } = useAccount();
+  const searchParams = useSearchParams();
+  const paramDate = searchParams.get('date');
+  const paramSymbol = searchParams.get('symbol');
+
+  const [allTransactions, setAllTransactions] = useState<TransactionRecord[]>([]);
   const [dayOptions, setDayOptions] = useState<DayOption[] | null>(null);
   const [selectedDate, setSelectedDate] = useState('');
+  const [replayInterval, setReplayInterval] = useState('1m');
   const prevVisibleCountRef = useRef(0);
 
   // Load transactions and build day options based on active account
@@ -42,6 +51,7 @@ export default function ReplayPage() {
 
       setDayOptions(null); // Show loading state on switch
       const transactions = await getTransactionsByAccount(selectedAccountId);
+      setAllTransactions(transactions);
 
       if (transactions.length === 0) {
         setDayOptions([]);
@@ -70,21 +80,31 @@ export default function ReplayPage() {
 
       setDayOptions(options);
       if (options.length > 0) {
-        setSelectedDate(options[0].date);
+        const initialDate = paramDate && options.some(o => o.date === paramDate)
+          ? paramDate
+          : options[0].date;
+        setSelectedDate(initialDate);
       }
     }
     load();
-  }, [selectedAccountId]);
+  }, [selectedAccountId, paramDate]);
 
   // Get selected day's data
   const selectedDay = dayOptions?.find((d) => d.date === selectedDate);
 
   const dayTransactions = useMemo(() => {
     if (!selectedDay) return [];
-    return [...selectedDay.transactions].sort(
+    let txns = [...selectedDay.transactions];
+
+    // If a specific symbol was requested, isolate the replay to just that ticker
+    if (paramSymbol) {
+      txns = txns.filter(t => t.symbol === paramSymbol);
+    }
+
+    return txns.sort(
       (a, b) => timeToSeconds(a.time) - timeToSeconds(b.time)
     );
-  }, [selectedDay]);
+  }, [selectedDay, paramSymbol]);
 
   const symbols = useMemo(() => {
     const seen = new Map<string, number>();
@@ -99,6 +119,45 @@ export default function ReplayPage() {
       .map(([sym]) => sym);
   }, [dayTransactions]);
 
+  // ── Step 1: Compute Full P&L Timeline (all-time FIFO) ──
+  const fullTimeline = useMemo(() => {
+    // If a specific symbol is isolated, only calculate P&L for that ticker
+    // otherwise it shows the whole portfolio's P&L which is confusing here.
+    const relevantTxns = paramSymbol 
+      ? allTransactions.filter(t => t.symbol === paramSymbol)
+      : allTransactions;
+    return computePnLTimeline(relevantTxns);
+  }, [allTransactions, paramSymbol]);
+
+  // ── Step 2: Extract Relevant Stats for Selected Day ──
+  const snapshots = useMemo(() => {
+    if (fullTimeline.length === 0) return [];
+    
+    // Relevant transactions sorted
+    const relevantAll = (paramSymbol 
+      ? allTransactions.filter(t => t.symbol === paramSymbol)
+      : allTransactions
+    ).sort((a, b) => a.date.localeCompare(b.date) || timeToSeconds(a.time) - timeToSeconds(b.time));
+    
+    // Find index of first trade of this day
+    const firstIdx = relevantAll.findIndex(t => t.date === selectedDate);
+    if (firstIdx === -1) return [];
+
+    const baselinePnL = firstIdx > 0 ? computePnLTimeline(relevantAll.slice(0, firstIdx)).pop()?.cumulativeNetPnL ?? 0 : 0;
+
+    // Filter snapshots that belong to this day
+    const daySnapshots: PnLSnapshot[] = [];
+    for (let i = firstIdx; i < relevantAll.length; i++) {
+        if (relevantAll[i].date !== selectedDate) break;
+        const s = fullTimeline[i];
+        daySnapshots.push({
+            ...s,
+            cumulativeNetPnL: s.cumulativeNetPnL - baselinePnL
+        });
+    }
+    return daySnapshots;
+  }, [fullTimeline, allTransactions, selectedDate, paramSymbol]);
+
   const timeRange = useMemo(() => {
     if (dayTransactions.length === 0) return { start: 0, end: 0 };
     const times = dayTransactions.map((t) => timeToSeconds(t.time));
@@ -108,15 +167,18 @@ export default function ReplayPage() {
     return { start: Math.max(0, min - 300), end: Math.min(86400, max + 300) };
   }, [dayTransactions]);
 
-  const snapshots = useMemo(
-    () => computePnLTimeline(dayTransactions),
-    [dayTransactions]
-  );
-
   const [playback, actions] = usePlaybackEngine(
     timeRange.start,
     timeRange.end
   );
+
+  // If replaying a specific symbol, jump to its start automatically
+  useEffect(() => {
+    if (paramSymbol && dayTransactions.length > 0 && playback.currentTimeSeconds === timeRange.start) {
+      const firstTrade = timeToSeconds(dayTransactions[0].time);
+      actions.seek(Math.max(timeRange.start, firstTrade - 120)); // Seek back 2 mins for context
+    }
+  }, [paramSymbol, dayTransactions, timeRange.start, actions, playback.currentTimeSeconds]);
 
   // Compute current stats
   const currentSnapshot = useMemo(
@@ -182,21 +244,40 @@ export default function ReplayPage() {
       {/* Header + day selector */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-foreground">Day Replay</h1>
-        <select
-          value={selectedDate}
-          onChange={(e) => {
-            actions.reset();
-            setSelectedDate(e.target.value);
-          }}
-          className="px-3 py-1.5 rounded-lg border border-card-border bg-card-bg text-foreground text-sm"
-        >
-          {dayOptions.map((opt) => (
-            <option key={opt.date} value={opt.date}>
-              {opt.formattedDate} ({opt.tradeCount} trades)
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-3">
+          <select
+            value={selectedDate}
+            onChange={(e) => {
+              actions.reset();
+              setSelectedDate(e.target.value);
+            }}
+            className="px-3 py-1.5 rounded-lg border border-card-border bg-card-bg text-foreground text-sm font-medium"
+          >
+            {dayOptions.map((opt) => (
+              <option key={opt.date} value={opt.date}>
+                {opt.formattedDate} ({opt.tradeCount} trades)
+              </option>
+            ))}
+          </select>
+
+          {paramSymbol && (
+            <Link
+              href={`/replay?date=${selectedDate}`}
+              className="text-[10px] uppercase font-bold text-accent bg-accent/10 px-2 py-1.5 rounded-lg hover:bg-accent hover:text-white transition-all flex items-center gap-1.5"
+              title="Show all trades for this day"
+            >
+              Show Entire Session
+            </Link>
+          )}
+        </div>
       </div>
+
+      {paramSymbol && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-accent/5 border border-accent/20 rounded-xl text-xs text-accent font-medium">
+          <Info size={14} />
+          <span>Isolating trade: <strong>{paramSymbol}</strong>. Other session trades are hidden to focus on this execution path.</span>
+        </div>
+      )}
 
       {/* Stats */}
       <ReplayStats
@@ -206,6 +287,39 @@ export default function ReplayPage() {
         positions={currentSnapshot?.positions ?? []}
         currentTime={secondsToTime(playback.currentTimeSeconds)}
       />
+
+      {/* Replay Chart (Candlesticks) */}
+      {paramSymbol && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest flex items-center gap-2">
+              <Info size={12} className="text-accent" />
+              Live Price Action Replay
+            </h3>
+            <div className="flex gap-1">
+              {['1m', '5m', '10m', '15m'].map((iv) => (
+                <button
+                  key={iv}
+                  onClick={() => setReplayInterval(iv)}
+                  className={`px-2 py-0.5 text-[9px] font-bold uppercase rounded transition-colors ${replayInterval === iv
+                      ? 'bg-accent text-white'
+                      : 'bg-muted/30 text-muted hover:text-foreground'
+                    }`}
+                >
+                  {iv}
+                </button>
+              ))}
+            </div>
+          </div>
+          <ReplayChart
+            symbol={paramSymbol}
+            date={selectedDate}
+            transactions={dayTransactions}
+            currentTimeSeconds={playback.currentTimeSeconds}
+            interval={replayInterval}
+          />
+        </div>
+      )}
 
       {/* Timeline */}
       <div className="rounded-xl border border-card-border bg-card-bg p-4">
