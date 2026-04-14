@@ -299,27 +299,22 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
  * Find the candle whose timestamp is closest to (but not after) the trade time.
  * Both candle timestamps and trade time are in ET (candles were pre-shifted).
  */
-function findClosestCandleTime(candles: { time: number }[], tradeTime: string, date: string): number | null {
+function findClosestCandleTime(candles: { time: number }[], tradeTimeStr: string, dateStr: string): number | null {
   if (candles.length === 0) return null;
 
-  // Trade time from TLG is in ET. Build a matching ET timestamp using Date.UTC
-  // (which just gives us the numeric value — since candles are also ET-shifted via
-  // the same Date.UTC base, they'll match).
-  const [h, m, s] = tradeTime.split(':').map(Number);
-  const year = parseInt(date.substring(0, 4));
-  const month = parseInt(date.substring(4, 6)) - 1;
-  const day = parseInt(date.substring(6, 8));
-  const tradeTimestamp = Math.floor(Date.UTC(year, month, day, h, m, s || 0) / 1000);
+  const [h, m, s] = tradeTimeStr.split(':').map(Number);
+  const year = parseInt(dateStr.substring(0, 4));
+  const month = parseInt(dateStr.substring(4, 6)) - 1;
+  const day = parseInt(dateStr.substring(6, 8));
 
-  let closest = candles[0].time;
-  for (const c of candles) {
-    if (c.time <= tradeTimestamp) {
-      closest = c.time;
-    } else {
-      break;
-    }
-  }
-  return closest;
+  // This must match the display-time shift (UTC-ET offset)
+  const tradeTimeUtc = Math.floor(Date.UTC(year, month, day, h, m, s || 0) / 1000);
+
+  // Find the candle that's active at this trade time (must be <= tradeTimeUtc)
+  const relevantCandles = candles.filter(c => c.time <= tradeTimeUtc);
+  if (relevantCandles.length === 0) return candles[0].time; // Fallback to first candle
+
+  return relevantCandles.sort((a, b) => b.time - a.time)[0].time;
 }
 
 function formatChartDate(dateStr: string): string {

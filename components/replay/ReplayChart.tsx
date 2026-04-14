@@ -7,10 +7,12 @@ import {
     CandlestickSeries,
     HistogramSeries,
     createSeriesMarkers,
-    type IChartApi,
-    type CandlestickData,
-    type HistogramData,
-    type Time,
+} from 'lightweight-charts';
+import type {
+    IChartApi,
+    CandlestickData,
+    HistogramData,
+    Time,
 } from 'lightweight-charts';
 import { fetchCandles, type CandleData } from '@/lib/chart/fetch';
 import type { TransactionRecord } from '@/lib/db/schema';
@@ -23,6 +25,7 @@ interface ReplayChartProps {
     transactions: TransactionRecord[];
     currentTimeSeconds: number;
     interval?: string;
+    isPlaying?: boolean;
 }
 
 /**
@@ -47,17 +50,20 @@ export default function ReplayChart({
     date,
     transactions,
     currentTimeSeconds,
-    interval = '1m'
+    interval = '1m',
+    isPlaying = false
 }: ReplayChartProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<any>(null);
     const seriesRef = useRef<any>(null);
     const volumeRef = useRef<any>(null);
+    const markersApiRef = useRef<any>(null);
     const rangeSetRef = useRef<string>('');
     
     const [allCandles, setAllCandles] = useState<CandleData[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [isFollowing, setIsFollowing] = useState(true); // Auto-follow playhead
 
     const etOffset = useMemo(() => getETOffsetSeconds(date), [date]);
 
@@ -108,26 +114,27 @@ export default function ReplayChart({
         });
 
         const candleSeries = chart.addSeries(CandlestickSeries, {
-            upColor: isDark ? '#4ade80' : '#16a34a',
-            downColor: isDark ? '#f87171' : '#dc2626',
-            borderUpColor: isDark ? '#4ade80' : '#16a34a',
-            borderDownColor: isDark ? '#f87171' : '#dc2626',
-            wickUpColor: isDark ? '#4ade80' : '#16a34a',
-            wickDownColor: isDark ? '#f87171' : '#dc2626',
+            upColor: isDark ? '#4ade80' : '#22c55e',
+            downColor: isDark ? '#f87171' : '#ef4444',
+            borderVisible: false,
+            wickVisible: true,
         });
+        seriesRef.current = candleSeries;
 
         const volumeSeries = chart.addSeries(HistogramSeries, {
             priceFormat: { type: 'volume' },
             priceScaleId: 'volume',
         });
-
-        chart.priceScale('volume').applyOptions({
+        volumeSeries.priceScale().applyOptions({
             scaleMargins: { top: 0.8, bottom: 0 },
         });
+        volumeRef.current = volumeSeries;
+
+        // Create ONE markers plugin — store the returned API for atomic updates
+        const markersApi = createSeriesMarkers(candleSeries, []);
+        markersApiRef.current = markersApi;
 
         chartRef.current = chart;
-        seriesRef.current = candleSeries;
-        volumeRef.current = volumeSeries;
 
         const observer = new ResizeObserver(() => {
             if (containerRef.current && chartRef.current) {
@@ -150,9 +157,8 @@ export default function ReplayChart({
         const year = parseInt(date.substring(0, 4));
         const month = parseInt(date.substring(4, 6)) - 1;
         const day = parseInt(date.substring(6, 8));
-        // currentTimeSeconds is ET-based (seconds since midnight)
-        // To get the corresponding UTC timestamp: midnight ET in UTC + currentTimeSeconds
-        const currentUtcTimestamp = Math.floor(Date.UTC(year, month, day, 0, 0, 0) / 1000) - etOffset + currentTimeSeconds;
+        const midnightEtUtc = Math.floor(Date.UTC(year, month, day, 0, 0, 0) / 1000) - etOffset;
+        const currentUtcTimestamp = midnightEtUtc + currentTimeSeconds;
 
         const visibleCandles = allCandles.filter(c => c.time <= currentUtcTimestamp);
         
@@ -166,10 +172,58 @@ export default function ReplayChart({
             close: c.close
         }));
 
+        // Calculate markers for past executions
+        const visibleMarkers = transactions
+            .map(t => {
+                const [h, m, s] = t.time.split(':').map(Number);
+                const tradeTimeUtc = Math.floor(Date.UTC(year, month, day, h, m, s || 0) / 1000) - etOffset;
+                
+                // HIDE if in the future
+                if (tradeTimeUtc > currentUtcTimestamp) return null;
+
+                // Bind to latest candle at or before trade
+                const candle = visibleCandles.filter(c => c.time <= tradeTimeUtc)
+                                           .sort((a,b) => b.time - a.time)[0];
+                
+                if (!candle) return null;
+
+                const isBuy = t.side === 'BUYTOOPEN' || t.side === 'BUYTOCLOSE';
+                return {
+                    time: (candle.time + etOffset) as Time,
+                    position: isBuy ? 'belowBar' : 'aboveBar',
+                    color: isBuy ? (isDark ? '#4ade80' : '#16a34a') : (isDark ? '#f87171' : '#dc2626'),
+                    shape: isBuy ? 'arrowUp' : 'arrowDown',
+                    text: `${isBuy ? 'B' : 'S'} ${Math.abs(t.quantity)}`,
+                };
+            })
+            .filter((m): m is any => m !== null)
+            .sort((a,b) => (a.time as number) - (b.time as number));
 
         seriesRef.current.setData(candleData);
-        
-        // --- Smart Zoom: Center the view on the trades ---
+        volumeRef.current.setData(visibleCandles.map(c => ({
+            time: (c.time + etOffset) as Time,
+            value: c.volume,
+            color: c.close >= c.open
+                ? (isDark ? 'rgba(74, 222, 128, 0.3)' : 'rgba(22, 163, 74, 0.3)')
+                : (isDark ? 'rgba(248, 113, 113, 0.3)' : 'rgba(220, 38, 38, 0.3)'),
+        })));
+
+        // Update the SINGLE markers plugin atomically — no new layers created
+        if (markersApiRef.current) {
+            markersApiRef.current.setMarkers(visibleMarkers);
+        }
+
+    }, [currentTimeSeconds, allCandles, transactions, date, etOffset]);
+
+    // 4. Smart Zoom (Perform ONLY when data loads or interval changes)
+    useEffect(() => {
+        if (!chartRef.current || allCandles.length === 0) return;
+
+        const year = parseInt(date.substring(0, 4));
+        const month = parseInt(date.substring(4, 6)) - 1;
+        const day = parseInt(date.substring(6, 8));
+
+        // Center on trades
         const tradeTimes = transactions.map(t => {
             const [h, m, s] = t.time.split(':').map(Number);
             return Math.floor(Date.UTC(year, month, day, h, m, s || 0) / 1000);
@@ -180,64 +234,41 @@ export default function ReplayChart({
         const dayStartET = Math.floor(Date.UTC(year, month, day, 4, 0, 0) / 1000);
         const dayEndET = Math.floor(Date.UTC(year, month, day, 20, 0, 0) / 1000);
 
-        // Padding: approx 15 candles
         const intervalNum = parseInt(interval) || 1;
         const marginSeconds = intervalNum * 60 * 20;
         
         const zoomStart = minTrade > 0 ? (minTrade - marginSeconds) : dayStartET;
         const zoomEnd = maxTrade > 0 ? (maxTrade + marginSeconds) : dayEndET;
 
-        // Use a tiny timeout to ensure the chart has processed the data before zooming
         setTimeout(() => {
           if (chartRef.current) {
             chartRef.current.timeScale().setVisibleRange({
-              from: zoomStart as Time,
-              to: zoomEnd as Time,
+              from: (zoomStart + etOffset) as Time,
+              to: (zoomEnd + etOffset) as Time,
             });
           }
-        }, 50);
+        }, 200);
+    }, [allCandles.length, interval, date, transactions.length, etOffset]);
 
-        volumeRef.current.setData(visibleCandles.map(c => ({
-            time: (c.time + etOffset) as Time,
-            value: c.volume,
-            color: c.close >= c.open
-                ? (isDark ? 'rgba(74, 222, 128, 0.3)' : 'rgba(22, 163, 74, 0.3)')
-                : (isDark ? 'rgba(248, 113, 113, 0.3)' : 'rgba(220, 38, 38, 0.3)'),
-        })));
+    // 5. Auto-follow playhead
+    useEffect(() => {
+        if (!chartRef.current || !isFollowing || allCandles.length === 0) return;
+        
+        // Scroll to the rightmost bar (the current playhead)
+        chartRef.current.timeScale().scrollToPosition(0, true);
+    }, [currentTimeSeconds, isFollowing, allCandles.length]);
 
-
-        // Markers
-        const visibleMarkers = transactions
-            .filter(t => timeToSeconds(t.time) <= currentTimeSeconds)
-            .map(t => {
-                const [h, m, s] = t.time.split(':').map(Number);
-                // Correct: 10:11 AM ET in UTC is Date.UTC(..., 10, 11, 0) - etOffset
-                const tradeTimeUtc = Math.floor(Date.UTC(year, month, day, h, m, s || 0) / 1000) - etOffset;
-                
-                // Snap to closest candle time for positioning
-                const closestCandle = visibleCandles.length > 0 
-                  ? visibleCandles.reduce((prev, curr) => 
-                      Math.abs(curr.time - tradeTimeUtc) < Math.abs(prev.time - tradeTimeUtc) ? curr : prev
-                    )
-                  : null;
-
-                const isBuy = t.side === 'BUYTOOPEN' || t.side === 'BUYTOCLOSE';
-                return {
-                    time: (closestCandle ? closestCandle.time + etOffset : tradeTimeUtc + etOffset) as Time,
-                    position: isBuy ? 'belowBar' : 'aboveBar',
-                    color: isBuy ? (isDark ? '#4ade80' : '#16a34a') : (isDark ? '#f87171' : '#dc2626'),
-                    shape: isBuy ? 'arrowUp' : 'arrowDown',
-                    text: `${isBuy ? 'B' : 'S'} ${Math.abs(t.quantity)}`,
-                };
-            })
-            .sort((a,b) => (a.time as number) - (b.time as number));
-
-        createSeriesMarkers(seriesRef.current, visibleMarkers);
-
-    }, [currentTimeSeconds, allCandles, transactions, date, etOffset]);
+    // Resume following if playback starts
+    useEffect(() => {
+        if (isPlaying) setIsFollowing(true);
+    }, [isPlaying]);
 
     return (
-        <div className="relative w-full h-[400px] bg-card-bg rounded-xl border border-card-border overflow-hidden">
+        <div 
+          className="relative w-full h-[400px] bg-card-bg rounded-xl border border-card-border overflow-hidden"
+          onMouseDown={() => setIsFollowing(false)} // Stop following if user interacts with chart
+          onWheel={() => setIsFollowing(false)}
+        >
             <div className="absolute top-3 left-4 z-20 flex items-center gap-2">
                 <span className="text-xs font-bold text-foreground bg-accent/20 px-2 py-0.5 rounded uppercase tracking-widest">
                     {symbol}

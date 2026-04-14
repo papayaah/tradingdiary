@@ -192,6 +192,21 @@ export default function ReplayPage() {
     ).length;
   }, [dayTransactions, playback.currentTimeSeconds]);
 
+  // Keyboard shortcut: Space to toggle play/pause
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        // Prevent scrolling and only toggle if not in an input
+        if (!(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
+          e.preventDefault();
+          actions.togglePlay();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [actions]);
+
   // Track previous visible count for "new trade" flash
   const prevVisible = prevVisibleCountRef.current;
   useEffect(() => {
@@ -317,6 +332,7 @@ export default function ReplayPage() {
             transactions={dayTransactions}
             currentTimeSeconds={playback.currentTimeSeconds}
             interval={replayInterval}
+            isPlaying={playback.isPlaying}
           />
         </div>
       )}
