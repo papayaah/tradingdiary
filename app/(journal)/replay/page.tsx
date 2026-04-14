@@ -34,11 +34,14 @@ export default function ReplayPage() {
   const searchParams = useSearchParams();
   const paramDate = searchParams.get('date');
   const paramSymbol = searchParams.get('symbol');
+  const paramInterval = searchParams.get('interval');
+  const paramHeartbeat = searchParams.get('heartbeat');
 
   const [allTransactions, setAllTransactions] = useState<TransactionRecord[]>([]);
   const [dayOptions, setDayOptions] = useState<DayOption[] | null>(null);
   const [selectedDate, setSelectedDate] = useState('');
-  const [replayInterval, setReplayInterval] = useState('1m');
+  const [replayInterval, setReplayInterval] = useState(paramInterval || '1m');
+  const [heartbeat, setHeartbeat] = useState(paramHeartbeat || '1m');
   const prevVisibleCountRef = useRef(0);
 
   // Load transactions and build day options based on active account
@@ -88,6 +91,29 @@ export default function ReplayPage() {
     }
     load();
   }, [selectedAccountId, paramDate]);
+
+  // Sync state to URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    let changed = false;
+
+    if (selectedDate && params.get('date') !== selectedDate) {
+      params.set('date', selectedDate);
+      changed = true;
+    }
+    if (replayInterval && params.get('interval') !== replayInterval) {
+      params.set('interval', replayInterval);
+      changed = true;
+    }
+    if (heartbeat && params.get('heartbeat') !== heartbeat) {
+      params.set('heartbeat', heartbeat);
+      changed = true;
+    }
+
+    if (changed) {
+      window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
+    }
+  }, [selectedDate, replayInterval, heartbeat]);
 
   // Get selected day's data
   const selectedDay = dayOptions?.find((d) => d.date === selectedDate);
@@ -311,19 +337,44 @@ export default function ReplayPage() {
               <Info size={12} className="text-accent" />
               Live Price Action Replay
             </h3>
-            <div className="flex gap-1">
-              {['1m', '5m', '10m', '15m'].map((iv) => (
-                <button
-                  key={iv}
-                  onClick={() => setReplayInterval(iv)}
-                  className={`px-2 py-0.5 text-[9px] font-bold uppercase rounded transition-colors ${replayInterval === iv
-                      ? 'bg-accent text-white'
-                      : 'bg-muted/30 text-muted hover:text-foreground'
-                    }`}
-                >
-                  {iv}
-                </button>
-              ))}
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] uppercase font-bold text-muted-foreground whitespace-nowrap">Heartbeat</span>
+                <div className="flex gap-1">
+                  {['10s', '30s', '1m'].map((hb) => (
+                    <button
+                      key={hb}
+                      onClick={() => setHeartbeat(hb)}
+                      className={`px-2 py-0.5 text-[9px] font-bold uppercase rounded transition-colors ${heartbeat === hb
+                          ? 'bg-accent text-white'
+                          : 'bg-muted/30 text-muted hover:text-foreground'
+                        }`}
+                    >
+                      {hb}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="h-3 w-px bg-card-border" />
+
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] uppercase font-bold text-muted-foreground whitespace-nowrap">Interval</span>
+                <div className="flex gap-1">
+                  {['1m', '5m', '10m', '15m'].map((iv) => (
+                    <button
+                      key={iv}
+                      onClick={() => setReplayInterval(iv)}
+                      className={`px-2 py-0.5 text-[9px] font-bold uppercase rounded transition-colors ${replayInterval === iv
+                          ? 'bg-accent text-white'
+                          : 'bg-muted/30 text-muted hover:text-foreground'
+                        }`}
+                    >
+                      {iv}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
           <ReplayChart
@@ -332,6 +383,7 @@ export default function ReplayPage() {
             transactions={dayTransactions}
             currentTimeSeconds={playback.currentTimeSeconds}
             interval={replayInterval}
+            heartbeat={heartbeat}
             isPlaying={playback.isPlaying}
           />
         </div>

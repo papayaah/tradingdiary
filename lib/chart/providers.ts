@@ -15,10 +15,11 @@ class PolygonProvider implements ChartProvider {
         if (!apiKey) throw new Error("Missing POLYGON_API_KEY");
 
         const formattedDate = `${date.substring(0, 4)}-${date.substring(4, 6)}-${date.substring(6, 8)}`;
-        // Convert interval string to Polygon multiplier (e.g. '10m' -> 10)
-        const multiplier = parseInt(interval.replace('m', '')) || 1;
+        const isSecond = interval.endsWith('s');
+        const multiplier = parseInt(interval.replace(/[ms]/g, '')) || 1;
+        const timescale = isSecond ? 'second' : 'minute';
         
-        const url = `https://api.polygon.io/v2/aggs/ticker/${symbol.toUpperCase()}/range/${multiplier}/minute/${formattedDate}/${formattedDate}?adjusted=true&sort=asc&limit=5000&apiKey=${apiKey}`;
+        const url = `https://api.polygon.io/v2/aggs/ticker/${symbol.toUpperCase()}/range/${multiplier}/${timescale}/${formattedDate}/${formattedDate}?adjusted=true&sort=asc&limit=50000&apiKey=${apiKey}`;
 
         const res = await fetch(url);
         if (!res.ok) throw new Error(`Polygon API error: ${res.status}`);

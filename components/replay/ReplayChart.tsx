@@ -25,6 +25,7 @@ interface ReplayChartProps {
     transactions: TransactionRecord[];
     currentTimeSeconds: number;
     interval?: string;
+    heartbeat?: string;
     isPlaying?: boolean;
 }
 
@@ -51,6 +52,7 @@ export default function ReplayChart({
     transactions,
     currentTimeSeconds,
     interval = '1m',
+    heartbeat = '1m',
     isPlaying = false
 }: ReplayChartProps) {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -67,13 +69,14 @@ export default function ReplayChart({
 
     const etOffset = useMemo(() => getETOffsetSeconds(date), [date]);
 
-    // 1. Fetch all day's candles once
+    // 1. Fetch 10-second bars for granular wiggling
     useEffect(() => {
         let cancelled = false;
-        async function load() {
+            async function load() {
             setLoading(true);
             try {
-                const data = await fetchCandles(symbol, date, interval);
+                // Fetch granular data based on the heartbeat setting
+                const data = await fetchCandles(symbol, date, heartbeat);
                 if (cancelled) return;
                 setAllCandles(data);
                 setLoading(false);
@@ -86,7 +89,7 @@ export default function ReplayChart({
         }
         load();
         return () => { cancelled = true; };
-    }, [symbol, date, interval]);
+    }, [symbol, date, heartbeat]); // Re-fetch only if symbol, date or heartbeat resolution changes
 
     // 2. Initialize Chart
     useEffect(() => {
@@ -149,9 +152,12 @@ export default function ReplayChart({
         };
     }, [allCandles]);
 
-    // 3. Update Chart Content based on Current Time
+    // 3. Update Chart Content based on Current Time with Live Aggregation
     useEffect(() => {
         if (!seriesRef.current || !volumeRef.current || allCandles.length === 0) return;
+
+        const intervalMinutes = parseInt(interval.replace('m', '')) || 1;
+        const intervalSeconds = intervalMinutes * 60;
 
         // "Now" in UTC (since allCandles timestamps are UTC)
         const year = parseInt(date.substring(0, 4));
@@ -160,17 +166,57 @@ export default function ReplayChart({
         const midnightEtUtc = Math.floor(Date.UTC(year, month, day, 0, 0, 0) / 1000) - etOffset;
         const currentUtcTimestamp = midnightEtUtc + currentTimeSeconds;
 
-        const visibleCandles = allCandles.filter(c => c.time <= currentUtcTimestamp);
-        
         const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         
-        const candleData = visibleCandles.map(c => ({
-            time: (c.time + etOffset) as Time,
-            open: c.open,
-            high: c.high,
-            low: c.low,
-            close: c.close
-        }));
+        // --- LIVE AGGREGATION LOGIC ---
+        // Group the granular bars (based on heartbeat) into the display interval (e.g. 1m, 5m, 10m)
+        const aggregated: Record<number, any> = {};
+        const visibleHB = allCandles.filter(c => c.time <= currentUtcTimestamp);
+
+        for (const hbBar of visibleHB) {
+            // Find which interval bucket this heartbeat bar belongs to
+            const bucketTime = Math.floor((hbBar.time - midnightEtUtc) / intervalSeconds) * intervalSeconds + midnightEtUtc;
+            
+            if (!aggregated[bucketTime]) {
+                aggregated[bucketTime] = { 
+                    time: bucketTime,
+                    open: hbBar.open,
+                    high: hbBar.high,
+                    low: hbBar.low,
+                    close: hbBar.close,
+                    volume: hbBar.volume
+                };
+            } else {
+                const agg = aggregated[bucketTime];
+                agg.high = Math.max(agg.high, hbBar.high);
+                agg.low = Math.min(agg.low, hbBar.low);
+                agg.close = hbBar.close;
+                agg.volume += hbBar.volume;
+            }
+        }
+
+        const candleData = Object.values(aggregated)
+            .sort((a, b) => a.time - b.time)
+            .map(c => ({
+                time: (c.time + etOffset) as Time,
+                open: c.open,
+                high: c.high,
+                low: c.low,
+                close: c.close
+            }));
+
+        const volumeData = Object.values(aggregated)
+            .sort((a, b) => a.time - b.time)
+            .map(c => ({
+                time: (c.time + etOffset) as Time,
+                value: c.volume,
+                color: c.close >= c.open
+                    ? (isDark ? 'rgba(74, 222, 128, 0.3)' : 'rgba(22, 163, 74, 0.3)')
+                    : (isDark ? 'rgba(248, 113, 113, 0.3)' : 'rgba(220, 38, 38, 0.3)'),
+            }));
+
+        seriesRef.current.setData(candleData);
+        volumeRef.current.setData(volumeData);
 
         // Calculate markers for past executions
         const visibleMarkers = transactions
@@ -181,15 +227,13 @@ export default function ReplayChart({
                 // HIDE if in the future
                 if (tradeTimeUtc > currentUtcTimestamp) return null;
 
-                // Bind to latest candle at or before trade
-                const candle = visibleCandles.filter(c => c.time <= tradeTimeUtc)
-                                           .sort((a,b) => b.time - a.time)[0];
-                
-                if (!candle) return null;
+                // Bind to the interval bucket, not the trade time itself
+                const bucketTime = Math.floor((tradeTimeUtc - midnightEtUtc) / intervalSeconds) * intervalSeconds + midnightEtUtc;
+                if (!aggregated[bucketTime]) return null;
 
                 const isBuy = t.side === 'BUYTOOPEN' || t.side === 'BUYTOCLOSE';
                 return {
-                    time: (candle.time + etOffset) as Time,
+                    time: (bucketTime + etOffset) as Time,
                     position: isBuy ? 'belowBar' : 'aboveBar',
                     color: isBuy ? (isDark ? '#4ade80' : '#16a34a') : (isDark ? '#f87171' : '#dc2626'),
                     shape: isBuy ? 'arrowUp' : 'arrowDown',
@@ -199,21 +243,12 @@ export default function ReplayChart({
             .filter((m): m is any => m !== null)
             .sort((a,b) => (a.time as number) - (b.time as number));
 
-        seriesRef.current.setData(candleData);
-        volumeRef.current.setData(visibleCandles.map(c => ({
-            time: (c.time + etOffset) as Time,
-            value: c.volume,
-            color: c.close >= c.open
-                ? (isDark ? 'rgba(74, 222, 128, 0.3)' : 'rgba(22, 163, 74, 0.3)')
-                : (isDark ? 'rgba(248, 113, 113, 0.3)' : 'rgba(220, 38, 38, 0.3)'),
-        })));
-
         // Update the SINGLE markers plugin atomically — no new layers created
         if (markersApiRef.current) {
             markersApiRef.current.setMarkers(visibleMarkers);
         }
 
-    }, [currentTimeSeconds, allCandles, transactions, date, etOffset]);
+    }, [currentTimeSeconds, allCandles, transactions, date, etOffset, interval]);
 
     // 4. Smart Zoom (Perform ONLY when data loads or interval changes)
     useEffect(() => {
