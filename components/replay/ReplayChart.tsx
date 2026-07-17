@@ -14,7 +14,8 @@ import type {
     HistogramData,
     Time,
 } from 'lightweight-charts';
-import { fetchCandles, type CandleData } from '@/lib/chart/fetch';
+import { fetchCandles } from '@/lib/chart/fetch';
+import type { OHLCCandle } from '@/lib/chart/types';
 import type { TransactionRecord } from '@/lib/db/schema';
 import { Loader2 } from 'lucide-react';
 import { timeToSeconds } from '@/lib/replay/engine';
@@ -27,6 +28,7 @@ interface ReplayChartProps {
     interval?: string;
     heartbeat?: string;
     isPlaying?: boolean;
+    onCurrentPrice?: (price: number) => void;
 }
 
 /**
@@ -53,16 +55,18 @@ export default function ReplayChart({
     currentTimeSeconds,
     interval = '1m',
     heartbeat = '1m',
-    isPlaying = false
+    isPlaying = false,
+    onCurrentPrice,
 }: ReplayChartProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<any>(null);
     const seriesRef = useRef<any>(null);
     const volumeRef = useRef<any>(null);
+    const tradePriceSeriesRef = useRef<any>(null);
     const markersApiRef = useRef<any>(null);
     const rangeSetRef = useRef<string>('');
     
-    const [allCandles, setAllCandles] = useState<CandleData[]>([]);
+    const [allCandles, setAllCandles] = useState<OHLCCandle[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [isFollowing, setIsFollowing] = useState(true); // Auto-follow playhead
@@ -133,6 +137,16 @@ export default function ReplayChart({
         });
         volumeRef.current = volumeSeries;
 
+        const tradePriceSeries = chart.addSeries(CandlestickSeries, {
+            upColor: '#4ade80',
+            downColor: '#f87171',
+            borderVisible: false,
+            wickVisible: false,
+            lastValueVisible: false,
+            priceLineVisible: false,
+        });
+        tradePriceSeriesRef.current = tradePriceSeries;
+
         // Create ONE markers plugin — store the returned API for atomic updates
         const markersApi = createSeriesMarkers(candleSeries, []);
         markersApiRef.current = markersApi;
@@ -172,6 +186,8 @@ export default function ReplayChart({
         // Group the granular bars (based on heartbeat) into the display interval (e.g. 1m, 5m, 10m)
         const aggregated: Record<number, any> = {};
         const visibleHB = allCandles.filter(c => c.time <= currentUtcTimestamp);
+        const lastHB = visibleHB[visibleHB.length - 1];
+        if (lastHB) onCurrentPrice?.(lastHB.close);
 
         for (const hbBar of visibleHB) {
             // Find which interval bucket this heartbeat bar belongs to
@@ -237,18 +253,44 @@ export default function ReplayChart({
                     position: isBuy ? 'belowBar' : 'aboveBar',
                     color: isBuy ? (isDark ? '#4ade80' : '#16a34a') : (isDark ? '#f87171' : '#dc2626'),
                     shape: isBuy ? 'arrowUp' : 'arrowDown',
-                    text: `${isBuy ? 'B' : 'S'} ${Math.abs(t.quantity)}`,
+                    text: `${isBuy ? 'B' : 'S'} ${Math.abs(t.quantity)} @ $${t.price.toFixed(2)}`,
                 };
             })
             .filter((m): m is any => m !== null)
             .sort((a,b) => (a.time as number) - (b.time as number));
+
+        if (tradePriceSeriesRef.current) {
+            const tradePriceData = transactions
+                .map(t => {
+                    const [h, m, s] = t.time.split(':').map(Number);
+                    const tradeTimeUtc = Math.floor(Date.UTC(year, month, day, h, m, s || 0) / 1000) - etOffset;
+
+                    if (tradeTimeUtc > currentUtcTimestamp) return null;
+
+                    const isBuy = t.side === 'BUYTOOPEN' || t.side === 'BUYTOCLOSE';
+                    return {
+                        time: (tradeTimeUtc + etOffset) as Time,
+                        open: t.price,
+                        high: t.price,
+                        low: t.price,
+                        close: t.price,
+                        // We use colors to distinguish buy/sell since O=C
+                        color: isBuy ? '#4ade80' : '#f87171',
+                        borderColor: isBuy ? '#4ade80' : '#f87171',
+                    };
+                })
+                .filter((d): d is any => d !== null)
+                .sort((a, b) => a.time - b.time);
+
+            tradePriceSeriesRef.current.setData(tradePriceData);
+        }
 
         // Update the SINGLE markers plugin atomically — no new layers created
         if (markersApiRef.current) {
             markersApiRef.current.setMarkers(visibleMarkers);
         }
 
-    }, [currentTimeSeconds, allCandles, transactions, date, etOffset, interval]);
+    }, [currentTimeSeconds, allCandles, transactions, date, etOffset, interval, onCurrentPrice]);
 
     // 4. Smart Zoom (Perform ONLY when data loads or interval changes)
     useEffect(() => {

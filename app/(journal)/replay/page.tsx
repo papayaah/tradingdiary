@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Upload, PlayCircle, Info } from 'lucide-react';
+import { Upload, PlayCircle, Info, BarChart3 } from 'lucide-react';
 import { getTransactionsByAccount } from '@/lib/db/trades';
 import { getTradeDateCutoff } from '@/lib/settings';
 import { aggregateByDay } from '@/lib/trading/aggregator';
@@ -15,11 +15,13 @@ import {
   usePlaybackEngine,
   type PnLSnapshot,
 } from '@/lib/replay/engine';
+import { computeRoundTrips, getRoundTripState } from '@/lib/replay/round-trips';
 import type { TransactionRecord } from '@/lib/db/schema';
 import ReplayTimeline from '@/components/replay/ReplayTimeline';
 import ReplayControls from '@/components/replay/ReplayControls';
 import ReplayStats from '@/components/replay/ReplayStats';
 import ReplayChart from '@/components/replay/ReplayChart';
+import FloatingTradePanel from '@/components/replay/FloatingTradePanel';
 import { useAccount } from '@/contexts/AccountContext';
 
 interface DayOption {
@@ -42,6 +44,9 @@ export default function ReplayPage() {
   const [selectedDate, setSelectedDate] = useState('');
   const [replayInterval, setReplayInterval] = useState(paramInterval || '1m');
   const [heartbeat, setHeartbeat] = useState(paramHeartbeat || '1m');
+  const [showFloatingPanel, setShowFloatingPanel] = useState(true);
+  const [selectedPanelSymbol, setSelectedPanelSymbol] = useState<string | null>(null);
+  const [currentPrice, setCurrentPrice] = useState<number | undefined>();
   const prevVisibleCountRef = useRef(0);
 
   // Load transactions and build day options based on active account
@@ -239,10 +244,33 @@ export default function ReplayPage() {
     prevVisibleCountRef.current = visibleCount;
   }, [visibleCount]);
 
-  // Reset prev count when day changes
+  // Reset prev count + price when day changes
   useEffect(() => {
     prevVisibleCountRef.current = 0;
+    setSelectedPanelSymbol(null);
+    setCurrentPrice(undefined);
   }, [selectedDate]);
+
+  // Auto-select panel symbol for isolated replay, or first symbol in session
+  useEffect(() => {
+    if (paramSymbol) {
+      setSelectedPanelSymbol(paramSymbol);
+    } else if (symbols.length > 0 && !selectedPanelSymbol) {
+      setSelectedPanelSymbol(symbols[0]);
+    }
+  }, [paramSymbol, symbols, selectedPanelSymbol]);
+
+  // Compute round trips for the selected panel symbol
+  const panelRoundTrips = useMemo(() => {
+    if (!selectedPanelSymbol || dayTransactions.length === 0) return [];
+    return computeRoundTrips(dayTransactions, selectedPanelSymbol);
+  }, [dayTransactions, selectedPanelSymbol]);
+
+  const roundTripState = useMemo(() => {
+    if (panelRoundTrips.length === 0)
+      return { completedTrips: [], activeTrip: null, dayNetPnL: 0 };
+    return getRoundTripState(panelRoundTrips, playback.currentTimeSeconds);
+  }, [panelRoundTrips, playback.currentTimeSeconds]);
 
   // Loading state
   if (dayOptions === null) {
@@ -385,6 +413,7 @@ export default function ReplayPage() {
             interval={replayInterval}
             heartbeat={heartbeat}
             isPlaying={playback.isPlaying}
+            onCurrentPrice={setCurrentPrice}
           />
         </div>
       )}
@@ -417,6 +446,31 @@ export default function ReplayPage() {
         onSkipForward={actions.skipForward}
         onSkipBack={actions.skipBack}
       />
+
+      {/* Floating Round Trip Panel */}
+      {showFloatingPanel && selectedPanelSymbol && panelRoundTrips.length > 0 && (
+        <FloatingTradePanel
+          symbol={selectedPanelSymbol}
+          roundTrips={roundTripState.completedTrips}
+          activeTrip={roundTripState.activeTrip}
+          dayNetPnL={roundTripState.dayNetPnL}
+          currentPrice={currentPrice}
+          symbols={symbols.length > 1 ? symbols : undefined}
+          onSymbolChange={symbols.length > 1 ? setSelectedPanelSymbol : undefined}
+          onClose={() => setShowFloatingPanel(false)}
+        />
+      )}
+
+      {/* Panel re-open button */}
+      {!showFloatingPanel && (
+        <button
+          onClick={() => setShowFloatingPanel(true)}
+          className="fixed bottom-24 right-6 z-50 p-2.5 rounded-xl bg-accent text-white shadow-lg hover:bg-accent/90 transition-all hover:scale-105"
+          title="Show Round Trips"
+        >
+          <BarChart3 size={18} />
+        </button>
+      )}
     </div>
   );
 }

@@ -20,7 +20,8 @@ import { AccountRecord } from '@/lib/db/schema';
 import { useState, useEffect } from 'react';
 import { useAccount } from '@/contexts/AccountContext';
 import { normalizeDate, normalizeTime } from '@/lib/import/normalizer';
-import { Link as LinkIcon } from 'lucide-react';
+import { Link as LinkIcon, Cpu } from 'lucide-react';
+import { getProvider } from '@/packages/ai-connect/src/providers';
 
 export default function ImportPage() {
   const router = useRouter();
@@ -213,15 +214,17 @@ export default function ImportPage() {
       }
 
       const config = aiContext?.config;
-      const llmConfig = config?.customLLM;
+
+      const activeProvider = config?.customLLM?.provider;
+      const activeKey = config?.customLLM?.apiKey;
+      const activeModel = config?.customLLM?.model;
 
       if (processedType === 'image') {
-        // If it's an image, we need vision. If we are in hosted-api mode, the server handles the key.
-        // If we are in custom-llm mode, we need a key.
-        if (config?.type === 'custom-llm' && !llmConfig?.apiKey) {
-          throw new Error("API Key required for image import in Custom LLM mode");
+        // If it's an image, we need vision.
+        if (!activeKey && config?.type !== 'hosted-api') {
+          throw new Error("API Key required for image import. Please configure it in Settings.");
         }
-        
+
         let base64Image = '';
         if (processedData instanceof File) {
           const { fileToBase64 } = await import('@/lib/import/image-extractor');
@@ -229,13 +232,16 @@ export default function ImportPage() {
         } else base64Image = processedData as string;
 
         const { extractFromImage } = await import('@/lib/import/image-extractor');
-        // If llmConfig is missing (hosted-api), we pass the whole config or a dummy
-        const result = await extractFromImage(base64Image, llmConfig || { apiKey: 'SERVER_MANAGED' } as any);
+        const result = await extractFromImage(base64Image, {
+          apiKey: activeKey || 'SERVER_MANAGED',
+          provider: activeProvider,
+          model: activeModel
+        });
 
         if (result.usage && aiContext?.recordUsage) {
           aiContext.recordUsage(
-            (llmConfig?.provider as any) || 'google',
-            llmConfig?.model || 'gemini-1.5-flash',
+            (activeProvider as any) || 'google',
+            activeModel || 'gemini-1.5-flash',
             {
               inputTokens: result.usage.promptTokens ?? 0,
               outputTokens: result.usage.completionTokens ?? 0,
@@ -266,13 +272,17 @@ export default function ImportPage() {
       let detectedMapping: ColumnMapping = {} as any;
       let detectedSideMap: SideValueMapping = {};
 
-      if (llmConfig?.apiKey) {
+      if (activeKey) {
         try {
-          const response = await mapColumnsWithLLM(parsedHeaders, parsedRows.slice(0, 3), llmConfig);
+          const response = await mapColumnsWithLLM(parsedHeaders, parsedRows.slice(0, 3), {
+            apiKey: activeKey,
+            provider: activeProvider,
+            model: activeModel
+          });
           detectedMapping = response.mapping as ColumnMapping;
           detectedSideMap = response.sideValues || {};
           if (response.usage && aiContext?.recordUsage) {
-            aiContext.recordUsage(llmConfig.provider || 'google', llmConfig.model || 'gemini-1.5-flash', {
+            aiContext.recordUsage(activeProvider || 'google', activeModel || 'gemini-1.5-flash', {
               inputTokens: response.usage.promptTokens,
               outputTokens: response.usage.completionTokens,
               totalTokens: response.usage.totalTokens
@@ -354,13 +364,37 @@ export default function ImportPage() {
     });
   };
 
+  // Determine active provider info for UI
+  const config = aiContext?.config;
+  const activeProviderId = config?.customLLM?.provider;
+  const activeModelId = config?.customLLM?.model;
+
+  const providerInfo = activeProviderId ? getProvider(activeProviderId as any) : null;
+
   return (
     <div className="container mx-auto py-8 px-4 max-w-5xl">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-foreground">Import Trades</h1>
-        <p className="text-muted mt-2">
-          Upload CSV, TLG, or drop a screenshot of your trade history.
-        </p>
+      <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground">Import Trades</h1>
+          <p className="text-muted mt-2">
+            Upload CSV, TLG, or drop a screenshot of your trade history.
+          </p>
+        </div>
+
+        {providerInfo && (
+          <div className="bg-muted/30 border border-border/50 rounded-2xl px-4 py-3 flex items-center gap-3 backdrop-blur-sm self-start md:self-auto">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+              <Cpu size={20} />
+            </div>
+            <div>
+              <div className="text-[10px] text-muted uppercase font-bold tracking-widest leading-none mb-1">Active AI Engine</div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-foreground">{providerInfo.name}</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-accent/10 text-accent rounded-md font-medium uppercase">{activeModelId?.split('/').pop() || activeModelId}</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {step === 'upload' && (

@@ -11,6 +11,7 @@ interface DropZoneProps {
 export default function DropZone({ onData, isProcessing }: DropZoneProps) {
   const [isDragActive, setIsDragActive] = useState(false);
   const [pasteDetected, setPasteDetected] = useState(false);
+  const [pasteError, setPasteError] = useState('');
   const dropzoneRef = useRef<HTMLDivElement>(null);
 
   // Auto-focus the dropzone on mount so paste works immediately
@@ -126,18 +127,66 @@ export default function DropZone({ onData, isProcessing }: DropZoneProps) {
           <p className="text-muted text-sm italic">This takes about 10-15 seconds for images</p>
         </div>
       ) : (
-        <div className="space-y-4">
-          <div className="flex justify-center text-5xl mb-4 group-hover:scale-110 transition-transform">
+        <div className="space-y-6">
+          <div className="flex justify-center text-5xl mb-2 group-hover:scale-110 transition-transform">
             📄 <span className="mx-2 opacity-50">/</span> 🖼️
           </div>
-          <h3 className="text-xl font-bold">Drop files here or click to browse</h3>
-          <p className="text-muted text-sm max-w-sm mx-auto leading-relaxed">
-            Supports <span className="text-foreground font-semibold">CSV, TSV, TXT, TLG, eSignal</span>, URLs, and <span className="text-foreground font-semibold">Screenshots</span> (PNG/JPG).
-            <br />
-            <span className="inline-block mt-3 px-3 py-1 bg-muted/50 rounded-lg border border-border">
-              <span className="font-semibold text-foreground">Tip:</span> Just <span className="keyboard-shortcut kbd">Cmd+V</span> anywhere to paste!
-            </span>
-          </p>
+
+          <div className="space-y-2">
+            <h3 className="text-xl font-bold">Drop files here or click to browse</h3>
+            <p className="text-muted text-sm max-w-sm mx-auto leading-relaxed">
+              Supports <span className="text-foreground font-semibold">CSV, TSV, TXT, TLG, eSignal</span>, URLs, and <span className="text-foreground font-semibold">Screenshots</span> (PNG/JPG).
+            </p>
+          </div>
+
+          <div className="flex flex-col items-center gap-3 pt-2">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setPasteError('');
+                // Try to read from clipboard
+                if (navigator.clipboard && navigator.clipboard.read) {
+                  navigator.clipboard.read().then(async (items) => {
+                    for (const item of items) {
+                      const imageType = item.types.find(t => t.startsWith('image/'));
+                      if (imageType) {
+                        const blob = await item.getType(imageType);
+                        const extension = imageType.split('/')[1] || 'png';
+                        const file = new File([blob], `clipboard-image.${extension}`, { type: imageType });
+                        onData(file, 'image');
+                        setPasteDetected(true);
+                        return;
+                      }
+                    }
+                    // If no image, try text
+                    const text = await navigator.clipboard.readText();
+                    if (text) {
+                      onData(text, 'text');
+                      setPasteDetected(true);
+                    }
+                  }).catch(err => {
+                    console.error('Failed to read clipboard:', err);
+                    setPasteError('Clipboard access was denied. Use Cmd+V or Ctrl+V instead.');
+                  });
+                } else {
+                  setPasteError('Clipboard access is unavailable. Use Cmd+V or Ctrl+V instead.');
+                }
+              }}
+              className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-full font-semibold shadow-lg hover:bg-primary/90 hover:scale-105 active:scale-95 transition-all"
+            >
+              <span className="text-xl">📋</span>
+              Paste from Clipboard
+            </button>
+
+            <p className="text-xs text-muted">
+              <span className="keyboard-shortcut kbd px-1.5 py-0.5 rounded border border-border bg-muted/30">Cmd+V</span> works anywhere too!
+            </p>
+            {pasteError && (
+              <p role="alert" className="text-xs text-loss">
+                {pasteError}
+              </p>
+            )}
+          </div>
         </div>
       )}
     </div>

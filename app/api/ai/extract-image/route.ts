@@ -24,6 +24,8 @@ export async function POST(request: NextRequest) {
         }
 
         // Use the user's configured provider and model
+        console.log(`[AI-Extract] Starting extraction using provider: ${provider}, model: ${modelId || 'gemini-2.0-flash'}`);
+
         const model = await createVercelAIModel({
             provider: provider as any,
             model: modelId || 'gemini-2.0-flash',
@@ -59,6 +61,9 @@ Rules:
             }],
             temperature: 0,
         });
+
+        console.log(`[AI-Extract] Received response from AI. Length: ${result.text.length} chars.`);
+
 
         let text = result.text.trim();
         if (text.startsWith('```json')) text = text.slice(7);
