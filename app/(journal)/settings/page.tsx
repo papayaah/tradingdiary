@@ -1,6 +1,7 @@
 import APIKeyInput from '@/components/settings/APIKeyInput';
 import TradeDateCutoff from '@/components/settings/TradeDateCutoff';
 import AccountSettings from '@/components/settings/AccountSettings';
+import MarketDataSettings from '@/components/settings/MarketDataSettings';
 
 export default function SettingsPage() {
     return (
@@ -9,6 +10,7 @@ export default function SettingsPage() {
 
             <div className="space-y-8">
                 <AccountSettings />
+                <MarketDataSettings />
                 <TradeDateCutoff />
                 <APIKeyInput />
             </div>
