@@ -19,6 +19,7 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       ADMIN_EMAILS: ${ADMIN_EMAILS}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
+      POLYGON_API_KEY: ${POLYGON_API_KEY}
     ports:
       - "127.0.0.1:${APP_PORT:-3000}:3000"
     volumes:
@@ -40,4 +41,3 @@ services:
 volumes:
   pgdata:
   media_storage:
-
