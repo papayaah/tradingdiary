@@ -188,6 +188,29 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
           createSeriesMarkers(candleSeries, markers);
         }
 
+        // Draw a horizontal price line at each executed price so the buy/sell price
+        // is readable on the right axis — non-overlapping with the arrow markers.
+        // Dedupe identical side+price pairs to avoid stacking duplicate lines.
+        const seenPriceLines = new Set<string>();
+        transactions.forEach((t) => {
+          if (typeof t.price !== 'number' || !isFinite(t.price) || t.price <= 0) return;
+          const isBuy = t.side === 'BUYTOOPEN' || t.side === 'BUYTOCLOSE';
+          const key = `${isBuy ? 'B' : 'S'}-${t.price.toFixed(2)}`;
+          if (seenPriceLines.has(key)) return;
+          seenPriceLines.add(key);
+
+          candleSeries.createPriceLine({
+            price: t.price,
+            color: isBuy
+              ? (isDark ? '#4ade80' : '#16a34a')
+              : (isDark ? '#f87171' : '#dc2626'),
+            lineWidth: 1,
+            lineStyle: 2, // dashed
+            axisLabelVisible: true,
+            title: isBuy ? 'Buy' : 'Sell',
+          });
+        });
+
         // --- Smart Zoom: Center the view on the trades ---
         // Find the time range of actual trades
         const tradeTimes = transactions.map(t => {

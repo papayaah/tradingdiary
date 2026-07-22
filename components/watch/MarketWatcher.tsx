@@ -136,12 +136,21 @@ export default function MarketWatcher() {
   const [alertLogs, setAlertLogs] = useState<AlertLog[]>([]);
   const [isPolygonActive, setIsPolygonActive] = useState(false);
   const [isScannerPaused, setIsScannerPaused] = useState(false);
-  const [autoPauseEnabled, setAutoPauseEnabled] = useState(true); // pause scanner outside market hours
+  const [autoPauseEnabled, setAutoPauseEnabled] = useState(true); // pause scanner outside chosen session
+  const [activeWindow, setActiveWindow] = useState<'rth' | 'pre' | 'ext'>('pre'); // which session the scanner runs in
   const [marketOpen, setMarketOpen] = useState(true);
 
-  // Determine whether the US equity market (NYSE/Nasdaq) is in regular trading hours right now.
-  // Regular hours: Mon–Fri, 09:30–16:00 America/New_York. Note: does not account for market holidays.
-  const isMarketOpen = () => {
+  // Session windows in America/New_York, as minutes-from-midnight [start, end).
+  // Polygon returns equity bars 4:00 AM – 8:00 PM ET, so 'ext' covers all available data.
+  const SESSION_WINDOWS: Record<string, [number, number]> = {
+    rth: [570, 960],  // 9:30 – 16:00 (regular)
+    pre: [240, 960],  // 4:00 – 16:00 (pre-market + regular)
+    ext: [240, 1200], // 4:00 – 20:00 (pre + regular + after-hours)
+  };
+
+  // Whether the current time (Mon–Fri) falls inside the chosen session window.
+  // Note: does not account for US market holidays.
+  const isMarketOpen = (win: string) => {
     const parts = new Intl.DateTimeFormat('en-US', {
       timeZone: 'America/New_York',
       weekday: 'short',
@@ -152,8 +161,9 @@ export default function MarketWatcher() {
     const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
     const weekday = get('weekday');
     if (weekday === 'Sat' || weekday === 'Sun') return false;
-    const timeVal = parseInt(get('hour')) * 100 + parseInt(get('minute'));
-    return timeVal >= 930 && timeVal < 1600;
+    const mins = parseInt(get('hour')) * 60 + parseInt(get('minute'));
+    const [start, end] = SESSION_WINDOWS[win] ?? SESSION_WINDOWS.rth;
+    return mins >= start && mins < end;
   };
 
   // Refs
@@ -210,8 +220,11 @@ export default function MarketWatcher() {
     if (savedScannerPaused !== null) {
       setIsScannerPaused(savedScannerPaused === 'true');
     }
+    const savedWindow = localStorage.getItem('watcher-active-window');
+    const initialWindow = (savedWindow === 'rth' || savedWindow === 'pre' || savedWindow === 'ext') ? savedWindow : 'pre';
+    if (savedWindow) setActiveWindow(initialWindow);
     // Seed the market-open state immediately so the badge is correct on first paint
-    setMarketOpen(isMarketOpen());
+    setMarketOpen(isMarketOpen(initialWindow));
 
     // Load tester settings
     const savedActiveTab = localStorage.getItem('watcher-active-tab');
@@ -382,6 +395,23 @@ export default function MarketWatcher() {
       
       const isRth = timeVal >= 930 && timeVal < 1600;
       return filter === 'rth' ? isRth : !isRth;
+    });
+  };
+
+  // Helper to filter candles to the active polling window (matches the auto-pause session bounds),
+  // so the chart shows only the hours the scanner actually polls — less noise.
+  const filterCandlesByWindow = (candles: Candle[], win: string) => {
+    const [start, end] = SESSION_WINDOWS[win] ?? SESSION_WINDOWS.pre;
+    return candles.filter((c) => {
+      const nyTime = new Date(c.time * 1000).toLocaleTimeString('en-US', {
+        timeZone: 'America/New_York',
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      const [h, m] = nyTime.split(':');
+      const mins = parseInt(h) * 60 + parseInt(m);
+      return mins >= start && mins < end;
     });
   };
 
@@ -612,9 +642,13 @@ export default function MarketWatcher() {
   const autoPauseEnabledRef = useRef(autoPauseEnabled);
   autoPauseEnabledRef.current = autoPauseEnabled;
 
+  const activeWindowRef = useRef(activeWindow);
+  activeWindowRef.current = activeWindow;
+
   // Derived scanner state used by the UI
   const marketAutoPaused = autoPauseEnabled && !marketOpen;
   const effectivelyActive = !isScannerPaused && !marketAutoPaused;
+  const windowStartLabel = activeWindow === 'rth' ? '9:30 AM ET' : '4:00 AM ET';
 
   const handleScanNext = async () => {
     const currentList = watchlistRef.current;
@@ -682,10 +716,11 @@ export default function MarketWatcher() {
 
     timerRef.current = setInterval(() => {
       // Keep the market-open indicator fresh (no-op re-render when unchanged)
-      setMarketOpen(isMarketOpen());
+      const open = isMarketOpen(activeWindowRef.current);
+      setMarketOpen(open);
 
       if (isScannerPaused) return; // Manually paused
-      if (autoPauseEnabledRef.current && !isMarketOpen()) return; // Auto-paused outside market hours
+      if (autoPauseEnabledRef.current && !open) return; // Auto-paused outside the chosen session
 
       setCountdown((prev) => {
         if (prev <= 1) {
@@ -906,6 +941,11 @@ export default function MarketWatcher() {
     let filtered = testResult.candles;
     if (testCurrentDayOnly) {
       filtered = filterCurrentDayOnly(filtered);
+    }
+    // Watchlist tab: constrain to the polling window (unless auto-pause is off / 24-7 mode).
+    // Tester tab: keep its own manual Trading Session filter.
+    if (activeTab === 'watchlist') {
+      return autoPauseEnabled ? filterCandlesByWindow(filtered, activeWindow) : filtered;
     }
     return filterCandlesBySession(filtered, testSessionFilter);
   };
@@ -1619,7 +1659,7 @@ export default function MarketWatcher() {
                   {marketAutoPaused && !isScannerPaused && watchlist.length > 0 && (
                     <div className="flex items-center gap-2 text-xs bg-slate-500/10 border border-slate-500/20 px-3 py-1.5 rounded-lg text-slate-400">
                       <Moon size={12} />
-                      <span>Auto-paused until market open (9:30 ET)</span>
+                      <span>Auto-paused until session open ({windowStartLabel})</span>
                     </div>
                   )}
                   
@@ -1881,18 +1921,34 @@ export default function MarketWatcher() {
                   </select>
                 </div>
 
-                <label className="flex items-center gap-2 cursor-pointer select-none hover:text-foreground transition-colors">
-                  <input
-                    type="checkbox"
-                    checked={autoPauseEnabled}
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer select-none hover:text-foreground transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={autoPauseEnabled}
+                      onChange={(e) => {
+                        setAutoPauseEnabled(e.target.checked);
+                        localStorage.setItem('watcher-auto-pause', String(e.target.checked));
+                      }}
+                      className="rounded border-card-border text-accent focus:ring-accent h-3.5 w-3.5 cursor-pointer"
+                    />
+                    <span>Auto-pause outside</span>
+                  </label>
+                  <select
+                    value={activeWindow}
+                    disabled={!autoPauseEnabled}
                     onChange={(e) => {
-                      setAutoPauseEnabled(e.target.checked);
-                      localStorage.setItem('watcher-auto-pause', String(e.target.checked));
+                      setActiveWindow(e.target.value as 'rth' | 'pre' | 'ext');
+                      localStorage.setItem('watcher-active-window', e.target.value);
                     }}
-                    className="rounded border-card-border text-accent focus:ring-accent h-3.5 w-3.5 cursor-pointer"
-                  />
-                  <span>Auto-pause outside market hours (Mon–Fri 9:30–16:00 ET)</span>
-                </label>
+                    className="bg-card-bg border border-card-border rounded px-2 py-1 text-foreground font-medium disabled:opacity-50 cursor-pointer"
+                  >
+                    <option value="rth">Regular hours (9:30–16:00 ET)</option>
+                    <option value="pre">Pre-market + Regular (4:00–16:00 ET)</option>
+                    <option value="ext">Extended: Pre + Regular + After (4:00–20:00 ET)</option>
+                  </select>
+                  <span className="text-muted/70">Mon–Fri</span>
+                </div>
               </div>
             </div>
 
