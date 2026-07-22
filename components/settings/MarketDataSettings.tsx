@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Key, ShieldCheck, Zap, Database, Check, RefreshCw } from 'lucide-react';
+import { Key, ShieldCheck, Zap, Database, Check, Activity } from 'lucide-react';
 
 export default function MarketDataSettings() {
   const [preferredProvider, setPreferredProvider] = useState<string>('auto');
@@ -9,6 +9,7 @@ export default function MarketDataSettings() {
   const [alpacaSecret, setAlpacaSecret] = useState<string>('');
   const [twelveKey, setTwelveKey] = useState<string>('');
   const [polygonKey, setPolygonKey] = useState<string>('');
+  const [activeProviderName, setActiveProviderName] = useState<string>('Detecting...');
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   useEffect(() => {
@@ -20,6 +21,24 @@ export default function MarketDataSettings() {
       setPolygonKey(localStorage.getItem('watcher-polygon-key') || '');
     }
   }, []);
+
+  // Detect active provider from live API endpoint
+  const checkActiveProvider = () => {
+    fetch('/api/watch?symbol=AAPL')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.provider) {
+          setActiveProviderName(data.provider);
+        } else {
+          setActiveProviderName('Yahoo Finance');
+        }
+      })
+      .catch(() => setActiveProviderName('Yahoo Finance'));
+  };
+
+  useEffect(() => {
+    checkActiveProvider();
+  }, [preferredProvider]);
 
   const handleSave = () => {
     if (typeof window !== 'undefined') {
@@ -37,13 +56,14 @@ export default function MarketDataSettings() {
       document.cookie = `watcher_polygon_key=${encodeURIComponent(polygonKey.trim())}; path=/; max-age=31536000; SameSite=Lax`;
 
       setSavedSuccess(true);
+      checkActiveProvider();
       setTimeout(() => setSavedSuccess(false), 3000);
     }
   };
 
   return (
     <div className="bg-card text-card-foreground p-6 rounded-xl border border-card-border shadow-sm max-w-4xl space-y-6">
-      <div className="flex items-center justify-between border-b border-card-border pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-card-border pb-4 gap-3">
         <div>
           <h3 className="text-lg font-bold flex items-center gap-2">
             <Zap className="text-accent" size={20} /> Market Data Provider Settings
@@ -52,11 +72,20 @@ export default function MarketDataSettings() {
             Choose your preferred data feed and manage API keys for real-time stock scanning.
           </p>
         </div>
-        {savedSuccess && (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-400 text-xs font-semibold rounded-full border border-emerald-500/20 animate-fade-in">
-            <Check size={14} /> Settings Saved
-          </span>
-        )}
+
+        <div className="flex items-center gap-3">
+          {/* Active Data Feed Indicator Badge */}
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold shadow-sm">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <Activity size={13} className="text-emerald-400" /> Active Feed: {activeProviderName}
+          </div>
+
+          {savedSuccess && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-400 text-xs font-semibold rounded-full border border-emerald-500/20 animate-fade-in">
+              <Check size={14} /> Saved
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Provider Selector */}
@@ -69,7 +98,7 @@ export default function MarketDataSettings() {
             {
               id: 'auto',
               name: 'Automatic (Recommended)',
-              desc: 'Auto-detect best key or fallback to Yahoo',
+              desc: 'Auto-detect active API key or fallback to Yahoo Finance',
               badge: 'Smart'
             },
             {
@@ -87,7 +116,7 @@ export default function MarketDataSettings() {
             {
               id: 'yahoo',
               name: 'Yahoo Finance',
-              desc: '100% Free Default (No key needed)',
+              desc: '100% Free Default (No key required)',
               badge: 'Free'
             }
           ].map((p) => (
