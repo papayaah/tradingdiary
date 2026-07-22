@@ -20,7 +20,10 @@ import {
   Search,
   Sliders,
   Edit,
-  Moon
+  Moon,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 import { openDB } from 'idb';
 
@@ -139,6 +142,50 @@ export default function MarketWatcher() {
   const [autoPauseEnabled, setAutoPauseEnabled] = useState(true); // pause scanner outside chosen session
   const [activeWindow, setActiveWindow] = useState<'rth' | 'pre' | 'ext'>('pre'); // which session the scanner runs in
   const [marketOpen, setMarketOpen] = useState(true);
+
+  // Sorting state for Watchlist table
+  const [sortColumn, setSortColumn] = useState<'symbol' | 'interval' | 'minMove' | 'status' | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const handleSort = (column: 'symbol' | 'interval' | 'minMove' | 'status') => {
+    if (sortColumn === column) {
+      if (sortDirection === 'asc') {
+        setSortDirection('desc');
+      } else {
+        setSortColumn(null);
+        setSortDirection('asc');
+      }
+    } else {
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  };
+
+  const sortedWatchlist = React.useMemo(() => {
+    if (!sortColumn) return watchlist;
+    return [...watchlist].sort((a, b) => {
+      let aVal: string | number = '';
+      let bVal: string | number = '';
+
+      if (sortColumn === 'symbol') {
+        aVal = a.symbol.toUpperCase();
+        bVal = b.symbol.toUpperCase();
+      } else if (sortColumn === 'interval') {
+        aVal = a.interval;
+        bVal = b.interval;
+      } else if (sortColumn === 'minMove') {
+        aVal = a.minMovePercent;
+        bVal = b.minMovePercent;
+      } else if (sortColumn === 'status') {
+        aVal = a.status || '';
+        bVal = b.status || '';
+      }
+
+      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [watchlist, sortColumn, sortDirection]);
 
   // Session windows in America/New_York, as minutes-from-midnight [start, end).
   // Polygon returns equity bars 4:00 AM – 8:00 PM ET, so 'ext' covers all available data.
@@ -1805,17 +1852,55 @@ export default function MarketWatcher() {
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="border-b border-card-border text-[10px] text-muted font-bold uppercase tracking-wider">
-                        <th className="py-3 px-4">Symbol</th>
-                        <th className="py-3 px-4">Interval</th>
-                        <th className="py-3 px-4">Min Move</th>
+                        <th onClick={() => handleSort('symbol')} className="py-3 px-4 cursor-pointer select-none hover:text-foreground transition-colors group">
+                          <div className="inline-flex items-center gap-1">
+                            <span>Symbol</span>
+                            {sortColumn === 'symbol' ? (
+                              sortDirection === 'asc' ? <ArrowUp size={12} className="text-accent" /> : <ArrowDown size={12} className="text-accent" />
+                            ) : (
+                              <ArrowUpDown size={11} className="text-muted/40 group-hover:text-muted transition-colors" />
+                            )}
+                          </div>
+                        </th>
+                        <th onClick={() => handleSort('interval')} className="py-3 px-4 cursor-pointer select-none hover:text-foreground transition-colors group">
+                          <div className="inline-flex items-center gap-1">
+                            <span>Interval</span>
+                            {sortColumn === 'interval' ? (
+                              sortDirection === 'asc' ? <ArrowUp size={12} className="text-accent" /> : <ArrowDown size={12} className="text-accent" />
+                            ) : (
+                              <ArrowUpDown size={11} className="text-muted/40 group-hover:text-muted transition-colors" />
+                            )}
+                          </div>
+                        </th>
+                        <th onClick={() => handleSort('minMove')} className="py-3 px-4 cursor-pointer select-none hover:text-foreground transition-colors group">
+                          <div className="inline-flex items-center gap-1">
+                            <span>Min Move</span>
+                            {sortColumn === 'minMove' ? (
+                              sortDirection === 'asc' ? <ArrowUp size={12} className="text-accent" /> : <ArrowDown size={12} className="text-accent" />
+                            ) : (
+                              <ArrowUpDown size={11} className="text-muted/40 group-hover:text-muted transition-colors" />
+                            )}
+                          </div>
+                        </th>
                         <th className="py-3 px-4 text-center">Last Candles</th>
                         <th className="py-3 px-4">Last Check</th>
-                        <th className="py-3 px-4">Status</th>
+                        <th onClick={() => handleSort('status')} className="py-3 px-4 cursor-pointer select-none hover:text-foreground transition-colors group">
+                          <div className="inline-flex items-center gap-1">
+                            <span>Status</span>
+                            {sortColumn === 'status' ? (
+                              sortDirection === 'asc' ? <ArrowUp size={12} className="text-accent" /> : <ArrowDown size={12} className="text-accent" />
+                            ) : (
+                              <ArrowUpDown size={11} className="text-muted/40 group-hover:text-muted transition-colors" />
+                            )}
+                          </div>
+                        </th>
                         <th className="py-3 px-4 text-right">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-card-border/40">
-                      {watchlist.map((item, idx) => {
+                      {sortedWatchlist.map((item, sortedIdx) => {
+                        const originalIdx = watchlist.findIndex(w => w.symbol === item.symbol && w.interval === item.interval);
+                        const idx = originalIdx !== -1 ? originalIdx : sortedIdx;
                         const rowViewCandles = item.candles ? getWatchlistViewCandles(item.candles) : [];
                         const miniCandles = (rowViewCandles.length > 0 ? rowViewCandles : (item.candles || [])).slice(-5);
                         const latestPrice = miniCandles.length > 0
