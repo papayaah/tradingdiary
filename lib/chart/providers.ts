@@ -213,6 +213,55 @@ class YahooProvider implements ChartProvider {
 }
 
 /**
+ * Twelve Data Provider (Free tier: 8 API calls/min, 800/day, real-time US equities)
+ */
+class TwelveDataProvider implements ChartProvider {
+    name = "Twelve Data";
+
+    async fetchCandles(symbol: string, date: string, interval: string): Promise<OHLCCandle[]> {
+        return this.fetchRecentCandles(symbol, interval);
+    }
+
+    async fetchRecentCandles(symbol: string, interval: string): Promise<OHLCCandle[]> {
+        const apiKey = process.env.TWELVE_DATA_API_KEY;
+        if (!apiKey) throw new Error("Missing TWELVE_DATA_API_KEY");
+
+        const needsAggregation = interval === '10m' || interval === '2m';
+        let fetchInterval = interval;
+        if (interval === '10m') fetchInterval = '5m';
+        if (interval === '2m') fetchInterval = '1m';
+
+        const cleanSymbol = symbol.toUpperCase();
+        const url = `https://api.twelvedata.com/time_series?symbol=${cleanSymbol}&interval=${fetchInterval}&outputsize=250&apikey=${apiKey}`;
+
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Twelve Data API error: ${res.status}`);
+
+        const data = await res.json();
+        if (data.status === 'error') {
+            throw new Error(`Twelve Data error: ${data.message}`);
+        }
+
+        const values = data.values || [];
+        // Twelve Data returns newest first, so reverse to chronological order
+        const candles: OHLCCandle[] = values.slice().reverse().map((v: any) => ({
+            time: Math.floor(new Date(v.datetime).getTime() / 1000),
+            open: parseFloat(v.open),
+            high: parseFloat(v.high),
+            low: parseFloat(v.low),
+            close: parseFloat(v.close),
+            volume: parseInt(v.volume) || 0,
+        }));
+
+        if (needsAggregation) {
+            return aggregateYahooCandles(candles, 2);
+        }
+
+        return candles;
+    }
+}
+
+/**
  * Factory to get the active provider based on environment variables.
  * Easy to prioritize which one to use.
  */
@@ -230,7 +279,12 @@ export function getActiveProvider(symbol?: string): ChartProvider {
         return new AlpacaProvider();
     }
 
-    // Priority 2: Polygon
+    // Priority 2: Twelve Data (Real-time US equities)
+    if (process.env.TWELVE_DATA_API_KEY) {
+        return new TwelveDataProvider();
+    }
+
+    // Priority 3: Polygon
     if (process.env.POLYGON_API_KEY) {
         return new PolygonProvider();
     }
