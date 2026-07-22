@@ -938,16 +938,26 @@ export default function MarketWatcher() {
   // Helper to get all filtered candles for tester tab
   const getTesterCandles = () => {
     if (!testResult || !testResult.success || !testResult.candles.length) return [];
+    // Watchlist tab: constrain to the polling window (shared with the row mini-viz).
+    // Tester tab: keep its own manual Trading Session filter.
+    if (activeTab === 'watchlist') {
+      return getWatchlistViewCandles(testResult.candles);
+    }
     let filtered = testResult.candles;
     if (testCurrentDayOnly) {
       filtered = filterCurrentDayOnly(filtered);
     }
-    // Watchlist tab: constrain to the polling window (unless auto-pause is off / 24-7 mode).
-    // Tester tab: keep its own manual Trading Session filter.
-    if (activeTab === 'watchlist') {
-      return autoPauseEnabled ? filterCandlesByWindow(filtered, activeWindow) : filtered;
-    }
     return filterCandlesBySession(filtered, testSessionFilter);
+  };
+
+  // Candles as shown in the watchlist context (row mini-viz + expanded chart):
+  // current-day + active polling window. Keeping both on this single helper ensures
+  // the row's last candles match what the expanded chart displays.
+  const getWatchlistViewCandles = (candles: Candle[]) => {
+    let filtered = candles;
+    if (testCurrentDayOnly) filtered = filterCurrentDayOnly(filtered);
+    if (autoPauseEnabled) filtered = filterCandlesByWindow(filtered, activeWindow);
+    return filtered;
   };
 
   const testerCandles = getTesterCandles();
@@ -1757,8 +1767,10 @@ export default function MarketWatcher() {
                     </thead>
                     <tbody className="divide-y divide-card-border/40">
                       {watchlist.map((item, idx) => {
-                        const latestPrice = item.candles && item.candles.length > 0 
-                          ? item.candles[item.candles.length - 1].close 
+                        const rowViewCandles = item.candles ? getWatchlistViewCandles(item.candles) : [];
+                        const miniCandles = (rowViewCandles.length > 0 ? rowViewCandles : (item.candles || [])).slice(-5);
+                        const latestPrice = miniCandles.length > 0
+                          ? miniCandles[miniCandles.length - 1].close
                           : null;
                                         return (
                           <React.Fragment key={`${item.symbol}-${item.interval}-${idx}`}>
@@ -1822,10 +1834,10 @@ export default function MarketWatcher() {
                                 className="py-4 px-4 cursor-pointer hover:opacity-80 transition-opacity"
                                 title="Click to expand inline session chart"
                               >
-                                {item.candles && item.candles.length > 0 ? (
+                                {miniCandles.length > 0 ? (
                                   <div className="flex items-center justify-center gap-1 h-6">
-                                    {item.candles.slice(-5).map((c, cIdx) => {
-                                      const isGreen = c.close > c.open;
+                                    {miniCandles.map((c, cIdx) => {
+                                      const isGreen = c.close >= c.open;
                                       return (
                                         <div
                                           key={cIdx}
