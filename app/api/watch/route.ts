@@ -11,7 +11,20 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const provider = getActiveProvider(symbol);
+    const cookies = request.cookies;
+    const preferredProvider = cookies.get('watcher_pref_provider')?.value;
+    const alpacaKeyId = cookies.get('watcher_alpaca_key_id')?.value;
+    const alpacaSecret = cookies.get('watcher_alpaca_secret')?.value;
+    const twelveKey = cookies.get('watcher_twelve_key')?.value;
+    const polygonKey = cookies.get('watcher_polygon_key')?.value;
+
+    const provider = getActiveProvider(symbol, {
+      preferredProvider,
+      alpacaKeyId,
+      alpacaSecret,
+      twelveKey,
+      polygonKey,
+    });
     const candles = await provider.fetchRecentCandles(symbol, interval);
 
     return NextResponse.json({

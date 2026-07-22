@@ -93,12 +93,12 @@ export default function MarketDataSettings() {
         <label className="text-xs font-bold uppercase tracking-wider text-muted block">
           Preferred Data Engine
         </label>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
           {[
             {
               id: 'auto',
               name: 'Automatic (Recommended)',
-              desc: 'Auto-detect active API key or fallback to Yahoo Finance',
+              desc: 'Auto-detect active key or fallback to Yahoo',
               badge: 'Smart'
             },
             {
@@ -112,6 +112,12 @@ export default function MarketDataSettings() {
               name: 'Twelve Data',
               desc: 'Real-time US equities & ETFs',
               badge: '8 req/min'
+            },
+            {
+              id: 'polygon',
+              name: 'Polygon / Massive',
+              desc: '5 API calls/min (Free Tier)',
+              badge: '5 req/min'
             },
             {
               id: 'yahoo',

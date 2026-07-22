@@ -261,11 +261,19 @@ class TwelveDataProvider implements ChartProvider {
     }
 }
 
+export interface UserProviderConfig {
+    preferredProvider?: string;
+    alpacaKeyId?: string;
+    alpacaSecret?: string;
+    twelveKey?: string;
+    polygonKey?: string;
+}
+
 /**
- * Factory to get the active provider based on environment variables.
- * Easy to prioritize which one to use.
+ * Factory to get the active provider based on environment variables or user config.
+ * Falls back safely to Yahoo Finance if selected provider lacks an API key.
  */
-export function getActiveProvider(symbol?: string): ChartProvider {
+export function getActiveProvider(symbol?: string, userConfig?: UserProviderConfig): ChartProvider {
     // If it's a Yahoo-specific ticker format (starts with ^, starts with /, or ends with =F), force YahooProvider
     if (symbol) {
         const upper = symbol.toUpperCase();
@@ -274,18 +282,38 @@ export function getActiveProvider(symbol?: string): ChartProvider {
         }
     }
 
-    // Priority 1: Alpaca (200 API calls/min)
-    if (process.env.ALPACA_API_KEY_ID || process.env.ALPACA_API_KEY) {
+    const pref = userConfig?.preferredProvider || 'auto';
+
+    if (pref === 'alpaca') {
+        const keyId = userConfig?.alpacaKeyId || process.env.ALPACA_API_KEY_ID || process.env.ALPACA_API_KEY;
+        const secret = userConfig?.alpacaSecret || process.env.ALPACA_SECRET_KEY || process.env.ALPACA_API_SECRET;
+        if (keyId && secret) return new AlpacaProvider();
+    }
+
+    if (pref === 'twelve') {
+        const key = userConfig?.twelveKey || process.env.TWELVE_DATA_API_KEY;
+        if (key) return new TwelveDataProvider();
+    }
+
+    if (pref === 'polygon') {
+        const key = userConfig?.polygonKey || process.env.POLYGON_API_KEY;
+        if (key) return new PolygonProvider();
+    }
+
+    if (pref === 'yahoo') {
+        return new YahooProvider();
+    }
+
+    // Default 'auto' fallback chain:
+    if (userConfig?.alpacaKeyId || process.env.ALPACA_API_KEY_ID || process.env.ALPACA_API_KEY) {
         return new AlpacaProvider();
     }
 
-    // Priority 2: Twelve Data (Real-time US equities)
-    if (process.env.TWELVE_DATA_API_KEY) {
+    if (userConfig?.twelveKey || process.env.TWELVE_DATA_API_KEY) {
         return new TwelveDataProvider();
     }
 
-    // Priority 3: Polygon
-    if (process.env.POLYGON_API_KEY) {
+    if (userConfig?.polygonKey || process.env.POLYGON_API_KEY) {
         return new PolygonProvider();
     }
 
