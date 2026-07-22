@@ -14,7 +14,8 @@ import {
   Settings,
   Wallet,
   ChevronDown,
-  PieChart
+  PieChart,
+  Bell
 } from 'lucide-react';
 import { useImport } from '@/contexts/ImportContext';
 import { useAccount } from '@/contexts/AccountContext';
@@ -29,6 +30,7 @@ const navItems = [
   { href: '/portfolio', label: 'Portfolio', icon: PieChart },
   { href: '/journal', label: 'Journal', icon: BookOpen },
   { href: '/replay', label: 'Replay', icon: Play },
+  { href: '/watch', label: 'Market Watch', icon: Bell },
   { href: '/import', label: 'Import', icon: Upload },
   { href: '/media', label: 'Media', icon: ImageIcon },
   { href: '/settings', label: 'Settings', icon: Settings },
