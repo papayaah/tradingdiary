@@ -8,12 +8,12 @@ import {
   LayoutDashboard,
   Play,
   Upload,
-  PanelLeftClose,
-  PanelLeftOpen,
   TrendingUp,
   Settings,
   Wallet,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   PieChart,
   Bell
 } from 'lucide-react';
@@ -45,9 +45,19 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   return (
     <aside
-      className={`flex flex-col h-screen bg-sidebar-bg border-r border-sidebar-border transition-all duration-200 ease-in-out ${collapsed ? 'w-[60px]' : 'w-[220px]'
+      className={`relative flex flex-col h-screen bg-sidebar-bg border-r border-sidebar-border transition-all duration-200 ease-in-out ${collapsed ? 'w-[60px]' : 'w-[220px]'
         }`}
     >
+      {/* Collapse/expand notch on the right edge, vertically centered */}
+      <button
+        onClick={onToggle}
+        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        className="absolute top-1/2 -right-3 -translate-y-1/2 z-20 flex items-center justify-center w-6 h-12 rounded-full bg-sidebar-bg border border-sidebar-border text-muted shadow-sm hover:text-foreground hover:bg-sidebar-hover transition-colors"
+      >
+        {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+      </button>
+
       <div className={`flex flex-col border-b border-sidebar-border ${collapsed ? 'py-4' : 'p-3'}`}>
         <div className={`flex items-center gap-2 mb-4 ${collapsed ? 'justify-center' : ''}`}>
           <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-accent text-white shrink-0">
@@ -116,17 +126,6 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           );
         })}
       </nav>
-
-      <div className="p-2 border-t border-sidebar-border">
-        <button
-          onClick={onToggle}
-          className="flex items-center justify-center w-full rounded-lg px-3 py-2 text-sm text-muted hover:bg-sidebar-hover hover:text-foreground transition-colors"
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-          {!collapsed && <span className="ml-3">Collapse</span>}
-        </button>
-      </div>
     </aside>
   );
 }

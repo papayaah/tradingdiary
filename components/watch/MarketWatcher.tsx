@@ -19,7 +19,8 @@ import {
   History,
   Search,
   Sliders,
-  Edit
+  Edit,
+  Moon
 } from 'lucide-react';
 import { openDB } from 'idb';
 
@@ -135,6 +136,25 @@ export default function MarketWatcher() {
   const [alertLogs, setAlertLogs] = useState<AlertLog[]>([]);
   const [isPolygonActive, setIsPolygonActive] = useState(false);
   const [isScannerPaused, setIsScannerPaused] = useState(false);
+  const [autoPauseEnabled, setAutoPauseEnabled] = useState(true); // pause scanner outside market hours
+  const [marketOpen, setMarketOpen] = useState(true);
+
+  // Determine whether the US equity market (NYSE/Nasdaq) is in regular trading hours right now.
+  // Regular hours: Mon–Fri, 09:30–16:00 America/New_York. Note: does not account for market holidays.
+  const isMarketOpen = () => {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(new Date());
+    const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+    const weekday = get('weekday');
+    if (weekday === 'Sat' || weekday === 'Sun') return false;
+    const timeVal = parseInt(get('hour')) * 100 + parseInt(get('minute'));
+    return timeVal >= 930 && timeVal < 1600;
+  };
 
   // Refs
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -182,6 +202,16 @@ export default function MarketWatcher() {
       setScanIntervalMinutes(mins);
       setCountdown(mins * 60);
     }
+    const savedAutoPause = localStorage.getItem('watcher-auto-pause');
+    if (savedAutoPause !== null) {
+      setAutoPauseEnabled(savedAutoPause === 'true');
+    }
+    const savedScannerPaused = localStorage.getItem('watcher-scanner-paused');
+    if (savedScannerPaused !== null) {
+      setIsScannerPaused(savedScannerPaused === 'true');
+    }
+    // Seed the market-open state immediately so the badge is correct on first paint
+    setMarketOpen(isMarketOpen());
 
     // Load tester settings
     const savedActiveTab = localStorage.getItem('watcher-active-tab');
@@ -250,7 +280,7 @@ export default function MarketWatcher() {
     if (!isSoundEnabled) return;
     try {
       if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        audioContextRef.current = new (window.AudioContext || (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
       }
       const ctx = audioContextRef.current;
       if (ctx.state === 'suspended') {
@@ -294,7 +324,7 @@ export default function MarketWatcher() {
   const handleTestSound = () => {
     // Initialise audio context if needed
     if (!audioContextRef.current) {
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioContextRef.current = new (window.AudioContext || (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
     }
     playAlertSound('bullish');
   };
@@ -547,13 +577,13 @@ export default function MarketWatcher() {
         candles,
         lastError: undefined
       };
-    } catch (err: any) {
+    } catch (err) {
       console.error(`Error scanning ${item.symbol}:`, err);
       return {
         ...item,
         lastChecked: new Date().toLocaleTimeString(),
         status: 'error',
-        lastError: err.message || 'Network error'
+        lastError: err instanceof Error ? err.message : 'Network error'
       };
     }
   };
@@ -578,6 +608,13 @@ export default function MarketWatcher() {
 
   const spacingSecondsRef = useRef(spacingSeconds);
   spacingSecondsRef.current = spacingSeconds;
+
+  const autoPauseEnabledRef = useRef(autoPauseEnabled);
+  autoPauseEnabledRef.current = autoPauseEnabled;
+
+  // Derived scanner state used by the UI
+  const marketAutoPaused = autoPauseEnabled && !marketOpen;
+  const effectivelyActive = !isScannerPaused && !marketAutoPaused;
 
   const handleScanNext = async () => {
     const currentList = watchlistRef.current;
@@ -644,7 +681,11 @@ export default function MarketWatcher() {
     if (watchlist.length === 0) return;
 
     timerRef.current = setInterval(() => {
-      if (isScannerPaused) return; // Do nothing if scanner is paused
+      // Keep the market-open indicator fresh (no-op re-render when unchanged)
+      setMarketOpen(isMarketOpen());
+
+      if (isScannerPaused) return; // Manually paused
+      if (autoPauseEnabledRef.current && !isMarketOpen()) return; // Auto-paused outside market hours
 
       setCountdown((prev) => {
         if (prev <= 1) {
@@ -818,11 +859,11 @@ export default function MarketWatcher() {
         provider: providerName,
         allMatches
       });
-    } catch (err: any) {
+    } catch (err) {
       setTestResult({
         success: false,
         patternMatched: 'none',
-        message: err.message || 'Failed to fetch data.',
+        message: err instanceof Error ? err.message : 'Failed to fetch data.',
         candles: [],
         provider: 'N/A',
         allMatches: []
@@ -1391,7 +1432,7 @@ export default function MarketWatcher() {
         </h3>
         {currentMatches.length === 0 ? (
           <div className="p-4 bg-muted-bg/30 border border-card-border rounded-xl text-xs text-muted text-center">
-            No setup triggers found in today's data.
+            No setup triggers found in today&apos;s data.
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[400px] overflow-y-auto pr-1">
@@ -1438,44 +1479,44 @@ export default function MarketWatcher() {
     <div className="p-6 max-w-7xl mx-auto space-y-6 text-foreground">
       
       {/* HEADER HERO */}
-      <div className="relative rounded-3xl overflow-hidden p-6 md:p-8 bg-gradient-to-r from-violet-950 via-slate-900 to-indigo-950 border border-violet-900/40 shadow-2xl">
+      <div className="relative rounded-2xl overflow-hidden px-5 py-4 md:px-6 md:py-5 bg-gradient-to-r from-violet-950 via-slate-900 to-indigo-950 border border-violet-900/40 shadow-xl">
         {/* Glow Effects */}
         <div className="absolute top-0 right-0 w-80 h-80 bg-violet-600/10 rounded-full blur-3xl -translate-y-12 translate-x-12 pointer-events-none" />
         <div className="absolute bottom-0 left-0 w-60 h-60 bg-blue-600/10 rounded-full blur-2xl translate-y-12 -translate-x-12 pointer-events-none" />
 
-        <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-violet-500/10 border border-violet-500/20 text-xs font-semibold text-violet-300 mb-3">
+        <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="min-w-0">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-[10px] font-semibold text-violet-300 mb-2">
               <Clock size={12} className="animate-pulse" />
               Live Scanner
             </div>
-            <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-100 to-violet-300 bg-clip-text text-transparent">
+            <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight leading-tight bg-gradient-to-r from-white via-slate-100 to-violet-300 bg-clip-text text-transparent">
               Market Pattern Watcher
             </h1>
-            <p className="text-slate-400 text-sm mt-2 max-w-xl">
+            <p className="text-slate-400 text-xs mt-1 max-w-xl leading-relaxed">
               Monitors stock indices, crypto, or individual shares for 3 consecutive candles in the same direction, signaling extended moves and trade setups.
             </p>
           </div>
 
           {/* Quick controls */}
-          <div className="flex flex-wrap items-center gap-3 bg-slate-950/40 border border-white/5 backdrop-blur-md p-3 rounded-2xl">
+          <div className="flex flex-wrap items-center gap-2 bg-slate-950/40 border border-white/5 backdrop-blur-md p-2 rounded-xl shrink-0">
             {/* Audio Alert Toggle */}
             <button
               onClick={() => setIsSoundEnabled(!isSoundEnabled)}
-              className={`p-2 rounded-xl transition-all ${
+              className={`p-1.5 rounded-lg transition-all ${
                 isSoundEnabled 
                   ? 'bg-violet-600/20 text-violet-400 border border-violet-500/30' 
                   : 'bg-slate-800/40 text-slate-500 border border-transparent'
               }`}
               title={isSoundEnabled ? 'Disable Audio Alert' : 'Enable Audio Alert'}
             >
-              {isSoundEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
+              {isSoundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
             </button>
 
             {/* Desktop Notification Request */}
             <button
               onClick={requestNotificationPermission}
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-all border ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all border ${
                 isNotificationsEnabled 
                   ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' 
                   : 'bg-amber-500/20 text-amber-300 border-amber-500/30 hover:bg-amber-500/30'
@@ -1495,7 +1536,7 @@ export default function MarketWatcher() {
             {/* Test sound */}
             <button
               onClick={handleTestSound}
-              className="px-3 py-2 rounded-xl text-xs font-medium bg-slate-800/50 hover:bg-slate-700/60 text-slate-300 border border-slate-700/40 transition-colors"
+              className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-slate-800/50 hover:bg-slate-700/60 text-slate-300 border border-slate-700/40 transition-colors"
             >
               Test Sound
             </button>
@@ -1546,22 +1587,39 @@ export default function MarketWatcher() {
                 {/* Countdown / Scan Now */}
                 <div className="flex items-center gap-3">
                   <button
-                    onClick={() => setIsScannerPaused(!isScannerPaused)}
+                    onClick={() => {
+                      const next = !isScannerPaused;
+                      setIsScannerPaused(next);
+                      localStorage.setItem('watcher-scanner-paused', String(next));
+                    }}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
                       isScannerPaused
                         ? 'bg-amber-500/10 text-amber-500 border-amber-500/20 hover:bg-amber-500/20'
+                        : marketAutoPaused
+                        ? 'bg-slate-500/10 text-slate-400 border-slate-500/20 hover:bg-slate-500/20'
                         : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20 hover:bg-emerald-500/20'
                     }`}
                     title={isScannerPaused ? 'Resume Automatic Scanning' : 'Pause Automatic Scanning'}
                   >
-                    <span className={`w-2 h-2 rounded-full shrink-0 ${isScannerPaused ? 'bg-amber-500' : 'bg-emerald-500 animate-pulse'}`} />
-                    <span>{isScannerPaused ? 'Scanner Paused' : 'Scanner Active'}</span>
+                    {marketAutoPaused && !isScannerPaused ? (
+                      <Moon size={12} className="shrink-0" />
+                    ) : (
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${isScannerPaused ? 'bg-amber-500' : 'bg-emerald-500 animate-pulse'}`} />
+                    )}
+                    <span>{isScannerPaused ? 'Scanner Paused' : marketAutoPaused ? 'Market Closed' : 'Scanner Active'}</span>
                   </button>
 
-                  {!isScannerPaused && watchlist.length > 0 && (
+                  {effectivelyActive && watchlist.length > 0 && (
                     <div className="flex items-center gap-2 text-xs bg-muted-bg border border-card-border px-3 py-1.5 rounded-lg text-muted">
                       <Clock size={12} className="text-accent" />
                       <span>Next scan: <span className="text-foreground font-semibold">{watchlist[nextScanIndex % watchlist.length]?.symbol}</span> in <span className="font-mono text-accent font-bold">{formatTime(countdown)}</span></span>
+                    </div>
+                  )}
+
+                  {marketAutoPaused && !isScannerPaused && watchlist.length > 0 && (
+                    <div className="flex items-center gap-2 text-xs bg-slate-500/10 border border-slate-500/20 px-3 py-1.5 rounded-lg text-slate-400">
+                      <Moon size={12} />
+                      <span>Auto-paused until market open (9:30 ET)</span>
                     </div>
                   )}
                   
@@ -1823,7 +1881,18 @@ export default function MarketWatcher() {
                   </select>
                 </div>
 
-                <span>Currently active provider handles fallback automatically based on config.</span>
+                <label className="flex items-center gap-2 cursor-pointer select-none hover:text-foreground transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={autoPauseEnabled}
+                    onChange={(e) => {
+                      setAutoPauseEnabled(e.target.checked);
+                      localStorage.setItem('watcher-auto-pause', String(e.target.checked));
+                    }}
+                    className="rounded border-card-border text-accent focus:ring-accent h-3.5 w-3.5 cursor-pointer"
+                  />
+                  <span>Auto-pause outside market hours (Mon–Fri 9:30–16:00 ET)</span>
+                </label>
               </div>
             </div>
 

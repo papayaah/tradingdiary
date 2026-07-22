@@ -1,5 +1,14 @@
 import { OHLCCandle } from "./types";
 
+interface PolygonAggregate {
+    t: number; // timestamp (ms)
+    o: number; // open
+    h: number; // high
+    l: number; // low
+    c: number; // close
+    v: number; // volume
+}
+
 export interface ChartProvider {
     name: string;
     fetchCandles(symbol: string, date: string, interval: string): Promise<OHLCCandle[]>;
@@ -28,7 +37,7 @@ class PolygonProvider implements ChartProvider {
         const data = await res.json();
         if (!data.results) return [];
 
-        return data.results.map((r: any) => ({
+        return data.results.map((r: PolygonAggregate) => ({
             time: Math.floor(r.t / 1000), // ms -> sec
             open: r.o,
             high: r.h,
@@ -61,7 +70,7 @@ class PolygonProvider implements ChartProvider {
         const data = await res.json();
         if (!data.results) return [];
 
-        return data.results.map((r: any) => ({
+        return data.results.map((r: PolygonAggregate) => ({
             time: Math.floor(r.t / 1000), // ms -> sec
             open: r.o,
             high: r.h,
