@@ -97,18 +97,25 @@ class AlpacaProvider implements ChartProvider {
 }
 
 function aggregateYahooCandles(candles: OHLCCandle[], factor: number): OHLCCandle[] {
+    const intervalSeconds = factor * 5 * 60; // e.g., 2 * 5m = 10m (600s)
+    const groups = new Map<number, OHLCCandle[]>();
+
+    for (const c of candles) {
+        const bucketTime = Math.floor(c.time / intervalSeconds) * intervalSeconds;
+        if (!groups.has(bucketTime)) {
+            groups.set(bucketTime, []);
+        }
+        groups.get(bucketTime)!.push(c);
+    }
+
     const aggregated: OHLCCandle[] = [];
-    for (let i = 0; i < candles.length; i += factor) {
-        const chunk = candles.slice(i, i + factor);
-        if (chunk.length === 0) continue;
-        
+    for (const [time, chunk] of groups.entries()) {
         const open = chunk[0].open;
         const close = chunk[chunk.length - 1].close;
         const high = Math.max(...chunk.map(c => c.high));
         const low = Math.min(...chunk.map(c => c.low));
         const volume = chunk.reduce((sum, c) => sum + c.volume, 0);
-        const time = chunk[0].time;
-        
+
         aggregated.push({ time, open, high, low, close, volume });
     }
     return aggregated;

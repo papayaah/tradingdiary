@@ -805,11 +805,15 @@ export default function MarketWatcher() {
       localStorage.setItem('watcher-watchlist', JSON.stringify(updated));
       return updated;
     });
+
+    if (expandedRowIndex === index) {
+      setTestMinMove(val);
+    }
     setEditingIndex(null);
   };
 
   // Toggle the expansion of a watchlist row to show the chart inline
-  const handleToggleRowExpansion = (index: number) => {
+  const handleToggleRowExpansion = async (index: number) => {
     const item = watchlist[index];
     if (!item) return;
 
@@ -823,6 +827,7 @@ export default function MarketWatcher() {
       setSelectedSetupTime(null);
       setChartOffset(0);
 
+      // Instantly show existing cached candles if available for quick feedback
       if (item.candles && item.candles.length > 0) {
         const allMatches = scanAllPatterns(item.candles, item.minMovePercent);
         const { matched, message } = detectPattern(item.candles, item.minMovePercent);
@@ -839,6 +844,47 @@ export default function MarketWatcher() {
         setTestResult(null);
       }
       setExpandedRowIndex(index);
+
+      // Fetch fresh live candles to ensure today's current pre-market/live data is displayed
+      try {
+        const res = await fetch(`/api/watch?symbol=${encodeURIComponent(item.symbol)}&interval=${item.interval}`);
+        if (res.ok) {
+          const data = await res.json();
+          const freshCandles: Candle[] = data.candles || [];
+          if (freshCandles.length > 0) {
+            const providerName = data.provider || 'Live Feed';
+            const allMatches = scanAllPatterns(freshCandles, item.minMovePercent);
+            const { matched, message } = detectPattern(freshCandles, item.minMovePercent);
+
+            setTestResult({
+              success: true,
+              patternMatched: matched,
+              message: message || 'Loaded',
+              candles: freshCandles,
+              provider: providerName,
+              allMatches
+            });
+
+            // Update item in watchlist state and cache
+            await setLiveCache(item.symbol, item.interval, freshCandles, providerName);
+            setWatchlist((prevList) => {
+              const updated = [...prevList];
+              if (updated[index]) {
+                updated[index] = {
+                  ...updated[index],
+                  candles: freshCandles,
+                  status: matched,
+                  lastChecked: new Date().toLocaleTimeString(),
+                };
+              }
+              localStorage.setItem('watcher-watchlist', JSON.stringify(updated));
+              return updated;
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch fresh candles on expansion:', err);
+      }
     }
   };
 
@@ -951,11 +997,11 @@ export default function MarketWatcher() {
   };
 
   // Candles as shown in the watchlist context (row mini-viz + expanded chart):
-  // current-day + active polling window. Keeping both on this single helper ensures
-  // the row's last candles match what the expanded chart displays.
+  // current-day + active polling window. Watchlist tab MUST always constrain
+  // candles to the current trading day so historical multi-day candles are not shown.
   const getWatchlistViewCandles = (candles: Candle[]) => {
     let filtered = candles;
-    if (testCurrentDayOnly) filtered = filterCurrentDayOnly(filtered);
+    filtered = filterCurrentDayOnly(filtered);
     if (autoPauseEnabled) filtered = filterCandlesByWindow(filtered, activeWindow);
     return filtered;
   };
@@ -1314,7 +1360,7 @@ export default function MarketWatcher() {
             return (
               <g key={ratio}>
                 <line x1={paddingLeft} y1={y} x2={800 - paddingRight} y2={y} stroke="rgba(255,255,255,0.08)" strokeWidth={1} strokeDasharray="3,3" />
-                <text x={800 - paddingRight + 5} y={y + 3} fill="rgba(255,255,255,0.6)" className="text-[8px] font-mono" textAnchor="start">${price.toFixed(2)}</text>
+                <text x={800 - paddingRight + 5} y={y + 3} fill="rgba(255,255,255,0.85)" className="text-[10px] font-mono font-medium" textAnchor="start">${price.toFixed(2)}</text>
               </g>
             );
           })}
@@ -1343,14 +1389,14 @@ export default function MarketWatcher() {
                   y1={paddingTop}
                   x2={x}
                   y2={260 - paddingBottom}
-                  stroke="rgba(255,255,255,0.04)"
+                  stroke="rgba(255,255,255,0.08)"
                   strokeWidth={1}
                 />
                 <text
                   x={x}
                   y={260 - paddingBottom + 14}
-                  fill="rgba(255,255,255,0.5)"
-                  className="text-[7px] font-mono"
+                  fill="rgba(255,255,255,0.8)"
+                  className="text-[9px] font-mono font-medium"
                   textAnchor="middle"
                 >
                   {nyTime}
@@ -1459,14 +1505,17 @@ export default function MarketWatcher() {
 
         {/* Hover details HUD inside canvas to save space */}
         {hoveredIndex !== null && hoveredIndex < displayedCandles.length ? (
-          <div className="absolute top-2 left-2 text-[9px] bg-slate-950/80 px-2 py-1 rounded text-slate-400 font-mono flex gap-3 select-none">
-            <span>T: <span className="text-foreground font-bold">{new Date(displayedCandles[hoveredIndex].time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}</span></span>
-            <span>O: <span className="text-foreground font-bold">${displayedCandles[hoveredIndex].open.toFixed(2)}</span></span>
-            <span>C: <span className="text-foreground font-bold">${displayedCandles[hoveredIndex].close.toFixed(2)}</span></span>
+          <div className="absolute top-2.5 left-2.5 text-xs bg-slate-900/95 border border-slate-700/80 px-3 py-1.5 rounded-md text-slate-200 font-mono flex items-center gap-3 shadow-xl select-none">
+            <span>T: <span className="text-amber-300 font-bold">{new Date(displayedCandles[hoveredIndex].time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}</span></span>
+            <span>O: <span className="text-cyan-300 font-bold">${displayedCandles[hoveredIndex].open.toFixed(2)}</span></span>
+            <span>H: <span className="text-emerald-400 font-bold">${displayedCandles[hoveredIndex].high.toFixed(2)}</span></span>
+            <span>L: <span className="text-rose-400 font-bold">${displayedCandles[hoveredIndex].low.toFixed(2)}</span></span>
+            <span>C: <span className="text-white font-bold">${displayedCandles[hoveredIndex].close.toFixed(2)}</span></span>
           </div>
         ) : (
-          <div className="absolute top-2 left-2 text-[8px] bg-slate-950/80 px-1.5 py-0.5 rounded text-slate-500 font-mono">
-            HOVER TO INSPECT
+          <div className="absolute top-2.5 left-2.5 text-xs bg-slate-900/95 border border-slate-700/80 px-2.5 py-1 rounded-md text-slate-200 font-mono shadow-md flex items-center gap-1.5 font-medium select-none">
+            <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+            <span>HOVER TO INSPECT</span>
           </div>
         )}
       </div>
