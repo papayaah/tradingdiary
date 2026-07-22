@@ -8,20 +8,9 @@ import { useRouter } from 'next/navigation';
 import { useIntegrationContext } from '@/packages/better-auth-connect/src/components';
 
 export default function LoginPage() {
-    const router = useRouter();
     const { authClient } = useIntegrationContext();
     const sessionState = authClient.useSession?.() || { data: null, isPending: true };
     const session = sessionState.data || null;
-
-    useEffect(() => {
-        if (session?.user) {
-            // Auto redirect to /watch after successful login
-            const timer = setTimeout(() => {
-                router.push('/watch');
-            }, 1200);
-            return () => clearTimeout(timer);
-        }
-    }, [session, router]);
 
     return (
         <div className="min-h-screen bg-[#09090b] text-white flex flex-col items-center justify-between p-6 relative overflow-hidden">
