@@ -918,14 +918,15 @@ export default function MarketWatcher() {
 
       // Instantly show existing cached candles if available for quick feedback
       if (item.candles && item.candles.length > 0) {
-        const allMatches = scanAllPatterns(item.candles, item.minMovePercent);
-        const { matched, message } = detectPattern(item.candles, item.minMovePercent);
+        const currentDayCandles = filterCurrentDayOnly(item.candles);
+        const allMatches = scanAllPatterns(currentDayCandles, item.minMovePercent);
+        const { matched, message } = detectPattern(currentDayCandles, item.minMovePercent);
 
         setTestResult({
           success: true,
           patternMatched: matched,
           message: message || 'Loaded',
-          candles: item.candles,
+          candles: currentDayCandles,
           provider: 'Watchlist Cache',
           allMatches
         });
@@ -936,7 +937,7 @@ export default function MarketWatcher() {
 
       // Fetch fresh live candles to ensure today's current pre-market/live data is displayed
       try {
-        const res = await fetch(`/api/watch?symbol=${encodeURIComponent(item.symbol)}&interval=${item.interval}`);
+        const res = await fetch(`/api/watch?symbol=${encodeURIComponent(item.symbol)}&interval=${item.interval}&t=${Date.now()}`);
         if (res.ok) {
           const data = await res.json();
           const freshCandles: Candle[] = data.candles || [];
