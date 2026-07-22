@@ -238,6 +238,17 @@ export default function MarketWatcher() {
       localStorage.setItem('watcher-watchlist', JSON.stringify(defaults));
     }
 
+    // Pull synced watchlist from cloud database if authenticated
+    fetch('/api/watch/sync')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.watchlist && Array.isArray(data.watchlist) && data.watchlist.length > 0) {
+          setWatchlist(data.watchlist);
+          localStorage.setItem('watcher-watchlist', JSON.stringify(data.watchlist));
+        }
+      })
+      .catch(() => {});
+
     // Load Alert History
     const savedLogs = localStorage.getItem('watcher-alerts');
     if (savedLogs) {
@@ -329,10 +340,16 @@ export default function MarketWatcher() {
     localStorage.setItem('watcher-active-tab', activeTab);
   }, [activeTab]);
 
-  // 2. Save Watchlist when modified
+  // 2. Save Watchlist when modified (Local + Cloud Sync)
   const saveWatchlist = (updated: WatchItem[]) => {
     setWatchlist(updated);
     localStorage.setItem('watcher-watchlist', JSON.stringify(updated));
+    // Push to cloud database if authenticated
+    fetch('/api/watch/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ watchlist: updated })
+    }).catch(() => {});
   };
 
   // 3. Audio Chime Synthesizer (Web Audio API)

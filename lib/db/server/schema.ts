@@ -61,3 +61,10 @@ export const projects = pgTable("projects", {
     data: jsonb("data").notNull(), // Stores project-specific JSON
     updatedAt: timestamp("updated_at", { mode: 'string' }).defaultNow(),
 });
+
+export const userWatchlists = pgTable("user_watchlists", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
+    watchlist: jsonb("watchlist").notNull(),
+    updatedAt: timestamp("updated_at", { mode: 'string' }).defaultNow(),
+});
