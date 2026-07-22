@@ -225,14 +225,14 @@ export function getActiveProvider(symbol?: string): ChartProvider {
         }
     }
 
-    // Priority 1: Polygon
+    // Priority 1: Alpaca (200 API calls/min)
+    if (process.env.ALPACA_API_KEY_ID || process.env.ALPACA_API_KEY) {
+        return new AlpacaProvider();
+    }
+
+    // Priority 2: Polygon
     if (process.env.POLYGON_API_KEY) {
         return new PolygonProvider();
-    }
-    
-    // Priority 2: Alpaca (if you add ALPACA_API_KEY later)
-    if (process.env.ALPACA_API_KEY) {
-        return new AlpacaProvider();
     }
 
     // Default: Yahoo
