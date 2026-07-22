@@ -16,7 +16,14 @@ export default function LoginButton({ collapsed = false }: LoginButtonProps) {
 
     const handleLogin = async () => {
         try {
-            await services.google.connect();
+            if (authClient?.signIn?.social) {
+                await authClient.signIn.social({
+                    provider: 'google',
+                    callbackURL: typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001',
+                });
+            } else {
+                await services.google.connect();
+            }
         } catch (error) {
             console.error('Login failed:', error);
         }
