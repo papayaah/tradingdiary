@@ -1110,7 +1110,8 @@ export default function MarketWatcher() {
   const getWatchlistViewCandles = (candles: Candle[]) => {
     let filtered = candles;
     filtered = filterCurrentDayOnly(filtered);
-    if (autoPauseEnabled) filtered = filterCandlesByWindow(filtered, activeWindow);
+    // Always include pre-market + regular hours (04:00 AM – 16:00 PM ET)
+    filtered = filterCandlesByWindow(filtered, 'pre');
     return filtered;
   };
 
