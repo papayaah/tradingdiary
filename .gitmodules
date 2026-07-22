@@ -4,3 +4,6 @@
 [submodule "packages/react-media-library"]
 	path = packages/react-media-library
 	url = git@github.com:papayaah/react-media-library
+[submodule "packages/better-auth-connect"]
+	path = packages/better-auth-connect
+	url = git@github.com:papayaah/better-auth-connect

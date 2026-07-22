@@ -271,7 +271,10 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          <CumulativePnLChart data={stats.cumulativePnL} />
+          <CumulativePnLChart
+            data={stats.cumulativePnL}
+            initialBalance={activeAccount?.initialBalance}
+          />
         </div>
         <WinLossDonut
           wins={stats.totalWins}

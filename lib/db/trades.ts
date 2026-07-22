@@ -35,6 +35,11 @@ export async function getAccounts(): Promise<AccountRecord[]> {
   return db.getAll('accounts');
 }
 
+export async function updateAccount(account: AccountRecord) {
+  const db = await getDB();
+  await db.put('accounts', account);
+}
+
 export async function getAllTransactions(): Promise<TransactionRecord[]> {
   const db = await getDB();
   return db.getAll('transactions');

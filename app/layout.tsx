@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { AIManagementProvider } from '@/packages/ai-connect/src/components';
-import { Toaster } from 'sonner';
+
+import { ClientProviders } from '@/components/providers/ClientProviders';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,10 +29,9 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <AIManagementProvider>
+        <ClientProviders>
           {children}
-        </AIManagementProvider>
-        <Toaster richColors position="top-right" />
+        </ClientProviders>
       </body>
     </html>
   );

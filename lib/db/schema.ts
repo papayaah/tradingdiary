@@ -7,6 +7,7 @@ export interface AccountRecord {
   currency: string;
   address: string;
   importedAt: number;
+  initialBalance?: number;
 }
 
 export interface TransactionRecord {

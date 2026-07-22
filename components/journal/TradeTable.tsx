@@ -27,20 +27,20 @@ export default function TradeTable({ trades, accountId, currency = 'USD' }: Trad
   };
 
   return (
-    <div className="bg-card-bg rounded-b-xl overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+    <div className="bg-card-bg/20 rounded-b-2xl overflow-hidden">
+      <div className="overflow-x-auto overflow-y-hidden">
+        <table className="w-full text-sm border-collapse">
           <thead>
-            <tr className="bg-table-header-bg text-muted text-[10px] uppercase font-bold tracking-tight">
-              <th className="w-8 px-2 py-2" />
-              <th className="text-left px-5 py-2 font-bold">Time</th>
-              <th className="text-left px-5 py-2 font-bold">Symbol</th>
-              <th className="text-left px-5 py-2 font-bold">Side</th>
-              <th className="text-right px-5 py-2 font-bold">Volume</th>
-              <th className="text-right px-5 py-2 font-bold">Execs</th>
-              <th className="text-right px-5 py-2 font-bold">P&L</th>
-              <th className="text-left px-5 py-2 font-bold">Notes</th>
-              <th className="text-left px-5 py-2 font-bold">Tags</th>
+            <tr className="bg-muted-bg/50 text-muted border-b border-card-border/50">
+              <th className="w-10 px-3 py-4" />
+              <th className="text-left px-5 py-4 text-[10px] font-bold uppercase tracking-widest">Time</th>
+              <th className="text-left px-5 py-4 text-[10px] font-bold uppercase tracking-widest">Symbol</th>
+              <th className="text-left px-5 py-4 text-[10px] font-bold uppercase tracking-widest">Side</th>
+              <th className="text-right px-5 py-4 text-[10px] font-bold uppercase tracking-widest">Volume</th>
+              <th className="text-right px-5 py-4 text-[10px] font-bold uppercase tracking-widest">Execs</th>
+              <th className="text-right px-5 py-4 text-[10px] font-bold uppercase tracking-widest">P&L</th>
+              <th className="text-left px-5 py-4 text-[10px] font-bold uppercase tracking-widest">Notes</th>
+              <th className="text-left px-5 py-4 text-[10px] font-bold uppercase tracking-widest">Tags</th>
             </tr>
           </thead>
           <tbody>
@@ -110,51 +110,55 @@ function TradeRow({
   return (
     <>
       <tr
-        className="border-t border-card-border hover:bg-table-row-hover transition-colors cursor-pointer"
+        className={`group border-b border-card-border/30 hover:bg-muted-bg/40 transition-all cursor-pointer ${isExpanded ? 'bg-muted-bg/30' : ''}`}
         onClick={() => onToggle(rowKey)}
       >
-        <td className="px-2 py-3 text-center text-muted">
-          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <td className="px-3 py-4 text-center">
+          <div className={`p-1 rounded-lg transition-colors ${isExpanded ? 'text-accent bg-accent/10' : 'text-muted group-hover:text-foreground'}`}>
+            {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </div>
         </td>
-        <td className="px-5 py-3 text-foreground">
+        <td className="px-5 py-4 text-muted font-mono text-[11px] font-medium tracking-tight">
           {trade.firstTradeTime.substring(0, 8)}
         </td>
-        <td className="px-5 py-3 font-medium text-foreground">
+        <td className="px-5 py-4 font-black text-foreground text-sm tracking-tight capitalize">
           {trade.symbol}
         </td>
-        <td className="px-5 py-3">
+        <td className="px-5 py-4">
           <span
-            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${trade.side === 'LONG'
-              ? 'bg-profit/15 text-profit'
-              : 'bg-loss/15 text-loss'
+            className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-widest ${trade.side === 'LONG'
+              ? 'bg-profit/10 text-profit border border-profit/20'
+              : 'bg-loss/10 text-loss border border-loss/20'
               }`}
           >
             {trade.side}
           </span>
         </td>
-        <td className="px-5 py-3 text-right text-foreground">
+        <td className="px-5 py-4 text-right font-medium text-foreground tabular-nums">
           {formatVolume(trade.volume)}
         </td>
-        <td className="px-5 py-3 text-right text-foreground">
+        <td className="px-5 py-4 text-right text-muted tabular-nums">
           {trade.executions}
         </td>
-        <td className="px-5 py-3 text-right">
-          <span className={`font-medium ${pnlColorClass(trade.netPnL)}`}>
+        <td className="px-5 py-4 text-right shrink-0">
+          <span className={`text-sm font-black tabular-nums ${pnlColorClass(trade.netPnL)} drop-shadow-sm`}>
             {formatCurrency(trade.netPnL, currency)}
           </span>
           {trade.isOpen && (
-            <div className="text-[10px] text-muted italic mt-0.5">
-              {formatVolume(Math.abs(trade.netQuantity))} held
+            <div className="flex flex-col items-end gap-0.5 mt-1">
+              <span className="text-[9px] font-bold text-muted/60 uppercase tracking-tighter">
+                {formatVolume(Math.abs(trade.netQuantity))} held
+              </span>
               {trade.unrealizedPnL != null && (
-                <span className={`ml-1 ${pnlColorClass(trade.unrealizedPnL)}`}>
-                  (unrl: {formatCurrency(trade.unrealizedPnL, currency)})
+                <span className={`text-[10px] font-bold px-1 rounded bg-muted-bg/50 ${pnlColorClass(trade.unrealizedPnL)}`}>
+                  unrl: {formatCurrency(trade.unrealizedPnL, currency)}
                 </span>
               )}
             </div>
           )}
         </td>
-        <td className="px-5 py-3 text-muted">-</td>
-        <td className="px-5 py-3 text-muted">-</td>
+        <td className="px-5 py-4 text-muted/40 font-medium italic text-xs">No notes</td>
+        <td className="px-5 py-4 text-muted/40 font-medium italic text-xs">-</td>
       </tr>
       {isExpanded && (
         <>

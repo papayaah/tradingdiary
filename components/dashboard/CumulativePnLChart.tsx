@@ -9,13 +9,23 @@ import {
   CartesianGrid,
   Tooltip,
 } from 'recharts';
+import { useState } from 'react';
+import { Percent, DollarSign } from 'lucide-react';
 import type { CumulativePnLPoint } from '@/lib/trading/dashboard';
 
 interface CumulativePnLChartProps {
   data: CumulativePnLPoint[];
+  initialBalance?: number;
 }
 
-function CustomTooltip({ active, payload }: { active?: boolean; payload?: Array<{ value: number; payload: CumulativePnLPoint }> }) {
+type DisplayMode = 'currency' | 'percentage';
+
+function CustomTooltip({
+  active,
+  payload,
+  displayMode,
+  initialBalance
+}: any) {
   if (!active || !payload?.length) return null;
   const val = payload[0].value;
   const point = payload[0].payload;
@@ -28,13 +38,18 @@ function CustomTooltip({ active, payload }: { active?: boolean; payload?: Array<
         <p className="text-[10px] font-bold text-muted uppercase tracking-wider">{point.label}</p>
       </div>
       <p className={`text-base font-black ${isProfit ? 'text-profit' : 'text-loss'}`}>
-        {val < 0 ? '-' : '+'}${Math.abs(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        {displayMode === 'currency' ? (
+          <>{val < 0 ? '-' : '+'}${Math.abs(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</>
+        ) : (
+          <>{val < 0 ? '-' : '+'}{initialBalance ? Math.abs((val / initialBalance) * 100).toFixed(2) : '0.00'}%</>
+        )}
       </p>
     </div>
   );
 }
 
-export default function CumulativePnLChart({ data }: CumulativePnLChartProps) {
+export default function CumulativePnLChart({ data, initialBalance }: CumulativePnLChartProps) {
+  const [displayMode, setDisplayMode] = useState<DisplayMode>(initialBalance ? 'percentage' : 'currency');
   const maxVal = Math.max(...data.map((d) => d.value), 0);
   const minVal = Math.min(...data.map((d) => d.value), 0);
   const totalPnL = data.length > 0 ? data[data.length - 1].value : 0;
@@ -44,13 +59,38 @@ export default function CumulativePnLChart({ data }: CumulativePnLChartProps) {
     <div className="rounded-2xl border border-card-border bg-card-bg/50 backdrop-blur-sm p-6 shadow-sm hover:shadow-md transition-all duration-300">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h3 className="text-sm font-bold text-muted uppercase tracking-widest mb-1">Cumulative P&L</h3>
+          <h3 className="text-sm font-bold text-muted uppercase tracking-widest mb-1">Cumulative Returns</h3>
           <p className={`text-2xl font-black ${isProfit ? 'text-profit' : 'text-loss'}`}>
-            {totalPnL < 0 ? '-' : '+'}${Math.abs(totalPnL).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {displayMode === 'currency' ? (
+              <>{totalPnL < 0 ? '-' : '+'}${Math.abs(totalPnL).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</>
+            ) : (
+              <>{totalPnL < 0 ? '-' : '+'}{initialBalance ? Math.abs((totalPnL / initialBalance) * 100).toFixed(2) : '0.00'}%</>
+            )}
           </p>
         </div>
-        <div className={`px-3 py-1 rounded-full text-[10px] font-bold ${isProfit ? 'bg-profit/10 text-profit' : 'bg-loss/10 text-loss'} border ${isProfit ? 'border-profit/20' : 'border-loss/20'}`}>
-          {isProfit ? 'Trending Up' : 'Trending Down'}
+
+        <div className="flex items-center gap-4">
+          {initialBalance && (
+            <div className="flex bg-muted-bg/50 p-1 rounded-xl border border-card-border overflow-hidden">
+              <button
+                onClick={() => setDisplayMode('currency')}
+                className={`p-1.5 rounded-lg transition-all ${displayMode === 'currency' ? 'bg-accent text-white shadow-sm' : 'text-muted hover:text-foreground'}`}
+                title="Show Currency"
+              >
+                <DollarSign size={14} />
+              </button>
+              <button
+                onClick={() => setDisplayMode('percentage')}
+                className={`p-1.5 rounded-lg transition-all ${displayMode === 'percentage' ? 'bg-accent text-white shadow-sm' : 'text-muted hover:text-foreground'}`}
+                title="Show Percentage"
+              >
+                <Percent size={14} />
+              </button>
+            </div>
+          )}
+          <div className={`px-3 py-1 rounded-full text-[10px] font-bold ${isProfit ? 'bg-profit/10 text-profit' : 'bg-loss/10 text-loss'} border ${isProfit ? 'border-profit/20' : 'border-loss/20'}`}>
+            {isProfit ? 'Trending Up' : 'Trending Down'}
+          </div>
         </div>
       </div>
 
@@ -77,18 +117,28 @@ export default function CumulativePnLChart({ data }: CumulativePnLChartProps) {
               tick={{ fontSize: 10, fill: 'var(--muted)', fontWeight: 500 }}
               tickLine={false}
               axisLine={false}
-              tickFormatter={(v: number) =>
-                `$${Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toLocaleString()}`
-              }
+              tickFormatter={(v: number) => {
+                if (displayMode === 'currency') {
+                  return `$${Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toLocaleString()}`;
+                }
+                const pct = initialBalance ? (v / initialBalance) * 100 : 0;
+                return `${pct.toFixed(1)}%`;
+              }}
               domain={[
-                Math.floor(minVal / 100) * 100 - 100,
-                Math.ceil(maxVal / 100) * 100 + 100
+                'auto',
+                'auto'
               ]}
               orientation="right"
-              width={45}
+              width={50}
             />
             <Tooltip
-              content={<CustomTooltip />}
+              content={(props) => (
+                <CustomTooltip
+                  {...props}
+                  displayMode={displayMode}
+                  initialBalance={initialBalance}
+                />
+              )}
               cursor={{ stroke: 'var(--accent)', strokeWidth: 1, strokeDasharray: '4 4' }}
             />
             <Area

@@ -269,10 +269,16 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
   }, [symbol, date, interval, transactions]);
 
   return (
-    <div className="border-t border-card-border bg-card-bg">
-      <div className="flex items-center justify-between px-5 py-2 border-b border-card-border">
-        <div className="text-xs font-medium text-foreground">
-          {symbol} &middot; {formatChartDate(date)} &middot; {interval} chart
+    <div className="border-t border-card-border/50 bg-card-bg/30">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between px-6 py-4 gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center text-accent shadow-inner">
+            <span className="text-xs font-black uppercase">{symbol.substring(0, 1)}</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-sm font-black text-foreground tracking-tight">{symbol}</span>
+            <span className="text-[10px] font-bold text-muted uppercase tracking-widest">{formatChartDate(date)}</span>
+          </div>
         </div>
         <div className="flex gap-2 items-center">
           <Link
@@ -282,7 +288,7 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
             <Play size={10} fill="currentColor" />
             Replay Trade
           </Link>
-          <div className="flex gap-1">
+          <div className="flex items-center gap-1.5 bg-muted-bg/50 p-1 rounded-xl border border-card-border/40">
             {INTERVALS.map((iv) => (
               <button
                 key={iv}
@@ -290,8 +296,8 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
                   e.stopPropagation();
                   setInterval(iv);
                 }}
-                className={`px-2 py-0.5 text-xs rounded transition-colors ${iv === interval
-                  ? 'bg-accent text-white'
+                className={`px-3 py-1.5 text-[10px] font-black uppercase rounded-lg transition-all duration-200 ${iv === interval
+                  ? 'bg-accent text-white shadow-sm'
                   : 'text-muted hover:text-foreground hover:bg-sidebar-hover'
                   }`}
               >
@@ -301,15 +307,17 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
           </div>
         </div>
       </div>
-      <div className="relative">
+      <div className="relative mx-6 mb-6 rounded-2xl border border-card-border/50 bg-card-bg overflow-hidden shadow-sm">
         {loading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-card-bg/80 z-10">
-            <Loader2 size={24} className="text-accent animate-spin" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-card-bg/60 backdrop-blur-[2px] z-10">
+            <Loader2 size={32} className="text-accent animate-spin mb-2" />
+            <span className="text-[10px] font-bold text-muted uppercase tracking-widest">Loading Chart Data</span>
           </div>
         )}
-        {!loading && error && (
-          <div className="flex items-center justify-center h-[350px] text-sm text-muted">
-            {error}
+        {error && !loading && (
+          <div className="flex flex-col items-center justify-center h-[350px] text-sm text-muted gap-3">
+            <div className="w-12 h-12 rounded-full bg-loss/10 flex items-center justify-center text-loss">!</div>
+            <span className="font-medium">{error}</span>
           </div>
         )}
         <div ref={containerRef} className={loading || error ? 'hidden' : ''} />

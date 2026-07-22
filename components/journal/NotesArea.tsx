@@ -8,6 +8,7 @@ import {
   removeScreenshotFromDaily,
 } from '@/lib/db/notes';
 import ScreenshotAttachment from './ScreenshotAttachment';
+import { BookOpen } from 'lucide-react';
 
 interface NotesAreaProps {
   date: string;
@@ -59,7 +60,11 @@ export default function NotesArea({ date, accountId }: NotesAreaProps) {
   if (!loaded) return null;
 
   return (
-    <div className="px-5 py-3 bg-card-bg border-b border-card-border space-y-2">
+    <div className="px-6 py-4 bg-muted-bg/10 border-b border-card-border/50 space-y-3">
+      <div className="flex items-center gap-2 text-[10px] font-bold text-muted uppercase tracking-widest mb-1">
+        <BookOpen size={10} className="text-accent" />
+        Daily Notes
+      </div>
       <textarea
         value={content}
         onChange={(e) => {
@@ -67,14 +72,16 @@ export default function NotesArea({ date, accountId }: NotesAreaProps) {
           save(e.target.value);
         }}
         placeholder="Click here to start typing your notes..."
-        className="w-full bg-transparent text-sm text-foreground placeholder:text-muted/50 placeholder:italic resize-none outline-none min-h-[40px]"
-        rows={2}
+        className="w-full bg-card-bg/50 border border-card-border/50 rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted/40 placeholder:font-medium resize-none outline-none focus:border-accent/40 focus:ring-1 focus:ring-accent/20 transition-all min-h-[80px]"
+        rows={3}
       />
-      <ScreenshotAttachment
-        screenshotIds={screenshotIds}
-        onAdd={handleAddScreenshot}
-        onRemove={handleRemoveScreenshot}
-      />
+      <div className="pt-1">
+        <ScreenshotAttachment
+          screenshotIds={screenshotIds}
+          onAdd={handleAddScreenshot}
+          onRemove={handleRemoveScreenshot}
+        />
+      </div>
     </div>
   );
 }

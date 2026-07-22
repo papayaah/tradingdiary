@@ -309,22 +309,26 @@ export default function ReplayPage() {
   }
 
   return (
-    <div className="p-6 space-y-4 max-w-7xl mx-auto">
+    <div className="p-6 space-y-8 max-w-7xl mx-auto">
       {/* Header + day selector */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-foreground">Day Replay</h1>
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div>
+          <h1 className="text-3xl font-black text-foreground tracking-tight mb-1">Trade Replay</h1>
+          <p className="text-sm text-muted font-medium">Step through your trades bar-by-bar to improve execution.</p>
+        </div>
+        <div className="flex items-center gap-3 bg-card-bg/50 backdrop-blur-sm border border-card-border p-2 rounded-2xl shadow-sm">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-muted px-2">Select Day</span>
           <select
             value={selectedDate}
             onChange={(e) => {
               actions.reset();
               setSelectedDate(e.target.value);
             }}
-            className="px-3 py-1.5 rounded-lg border border-card-border bg-card-bg text-foreground text-sm font-medium"
+            className="px-4 py-2 rounded-xl bg-background/50 text-foreground text-xs font-bold outline-none border border-card-border/50 focus:border-accent/40 transition-colors cursor-pointer"
           >
             {dayOptions.map((opt) => (
               <option key={opt.date} value={opt.date}>
-                {opt.formattedDate} ({opt.tradeCount} trades)
+                {opt.formattedDate} &middot; {opt.tradeCount} trades
               </option>
             ))}
           </select>
@@ -419,7 +423,7 @@ export default function ReplayPage() {
       )}
 
       {/* Timeline */}
-      <div className="rounded-xl border border-card-border bg-card-bg p-4">
+      <div className="rounded-2xl border border-card-border/50 bg-card-bg/40 backdrop-blur-md p-6 shadow-sm">
         <ReplayTimeline
           transactions={dayTransactions}
           symbols={symbols}
@@ -433,19 +437,21 @@ export default function ReplayPage() {
       </div>
 
       {/* Controls */}
-      <ReplayControls
-        isPlaying={playback.isPlaying}
-        speed={playback.speed}
-        currentTimeSeconds={playback.currentTimeSeconds}
-        startTimeSeconds={timeRange.start}
-        endTimeSeconds={timeRange.end}
-        onTogglePlay={actions.togglePlay}
-        onSetSpeed={actions.setSpeed}
-        onSeek={actions.seek}
-        onReset={actions.reset}
-        onSkipForward={actions.skipForward}
-        onSkipBack={actions.skipBack}
-      />
+      <div className="bg-card-bg/20 p-2 rounded-3xl border border-card-border/30">
+        <ReplayControls
+          isPlaying={playback.isPlaying}
+          speed={playback.speed}
+          currentTimeSeconds={playback.currentTimeSeconds}
+          startTimeSeconds={timeRange.start}
+          endTimeSeconds={timeRange.end}
+          onTogglePlay={actions.togglePlay}
+          onSetSpeed={actions.setSpeed}
+          onSeek={actions.seek}
+          onReset={actions.reset}
+          onSkipForward={actions.skipForward}
+          onSkipBack={actions.skipBack}
+        />
+      </div>
 
       {/* Floating Round Trip Panel */}
       {showFloatingPanel && selectedPanelSymbol && panelRoundTrips.length > 0 && (

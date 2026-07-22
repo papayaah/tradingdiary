@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useImport } from '@/contexts/ImportContext';
 import { useAccount } from '@/contexts/AccountContext';
+import LoginButton from '@/components/auth/LoginButton';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -33,6 +34,7 @@ const navItems = [
   { href: '/watch', label: 'Market Watch', icon: Bell },
   { href: '/import', label: 'Import', icon: Upload },
   { href: '/media', label: 'Media', icon: ImageIcon },
+  { href: '/login', label: 'Cloud Sync', icon: TrendingUp },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -126,6 +128,11 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           );
         })}
       </nav>
+      <div className="p-2 border-t border-sidebar-border">
+        <div className="px-1 py-1">
+          <LoginButton collapsed={collapsed} />
+        </div>
+      </div>
     </aside>
   );
 }

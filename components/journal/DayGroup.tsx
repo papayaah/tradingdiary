@@ -19,7 +19,7 @@ export default function DayGroup({ summary, accountId }: DayGroupProps) {
   const currency = activeAccount?.currency || 'USD';
 
   return (
-    <section className="rounded-2xl border border-card-border overflow-hidden shadow-sm bg-card-bg mb-8 transition-all hover:shadow-md">
+    <section className="rounded-2xl border border-card-border overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 bg-card-bg/50 backdrop-blur-sm mb-8">
       <DayHeader 
         formattedDate={summary.formattedDate} 
         totalPnL={summary.totalPnL} 

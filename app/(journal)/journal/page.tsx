@@ -115,23 +115,30 @@ export default function JournalPage() {
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-6xl mx-auto">
+    <div className="p-6 space-y-8 max-w-6xl mx-auto">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div>
+          <h1 className="text-3xl font-black text-foreground tracking-tight mb-1">Trading Journal</h1>
+          <p className="text-sm text-muted font-medium">Capture your trades, thoughts, and market analysis.</p>
+        </div>
+      </div>
+
       {filterDate && (
-        <div className="flex items-center justify-between bg-accent/5 p-4 rounded-xl border border-accent/10 mb-2">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-accent/10 rounded-lg text-accent">
-              <BookOpen size={20} />
+        <div className="flex items-center justify-between bg-accent/5 backdrop-blur-sm p-5 rounded-2xl border border-accent/20 shadow-sm animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="flex items-center gap-4">
+            <div className="p-2.5 bg-accent/10 rounded-xl text-accent shadow-inner">
+              <BookOpen size={24} />
             </div>
             <div>
-              <h3 className="font-semibold">Viewing trades for {filterDate.substring(0, 4)}-{filterDate.substring(4, 6)}-{filterDate.substring(6, 8)}</h3>
-              <p className="text-xs text-muted">Showing {displaySummaries?.length || 0} trading day</p>
+              <h3 className="font-bold text-foreground">Showing {filterDate.substring(0, 4)}-{filterDate.substring(4, 6)}-{filterDate.substring(6, 8)}</h3>
+              <p className="text-[10px] font-bold text-muted uppercase tracking-widest mt-0.5">Focusing on {displaySummaries?.length || 0} trading day</p>
             </div>
           </div>
           <Link
             href="/journal"
-            className="flex items-center gap-2 text-sm font-medium text-accent hover:underline"
+            className="flex items-center gap-2 text-xs font-bold text-accent hover:text-accent/80 transition-colors bg-accent/10 hover:bg-accent/20 px-4 py-2 rounded-xl border border-accent/10"
           >
-            <ArrowLeft size={16} />
+            <ArrowLeft size={14} />
             Show All History
           </Link>
         </div>
