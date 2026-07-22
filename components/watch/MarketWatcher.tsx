@@ -1051,16 +1051,34 @@ export default function MarketWatcher() {
   };
 
   // Helper to filter candles to only include the current trading session (the date of the latest candle)
+  // Helper to filter candles to only include the current trading session (New York market date)
   const filterCurrentDayOnly = (candles: Candle[]) => {
     if (candles.length === 0) return candles;
     
-    // Find the date of the latest candle in America/New_York (market timezone)
+    // Find TODAY'S current date in America/New_York (market timezone)
+    const todayNYDateString = new Date().toLocaleDateString('en-US', {
+      timeZone: 'America/New_York'
+    });
+
+    const todayCandles = candles.filter((c) => {
+      const d = new Date(c.time * 1000);
+      const nyDateStr = d.toLocaleDateString('en-US', {
+        timeZone: 'America/New_York'
+      });
+      return nyDateStr === todayNYDateString;
+    });
+
+    // If today's premarket/market session has candles, return ONLY today's candles!
+    if (todayCandles.length > 0) {
+      return todayCandles;
+    }
+
+    // Fallback: If before 4:00 AM ET (when today's premarket hasn't started yet), return latest available day
     const latestCandle = candles[candles.length - 1];
     const latestDate = new Date(latestCandle.time * 1000);
     const latestNYDateString = latestDate.toLocaleDateString('en-US', {
       timeZone: 'America/New_York'
     });
-    
     return candles.filter((c) => {
       const d = new Date(c.time * 1000);
       const nyDateStr = d.toLocaleDateString('en-US', {
