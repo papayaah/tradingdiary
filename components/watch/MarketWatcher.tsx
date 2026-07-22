@@ -238,13 +238,38 @@ export default function MarketWatcher() {
       localStorage.setItem('watcher-watchlist', JSON.stringify(defaults));
     }
 
-    // Pull synced watchlist from cloud database if authenticated
+    // Pull & Smart-Merge synced watchlist from cloud database if authenticated
     fetch('/api/watch/sync')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data?.watchlist && Array.isArray(data.watchlist) && data.watchlist.length > 0) {
-          setWatchlist(data.watchlist);
-          localStorage.setItem('watcher-watchlist', JSON.stringify(data.watchlist));
+        if (data?.watchlist && Array.isArray(data.watchlist)) {
+          if (data.watchlist.length > 0) {
+            setWatchlist((prevList) => {
+              // Smart Merge: Combine cloud items and local items by unique symbol
+              const map = new Map<string, WatchItem>();
+              for (const item of prevList) {
+                map.set(item.symbol.toUpperCase(), item);
+              }
+              for (const item of data.watchlist) {
+                map.set(item.symbol.toUpperCase(), item);
+              }
+              const merged = Array.from(map.values());
+              localStorage.setItem('watcher-watchlist', JSON.stringify(merged));
+              return merged;
+            });
+          } else {
+            // If cloud database is empty, push local watchlist to cloud
+            setWatchlist((currentList) => {
+              if (currentList.length > 0) {
+                fetch('/api/watch/sync', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ watchlist: currentList }),
+                }).catch(() => {});
+              }
+              return currentList;
+            });
+          }
         }
       })
       .catch(() => {});
