@@ -9,6 +9,16 @@ interface PolygonAggregate {
     v: number; // volume
 }
 
+interface IntradayPriceRecord {
+    date?: string;
+    datetime?: string;
+    open: number | string;
+    high: number | string;
+    low: number | string;
+    close: number | string;
+    volume?: number | string;
+}
+
 export interface ChartProvider {
     name: string;
     fetchCandles(symbol: string, date: string, interval: string): Promise<OHLCCandle[]>;
@@ -124,7 +134,7 @@ function aggregateYahooCandles(candles: OHLCCandle[], factor: number): OHLCCandl
 /**
  * Yahoo Finance Provider (Free Fallback, less reliable)
  */
-class YahooProvider implements ChartProvider {
+export class YahooProvider implements ChartProvider {
     name = "Yahoo Finance";
     async fetchCandles(symbol: string, date: string, interval: string): Promise<OHLCCandle[]> {
         const needsAggregation = interval === '10m';
@@ -244,13 +254,13 @@ class TwelveDataProvider implements ChartProvider {
 
         const values = data.values || [];
         // Twelve Data returns newest first, so reverse to chronological order
-        const candles: OHLCCandle[] = values.slice().reverse().map((v: any) => ({
-            time: Math.floor(new Date(v.datetime).getTime() / 1000),
-            open: parseFloat(v.open),
-            high: parseFloat(v.high),
-            low: parseFloat(v.low),
-            close: parseFloat(v.close),
-            volume: parseInt(v.volume) || 0,
+        const candles: OHLCCandle[] = values.slice().reverse().map((v: IntradayPriceRecord) => ({
+            time: Math.floor(new Date(v.datetime || v.date || '').getTime() / 1000),
+            open: Number(v.open),
+            high: Number(v.high),
+            low: Number(v.low),
+            close: Number(v.close),
+            volume: Number(v.volume || 0),
         }));
 
         if (needsAggregation) {
@@ -281,51 +291,57 @@ class TiingoProvider implements ChartProvider {
         return `${val}min`;
     }
 
+    private async fetchIntraday(
+        symbol: string,
+        startDate: string,
+        interval: string,
+        endDate?: string,
+    ): Promise<OHLCCandle[]> {
+        const freq = this.mapInterval(interval);
+        const dateParams = `startDate=${startDate}${endDate ? `&endDate=${endDate}` : ''}`;
+        const query = `${dateParams}&resampleFreq=${freq}&afterHours=true&token=${this.apiKey}`;
+        const cleanSymbol = symbol.toUpperCase();
+
+        // The consolidated equity feed covers the full 4:00 AM–8:00 PM ET
+        // session. Keep IEX as a compatibility fallback for accounts that
+        // haven't been enabled for the newer endpoint yet.
+        const urls = [
+            `https://api.tiingo.com/tiingo/equity/intraday/${cleanSymbol}/prices?${query}`,
+            `https://api.tiingo.com/iex/${cleanSymbol}/prices?${query}`,
+        ];
+
+        let lastStatus = 500;
+        for (const url of urls) {
+            const res = await fetch(url);
+            lastStatus = res.status;
+            if (!res.ok) continue;
+
+            const data = await res.json();
+            if (!Array.isArray(data)) continue;
+            return data.map((r: IntradayPriceRecord) => ({
+                time: Math.floor(new Date(r.date || r.datetime || '').getTime() / 1000),
+                open: Number(r.open),
+                high: Number(r.high),
+                low: Number(r.low),
+                close: Number(r.close),
+                volume: Number(r.volume || 0),
+            }));
+        }
+
+        throw new Error(`Tiingo API error: ${lastStatus}`);
+    }
+
     async fetchCandles(symbol: string, date: string, interval: string): Promise<OHLCCandle[]> {
         const formattedDate = `${date.substring(0, 4)}-${date.substring(4, 6)}-${date.substring(6, 8)}`;
-        const freq = this.mapInterval(interval);
-        const url = `https://api.tiingo.com/iex/${symbol.toUpperCase()}/prices?startDate=${formattedDate}&endDate=${formattedDate}&resampleFreq=${freq}&afterHours=true&token=${this.apiKey}`;
-
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`Tiingo API error: ${res.status}`);
-
-        const data = await res.json();
-        if (!Array.isArray(data)) return [];
-
-        return data.map((r: any) => ({
-            time: Math.floor(new Date(r.date).getTime() / 1000),
-            open: r.open,
-            high: r.high,
-            low: r.low,
-            close: r.close,
-            volume: r.volume || 0,
-        }));
+        return this.fetchIntraday(symbol, formattedDate, interval, formattedDate);
     }
 
     async fetchRecentCandles(symbol: string, interval: string): Promise<OHLCCandle[]> {
-        const end = new Date();
-        const start = new Date(end.getTime() - 3 * 24 * 60 * 60 * 1000);
+        const start = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
         const formatDate = (d: Date) => d.toISOString().split('T')[0];
         const formattedStart = formatDate(start);
-        const formattedEnd = formatDate(end);
-        
-        const freq = this.mapInterval(interval);
-        const url = `https://api.tiingo.com/iex/${symbol.toUpperCase()}/prices?startDate=${formattedStart}&endDate=${formattedEnd}&resampleFreq=${freq}&afterHours=true&token=${this.apiKey}`;
-
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`Tiingo API error: ${res.status}`);
-
-        const data = await res.json();
-        if (!Array.isArray(data)) return [];
-
-        return data.map((r: any) => ({
-            time: Math.floor(new Date(r.date).getTime() / 1000),
-            open: r.open,
-            high: r.high,
-            low: r.low,
-            close: r.close,
-            volume: r.volume || 0,
-        }));
+        // Omitting endDate asks Tiingo for all data through the current moment.
+        return this.fetchIntraday(symbol, formattedStart, interval);
     }
 }
 

@@ -1,5 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getActiveProvider } from '@/lib/chart/providers';
+import { getActiveProvider, YahooProvider } from '@/lib/chart/providers';
+
+const newYorkDate = (timestampMs: number) =>
+  new Date(timestampMs).toLocaleDateString('en-US', {
+    timeZone: 'America/New_York',
+  });
+
+const hasCurrentNewYorkCandles = (candles: { time: number }[]) => {
+  const today = newYorkDate(Date.now());
+  return candles.some((candle) => newYorkDate(candle.time * 1000) === today);
+};
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
@@ -31,12 +41,29 @@ export async function GET(request: NextRequest) {
       polygonKey,
       tiingoKey,
     });
-    const candles = await provider.fetchRecentCandles(symbol, interval);
+    let candles = await provider.fetchRecentCandles(symbol, interval);
+    let providerName = provider.name;
+
+    // Some entry-level equity feeds return intraday bars only through the
+    // previous session. During pre-market that looks like a valid, but stale,
+    // response. Yahoo's chart feed includes current extended-hours bars, so use
+    // it when the configured equity provider has no candles for today's NY date.
+    const isFutures = symbol.toUpperCase().endsWith('=F')
+      || symbol.toUpperCase().includes('.C.0')
+      || symbol.startsWith('/');
+    if (!isFutures && provider.name !== 'Yahoo Finance' && !hasCurrentNewYorkCandles(candles)) {
+      const fallback = new YahooProvider();
+      const fallbackCandles = await fallback.fetchRecentCandles(symbol, interval);
+      if (hasCurrentNewYorkCandles(fallbackCandles)) {
+        candles = fallbackCandles;
+        providerName = `${fallback.name} (live fallback from ${provider.name})`;
+      }
+    }
 
     return NextResponse.json({
       symbol: symbol.toUpperCase(),
       interval,
-      provider: provider.name,
+      provider: providerName,
       candles,
     }, {
       headers: {

@@ -42,7 +42,7 @@ interface WatchItem {
   interval: string;
   minMovePercent: number;
   lastChecked?: string;
-  status?: 'bullish' | 'bearish' | 'none' | 'error';
+  status?: 'bullish' | 'bearish' | 'none' | 'no-data' | 'error';
   lastError?: string;
   candles?: Candle[];
   lastAlertedCandleTime?: number;
@@ -565,6 +565,14 @@ export default function MarketWatcher() {
     });
   };
 
+  const formatEasternTime = (timestamp: number) =>
+    new Date(timestamp * 1000).toLocaleTimeString('en-US', {
+      timeZone: 'America/New_York',
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
   // 5. Pattern Detection Algorithm
   const detectPattern = (candles: Candle[], minMovePercent: number, interval?: string) => {
     if (candles.length < 3) {
@@ -785,7 +793,12 @@ export default function MarketWatcher() {
 
       // 1. Try fetching from IndexedDB cache first
       const cache = await getLiveCache(item.symbol, item.interval);
-      if (cache) {
+      const isFuturesOrCrypto = item.symbol.includes('=F') || item.symbol.includes('-USD');
+      const cacheHasCurrentSession = cache && (
+        isFuturesOrCrypto
+        || filterCandlesByWindow(filterCurrentDayOnly(cache.candles), activeWindowRef.current).length > 0
+      );
+      if (cache && cacheHasCurrentSession) {
         candles = cache.candles;
         providerName = cache.provider || 'Polygon.io';
         if (providerName === 'Polygon.io') {
@@ -822,20 +835,24 @@ export default function MarketWatcher() {
         }
       }
 
-      const { matched, message, time } = detectPattern(candles, item.minMovePercent, item.interval);
+      const scanCandles = isFuturesOrCrypto
+        ? candles
+        : filterCandlesByWindow(filterCurrentDayOnly(candles), activeWindowRef.current);
+      const { matched, message, time } = detectPattern(scanCandles, item.minMovePercent, item.interval);
+      const status = scanCandles.length === 0 ? 'no-data' as const : matched;
 
       // Trigger Alert if pattern matched and hasn't been alerted for this candle/direction yet
       const alreadyAlerted = item.lastAlertedCandleTime === time && item.lastAlertedType === matched;
-      if (matched !== 'none' && !alreadyAlerted) {
-        triggerAlert(item.symbol, item.interval, matched, message, candles[candles.length - 1]?.close || 0, candles);
+      if (scanCandles.length > 0 && matched !== 'none' && !alreadyAlerted) {
+        triggerAlert(item.symbol, item.interval, matched, message, scanCandles[scanCandles.length - 1]?.close || 0, scanCandles);
       }
 
       return {
         ...item,
         lastChecked: new Date().toLocaleTimeString(),
-        status: matched,
+        status,
         candles,
-        lastError: undefined,
+        lastError: scanCandles.length === 0 ? 'No candles available for today’s selected ET session' : undefined,
         lastAlertedCandleTime: matched !== 'none' ? time : item.lastAlertedCandleTime,
         lastAlertedType: matched !== 'none' ? matched : item.lastAlertedType
       };
@@ -1159,12 +1176,17 @@ export default function MarketWatcher() {
           const freshCandles: Candle[] = data.candles || [];
           if (freshCandles.length > 0) {
             const providerName = data.provider || 'Live Feed';
-            const allMatches = scanAllPatterns(freshCandles, item.minMovePercent);
-            const { matched, message, time } = detectPattern(freshCandles, item.minMovePercent, item.interval);
+            const isFuturesOrCrypto = item.symbol.includes('=F') || item.symbol.includes('-USD');
+            const sessionCandles = isFuturesOrCrypto
+              ? freshCandles
+              : filterCandlesByWindow(filterCurrentDayOnly(freshCandles), activeWindowRef.current);
+            const allMatches = scanAllPatterns(sessionCandles, item.minMovePercent);
+            const { matched, message, time } = detectPattern(sessionCandles, item.minMovePercent, item.interval);
+            const status = sessionCandles.length === 0 ? 'no-data' as const : matched;
 
             const alreadyAlerted = item.lastAlertedCandleTime === time && item.lastAlertedType === matched;
-            if (matched !== 'none' && !alreadyAlerted) {
-              triggerAlert(item.symbol, item.interval, matched, message, freshCandles[freshCandles.length - 1]?.close || 0, freshCandles);
+            if (sessionCandles.length > 0 && matched !== 'none' && !alreadyAlerted) {
+              triggerAlert(item.symbol, item.interval, matched, message, sessionCandles[sessionCandles.length - 1]?.close || 0, sessionCandles);
             }
 
             setTestResult({
@@ -1184,7 +1206,8 @@ export default function MarketWatcher() {
                 updated[index] = {
                   ...updated[index],
                   candles: freshCandles,
-                  status: matched,
+                  status,
+                  lastError: sessionCandles.length === 0 ? 'No candles available for today’s selected ET session' : undefined,
                   lastChecked: new Date().toLocaleTimeString(),
                   lastAlertedCandleTime: matched !== 'none' ? time : updated[index].lastAlertedCandleTime,
                   lastAlertedType: matched !== 'none' ? matched : updated[index].lastAlertedType
@@ -1293,8 +1316,8 @@ export default function MarketWatcher() {
     return `${m}m ${s.toString().padStart(2, '0')}s`;
   };
 
-  // Helper to filter candles to only include the current trading session (the date of the latest candle)
-  // Helper to filter candles to only include the current trading session (New York market date)
+  // Keep only the current New York market date. Never substitute the previous
+  // session: doing so makes stale candles look like live pre-market data.
   const filterCurrentDayOnly = (candles: Candle[]) => {
     if (candles.length === 0) return candles;
     
@@ -1303,31 +1326,12 @@ export default function MarketWatcher() {
       timeZone: 'America/New_York'
     });
 
-    const todayCandles = candles.filter((c) => {
-      const d = new Date(c.time * 1000);
-      const nyDateStr = d.toLocaleDateString('en-US', {
-        timeZone: 'America/New_York'
-      });
-      return nyDateStr === todayNYDateString;
-    });
-
-    // If today's premarket/market session has candles, return ONLY today's candles!
-    if (todayCandles.length > 0) {
-      return todayCandles;
-    }
-
-    // Fallback: If before 4:00 AM ET (when today's premarket hasn't started yet), return latest available day
-    const latestCandle = candles[candles.length - 1];
-    const latestDate = new Date(latestCandle.time * 1000);
-    const latestNYDateString = latestDate.toLocaleDateString('en-US', {
-      timeZone: 'America/New_York'
-    });
     return candles.filter((c) => {
       const d = new Date(c.time * 1000);
       const nyDateStr = d.toLocaleDateString('en-US', {
         timeZone: 'America/New_York'
       });
-      return nyDateStr === latestNYDateString;
+      return nyDateStr === todayNYDateString;
     });
   };
 
@@ -1456,6 +1460,13 @@ export default function MarketWatcher() {
 
   const renderChartOnly = () => {
     if (!testResult || !testResult.success || testResult.candles.length === 0) return null;
+    if (displayedCandles.length === 0) {
+      return (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-8 text-center text-sm text-amber-300">
+          No candles are available for today&apos;s selected Eastern Time session.
+        </div>
+      );
+    }
     return (
       <div className="space-y-4">
         {/* Title Bar */}
@@ -1492,7 +1503,7 @@ export default function MarketWatcher() {
         <div className="flex items-center bg-muted-bg border border-card-border px-3 py-2 rounded-xl text-[10px] font-mono text-muted h-[38px] overflow-hidden select-none">
           {hoveredIndex !== null && hoveredIndex < displayedCandles.length ? (
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-              <span>T: <span className="text-foreground font-bold">{new Date(displayedCandles[hoveredIndex].time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}</span></span>
+              <span>T: <span className="text-foreground font-bold">{formatEasternTime(displayedCandles[hoveredIndex].time)} ET</span></span>
               <span>O: <span className="text-foreground font-bold">${displayedCandles[hoveredIndex].open.toFixed(2)}</span></span>
               <span>H: <span className="text-emerald-500 font-bold">${displayedCandles[hoveredIndex].high.toFixed(2)}</span></span>
               <span>L: <span className="text-rose-405 font-bold">${displayedCandles[hoveredIndex].low.toFixed(2)}</span></span>
@@ -1710,6 +1721,13 @@ export default function MarketWatcher() {
 
   const renderJustChartCanvas = () => {
     if (!testResult || !testResult.success || testResult.candles.length === 0) return null;
+    if (displayedCandles.length === 0) {
+      return (
+        <div className="bg-slate-900 px-4 py-10 text-center text-sm text-amber-300">
+          No candles are available for today&apos;s selected Eastern Time session.
+        </div>
+      );
+    }
     return (
       <div className="relative border-b border-card-border/30 bg-slate-900 dark:bg-slate-950 overflow-hidden">
         <svg
@@ -1878,7 +1896,7 @@ export default function MarketWatcher() {
         {/* Hover details HUD inside canvas to save space */}
         {hoveredIndex !== null && hoveredIndex < displayedCandles.length ? (
           <div className="absolute top-2.5 left-2.5 text-xs bg-slate-900/95 border border-slate-700/80 px-3 py-1.5 rounded-md text-slate-200 font-mono flex items-center gap-3 shadow-xl select-none">
-            <span>T: <span className="text-amber-300 font-bold">{new Date(displayedCandles[hoveredIndex].time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}</span></span>
+            <span>T: <span className="text-amber-300 font-bold">{formatEasternTime(displayedCandles[hoveredIndex].time)} ET</span></span>
             <span>O: <span className="text-cyan-300 font-bold">${displayedCandles[hoveredIndex].open.toFixed(2)}</span></span>
             <span>H: <span className="text-emerald-400 font-bold">${displayedCandles[hoveredIndex].high.toFixed(2)}</span></span>
             <span>L: <span className="text-rose-400 font-bold">${displayedCandles[hoveredIndex].low.toFixed(2)}</span></span>
@@ -2380,7 +2398,7 @@ export default function MarketWatcher() {
                         const originalIdx = watchlist.findIndex(w => w.symbol === item.symbol && w.interval === item.interval);
                         const idx = originalIdx !== -1 ? originalIdx : sortedIdx;
                         const rowViewCandles = item.candles ? getWatchlistViewCandles(item.candles, item.symbol) : [];
-                        const miniCandles = (rowViewCandles.length > 0 ? rowViewCandles : (item.candles || [])).slice(-5);
+                        const miniCandles = rowViewCandles.slice(-5);
                         const latestPrice = miniCandles.length > 0
                           ? miniCandles[miniCandles.length - 1].close
                           : null;
@@ -2493,6 +2511,14 @@ export default function MarketWatcher() {
                                 {item.status === 'none' && (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-muted-bg text-muted border border-card-border">
                                     Normal
+                                  </span>
+                                )}
+                                {item.status === 'no-data' && (
+                                  <span
+                                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                                    title={item.lastError}
+                                  >
+                                    <Clock size={12} /> No current data
                                   </span>
                                 )}
                                 {item.status === 'error' && (
