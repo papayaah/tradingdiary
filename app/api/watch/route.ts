@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
     const alpacaSecret = cookies.get('watcher_alpaca_secret')?.value;
     const twelveKey = cookies.get('watcher_twelve_key')?.value;
     const polygonKey = cookies.get('watcher_polygon_key')?.value;
+    const tiingoKey = cookies.get('watcher_tiingo_key')?.value;
 
     const provider = getActiveProvider(symbol, {
       preferredProvider,
@@ -24,6 +25,7 @@ export async function GET(request: NextRequest) {
       alpacaSecret,
       twelveKey,
       polygonKey,
+      tiingoKey,
     });
     const candles = await provider.fetchRecentCandles(symbol, interval);
 

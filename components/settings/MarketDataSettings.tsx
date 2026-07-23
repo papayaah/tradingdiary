@@ -9,6 +9,7 @@ export default function MarketDataSettings() {
   const [alpacaSecret, setAlpacaSecret] = useState<string>('');
   const [twelveKey, setTwelveKey] = useState<string>('');
   const [polygonKey, setPolygonKey] = useState<string>('');
+  const [tiingoKey, setTiingoKey] = useState<string>('');
   const [activeProviderName, setActiveProviderName] = useState<string>('Detecting...');
   const [savedSuccess, setSavedSuccess] = useState(false);
 
@@ -19,6 +20,16 @@ export default function MarketDataSettings() {
       setAlpacaSecret(localStorage.getItem('watcher-alpaca-secret') || '');
       setTwelveKey(localStorage.getItem('watcher-twelve-key') || '');
       setPolygonKey(localStorage.getItem('watcher-polygon-key') || '');
+      
+      const storedTiingo = localStorage.getItem('watcher-tiingo-key');
+      if (!storedTiingo) {
+        const defaultKey = '8deef2458b32ed163118fd38d9e2df9762f70ea0';
+        setTiingoKey(defaultKey);
+        localStorage.setItem('watcher-tiingo-key', defaultKey);
+        document.cookie = `watcher_tiingo_key=${encodeURIComponent(defaultKey)}; path=/; max-age=31536000; SameSite=Lax`;
+      } else {
+        setTiingoKey(storedTiingo);
+      }
     }
   }, []);
 
@@ -40,24 +51,41 @@ export default function MarketDataSettings() {
     checkActiveProvider();
   }, [preferredProvider]);
 
-  const handleSave = () => {
+  const handleSave = (updatedProvider?: string, customTiingoKey?: string) => {
     if (typeof window !== 'undefined') {
-      localStorage.setItem('watcher-pref-provider', preferredProvider);
+      const activeProvider = updatedProvider !== undefined ? updatedProvider : preferredProvider;
+      const finalTiingoKey = customTiingoKey !== undefined ? customTiingoKey : tiingoKey;
+
+      localStorage.setItem('watcher-pref-provider', activeProvider);
       localStorage.setItem('watcher-alpaca-key-id', alpacaKeyId.trim());
       localStorage.setItem('watcher-alpaca-secret', alpacaSecret.trim());
       localStorage.setItem('watcher-twelve-key', twelveKey.trim());
       localStorage.setItem('watcher-polygon-key', polygonKey.trim());
+      localStorage.setItem('watcher-tiingo-key', finalTiingoKey.trim());
 
       // Set cookies for server API route consumption
-      document.cookie = `watcher_pref_provider=${preferredProvider}; path=/; max-age=31536000; SameSite=Lax`;
+      document.cookie = `watcher_pref_provider=${activeProvider}; path=/; max-age=31536000; SameSite=Lax`;
       document.cookie = `watcher_alpaca_key_id=${encodeURIComponent(alpacaKeyId.trim())}; path=/; max-age=31536000; SameSite=Lax`;
       document.cookie = `watcher_alpaca_secret=${encodeURIComponent(alpacaSecret.trim())}; path=/; max-age=31536000; SameSite=Lax`;
       document.cookie = `watcher_twelve_key=${encodeURIComponent(twelveKey.trim())}; path=/; max-age=31536000; SameSite=Lax`;
       document.cookie = `watcher_polygon_key=${encodeURIComponent(polygonKey.trim())}; path=/; max-age=31536000; SameSite=Lax`;
+      document.cookie = `watcher_tiingo_key=${encodeURIComponent(finalTiingoKey.trim())}; path=/; max-age=31536000; SameSite=Lax`;
 
       setSavedSuccess(true);
-      checkActiveProvider();
-      setTimeout(() => setSavedSuccess(false), 3000);
+      
+      // Instantly check active provider using the new active provider name
+      fetch(`/api/watch?symbol=AAPL&t=${Date.now()}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.provider) {
+            setActiveProviderName(data.provider);
+          } else {
+            setActiveProviderName('Yahoo Finance');
+          }
+        })
+        .catch(() => setActiveProviderName('Yahoo Finance'));
+
+      setTimeout(() => setSavedSuccess(false), 2000);
     }
   };
 
@@ -93,7 +121,7 @@ export default function MarketDataSettings() {
         <label className="text-xs font-bold uppercase tracking-wider text-muted block">
           Preferred Data Engine
         </label>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
           {[
             {
               id: 'auto',
@@ -120,6 +148,12 @@ export default function MarketDataSettings() {
               badge: '5 req/min'
             },
             {
+              id: 'tiingo',
+              name: 'Tiingo IEX',
+              desc: 'Low cost high rate limit REST API',
+              badge: 'Live IEX'
+            },
+            {
               id: 'yahoo',
               name: 'Yahoo Finance',
               desc: '100% Free Default (No key required)',
@@ -128,7 +162,10 @@ export default function MarketDataSettings() {
           ].map((p) => (
             <div
               key={p.id}
-              onClick={() => setPreferredProvider(p.id)}
+              onClick={() => {
+                setPreferredProvider(p.id);
+                handleSave(p.id);
+              }}
               className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
                 preferredProvider === p.id
                   ? 'bg-accent/10 border-accent text-foreground font-medium ring-1 ring-accent/30'
@@ -164,6 +201,8 @@ export default function MarketDataSettings() {
                 type="text"
                 value={alpacaKeyId}
                 onChange={(e) => setAlpacaKeyId(e.target.value)}
+                onBlur={() => handleSave()}
+                onKeyDown={(e) => e.key === 'Enter' && handleSave()}
                 placeholder="PK..."
                 className="w-full bg-card-bg border border-card-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-accent outline-none"
               />
@@ -174,6 +213,8 @@ export default function MarketDataSettings() {
                 type="password"
                 value={alpacaSecret}
                 onChange={(e) => setAlpacaSecret(e.target.value)}
+                onBlur={() => handleSave()}
+                onKeyDown={(e) => e.key === 'Enter' && handleSave()}
                 placeholder="••••••••••••••••"
                 className="w-full bg-card-bg border border-card-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-accent outline-none"
               />
@@ -188,6 +229,8 @@ export default function MarketDataSettings() {
             type="password"
             value={twelveKey}
             onChange={(e) => setTwelveKey(e.target.value)}
+            onBlur={() => handleSave()}
+            onKeyDown={(e) => e.key === 'Enter' && handleSave()}
             placeholder="Twelve Data API Key..."
             className="w-full bg-card-bg border border-card-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-accent outline-none"
           />
@@ -200,7 +243,23 @@ export default function MarketDataSettings() {
             type="password"
             value={polygonKey}
             onChange={(e) => setPolygonKey(e.target.value)}
+            onBlur={() => handleSave()}
+            onKeyDown={(e) => e.key === 'Enter' && handleSave()}
             placeholder="Polygon / Massive API Key..."
+            className="w-full bg-card-bg border border-card-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-accent outline-none"
+          />
+        </div>
+
+        {/* Tiingo Key */}
+        <div className="p-4 rounded-xl bg-muted-bg/20 border border-card-border space-y-2">
+          <span className="text-xs font-bold text-foreground block">Tiingo API Key</span>
+          <input
+            type="password"
+            value={tiingoKey}
+            onChange={(e) => setTiingoKey(e.target.value)}
+            onBlur={() => handleSave()}
+            onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+            placeholder="Tiingo API Key..."
             className="w-full bg-card-bg border border-card-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-accent outline-none"
           />
         </div>
@@ -209,7 +268,7 @@ export default function MarketDataSettings() {
       {/* Save Button */}
       <div className="pt-2 flex justify-end">
         <button
-          onClick={handleSave}
+          onClick={() => handleSave()}
           className="px-5 py-2.5 bg-accent hover:bg-accent/80 active:bg-accent text-white font-semibold text-xs rounded-xl transition-all shadow-md flex items-center gap-2 cursor-pointer"
         >
           <ShieldCheck size={16} /> Save Market Data Settings

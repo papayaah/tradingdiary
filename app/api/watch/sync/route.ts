@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   try {
     const session = await auth.api.getSession({ headers: request.headers });
     if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ watchlist: null, authenticated: false }, { status: 200 });
     }
 
     const records = await db
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
   try {
     const session = await auth.api.getSession({ headers: request.headers });
     if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ success: false, authenticated: false }, { status: 200 });
     }
 
     const body = await request.json();

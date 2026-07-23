@@ -261,12 +261,81 @@ class TwelveDataProvider implements ChartProvider {
     }
 }
 
+/**
+ * Tiingo IEX Provider
+ */
+class TiingoProvider implements ChartProvider {
+    name = "Tiingo";
+    apiKey: string;
+
+    constructor(apiKey: string) {
+        this.apiKey = apiKey;
+    }
+
+    private mapInterval(interval: string): string {
+        const val = parseInt(interval.replace(/[ms]/g, '')) || 5;
+        const isHour = interval.endsWith('h');
+        if (isHour) {
+            return `${val}hour`;
+        }
+        return `${val}min`;
+    }
+
+    async fetchCandles(symbol: string, date: string, interval: string): Promise<OHLCCandle[]> {
+        const formattedDate = `${date.substring(0, 4)}-${date.substring(4, 6)}-${date.substring(6, 8)}`;
+        const freq = this.mapInterval(interval);
+        const url = `https://api.tiingo.com/iex/${symbol.toUpperCase()}/prices?startDate=${formattedDate}&endDate=${formattedDate}&resampleFreq=${freq}&token=${this.apiKey}`;
+
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Tiingo API error: ${res.status}`);
+
+        const data = await res.json();
+        if (!Array.isArray(data)) return [];
+
+        return data.map((r: any) => ({
+            time: Math.floor(new Date(r.date).getTime() / 1000),
+            open: r.open,
+            high: r.high,
+            low: r.low,
+            close: r.close,
+            volume: r.volume || 0,
+        }));
+    }
+
+    async fetchRecentCandles(symbol: string, interval: string): Promise<OHLCCandle[]> {
+        const end = new Date();
+        const start = new Date(end.getTime() - 3 * 24 * 60 * 60 * 1000);
+        const formatDate = (d: Date) => d.toISOString().split('T')[0];
+        const formattedStart = formatDate(start);
+        const formattedEnd = formatDate(end);
+        
+        const freq = this.mapInterval(interval);
+        const url = `https://api.tiingo.com/iex/${symbol.toUpperCase()}/prices?startDate=${formattedStart}&endDate=${formattedEnd}&resampleFreq=${freq}&token=${this.apiKey}`;
+
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Tiingo API error: ${res.status}`);
+
+        const data = await res.json();
+        if (!Array.isArray(data)) return [];
+
+        return data.map((r: any) => ({
+            time: Math.floor(new Date(r.date).getTime() / 1000),
+            open: r.open,
+            high: r.high,
+            low: r.low,
+            close: r.close,
+            volume: r.volume || 0,
+        }));
+    }
+}
+
 export interface UserProviderConfig {
     preferredProvider?: string;
     alpacaKeyId?: string;
     alpacaSecret?: string;
     twelveKey?: string;
     polygonKey?: string;
+    tiingoKey?: string;
 }
 
 /**
@@ -300,6 +369,11 @@ export function getActiveProvider(symbol?: string, userConfig?: UserProviderConf
         if (key) return new PolygonProvider();
     }
 
+    if (pref === 'tiingo') {
+        const key = userConfig?.tiingoKey || process.env.TIINGO_API_KEY;
+        if (key) return new TiingoProvider(key);
+    }
+
     if (pref === 'yahoo') {
         return new YahooProvider();
     }
@@ -315,6 +389,10 @@ export function getActiveProvider(symbol?: string, userConfig?: UserProviderConf
 
     if (userConfig?.polygonKey || process.env.POLYGON_API_KEY) {
         return new PolygonProvider();
+    }
+
+    if (userConfig?.tiingoKey || process.env.TIINGO_API_KEY) {
+        return new TiingoProvider(userConfig?.tiingoKey || process.env.TIINGO_API_KEY || '');
     }
 
     // Default: Yahoo
