@@ -13,6 +13,8 @@ export async function GET(request: NextRequest) {
   try {
     const cookies = request.cookies;
     const preferredProvider = cookies.get('watcher_pref_provider')?.value;
+    const futuresProvider = cookies.get('watcher_futures_provider')?.value;
+    const databentoKey = cookies.get('watcher_databento_key')?.value;
     const alpacaKeyId = cookies.get('watcher_alpaca_key_id')?.value;
     const alpacaSecret = cookies.get('watcher_alpaca_secret')?.value;
     const twelveKey = cookies.get('watcher_twelve_key')?.value;
@@ -21,6 +23,8 @@ export async function GET(request: NextRequest) {
 
     const provider = getActiveProvider(symbol, {
       preferredProvider,
+      futuresProvider,
+      databentoKey,
       alpacaKeyId,
       alpacaSecret,
       twelveKey,

@@ -1,10 +1,12 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Key, ShieldCheck, Zap, Database, Check, Activity } from 'lucide-react';
+import { Key, ShieldCheck, Zap, Database, Check, Activity, Flame } from 'lucide-react';
 
 export default function MarketDataSettings() {
-  const [preferredProvider, setPreferredProvider] = useState<string>('auto');
+  const [preferredProvider, setPreferredProvider] = useState<string>('tiingo');
+  const [futuresProvider, setFuturesProvider] = useState<string>('databento');
+  const [databentoKey, setDatabentoKey] = useState<string>('');
   const [alpacaKeyId, setAlpacaKeyId] = useState<string>('');
   const [alpacaSecret, setAlpacaSecret] = useState<string>('');
   const [twelveKey, setTwelveKey] = useState<string>('');
@@ -15,7 +17,9 @@ export default function MarketDataSettings() {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      setPreferredProvider(localStorage.getItem('watcher-pref-provider') || 'auto');
+      setPreferredProvider(localStorage.getItem('watcher-pref-provider') || 'tiingo');
+      setFuturesProvider(localStorage.getItem('watcher-futures-provider') || 'databento');
+      setDatabentoKey(localStorage.getItem('watcher-databento-key') || '');
       setAlpacaKeyId(localStorage.getItem('watcher-alpaca-key-id') || '');
       setAlpacaSecret(localStorage.getItem('watcher-alpaca-secret') || '');
       setTwelveKey(localStorage.getItem('watcher-twelve-key') || '');
@@ -51,12 +55,15 @@ export default function MarketDataSettings() {
     checkActiveProvider();
   }, [preferredProvider]);
 
-  const handleSave = (updatedProvider?: string, customTiingoKey?: string) => {
+  const handleSave = (updatedEquitiesProvider?: string, updatedFuturesProvider?: string, customTiingoKey?: string) => {
     if (typeof window !== 'undefined') {
-      const activeProvider = updatedProvider !== undefined ? updatedProvider : preferredProvider;
+      const activeEquities = updatedEquitiesProvider !== undefined ? updatedEquitiesProvider : preferredProvider;
+      const activeFutures = updatedFuturesProvider !== undefined ? updatedFuturesProvider : futuresProvider;
       const finalTiingoKey = customTiingoKey !== undefined ? customTiingoKey : tiingoKey;
 
-      localStorage.setItem('watcher-pref-provider', activeProvider);
+      localStorage.setItem('watcher-pref-provider', activeEquities);
+      localStorage.setItem('watcher-futures-provider', activeFutures);
+      localStorage.setItem('watcher-databento-key', databentoKey.trim());
       localStorage.setItem('watcher-alpaca-key-id', alpacaKeyId.trim());
       localStorage.setItem('watcher-alpaca-secret', alpacaSecret.trim());
       localStorage.setItem('watcher-twelve-key', twelveKey.trim());
@@ -64,7 +71,9 @@ export default function MarketDataSettings() {
       localStorage.setItem('watcher-tiingo-key', finalTiingoKey.trim());
 
       // Set cookies for server API route consumption
-      document.cookie = `watcher_pref_provider=${activeProvider}; path=/; max-age=31536000; SameSite=Lax`;
+      document.cookie = `watcher_pref_provider=${activeEquities}; path=/; max-age=31536000; SameSite=Lax`;
+      document.cookie = `watcher_futures_provider=${activeFutures}; path=/; max-age=31536000; SameSite=Lax`;
+      document.cookie = `watcher_databento_key=${encodeURIComponent(databentoKey.trim())}; path=/; max-age=31536000; SameSite=Lax`;
       document.cookie = `watcher_alpaca_key_id=${encodeURIComponent(alpacaKeyId.trim())}; path=/; max-age=31536000; SameSite=Lax`;
       document.cookie = `watcher_alpaca_secret=${encodeURIComponent(alpacaSecret.trim())}; path=/; max-age=31536000; SameSite=Lax`;
       document.cookie = `watcher_twelve_key=${encodeURIComponent(twelveKey.trim())}; path=/; max-age=31536000; SameSite=Lax`;
@@ -73,7 +82,6 @@ export default function MarketDataSettings() {
 
       setSavedSuccess(true);
       
-      // Instantly check active provider using the new active provider name
       fetch(`/api/watch?symbol=AAPL&t=${Date.now()}`)
         .then((res) => res.json())
         .then((data) => {
@@ -97,7 +105,7 @@ export default function MarketDataSettings() {
             <Zap className="text-accent" size={20} /> Market Data Provider Settings
           </h3>
           <p className="text-xs text-muted mt-1">
-            Choose your preferred data feed and manage API keys for real-time stock scanning.
+            Configure independent data feeds for Equities and 24H CME Futures, and manage your API keys.
           </p>
         </div>
 
@@ -105,7 +113,7 @@ export default function MarketDataSettings() {
           {/* Active Data Feed Indicator Badge */}
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold shadow-sm">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <Activity size={13} className="text-emerald-400" /> Active Feed: {activeProviderName}
+            <Activity size={13} className="text-emerald-400" /> Equities Feed: {activeProviderName}
           </div>
 
           {savedSuccess && (
@@ -116,18 +124,71 @@ export default function MarketDataSettings() {
         </div>
       </div>
 
-      {/* Provider Selector */}
-      <div className="space-y-3">
-        <label className="text-xs font-bold uppercase tracking-wider text-muted block">
-          Preferred Data Engine
-        </label>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+      {/* Futures Data Feed Selector */}
+      <div className="space-y-3 p-4 rounded-xl bg-amber-500/5 border border-amber-500/20">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+            <Flame size={15} /> ⚡ Futures Data Engine (CME 24H Continuous)
+          </label>
+          <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded font-medium">
+            Dedicated Futures Feed
+          </span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {[
             {
-              id: 'auto',
-              name: 'Automatic (Recommended)',
-              desc: 'Auto-detect active key or fallback to Yahoo',
-              badge: 'Smart'
+              id: 'databento',
+              name: 'Databento (GLBX.MDP3 CME)',
+              desc: 'Institutional-grade live CME futures feed (OHLCV-1m)',
+              badge: 'Recommended'
+            },
+            {
+              id: 'yahoo',
+              name: 'Yahoo Finance (Fallback)',
+              desc: 'Free delayed/approximate futures candles',
+              badge: 'Free'
+            }
+          ].map((f) => (
+            <div
+              key={f.id}
+              onClick={() => {
+                setFuturesProvider(f.id);
+                handleSave(undefined, f.id);
+              }}
+              className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                futuresProvider === f.id
+                  ? 'bg-amber-500/15 border-amber-500 text-foreground font-medium ring-1 ring-amber-500/30'
+                  : 'bg-card-bg border-card-border hover:border-card-border/80 text-muted'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-xs text-foreground">{f.name}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 font-mono border border-amber-500/20">{f.badge}</span>
+              </div>
+              <p className="text-[11px] text-muted mt-1 leading-tight">{f.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Equities Provider Selector */}
+      <div className="space-y-3">
+        <label className="text-xs font-bold uppercase tracking-wider text-muted block">
+          📈 Equities Data Engine (Stocks & ETFs)
+        </label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          {[
+            {
+              id: 'tiingo',
+              name: 'Tiingo IEX',
+              desc: 'Low cost high rate limit REST API',
+              badge: 'Power Tier'
+            },
+            {
+              id: 'polygon',
+              name: 'Polygon / Massive',
+              desc: '5 API calls/min (Free Tier)',
+              badge: '5 req/min'
             },
             {
               id: 'alpaca',
@@ -140,18 +201,6 @@ export default function MarketDataSettings() {
               name: 'Twelve Data',
               desc: 'Real-time US equities & ETFs',
               badge: '8 req/min'
-            },
-            {
-              id: 'polygon',
-              name: 'Polygon / Massive',
-              desc: '5 API calls/min (Free Tier)',
-              badge: '5 req/min'
-            },
-            {
-              id: 'tiingo',
-              name: 'Tiingo IEX',
-              desc: 'Low cost high rate limit REST API',
-              badge: 'Live IEX'
             },
             {
               id: 'yahoo',
@@ -187,6 +236,59 @@ export default function MarketDataSettings() {
         <h4 className="text-xs font-bold uppercase tracking-wider text-muted flex items-center gap-1.5">
           <Key size={14} className="text-accent" /> API Credentials
         </h4>
+
+        {/* Databento Key */}
+        <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/20 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+              <Flame size={14} /> Databento API Key (CME Futures)
+            </span>
+            <span className="text-[10px] text-amber-400 font-semibold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">GLBX.MDP3 Live</span>
+          </div>
+          <input
+            type="password"
+            value={databentoKey}
+            onChange={(e) => setDatabentoKey(e.target.value)}
+            onBlur={() => handleSave()}
+            onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+            placeholder="db-..."
+            className="w-full bg-card-bg border border-card-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-amber-500 outline-none"
+          />
+          <p className="text-[11px] text-muted">
+            Used for institutional-grade 1m CME Futures candles (`NQ.c.0`, `ES.c.0`, `CL.c.0`, `GC.c.0`).
+          </p>
+        </div>
+
+        {/* Tiingo Key */}
+        <div className="p-4 rounded-xl bg-muted-bg/20 border border-card-border space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-foreground">Tiingo API Key (Equities)</span>
+            <span className="text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">Power Tier Active</span>
+          </div>
+          <input
+            type="password"
+            value={tiingoKey}
+            onChange={(e) => setTiingoKey(e.target.value)}
+            onBlur={() => handleSave()}
+            onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+            placeholder="Tiingo API Key..."
+            className="w-full bg-card-bg border border-card-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-accent outline-none"
+          />
+        </div>
+
+        {/* Polygon / Massive Key */}
+        <div className="p-4 rounded-xl bg-muted-bg/20 border border-card-border space-y-2">
+          <span className="text-xs font-bold text-foreground block">Polygon.io / Massive API Key</span>
+          <input
+            type="password"
+            value={polygonKey}
+            onChange={(e) => setPolygonKey(e.target.value)}
+            onBlur={() => handleSave()}
+            onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+            placeholder="Polygon / Massive API Key..."
+            className="w-full bg-card-bg border border-card-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-accent outline-none"
+          />
+        </div>
 
         {/* Alpaca Credentials */}
         <div className="p-4 rounded-xl bg-muted-bg/20 border border-card-border space-y-3">
@@ -232,34 +334,6 @@ export default function MarketDataSettings() {
             onBlur={() => handleSave()}
             onKeyDown={(e) => e.key === 'Enter' && handleSave()}
             placeholder="Twelve Data API Key..."
-            className="w-full bg-card-bg border border-card-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-accent outline-none"
-          />
-        </div>
-
-        {/* Polygon / Massive Key */}
-        <div className="p-4 rounded-xl bg-muted-bg/20 border border-card-border space-y-2">
-          <span className="text-xs font-bold text-foreground block">Polygon.io / Massive API Key</span>
-          <input
-            type="password"
-            value={polygonKey}
-            onChange={(e) => setPolygonKey(e.target.value)}
-            onBlur={() => handleSave()}
-            onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-            placeholder="Polygon / Massive API Key..."
-            className="w-full bg-card-bg border border-card-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-accent outline-none"
-          />
-        </div>
-
-        {/* Tiingo Key */}
-        <div className="p-4 rounded-xl bg-muted-bg/20 border border-card-border space-y-2">
-          <span className="text-xs font-bold text-foreground block">Tiingo API Key</span>
-          <input
-            type="password"
-            value={tiingoKey}
-            onChange={(e) => setTiingoKey(e.target.value)}
-            onBlur={() => handleSave()}
-            onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-            placeholder="Tiingo API Key..."
             className="w-full bg-card-bg border border-card-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-accent outline-none"
           />
         </div>

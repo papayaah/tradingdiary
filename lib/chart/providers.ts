@@ -329,8 +329,124 @@ class TiingoProvider implements ChartProvider {
     }
 }
 
+function aggregate1mCandles(candles: OHLCCandle[], targetInterval: string): OHLCCandle[] {
+    const minutes = parseInt(targetInterval.replace(/[ms]/g, '')) || 1;
+    if (minutes <= 1) return candles;
+    const intervalSeconds = minutes * 60;
+    const groups = new Map<number, OHLCCandle[]>();
+
+    for (const c of candles) {
+        const bucketTime = Math.floor(c.time / intervalSeconds) * intervalSeconds;
+        if (!groups.has(bucketTime)) {
+            groups.set(bucketTime, []);
+        }
+        groups.get(bucketTime)!.push(c);
+    }
+
+    const aggregated: OHLCCandle[] = [];
+    for (const [time, chunk] of groups.entries()) {
+        const open = chunk[0].open;
+        const close = chunk[chunk.length - 1].close;
+        const high = Math.max(...chunk.map(c => c.high));
+        const low = Math.min(...chunk.map(c => c.low));
+        const volume = chunk.reduce((sum, c) => sum + c.volume, 0);
+
+        aggregated.push({ time, open, high, low, close, volume });
+    }
+    return aggregated;
+}
+
+/**
+ * Databento CME Futures Provider (GLBX.MDP3)
+ */
+export class DatabentoProvider implements ChartProvider {
+    name = "Databento (GLBX.MDP3 CME)";
+    private apiKey: string;
+
+    constructor(apiKey: string) {
+        this.apiKey = apiKey;
+    }
+
+    private mapSymbol(symbol: string): string {
+        let clean = symbol.toUpperCase().trim();
+        if (clean.endsWith('=F')) {
+            clean = clean.replace('=F', '');
+        }
+        if (!clean.includes('.')) {
+            clean = `${clean}.c.0`;
+        }
+        return clean;
+    }
+
+    async fetchCandles(symbol: string, date: string, interval: string): Promise<OHLCCandle[]> {
+        return this.fetchRecentCandles(symbol, interval);
+    }
+
+    async fetchRecentCandles(symbol: string, interval: string): Promise<OHLCCandle[]> {
+        if (!this.apiKey) {
+            throw new Error("Missing DATABENTO_API_KEY");
+        }
+
+        const dbSymbol = this.mapSymbol(symbol);
+        
+        // Fetch last 3 days to cover 24h continuous futures session + weekend gaps
+        const end = new Date();
+        const start = new Date(end.getTime() - 3 * 24 * 60 * 60 * 1000);
+        const startIso = start.toISOString().split('.')[0];
+        const endIso = end.toISOString().split('.')[0];
+
+        const url = `https://hist.databento.com/v0/timeseries.get_range?dataset=GLBX.MDP3&symbols=${dbSymbol}&schema=ohlcv-1m&stype_in=continuous&stype_out=continuous&encoding=json&pretty_px=1&pretty_ts=1&start=${startIso}&end=${endIso}`;
+
+        const res = await fetch(url, {
+            headers: {
+                'Authorization': `Bearer ${this.apiKey.trim()}`
+            }
+        });
+
+        if (!res.ok) {
+            const errText = await res.text().catch(() => '');
+            throw new Error(`Databento API error ${res.status}: ${errText.substring(0, 100)}`);
+        }
+
+        const text = await res.text();
+        if (!text.trim()) return [];
+
+        const lines = text.trim().split('\n');
+        const raw1mCandles: OHLCCandle[] = [];
+
+        for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+                const record = JSON.parse(line);
+                let sec = 0;
+                if (typeof record.ts_event === 'number') {
+                    sec = Math.floor(record.ts_event / 1e9);
+                } else if (typeof record.ts_event === 'string') {
+                    sec = Math.floor(new Date(record.ts_event).getTime() / 1000);
+                }
+                
+                const open = typeof record.open === 'number' ? record.open : parseFloat(record.open);
+                const high = typeof record.high === 'number' ? record.high : parseFloat(record.high);
+                const low = typeof record.low === 'number' ? record.low : parseFloat(record.low);
+                const close = typeof record.close === 'number' ? record.close : parseFloat(record.close);
+                const volume = typeof record.volume === 'number' ? record.volume : parseFloat(record.volume || 0);
+
+                if (sec && !isNaN(close)) {
+                    raw1mCandles.push({ time: sec, open, high, low, close, volume });
+                }
+            } catch (e) {
+                // skip metadata or non-candle record
+            }
+        }
+
+        return aggregate1mCandles(raw1mCandles, interval);
+    }
+}
+
 export interface UserProviderConfig {
     preferredProvider?: string;
+    futuresProvider?: string;
+    databentoKey?: string;
     alpacaKeyId?: string;
     alpacaSecret?: string;
     twelveKey?: string;
@@ -340,17 +456,24 @@ export interface UserProviderConfig {
 
 /**
  * Factory to get the active provider based on environment variables or user config.
- * Falls back safely to Yahoo Finance if selected provider lacks an API key.
+ * Supports distinct routing for Equities vs Futures.
  */
 export function getActiveProvider(symbol?: string, userConfig?: UserProviderConfig): ChartProvider {
-    // If it's a Yahoo-specific ticker format (starts with ^, starts with /, or ends with =F), force YahooProvider
-    if (symbol) {
-        const upper = symbol.toUpperCase();
-        if (upper.startsWith('^') || upper.startsWith('/') || upper.endsWith('=F') || upper.includes('=')) {
-            return new YahooProvider();
+    const upperSymbol = symbol ? symbol.toUpperCase() : '';
+    const isFutures = upperSymbol.endsWith('=F') || upperSymbol.includes('.C.0') || upperSymbol.startsWith('/');
+
+    // Handle Futures Data Feed Selection separately
+    if (isFutures) {
+        const futuresPref = userConfig?.futuresProvider || 'databento';
+        const databentoKey = userConfig?.databentoKey || process.env.DATABENTO_API_KEY;
+
+        if ((futuresPref === 'databento' || futuresPref === 'auto') && databentoKey) {
+            return new DatabentoProvider(databentoKey);
         }
+        return new YahooProvider();
     }
 
+    // Handle Equities Data Feed Selection
     const pref = userConfig?.preferredProvider || 'auto';
 
     if (pref === 'alpaca') {
@@ -378,21 +501,21 @@ export function getActiveProvider(symbol?: string, userConfig?: UserProviderConf
         return new YahooProvider();
     }
 
-    // Default 'auto' fallback chain:
-    if (userConfig?.alpacaKeyId || process.env.ALPACA_API_KEY_ID || process.env.ALPACA_API_KEY) {
-        return new AlpacaProvider();
-    }
-
-    if (userConfig?.twelveKey || process.env.TWELVE_DATA_API_KEY) {
-        return new TwelveDataProvider();
+    // Default 'auto' fallback chain for Equities:
+    if (userConfig?.tiingoKey || process.env.TIINGO_API_KEY) {
+        return new TiingoProvider(userConfig?.tiingoKey || process.env.TIINGO_API_KEY || '');
     }
 
     if (userConfig?.polygonKey || process.env.POLYGON_API_KEY) {
         return new PolygonProvider();
     }
 
-    if (userConfig?.tiingoKey || process.env.TIINGO_API_KEY) {
-        return new TiingoProvider(userConfig?.tiingoKey || process.env.TIINGO_API_KEY || '');
+    if (userConfig?.alpacaKeyId || process.env.ALPACA_API_KEY_ID || process.env.ALPACA_API_KEY) {
+        return new AlpacaProvider();
+    }
+
+    if (userConfig?.twelveKey || process.env.TWELVE_DATA_API_KEY) {
+        return new TwelveDataProvider();
     }
 
     // Default: Yahoo
