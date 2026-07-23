@@ -284,7 +284,7 @@ class TiingoProvider implements ChartProvider {
     async fetchCandles(symbol: string, date: string, interval: string): Promise<OHLCCandle[]> {
         const formattedDate = `${date.substring(0, 4)}-${date.substring(4, 6)}-${date.substring(6, 8)}`;
         const freq = this.mapInterval(interval);
-        const url = `https://api.tiingo.com/iex/${symbol.toUpperCase()}/prices?startDate=${formattedDate}&endDate=${formattedDate}&resampleFreq=${freq}&token=${this.apiKey}`;
+        const url = `https://api.tiingo.com/iex/${symbol.toUpperCase()}/prices?startDate=${formattedDate}&endDate=${formattedDate}&resampleFreq=${freq}&afterHours=true&token=${this.apiKey}`;
 
         const res = await fetch(url);
         if (!res.ok) throw new Error(`Tiingo API error: ${res.status}`);
@@ -310,7 +310,7 @@ class TiingoProvider implements ChartProvider {
         const formattedEnd = formatDate(end);
         
         const freq = this.mapInterval(interval);
-        const url = `https://api.tiingo.com/iex/${symbol.toUpperCase()}/prices?startDate=${formattedStart}&endDate=${formattedEnd}&resampleFreq=${freq}&token=${this.apiKey}`;
+        const url = `https://api.tiingo.com/iex/${symbol.toUpperCase()}/prices?startDate=${formattedStart}&endDate=${formattedEnd}&resampleFreq=${freq}&afterHours=true&token=${this.apiKey}`;
 
         const res = await fetch(url);
         if (!res.ok) throw new Error(`Tiingo API error: ${res.status}`);
@@ -388,20 +388,35 @@ export class DatabentoProvider implements ChartProvider {
         }
 
         const dbSymbol = this.mapSymbol(symbol);
-        
-        // Fetch last 3 days to cover 24h continuous futures session + weekend gaps
-        const end = new Date();
-        const start = new Date(end.getTime() - 3 * 24 * 60 * 60 * 1000);
-        const startIso = start.toISOString().split('.')[0];
-        const endIso = end.toISOString().split('.')[0];
+        const basicAuth = Buffer.from(this.apiKey.trim() + ':').toString('base64');
 
-        const url = `https://hist.databento.com/v0/timeseries.get_range?dataset=GLBX.MDP3&symbols=${dbSymbol}&schema=ohlcv-1m&stype_in=continuous&stype_out=continuous&encoding=json&pretty_px=1&pretty_ts=1&start=${startIso}&end=${endIso}`;
+        const now = new Date();
+        const endHour = new Date(Math.floor(now.getTime() / (60 * 60 * 1000)) * (60 * 60 * 1000));
+        const startHour = new Date(endHour.getTime() - 24 * 60 * 60 * 1000);
 
-        const res = await fetch(url, {
+        const startIso = startHour.toISOString().replace(/\:\d{2}\:\d{2}\.\d{3}Z$/, ':00:00Z');
+        const endIso = endHour.toISOString().replace(/\:\d{2}\:\d{2}\.\d{3}Z$/, ':00:00Z');
+
+        const url = `https://hist.databento.com/v0/timeseries.get_range?dataset=GLBX.MDP3&symbols=${dbSymbol}&schema=ohlcv-1m&stype_in=continuous&stype_out=instrument_id&encoding=json&pretty_px=1&pretty_ts=1&start=${startIso}&end=${endIso}`;
+
+        const cleanRoot = symbol.toUpperCase().replace('=F', '').replace(/\..*$/, '').replace(/^\//, '');
+
+        let res = await fetch(url, {
             headers: {
-                'Authorization': `Bearer ${this.apiKey.trim()}`
+                'Authorization': `Basic ${basicAuth}`
             }
         });
+
+        // Fallback to parent symbology (e.g., NQ.FUT) if continuous symbology fails
+        if (!res.ok) {
+            const parentSymbol = `${cleanRoot}.FUT`;
+            const fallbackUrl = `https://hist.databento.com/v0/timeseries.get_range?dataset=GLBX.MDP3&symbols=${parentSymbol}&schema=ohlcv-1m&stype_in=parent&stype_out=instrument_id&encoding=json&pretty_px=1&pretty_ts=1&start=${startIso}&end=${endIso}`;
+            res = await fetch(fallbackUrl, {
+                headers: {
+                    'Authorization': `Basic ${basicAuth}`
+                }
+            });
+        }
 
         if (!res.ok) {
             const errText = await res.text().catch(() => '');
@@ -439,7 +454,10 @@ export class DatabentoProvider implements ChartProvider {
             }
         }
 
-        return aggregate1mCandles(raw1mCandles, interval);
+        const aggregated = aggregate1mCandles(raw1mCandles, interval);
+        aggregated.sort((a, b) => a.time - b.time);
+        // Ensure we return the latest candles ending right now!
+        return aggregated.slice(-144);
     }
 }
 

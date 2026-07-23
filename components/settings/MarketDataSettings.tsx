@@ -14,6 +14,7 @@ export default function MarketDataSettings() {
   const [tiingoKey, setTiingoKey] = useState<string>('');
   const [activeProviderName, setActiveProviderName] = useState<string>('Detecting...');
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [showAllKeys, setShowAllKeys] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -233,110 +234,129 @@ export default function MarketDataSettings() {
 
       {/* API Key Inputs */}
       <div className="space-y-4 pt-2">
-        <h4 className="text-xs font-bold uppercase tracking-wider text-muted flex items-center gap-1.5">
-          <Key size={14} className="text-accent" /> API Credentials
-        </h4>
+        <div className="flex items-center justify-between">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-muted flex items-center gap-1.5">
+            <Key size={14} className="text-accent" /> API Credentials
+          </h4>
+          <button
+            type="button"
+            onClick={() => setShowAllKeys(!showAllKeys)}
+            className="text-[11px] text-accent hover:underline font-medium cursor-pointer"
+          >
+            {showAllKeys ? 'Hide Inactive Providers' : '+ Configure All Provider Keys'}
+          </button>
+        </div>
 
         {/* Databento Key */}
-        <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/20 space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
-              <Flame size={14} /> Databento API Key (CME Futures)
-            </span>
-            <span className="text-[10px] text-amber-400 font-semibold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">GLBX.MDP3 Live</span>
+        {(futuresProvider === 'databento' || showAllKeys || databentoKey.length > 0) && (
+          <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/20 space-y-2 transition-all">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                <Flame size={14} /> Databento API Key (CME Futures)
+              </span>
+              <span className="text-[10px] text-amber-400 font-semibold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">GLBX.MDP3 Live</span>
+            </div>
+            <input
+              type="password"
+              value={databentoKey}
+              onChange={(e) => setDatabentoKey(e.target.value)}
+              onBlur={() => handleSave()}
+              onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+              placeholder="db-..."
+              className="w-full bg-card-bg border border-card-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-amber-500 outline-none"
+            />
+            <p className="text-[11px] text-muted">
+              Used for institutional-grade 1m CME Futures candles (`NQ.c.0`, `ES.c.0`, `CL.c.0`, `GC.c.0`).
+            </p>
           </div>
-          <input
-            type="password"
-            value={databentoKey}
-            onChange={(e) => setDatabentoKey(e.target.value)}
-            onBlur={() => handleSave()}
-            onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-            placeholder="db-..."
-            className="w-full bg-card-bg border border-card-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-amber-500 outline-none"
-          />
-          <p className="text-[11px] text-muted">
-            Used for institutional-grade 1m CME Futures candles (`NQ.c.0`, `ES.c.0`, `CL.c.0`, `GC.c.0`).
-          </p>
-        </div>
+        )}
 
         {/* Tiingo Key */}
-        <div className="p-4 rounded-xl bg-muted-bg/20 border border-card-border space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-foreground">Tiingo API Key (Equities)</span>
-            <span className="text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">Power Tier Active</span>
+        {(preferredProvider === 'tiingo' || preferredProvider === 'auto' || showAllKeys || tiingoKey.length > 0) && (
+          <div className="p-4 rounded-xl bg-muted-bg/20 border border-card-border space-y-2 transition-all">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-foreground">Tiingo API Key (Equities)</span>
+              <span className="text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">Power Tier Active</span>
+            </div>
+            <input
+              type="password"
+              value={tiingoKey}
+              onChange={(e) => setTiingoKey(e.target.value)}
+              onBlur={() => handleSave()}
+              onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+              placeholder="Tiingo API Key..."
+              className="w-full bg-card-bg border border-card-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-accent outline-none"
+            />
           </div>
-          <input
-            type="password"
-            value={tiingoKey}
-            onChange={(e) => setTiingoKey(e.target.value)}
-            onBlur={() => handleSave()}
-            onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-            placeholder="Tiingo API Key..."
-            className="w-full bg-card-bg border border-card-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-accent outline-none"
-          />
-        </div>
+        )}
 
         {/* Polygon / Massive Key */}
-        <div className="p-4 rounded-xl bg-muted-bg/20 border border-card-border space-y-2">
-          <span className="text-xs font-bold text-foreground block">Polygon.io / Massive API Key</span>
-          <input
-            type="password"
-            value={polygonKey}
-            onChange={(e) => setPolygonKey(e.target.value)}
-            onBlur={() => handleSave()}
-            onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-            placeholder="Polygon / Massive API Key..."
-            className="w-full bg-card-bg border border-card-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-accent outline-none"
-          />
-        </div>
+        {(preferredProvider === 'polygon' || showAllKeys || polygonKey.length > 0) && (
+          <div className="p-4 rounded-xl bg-muted-bg/20 border border-card-border space-y-2 transition-all">
+            <span className="text-xs font-bold text-foreground block">Polygon.io / Massive API Key</span>
+            <input
+              type="password"
+              value={polygonKey}
+              onChange={(e) => setPolygonKey(e.target.value)}
+              onBlur={() => handleSave()}
+              onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+              placeholder="Polygon / Massive API Key..."
+              className="w-full bg-card-bg border border-card-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-accent outline-none"
+            />
+          </div>
+        )}
 
         {/* Alpaca Credentials */}
-        <div className="p-4 rounded-xl bg-muted-bg/20 border border-card-border space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-foreground">Alpaca Market Data Keys</span>
-            <span className="text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded">Fastest (200 req/min)</span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="text-[11px] text-muted block mb-1">API Key ID</label>
-              <input
-                type="text"
-                value={alpacaKeyId}
-                onChange={(e) => setAlpacaKeyId(e.target.value)}
-                onBlur={() => handleSave()}
-                onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-                placeholder="PK..."
-                className="w-full bg-card-bg border border-card-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-accent outline-none"
-              />
+        {(preferredProvider === 'alpaca' || showAllKeys || alpacaKeyId.length > 0 || alpacaSecret.length > 0) && (
+          <div className="p-4 rounded-xl bg-muted-bg/20 border border-card-border space-y-3 transition-all">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-foreground">Alpaca Market Data Keys</span>
+              <span className="text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded">Fastest (200 req/min)</span>
             </div>
-            <div>
-              <label className="text-[11px] text-muted block mb-1">Secret Key</label>
-              <input
-                type="password"
-                value={alpacaSecret}
-                onChange={(e) => setAlpacaSecret(e.target.value)}
-                onBlur={() => handleSave()}
-                onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-                placeholder="••••••••••••••••"
-                className="w-full bg-card-bg border border-card-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-accent outline-none"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-[11px] text-muted block mb-1">API Key ID</label>
+                <input
+                  type="text"
+                  value={alpacaKeyId}
+                  onChange={(e) => setAlpacaKeyId(e.target.value)}
+                  onBlur={() => handleSave()}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+                  placeholder="PK..."
+                  className="w-full bg-card-bg border border-card-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-accent outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] text-muted block mb-1">Secret Key</label>
+                <input
+                  type="password"
+                  value={alpacaSecret}
+                  onChange={(e) => setAlpacaSecret(e.target.value)}
+                  onBlur={() => handleSave()}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+                  placeholder="••••••••••••••••"
+                  className="w-full bg-card-bg border border-card-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-accent outline-none"
+                />
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Twelve Data Key */}
-        <div className="p-4 rounded-xl bg-muted-bg/20 border border-card-border space-y-2">
-          <span className="text-xs font-bold text-foreground block">Twelve Data API Key</span>
-          <input
-            type="password"
-            value={twelveKey}
-            onChange={(e) => setTwelveKey(e.target.value)}
-            onBlur={() => handleSave()}
-            onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-            placeholder="Twelve Data API Key..."
-            className="w-full bg-card-bg border border-card-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-accent outline-none"
-          />
-        </div>
+        {(preferredProvider === 'twelve' || showAllKeys || twelveKey.length > 0) && (
+          <div className="p-4 rounded-xl bg-muted-bg/20 border border-card-border space-y-2 transition-all">
+            <span className="text-xs font-bold text-foreground block">Twelve Data API Key</span>
+            <input
+              type="password"
+              value={twelveKey}
+              onChange={(e) => setTwelveKey(e.target.value)}
+              onBlur={() => handleSave()}
+              onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+              placeholder="Twelve Data API Key..."
+              className="w-full bg-card-bg border border-card-border rounded-lg px-3 py-2 text-xs font-mono text-foreground focus:border-accent outline-none"
+            />
+          </div>
+        )}
       </div>
 
       {/* Save Button */}
