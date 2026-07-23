@@ -52,6 +52,7 @@ interface WatchItem {
 interface AlertLog {
   id: string;
   time: string;
+  createdAt?: number;
   symbol: string;
   interval: string;
   type: 'bullish' | 'bearish';
@@ -66,6 +67,40 @@ interface PatternMatch {
   change: number;
   message: string;
 }
+
+const inferLegacyAlertTimestamp = (time: string, now = Date.now()) => {
+  const match = time.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AP]M)?$/i);
+  if (!match) return now;
+
+  let hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const second = Number(match[3] || 0);
+  const period = match[4]?.toUpperCase();
+  if (period === 'PM' && hour < 12) hour += 12;
+  if (period === 'AM' && hour === 12) hour = 0;
+
+  const date = new Date(now);
+  date.setHours(hour, minute, second, 0);
+  if (date.getTime() > now + 5 * 60 * 1000) {
+    date.setDate(date.getDate() - 1);
+  }
+  return date.getTime();
+};
+
+const formatTimeAgo = (timestamp: number, now: number) => {
+  const elapsedSeconds = Math.max(0, Math.floor((now - timestamp) / 1000));
+  if (elapsedSeconds < 10) return 'just now';
+  if (elapsedSeconds < 60) return `${elapsedSeconds} sec ago`;
+
+  const elapsedMinutes = Math.floor(elapsedSeconds / 60);
+  if (elapsedMinutes < 60) return `${elapsedMinutes} min ago`;
+
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  if (elapsedHours < 24) return `${elapsedHours} hr ago`;
+
+  const elapsedDays = Math.floor(elapsedHours / 24);
+  return `${elapsedDays} day${elapsedDays === 1 ? '' : 's'} ago`;
+};
 
 // Client-side cache using existing 'tradingdiary-charts' IndexedDB ohlc store
 async function getLiveCache(symbol: string, interval: string) {
@@ -141,6 +176,7 @@ export default function MarketWatcher() {
   const [countdown, setCountdown] = useState(600); // 10 minutes in seconds
   const [isScanning, setIsScanning] = useState(false);
   const [alertLogs, setAlertLogs] = useState<AlertLog[]>([]);
+  const [relativeNow, setRelativeNow] = useState(Date.now());
   const [isPolygonActive, setIsPolygonActive] = useState(false);
   const [isScannerPaused, setIsScannerPaused] = useState(false);
   const [autoPauseEnabled, setAutoPauseEnabled] = useState(true); // pause scanner outside chosen session
@@ -332,7 +368,13 @@ export default function MarketWatcher() {
     const savedLogs = localStorage.getItem('watcher-alerts');
     if (savedLogs) {
       try {
-        setAlertLogs(JSON.parse(savedLogs));
+        const parsedLogs: AlertLog[] = JSON.parse(savedLogs);
+        const migratedLogs = parsedLogs.map((log) => ({
+          ...log,
+          createdAt: log.createdAt ?? inferLegacyAlertTimestamp(log.time),
+        }));
+        setAlertLogs(migratedLogs);
+        localStorage.setItem('watcher-alerts', JSON.stringify(migratedLogs));
       } catch (e) {
         console.error(e);
       }
@@ -407,6 +449,11 @@ export default function MarketWatcher() {
     if (typeof window !== 'undefined' && 'Notification' in window) {
       setIsNotificationsEnabled(Notification.permission === 'granted');
     }
+  }, []);
+
+  useEffect(() => {
+    const relativeTimeTimer = window.setInterval(() => setRelativeNow(Date.now()), 10_000);
+    return () => window.clearInterval(relativeTimeTimer);
   }, []);
 
   // Save tester configuration changes to localStorage
@@ -752,7 +799,8 @@ export default function MarketWatcher() {
   };
 
   const triggerAlert = (symbol: string, interval: string, type: 'bullish' | 'bearish', message: string, price: number, candles?: Candle[]) => {
-    const timeStr = new Date().toLocaleTimeString();
+    const createdAt = Date.now();
+    const timeStr = new Date(createdAt).toLocaleTimeString();
     const detailMessage = `${type === 'bullish' ? '📈 Bullish' : '📉 Bearish'} move on ${symbol} (${interval})! ${message}`;
     
     // Sound and desktop notifications
@@ -763,16 +811,21 @@ export default function MarketWatcher() {
     setAlertLogs((prev) => {
       // Prevent exact duplicates in history within the same minute
       const isDuplicate = prev.some(
-        (log) => log.symbol === symbol.toUpperCase() && 
-                 log.type === type && 
-                 log.interval === interval &&
-                 log.time.substring(0, 5) === timeStr.substring(0, 5)
+        (log) => {
+          const elapsed = createdAt - (log.createdAt ?? inferLegacyAlertTimestamp(log.time, createdAt));
+          return log.symbol === symbol.toUpperCase()
+            && log.type === type
+            && log.interval === interval
+            && elapsed >= 0
+            && elapsed < 60_000;
+        }
       );
       if (isDuplicate) return prev;
 
       const newAlert: AlertLog = {
         id: Math.random().toString(36).substr(2, 9),
         time: timeStr,
+        createdAt,
         symbol: symbol.toUpperCase(),
         interval: interval,
         type: type,
@@ -2688,7 +2741,11 @@ export default function MarketWatcher() {
 
                       <div className="flex items-center justify-between gap-4 font-mono text-[10px] text-muted border-t border-card-border/20 pt-1.5">
                         <span>Price: ${log.price.toFixed(2)}</span>
-                        <span>{log.time}</span>
+                        <span
+                          title={new Date(log.createdAt ?? inferLegacyAlertTimestamp(log.time, relativeNow)).toLocaleString()}
+                        >
+                          {formatTimeAgo(log.createdAt ?? inferLegacyAlertTimestamp(log.time, relativeNow), relativeNow)}
+                        </span>
                       </div>
                     </div>
                   ))}
