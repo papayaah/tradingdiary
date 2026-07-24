@@ -607,26 +607,20 @@ export default function MarketWatcher() {
     }
   };
 
-  // Helper to generate a mini candlestick PNG data URL for desktop notifications
+  // Helper to generate a 1:1 square mini candlestick PNG for desktop notification thumbnails
   const generateCandleChartIcon = (candles: Candle[]): string => {
     if (typeof window === 'undefined' || !candles || candles.length === 0) return '/favicon.ico';
     try {
-      const width = 180;
-      const height = 90;
+      const size = 256;
       const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
+      canvas.width = size;
+      canvas.height = size;
       const ctx = canvas.getContext('2d');
       if (!ctx) return '/favicon.ico';
 
       // Dark theme background matching app theme
       ctx.fillStyle = '#0B0F19';
-      ctx.fillRect(0, 0, width, height);
-
-      // Subtle container outline
-      ctx.strokeStyle = '#1E293B';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(0, 0, width, height);
+      ctx.fillRect(0, 0, size, size);
 
       // Take last 5 candles
       const slice = candles.slice(-5);
@@ -639,17 +633,20 @@ export default function MarketWatcher() {
         maxPrice += 0.01;
       }
       const range = maxPrice - minPrice;
-      const paddingY = 12;
-      const usableHeight = height - paddingY * 2;
+      const paddingY = 36;
+      const usableHeight = size - paddingY * 2;
 
-      const candleWidth = width / slice.length;
+      const paddingX = 24;
+      const usableWidth = size - paddingX * 2;
+      const count = slice.length;
+      const slotWidth = usableWidth / count;
+      const bodyWidth = Math.min(slotWidth * 0.65, 26); // Bold thick candle body!
 
       slice.forEach((c, i) => {
         const isGreen = c.close >= c.open;
         const color = isGreen ? '#10B981' : '#EF4444';
 
-        const xCenter = i * candleWidth + candleWidth / 2;
-        const bodyWidth = Math.max(candleWidth * 0.55, 6);
+        const xCenter = paddingX + i * slotWidth + slotWidth / 2;
         const bodyLeft = xCenter - bodyWidth / 2;
 
         const highY = paddingY + usableHeight * (1 - (c.high - minPrice) / range);
@@ -659,7 +656,8 @@ export default function MarketWatcher() {
 
         // Draw high-low wick
         ctx.strokeStyle = color;
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 3.5;
+        ctx.lineCap = 'round';
         ctx.beginPath();
         ctx.moveTo(xCenter, highY);
         ctx.lineTo(xCenter, lowY);
@@ -667,10 +665,16 @@ export default function MarketWatcher() {
 
         // Draw open-close candle body
         const bodyTop = Math.min(openY, closeY);
-        const bodyHeight = Math.max(Math.abs(closeY - openY), 2);
+        const bodyHeight = Math.max(Math.abs(closeY - openY), 6);
 
         ctx.fillStyle = color;
-        ctx.fillRect(bodyLeft, bodyTop, bodyWidth, bodyHeight);
+        if (typeof ctx.roundRect === 'function') {
+          ctx.beginPath();
+          ctx.roundRect(bodyLeft, bodyTop, bodyWidth, bodyHeight, 4);
+          ctx.fill();
+        } else {
+          ctx.fillRect(bodyLeft, bodyTop, bodyWidth, bodyHeight);
+        }
       });
 
       return canvas.toDataURL('image/png');
