@@ -447,14 +447,93 @@ export default function MarketWatcher() {
     }
   };
 
-  const sendDesktopNotification = (symbol: string, type: 'bullish' | 'bearish', text: string) => {
+  // Helper to generate a mini candlestick PNG data URL for desktop notifications
+  const generateCandleChartIcon = (candles: Candle[]): string => {
+    if (typeof window === 'undefined' || !candles || candles.length === 0) return '/favicon.ico';
+    try {
+      const width = 180;
+      const height = 90;
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return '/favicon.ico';
+
+      // Dark theme background matching app theme
+      ctx.fillStyle = '#0B0F19';
+      ctx.fillRect(0, 0, width, height);
+
+      // Subtle container outline
+      ctx.strokeStyle = '#1E293B';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(0, 0, width, height);
+
+      // Take last 5 candles
+      const slice = candles.slice(-5);
+      if (slice.length === 0) return '/favicon.ico';
+
+      let minPrice = Math.min(...slice.map(c => c.low));
+      let maxPrice = Math.max(...slice.map(c => c.high));
+      if (minPrice === maxPrice) {
+        minPrice -= 0.01;
+        maxPrice += 0.01;
+      }
+      const range = maxPrice - minPrice;
+      const paddingY = 12;
+      const usableHeight = height - paddingY * 2;
+
+      const candleWidth = width / slice.length;
+
+      slice.forEach((c, i) => {
+        const isGreen = c.close >= c.open;
+        const color = isGreen ? '#10B981' : '#EF4444';
+
+        const xCenter = i * candleWidth + candleWidth / 2;
+        const bodyWidth = Math.max(candleWidth * 0.55, 6);
+        const bodyLeft = xCenter - bodyWidth / 2;
+
+        const highY = paddingY + usableHeight * (1 - (c.high - minPrice) / range);
+        const lowY = paddingY + usableHeight * (1 - (c.low - minPrice) / range);
+        const openY = paddingY + usableHeight * (1 - (c.open - minPrice) / range);
+        const closeY = paddingY + usableHeight * (1 - (c.close - minPrice) / range);
+
+        // Draw high-low wick
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(xCenter, highY);
+        ctx.lineTo(xCenter, lowY);
+        ctx.stroke();
+
+        // Draw open-close candle body
+        const bodyTop = Math.min(openY, closeY);
+        const bodyHeight = Math.max(Math.abs(closeY - openY), 2);
+
+        ctx.fillStyle = color;
+        ctx.fillRect(bodyLeft, bodyTop, bodyWidth, bodyHeight);
+      });
+
+      return canvas.toDataURL('image/png');
+    } catch {
+      return '/favicon.ico';
+    }
+  };
+
+  const sendDesktopNotification = (symbol: string, type: 'bullish' | 'bearish', text: string, candles?: Candle[]) => {
     if (isNotificationsEnabled && typeof window !== 'undefined' && 'Notification' in window) {
       try {
-        const notification = new Notification(`🚨 Market Alert: ${symbol}`, {
-          body: text,
+        // Strip emojis for clean, professional compact text
+        const cleanText = text.replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu, '').replace(/📈|📉|🚨/g, '').trim();
+        const iconUrl = candles && candles.length > 0 ? generateCandleChartIcon(candles) : '/favicon.ico';
+
+        const notificationOptions: NotificationOptions & { image?: string } = {
+          body: cleanText,
           tag: `${symbol}-${type}`,
-          icon: '/favicon.ico'
-        });
+          icon: iconUrl,
+          image: iconUrl
+        };
+
+        const notification = new Notification(`Market Alert: ${symbol.toUpperCase()}`, notificationOptions);
         
         notification.onclick = () => {
           window.focus();
@@ -666,11 +745,11 @@ export default function MarketWatcher() {
       // Trigger Alert if pattern matched
       if (matched !== 'none') {
         const timeStr = new Date().toLocaleTimeString();
-        const detailMessage = `${matched === 'bullish' ? '📈 Bullish' : '📉 Bearish'} move on ${item.symbol} (${item.interval})! ${message}`;
+        const detailMessage = `${matched.toUpperCase()} move on ${item.symbol} (${item.interval}). ${message.replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu, '').replace(/📈|📉|🚨/g, '').trim()}`;
         
         // Sound and desktop notifications
         playAlertSound(matched);
-        sendDesktopNotification(item.symbol, matched, detailMessage);
+        sendDesktopNotification(item.symbol, matched, detailMessage, candles);
 
         // Add to alert log
         setAlertLogs((prev) => {
