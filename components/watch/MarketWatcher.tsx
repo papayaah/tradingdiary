@@ -160,6 +160,11 @@ export default function MarketWatcher() {
   const [autoPauseEnabled, setAutoPauseEnabled] = useState(true); // pause scanner outside chosen session
   const [activeWindow, setActiveWindow] = useState<'rth' | 'pre' | 'ext' | 'all'>('pre'); // which session the scanner runs in
   const [marketOpen, setMarketOpen] = useState(true);
+  const [parallelScanEnabled, setParallelScanEnabled] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    const saved = localStorage.getItem('watcher-parallel-scan');
+    return saved !== null ? saved === 'true' : true;
+  });
 
   // Sorting state for Watchlist table
   const [sortColumn, setSortColumn] = useState<'symbol' | 'interval' | 'minMove' | 'status' | null>(null);
@@ -1030,19 +1035,38 @@ export default function MarketWatcher() {
     setIsScanning(true);
     
     const currentFullList = [...watchlist];
-    for (let i = 0; i < targetList.length; i++) {
-      const item = targetList[i];
-      const scanned = await scanSymbol(item);
-      const idx = currentFullList.findIndex((w) => w.symbol === item.symbol && w.interval === item.interval);
-      if (idx !== -1) {
-        currentFullList[idx] = scanned;
-      }
+    const canUseParallel = parallelScanEnabled && !isPolygonActive;
 
-      if (i < targetList.length - 1) {
-        if (isPolygonActive) {
-          await new Promise((resolve) => setTimeout(resolve, 12000));
-        } else {
-          await new Promise((resolve) => setTimeout(resolve, 500));
+    if (canUseParallel) {
+      // Parallel batch scanning: 5 concurrent API requests per batch
+      const BATCH_SIZE = 5;
+      for (let i = 0; i < targetList.length; i += BATCH_SIZE) {
+        const batch = targetList.slice(i, i + BATCH_SIZE);
+        const results = await Promise.all(batch.map((item) => scanSymbol(item)));
+        results.forEach((scanned, batchIdx) => {
+          const item = batch[batchIdx];
+          const idx = currentFullList.findIndex((w) => w.symbol === item.symbol && w.interval === item.interval);
+          if (idx !== -1) {
+            currentFullList[idx] = scanned;
+          }
+        });
+      }
+    } else {
+      // Sequential scanning fallback (for rate-limited keys)
+      for (let i = 0; i < targetList.length; i++) {
+        const item = targetList[i];
+        const scanned = await scanSymbol(item);
+        const idx = currentFullList.findIndex((w) => w.symbol === item.symbol && w.interval === item.interval);
+        if (idx !== -1) {
+          currentFullList[idx] = scanned;
+        }
+
+        if (i < targetList.length - 1) {
+          if (isPolygonActive) {
+            await new Promise((resolve) => setTimeout(resolve, 12000));
+          } else {
+            await new Promise((resolve) => setTimeout(resolve, 500));
+          }
         }
       }
     }
@@ -2629,6 +2653,18 @@ export default function MarketWatcher() {
                     </div>
                   ) : (
                     <div className="flex flex-wrap items-center gap-3">
+                      <label className="flex items-center gap-2 cursor-pointer select-none hover:text-foreground transition-colors" title="Scans 5 stocks concurrently per batch for fast scanning on paid API keys">
+                        <input
+                          type="checkbox"
+                          checked={parallelScanEnabled}
+                          onChange={(e) => {
+                            setParallelScanEnabled(e.target.checked);
+                            localStorage.setItem('watcher-parallel-scan', String(e.target.checked));
+                          }}
+                          className="rounded border-card-border text-accent focus:ring-accent h-3.5 w-3.5 cursor-pointer"
+                        />
+                        <span>⚡ Parallel Batch Scan (Fast 5x Mode)</span>
+                      </label>
                       <label className="flex items-center gap-2 cursor-pointer select-none hover:text-foreground transition-colors">
                         <input
                           type="checkbox"
