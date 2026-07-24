@@ -1059,21 +1059,21 @@ export default function MarketWatcher() {
     }
   }, [watchlist.length, scanIntervalMinutes]);
 
-  // Polling Timer scheduler loop
+  // Polling Timer scheduler loop (Uses Web Worker to bypass Chrome background tab throttling)
   useEffect(() => {
     if (watchlist.length === 0) return;
 
     // Reset last scan time on restart/resume
     lastScanTimeRef.current = Date.now();
 
-    timerRef.current = setInterval(() => {
+    const onTick = () => {
       // Keep the market-open indicator fresh (no-op re-render when unchanged)
       const open = isMarketOpen(activeWindowRef.current);
       setMarketOpen(open);
 
       if (isScannerPaused) return; // Manually paused
       const isFuturesCategory = watchlistCategoryRef.current === 'futures';
-      if (autoPauseEnabledRef.current && !open && !isFuturesCategory) return; // Auto-paused outside the chosen session (for stocks)
+      if (autoPauseEnabledRef.current && !open && !isFuturesCategory) return; // Auto-paused outside session
 
       const elapsed = Math.floor((Date.now() - lastScanTimeRef.current) / 1000);
       const remaining = spacingSecondsRef.current - elapsed;
@@ -1082,10 +1082,65 @@ export default function MarketWatcher() {
         handleScanNextRef.current();
         lastScanTimeRef.current = Date.now();
       }
-    }, 1000);
+    };
+
+    // Create an inline Web Worker that runs on a separate background thread
+    // Chrome does NOT throttle interval timers inside Web Workers when tab is in background!
+    let worker: Worker | null = null;
+    let workerUrl: string | null = null;
+
+    try {
+      const workerCode = `
+        let timer = null;
+        self.onmessage = function(e) {
+          if (e.data === 'start') {
+            if (timer) clearInterval(timer);
+            timer = setInterval(function() {
+              self.postMessage('tick');
+            }, 1000);
+          } else if (e.data === 'stop') {
+            if (timer) clearInterval(timer);
+            timer = null;
+          }
+        };
+      `;
+      const blob = new Blob([workerCode], { type: 'application/javascript' });
+      workerUrl = URL.createObjectURL(blob);
+      worker = new Worker(workerUrl);
+
+      worker.onmessage = (e) => {
+        if (e.data === 'tick') {
+          onTick();
+        }
+      };
+      worker.postMessage('start');
+    } catch {
+      // Web Worker fallback if worker creation is blocked
+    }
+
+    // Backup main thread timer
+    timerRef.current = setInterval(onTick, 1000);
+
+    // Instant catch-up scan when switching back to tab
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        onTick();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (worker) {
+        worker.postMessage('stop');
+        worker.terminate();
+      }
+      if (workerUrl) {
+        URL.revokeObjectURL(workerUrl);
+      }
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [watchlist.length, isScannerPaused]);
 
