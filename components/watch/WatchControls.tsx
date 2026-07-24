@@ -4,9 +4,10 @@ import React, {
   forwardRef,
   useEffect,
   useImperativeHandle,
+  useRef,
   useState,
 } from 'react';
-import { LayoutGrid, List } from 'lucide-react';
+import { LayoutGrid, List, RefreshCw } from 'lucide-react';
 
 export type WatchlistView = 'compact' | 'table';
 
@@ -66,6 +67,102 @@ export const ScanCountdown = React.memo(function ScanCountdown({
 
   return <>{formatCountdown(remaining)}</>;
 });
+
+interface BatchScanProgress {
+  current: number;
+  total: number;
+  percent: number;
+}
+
+export interface BatchScanControlHandle {
+  start: (total: number) => void;
+  update: (current: number, total: number) => void;
+  complete: (total: number) => void;
+}
+
+interface BatchScanControlProps {
+  disabled: boolean;
+  isParallel: boolean;
+  onScan: () => void;
+}
+
+const BatchScanControlComponent = forwardRef<BatchScanControlHandle, BatchScanControlProps>(
+function BatchScanControl({ disabled, isParallel, onScan }, ref) {
+  const [progress, setProgress] = useState<BatchScanProgress | null>(null);
+  const clearTimerRef = useRef<number | null>(null);
+  const isScanning = progress !== null && progress.percent < 100;
+
+  const clearCompletionTimer = () => {
+    if (clearTimerRef.current !== null) {
+      window.clearTimeout(clearTimerRef.current);
+      clearTimerRef.current = null;
+    }
+  };
+
+  useImperativeHandle(ref, () => ({
+    start(total) {
+      clearCompletionTimer();
+      setProgress({ current: 0, total, percent: 0 });
+    },
+    update(current, total) {
+      setProgress({
+        current,
+        total,
+        percent: Math.min(100, Math.round((current / Math.max(1, total)) * 100)),
+      });
+    },
+    complete(total) {
+      setProgress({ current: total, total, percent: 100 });
+      clearCompletionTimer();
+      clearTimerRef.current = window.setTimeout(() => {
+        setProgress(null);
+        clearTimerRef.current = null;
+      }, 2500);
+    },
+  }), []);
+
+  useEffect(() => () => clearCompletionTimer(), []);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={onScan}
+        disabled={disabled || isScanning}
+        className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-accent hover:bg-accent/80 text-white disabled:opacity-50 disabled:hover:bg-accent transition-colors shadow-sm cursor-pointer"
+      >
+        <RefreshCw size={13} className={isScanning ? 'animate-spin' : ''} />
+        <span>{isScanning ? `Scanning (${progress?.percent ?? 0}%)` : 'Scan Now All'}</span>
+      </button>
+
+      {progress && (
+        <div className="absolute right-0 top-full z-30 mt-2 w-[min(24rem,calc(100vw-2rem))] p-3.5 bg-card-bg border border-accent/40 rounded-xl shadow-xl flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-150">
+          <div className="flex items-center justify-between gap-4 text-xs">
+            <span className="flex items-center gap-2 font-semibold text-accent">
+              <RefreshCw size={14} className={isScanning ? 'animate-spin shrink-0' : 'shrink-0'} />
+              {progress.percent === 100
+                ? 'Scan Complete!'
+                : isParallel
+                  ? 'Batch scanning watchlist…'
+                  : 'Scanning watchlist…'}
+            </span>
+            <span className="font-mono text-xs font-bold text-foreground whitespace-nowrap">
+              {progress.current} / {progress.total} ({progress.percent}%)
+            </span>
+          </div>
+          <div className="w-full bg-muted-bg rounded-full h-2 overflow-hidden border border-card-border/40">
+            <div
+              className="bg-accent h-full transition-all duration-200 rounded-full"
+              style={{ width: `${progress.percent}%` }}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
+
+export const BatchScanControl = React.memo(BatchScanControlComponent);
 
 export interface TickerInputHandle {
   add: () => void;

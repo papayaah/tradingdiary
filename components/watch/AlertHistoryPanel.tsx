@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { History } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
+import { History, ChevronDown, ChevronUp, Loader2, BarChart2 } from 'lucide-react';
 
 interface AlertCandle {
   time: number;
@@ -220,17 +221,191 @@ const ExpandedMiniChart = React.memo(function ExpandedMiniChart({
   );
 });
 
+interface AlertHistoryCardProps {
+  alert: AlertHistoryItem;
+  isExpanded: boolean;
+  isOpening: boolean;
+  onToggle: (alert: AlertHistoryItem, event: React.MouseEvent) => void;
+  onAlertClick: (alert: AlertHistoryItem) => void;
+}
+
+const AlertHistoryCard = React.memo(function AlertHistoryCard({
+  alert,
+  isExpanded,
+  isOpening,
+  onToggle,
+  onAlertClick,
+}: AlertHistoryCardProps) {
+  return (
+    <div
+      className={`p-3 rounded-xl border flex flex-col justify-between gap-2 text-xs hover:border-card-border/80 transition-all select-none ${
+        alert.type === 'bullish'
+          ? 'bg-emerald-950/20 border-emerald-900/30 hover:bg-emerald-950/30'
+          : 'bg-rose-950/20 border-rose-900/30 hover:bg-rose-950/30'
+      } ${isExpanded ? 'ring-1 ring-accent border-accent/60' : ''} ${
+        isOpening ? 'brightness-110' : ''
+      }`}
+      style={{ contentVisibility: 'auto', containIntrinsicSize: '180px' }}
+    >
+      <button
+        type="button"
+        onClick={(event) => onToggle(alert, event)}
+        aria-expanded={isExpanded}
+        aria-controls={`alert-chart-${alert.id}`}
+        className="w-full flex flex-col gap-2 text-left cursor-pointer touch-manipulation active:scale-[0.99] active:opacity-80 transition-transform"
+        title="Tap to toggle inline chart below"
+      >
+        <div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-foreground">{alert.symbol}</span>
+              <span className="bg-muted-bg text-muted px-1.5 py-0.5 rounded text-[10px] font-mono">
+                {alert.interval}
+              </span>
+              <span
+                className={`font-semibold ${
+                  alert.type === 'bullish' ? 'text-emerald-400' : 'text-rose-400'
+                }`}
+              >
+                {alert.type === 'bullish' ? 'Ascending' : 'Descending'}
+              </span>
+            </div>
+            {alert.candles && alert.candles.length > 0 && (
+              <div className="flex items-center bg-black/40 px-1.5 py-0.5 rounded border border-card-border/30 shadow-inner">
+                <MiniCandles candles={alert.candles} interval={alert.interval} />
+              </div>
+            )}
+          </div>
+          <p className="text-muted mt-1 text-[11px] leading-relaxed">{alert.details}</p>
+        </div>
+
+        <div className="flex items-center justify-between gap-4 font-mono text-[10px] text-muted border-t border-card-border/20 pt-1.5 w-full">
+          <span>Price: ${alert.price.toFixed(2)}</span>
+          <div className="flex items-center gap-2.5">
+            <TimeAgo timestamp={alert.createdAt} />
+            <span
+              className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border transition-all ${
+              isExpanded
+                ? 'bg-accent text-white border-accent shadow-sm'
+                : 'bg-accent/10 text-accent border-accent/30 hover:bg-accent/20'
+            }`}
+            >
+              {isOpening ? (
+                <>
+                  <Loader2 size={11} className="shrink-0 animate-spin" />
+                  <span>Opening...</span>
+                </>
+              ) : isExpanded ? (
+                <>
+                  <ChevronUp size={11} className="shrink-0" />
+                  <span>Hide Chart</span>
+                </>
+              ) : (
+                <>
+                  <BarChart2 size={11} className="shrink-0" />
+                  <span>Show Chart</span>
+                  <ChevronDown size={11} className="shrink-0 opacity-70" />
+                </>
+              )}
+            </span>
+          </div>
+        </div>
+      </button>
+
+      {isExpanded && (
+        <div
+          id={`alert-chart-${alert.id}`}
+          className="mt-2 pt-2 border-t border-card-border/40 space-y-2 animate-in fade-in zoom-in-95 duration-150"
+          onClick={(event) => event.stopPropagation()}
+          aria-live="polite"
+        >
+          <div className="flex items-center justify-between text-[10px] text-muted font-mono">
+            <span className="flex items-center gap-1 text-accent font-semibold">
+              <BarChart2 size={11} />
+              {alert.symbol} {alert.interval} Chart (4H Window)
+            </span>
+            <button
+              type="button"
+              onClick={() => onAlertClick(alert)}
+              className="text-[10px] text-accent hover:underline font-semibold flex items-center gap-1"
+            >
+              <span>Jump to Watchlist Row</span>
+              <span>→</span>
+            </button>
+          </div>
+
+          {isOpening ? (
+            <div className="min-h-[135px] bg-black/60 border border-accent/30 rounded-xl p-4 flex flex-col items-center justify-center gap-2 text-xs font-mono text-accent">
+              <Loader2 size={18} className="animate-spin" />
+              <span className="font-semibold">Opening {alert.symbol} chart…</span>
+            </div>
+          ) : alert.candles && alert.candles.length > 0 ? (
+            <div className="bg-black/60 border border-card-border/50 rounded-xl p-2 flex flex-col items-center">
+              <ExpandedMiniChart candles={alert.candles} interval={alert.interval} />
+            </div>
+          ) : (
+            <div className="bg-black/60 border border-card-border/50 rounded-xl p-4 flex flex-col items-center justify-center gap-2 text-xs font-mono text-muted text-center">
+              <div className="flex items-center gap-2 text-accent font-semibold">
+                <Loader2 size={14} className="animate-spin" />
+                <span>Fetching Live {alert.symbol} {alert.interval} Chart Data...</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => onAlertClick(alert)}
+                className="mt-1 px-3 py-1 bg-accent/20 hover:bg-accent hover:text-white border border-accent/40 text-accent rounded-lg text-[11px] font-semibold transition-all"
+              >
+                Jump to Watchlist to View Chart →
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
+
 function AlertHistoryPanel({
   alerts,
   onAlertClick,
   onClear,
 }: AlertHistoryPanelProps) {
   const [expandedAlertId, setExpandedAlertId] = useState<string | null>(null);
+  const [openingAlertId, setOpeningAlertId] = useState<string | null>(null);
+  const expandedAlertIdRef = useRef<string | null>(null);
+  const openingTimerRef = useRef<number | null>(null);
 
-  const toggleAlertExpand = (alert: AlertHistoryItem, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setExpandedAlertId((prev) => (prev === alert.id ? null : alert.id));
-  };
+  const toggleAlertExpand = useCallback((alert: AlertHistoryItem, event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (openingTimerRef.current !== null) {
+      window.clearTimeout(openingTimerRef.current);
+      openingTimerRef.current = null;
+    }
+
+    if (expandedAlertIdRef.current === alert.id) {
+      expandedAlertIdRef.current = null;
+      flushSync(() => {
+        setOpeningAlertId(null);
+        setExpandedAlertId(null);
+      });
+      return;
+    }
+
+    expandedAlertIdRef.current = alert.id;
+    flushSync(() => {
+      setOpeningAlertId(alert.id);
+      setExpandedAlertId(alert.id);
+    });
+    openingTimerRef.current = window.setTimeout(() => {
+      setOpeningAlertId((current) => (current === alert.id ? null : current));
+      openingTimerRef.current = null;
+    }, 300);
+  }, []);
+
+  useEffect(() => () => {
+    if (openingTimerRef.current !== null) {
+      window.clearTimeout(openingTimerRef.current);
+    }
+  }, []);
 
   return (
     <div className="lg:col-span-4">
@@ -255,76 +430,16 @@ function AlertHistoryPanel({
           </div>
         ) : (
           <div className="space-y-3 overflow-y-auto flex-1 pr-1 max-h-[550px]">
-            {alerts.map((alert) => {
-              const isExpanded = expandedAlertId === alert.id;
-              return (
-                <div
-                  key={alert.id}
-                  onClick={(e) => toggleAlertExpand(alert, e)}
-                  className={`p-3 rounded-xl border flex flex-col justify-between gap-2 text-xs cursor-pointer hover:border-card-border/80 transition-all select-none ${
-                    alert.type === 'bullish'
-                      ? 'bg-emerald-950/20 border-emerald-900/30 hover:bg-emerald-950/30'
-                      : 'bg-rose-950/20 border-rose-900/30 hover:bg-rose-950/30'
-                  } ${isExpanded ? 'ring-1 ring-accent border-accent/60' : ''}`}
-                  title="Click to toggle inline chart below"
-                >
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-foreground">{alert.symbol}</span>
-                        <span className="bg-muted-bg text-muted px-1.5 py-0.5 rounded text-[10px] font-mono">
-                          {alert.interval}
-                        </span>
-                        <span
-                          className={`font-semibold ${
-                            alert.type === 'bullish' ? 'text-emerald-400' : 'text-rose-400'
-                          }`}
-                        >
-                          {alert.type === 'bullish' ? 'Ascending' : 'Descending'}
-                        </span>
-                      </div>
-                      {alert.candles && alert.candles.length > 0 && (
-                        <div className="flex items-center bg-black/40 px-1.5 py-0.5 rounded border border-card-border/30 shadow-inner">
-                          <MiniCandles candles={alert.candles} interval={alert.interval} />
-                        </div>
-                      )}
-                    </div>
-                    <p className="text-muted mt-1 text-[11px] leading-relaxed">{alert.details}</p>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-4 font-mono text-[10px] text-muted border-t border-card-border/20 pt-1.5">
-                    <span>Price: ${alert.price.toFixed(2)}</span>
-                    <div className="flex items-center gap-3">
-                      <TimeAgo timestamp={alert.createdAt} />
-                      <span className="text-[9px] text-accent underline hover:text-foreground">
-                        {isExpanded ? 'Hide Chart' : 'Show Chart'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Inline Expanded Chart directly inside Alert History card */}
-                  {isExpanded && alert.candles && alert.candles.length > 0 && (
-                    <div
-                      className="mt-2 pt-2 border-t border-card-border/40 space-y-2"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="flex items-center justify-between text-[10px] text-muted font-mono">
-                        <span>{alert.symbol} {alert.interval} Chart</span>
-                        <button
-                          onClick={() => onAlertClick(alert)}
-                          className="text-[10px] text-accent hover:underline font-semibold"
-                        >
-                          Jump to Watchlist Row →
-                        </button>
-                      </div>
-                      <div className="bg-black/60 border border-card-border/50 rounded-xl p-2 flex flex-col items-center">
-                        <ExpandedMiniChart candles={alert.candles} interval={alert.interval} />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {alerts.map((alert) => (
+              <AlertHistoryCard
+                key={alert.id}
+                alert={alert}
+                isExpanded={expandedAlertId === alert.id}
+                isOpening={openingAlertId === alert.id}
+                onToggle={toggleAlertExpand}
+                onAlertClick={onAlertClick}
+              />
+            ))}
           </div>
         )}
       </div>

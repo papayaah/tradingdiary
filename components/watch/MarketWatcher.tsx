@@ -27,9 +27,11 @@ import {
 import { openDB } from 'idb';
 import AlertHistoryPanel from './AlertHistoryPanel';
 import {
+  BatchScanControl,
   ScanCountdown,
   TickerInput,
   WatchlistViewToggle,
+  type BatchScanControlHandle,
   type TickerInputHandle,
   type WatchlistView,
 } from './WatchControls';
@@ -67,6 +69,16 @@ interface AlertLog {
   candles?: Candle[];
 }
 
+interface PendingAlert {
+  createdAt: number;
+  symbol: string;
+  interval: string;
+  type: 'bullish' | 'bearish';
+  details: string;
+  price: number;
+  candles?: Candle[];
+}
+
 const ALERT_HISTORY_TTL_MS = 10 * 60 * 1000;
 const MAX_ALERT_HISTORY_ITEMS = 50;
 
@@ -83,6 +95,19 @@ const pruneAlertHistory = (logs: AlertLog[], now = Date.now()) =>
   logs
     .filter((log) => Number.isFinite(log.createdAt) && now - log.createdAt < ALERT_HISTORY_TTL_MS)
     .slice(0, MAX_ALERT_HISTORY_ITEMS);
+
+const getPersistedWatchlist = (items: WatchItem[]): WatchItem[] =>
+  items.map((item) => ({
+    symbol: item.symbol,
+    interval: item.interval,
+    minMovePercent: item.minMovePercent,
+    lastAlertedCandleTime: item.lastAlertedCandleTime,
+    lastAlertedType: item.lastAlertedType,
+  }));
+
+const persistWatchlist = (items: WatchItem[]) => {
+  localStorage.setItem('watcher-watchlist', JSON.stringify(getPersistedWatchlist(items)));
+};
 
 // Client-side cache using existing 'tradingdiary-charts' IndexedDB ohlc store
 async function getLiveCache(symbol: string, interval: string) {
@@ -120,6 +145,7 @@ export default function MarketWatcher() {
   // Watchlist & Config State
   const [watchlist, setWatchlist] = useState<WatchItem[]>([]);
   const tickerInputRef = useRef<TickerInputHandle>(null);
+  const batchScanControlRef = useRef<BatchScanControlHandle>(null);
   const [newInterval, setNewInterval] = useState('10m');
   const [newMinMove, setNewMinMove] = useState(0.25); // min move percentage (e.g. 0.25% cumulative)
 
@@ -157,8 +183,12 @@ export default function MarketWatcher() {
   } | null>(null);
   const [isSoundEnabled, setIsSoundEnabled] = useState(true);
   const [scanIntervalMinutes, setScanIntervalMinutes] = useState(10); // Polling interval
-  const [isScanning, setIsScanning] = useState(false);
+  const [isBackgroundScanning, setIsBackgroundScanning] = useState(false);
+  const [isBatchScanning, setIsBatchScanning] = useState(false);
   const [alertLogs, setAlertLogs] = useState<AlertLog[]>([]);
+  const alertLogsRef = useRef<AlertLog[]>([]);
+  alertLogsRef.current = alertLogs;
+  const alertPersistTimerRef = useRef<number | null>(null);
   const [addNotice, setAddNotice] = useState<{
     type: 'success' | 'duplicate';
     message: string;
@@ -317,87 +347,43 @@ export default function MarketWatcher() {
 
   // 1. Initial Load: localStorage & Notifications Check
   useEffect(() => {
-    // Load Watchlist
-    const defaultFutures: WatchItem[] = [
-      { symbol: 'NQ=F', interval: '10m', minMovePercent: 0.25 },
-      { symbol: 'ES=F', interval: '10m', minMovePercent: 0.25 },
-      { symbol: 'YM=F', interval: '10m', minMovePercent: 0.25 },
-      { symbol: 'CL=F', interval: '10m', minMovePercent: 0.5 },
-      { symbol: 'GC=F', interval: '10m', minMovePercent: 0.5 },
-      { symbol: 'SI=F', interval: '10m', minMovePercent: 0.5 },
+    const DEFAULT_STARTER_WATCHLIST: WatchItem[] = [
+      { symbol: 'AAPL', interval: '5m', minMovePercent: 0.1 },
+      { symbol: 'TSLA', interval: '10m', minMovePercent: 0.25 },
+      { symbol: 'NVDA', interval: '10m', minMovePercent: 0.25 },
+      { symbol: 'SPY', interval: '5m', minMovePercent: 0.05 },
+      { symbol: 'QQQ', interval: '10m', minMovePercent: 0.2 },
+      { symbol: 'NQ=F', interval: '10m', minMovePercent: 0.05 },
+      { symbol: 'ES=F', interval: '10m', minMovePercent: 0.05 },
+      { symbol: 'YM=F', interval: '10m', minMovePercent: 0.05 },
+      { symbol: 'CL=F', interval: '10m', minMovePercent: 0.05 },
+      { symbol: 'GC=F', interval: '10m', minMovePercent: 0.05 },
+      { symbol: 'SI=F', interval: '10m', minMovePercent: 0.05 },
     ];
 
     const savedWatch = localStorage.getItem('watcher-watchlist');
     if (savedWatch) {
       try {
         const loaded: WatchItem[] = JSON.parse(savedWatch);
-        const hasFutures = loaded.some((w) => w.symbol.includes('=F'));
-        if (!hasFutures) {
-          const merged = [...loaded, ...defaultFutures];
-          setWatchlist(merged);
-          localStorage.setItem('watcher-watchlist', JSON.stringify(merged));
-        } else {
-          setWatchlist(loaded);
-        }
+        setWatchlist(loaded);
       } catch (e) {
         console.error(e);
+        setWatchlist(DEFAULT_STARTER_WATCHLIST);
+        persistWatchlist(DEFAULT_STARTER_WATCHLIST);
       }
     } else {
-      // Default Watchlist
-      const defaults: WatchItem[] = [
-        { symbol: 'AAPL', interval: '5m', minMovePercent: 0.1 },
-        { symbol: 'BTC-USD', interval: '10m', minMovePercent: 0.2 },
-        { symbol: 'SPY', interval: '5m', minMovePercent: 0.05 },
-        ...defaultFutures
-      ];
-      setWatchlist(defaults);
-      localStorage.setItem('watcher-watchlist', JSON.stringify(defaults));
+      setWatchlist(DEFAULT_STARTER_WATCHLIST);
+      persistWatchlist(DEFAULT_STARTER_WATCHLIST);
     }
 
-    // Pull & Smart-Merge synced watchlist from cloud database if authenticated
+    // Pull synced watchlist from cloud database if authenticated
     fetch('/api/watch/sync')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.watchlist && Array.isArray(data.watchlist)) {
           if (data.watchlist.length > 0) {
-            setWatchlist((prevList) => {
-              // Smart Merge: Combine cloud items and local items by unique symbol + interval
-              const map = new Map<string, WatchItem>();
-              for (const item of prevList) {
-                if (item && item.symbol) {
-                  map.set(`${item.symbol.toUpperCase()}__${item.interval || '5m'}`, item);
-                }
-              }
-              for (const item of data.watchlist) {
-                if (item && item.symbol) {
-                  map.set(`${item.symbol.toUpperCase()}__${item.interval || '5m'}`, item);
-                }
-              }
-              const merged = Array.from(map.values());
-              localStorage.setItem('watcher-watchlist', JSON.stringify(merged));
-
-              // If local list had extra items, automatically sync full merged list back to cloud database
-              if (merged.length > data.watchlist.length) {
-                fetch('/api/watch/sync', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ watchlist: merged }),
-                }).catch(() => {});
-              }
-              return merged;
-            });
-          } else {
-            // If cloud database is empty, push local watchlist to cloud
-            setWatchlist((currentList) => {
-              if (currentList.length > 0) {
-                fetch('/api/watch/sync', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ watchlist: currentList }),
-                }).catch(() => {});
-              }
-              return currentList;
-            });
+            setWatchlist(data.watchlist);
+            persistWatchlist(data.watchlist);
           }
         }
       })
@@ -506,6 +492,9 @@ export default function MarketWatcher() {
     if (addNoticeTimerRef.current !== null) {
       window.clearTimeout(addNoticeTimerRef.current);
     }
+    if (alertPersistTimerRef.current !== null) {
+      window.clearTimeout(alertPersistTimerRef.current);
+    }
   }, []);
 
   // Save tester configuration changes to localStorage
@@ -525,7 +514,7 @@ export default function MarketWatcher() {
   // 2. Save Watchlist when modified (Local + Cloud Sync)
   const saveWatchlist = (updated: WatchItem[], skipCloudSync = false) => {
     setWatchlist(updated);
-    localStorage.setItem('watcher-watchlist', JSON.stringify(updated));
+    persistWatchlist(updated);
     if (!skipCloudSync) {
       // Strip heavy candle arrays before pushing to cloud API (keeps payload under 10KB)
       const cleanList = updated.map((item) => ({
@@ -822,54 +811,107 @@ export default function MarketWatcher() {
       minute: '2-digit',
     });
 
-  const triggerAlert = (symbol: string, interval: string, type: 'bullish' | 'bearish', message: string, price: number, candles?: Candle[]) => {
-    const createdAt = Date.now();
-    const cleanMsg = message.replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu, '').replace(/📈|📉|🚨/g, '').trim();
-    const detailMessage = `${type.toUpperCase()} move on ${symbol} (${interval}). ${cleanMsg}`;
-    
-    // Sound and desktop notifications
-    playAlertSound(type);
-    sendDesktopNotification(symbol, type, detailMessage, candles);
+  const persistAlertHistorySoon = (logs: AlertLog[]) => {
+    if (alertPersistTimerRef.current !== null) {
+      window.clearTimeout(alertPersistTimerRef.current);
+    }
+    alertPersistTimerRef.current = window.setTimeout(() => {
+      localStorage.setItem('watcher-alerts', JSON.stringify(logs));
+      alertPersistTimerRef.current = null;
+    }, 250);
+  };
 
-    // Add to alert log
-    setAlertLogs((prev) => {
-      const activeLogs = pruneAlertHistory(prev, createdAt);
-      // Prevent exact duplicates in history within the same minute
-      const isDuplicate = activeLogs.some(
-        (log) => {
-          const elapsed = createdAt - log.createdAt;
-          return log.symbol === symbol.toUpperCase()
-            && log.type === type
-            && log.interval === interval
-            && elapsed >= 0
-            && elapsed < 60_000;
-        }
-      );
-      if (isDuplicate) {
-        if (activeLogs.length !== prev.length) {
-          localStorage.setItem('watcher-alerts', JSON.stringify(activeLogs));
-        }
-        return activeLogs;
+  const publishAlerts = (candidates: PendingAlert[]) => {
+    if (candidates.length === 0) return;
+
+    const now = Date.now();
+    const activeLogs = pruneAlertHistory(alertLogsRef.current, now);
+    const additions: AlertLog[] = [];
+
+    for (const candidate of candidates) {
+      const symbol = candidate.symbol.toUpperCase();
+      const isDuplicate = [...additions, ...activeLogs].some((log) => {
+        const elapsed = candidate.createdAt - log.createdAt;
+        return log.symbol === symbol
+          && log.type === candidate.type
+          && log.interval === candidate.interval
+          && elapsed >= 0
+          && elapsed < 60_000;
+      });
+      if (isDuplicate) continue;
+
+      additions.push({
+        id: Math.random().toString(36).slice(2, 11),
+        ...candidate,
+        symbol,
+      });
+    }
+
+    if (additions.length === 0) {
+      if (activeLogs.length !== alertLogsRef.current.length) {
+        alertLogsRef.current = activeLogs;
+        setAlertLogs(activeLogs);
+        persistAlertHistorySoon(activeLogs);
       }
+      return;
+    }
 
-      const newAlert: AlertLog = {
-        id: Math.random().toString(36).substr(2, 9),
-        createdAt,
-        symbol: symbol.toUpperCase(),
-        interval: interval,
-        type: type,
-        details: message,
-        price: price,
-        // Store exact 4-hour window of intraday candles (e.g. 24 candles for 10m, 48 for 5m, 240 for 1m)
-        candles: candles ? candles.slice(-get4HourCandleCount(interval)) : undefined
-      };
-      const updatedLogs = [newAlert, ...activeLogs].slice(0, MAX_ALERT_HISTORY_ITEMS);
-      localStorage.setItem('watcher-alerts', JSON.stringify(updatedLogs));
-      return updatedLogs;
+    const updatedLogs = [...additions, ...activeLogs]
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, MAX_ALERT_HISTORY_ITEMS);
+    alertLogsRef.current = updatedLogs;
+    setAlertLogs(updatedLogs);
+    persistAlertHistorySoon(updatedLogs);
+
+    // Yield between notification thumbnail renders so a burst of alerts does
+    // not monopolize the main thread and block taps or chart expansion.
+    additions.forEach((alert, index) => {
+      window.setTimeout(() => {
+        const cleanMsg = alert.details
+          .replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu, '')
+          .replace(/📈|📉|🚨/g, '')
+          .trim();
+        playAlertSound(alert.type);
+        sendDesktopNotification(
+          alert.symbol,
+          alert.type,
+          `${alert.type.toUpperCase()} move on ${alert.symbol} (${alert.interval}). ${cleanMsg}`,
+          alert.candles,
+        );
+      }, index * 75);
     });
   };
 
-  const scanSymbol = async (item: WatchItem): Promise<WatchItem> => {
+  const triggerAlert = (
+    symbol: string,
+    interval: string,
+    type: 'bullish' | 'bearish',
+    message: string,
+    price: number,
+    candles?: Candle[],
+    collector?: (alert: PendingAlert) => void,
+  ) => {
+    const alert: PendingAlert = {
+      createdAt: Date.now(),
+      symbol: symbol.toUpperCase(),
+      interval,
+      type,
+      details: message,
+      price,
+      // Store the exact 4-hour window rather than the full provider response.
+      candles: candles ? candles.slice(-get4HourCandleCount(interval)) : undefined,
+    };
+    if (collector) {
+      collector(alert);
+    } else {
+      publishAlerts([alert]);
+    }
+  };
+
+  const scanSymbol = async (
+    item: WatchItem,
+    alertCollector?: (alert: PendingAlert) => void,
+  ): Promise<WatchItem> => {
     try {
       let candles: Candle[] = [];
       let providerName = 'Polygon.io';
@@ -899,8 +941,15 @@ export default function MarketWatcher() {
           clearTimeout(timeoutId);
 
           if (!res.ok) {
-            const errData = await res.json();
-            throw new Error(errData.error || `Server responded with ${res.status}`);
+            const text = await res.text().catch(() => '');
+            let errMsg = `Server responded with ${res.status}`;
+            try {
+              const errData = JSON.parse(text);
+              if (errData?.error) errMsg = errData.error;
+            } catch {
+              // HTML error page during dev hot-reload
+            }
+            throw new Error(errMsg);
           }
 
           const data = await res.json();
@@ -928,7 +977,15 @@ export default function MarketWatcher() {
       // Trigger Alert if pattern matched and hasn't been alerted for this candle/direction yet
       const alreadyAlerted = item.lastAlertedCandleTime === time && item.lastAlertedType === matched;
       if (scanCandles.length > 0 && matched !== 'none' && !alreadyAlerted) {
-        triggerAlert(item.symbol, item.interval, matched, message, scanCandles[scanCandles.length - 1]?.close || 0, scanCandles);
+        triggerAlert(
+          item.symbol,
+          item.interval,
+          matched,
+          message,
+          scanCandles[scanCandles.length - 1]?.close || 0,
+          scanCandles,
+          alertCollector,
+        );
       }
 
       return {
@@ -996,7 +1053,7 @@ export default function MarketWatcher() {
 
   const handleScanNext = async () => {
     const currentList = categoryItemsRef.current.length > 0 ? categoryItemsRef.current : watchlistRef.current;
-    if (currentList.length === 0 || isScanning) return;
+    if (currentList.length === 0 || isBackgroundScanning || isBatchScanning) return;
 
     const indexToScan = nextScanIndexRef.current % currentList.length;
     const item = currentList[indexToScan];
@@ -1011,7 +1068,7 @@ export default function MarketWatcher() {
       return;
     }
 
-    setIsScanning(true);
+    setIsBackgroundScanning(true);
     try {
       const scanned = await scanSymbol(item);
       const latestList = [...watchlistRef.current];
@@ -1038,7 +1095,7 @@ export default function MarketWatcher() {
     } catch (err) {
       console.error('Scan next error:', err);
     } finally {
-      setIsScanning(false);
+      setIsBackgroundScanning(false);
       nextScanIndexRef.current += 1;
       setNextScanIndex(nextScanIndexRef.current);
     }
@@ -1053,49 +1110,84 @@ export default function MarketWatcher() {
   // Scan all items in the current active category (manual override Scan Now button)
   const handleScanAll = async () => {
     const targetList = categoryItemsRef.current.length > 0 ? categoryItemsRef.current : watchlist;
-    if (isScanning || targetList.length === 0) return;
-    setIsScanning(true);
+    if (isBatchScanning || targetList.length === 0) return;
+    setIsBatchScanning(true);
+    batchScanControlRef.current?.start(targetList.length);
     
     const currentFullList = [...watchlist];
     const canUseParallel = parallelScanEnabled && !isPolygonActive;
+    const pendingAlerts: PendingAlert[] = [];
+    const collectAlert = (alert: PendingAlert) => pendingAlerts.push(alert);
+    let lastAlertFlushAt = performance.now();
+    const flushPendingAlerts = (force = false) => {
+      if (pendingAlerts.length === 0) return;
+      const now = performance.now();
+      if (!force && now - lastAlertFlushAt < 250) return;
+      publishAlerts(pendingAlerts.splice(0, pendingAlerts.length));
+      lastAlertFlushAt = now;
+    };
 
-    if (canUseParallel) {
-      // Parallel batch scanning: 5 concurrent API requests per batch
-      const BATCH_SIZE = 5;
-      for (let i = 0; i < targetList.length; i += BATCH_SIZE) {
-        const batch = targetList.slice(i, i + BATCH_SIZE);
-        const results = await Promise.all(batch.map((item) => scanSymbol(item)));
-        results.forEach((scanned, batchIdx) => {
-          const item = batch[batchIdx];
+    try {
+      if (canUseParallel) {
+        // Parallel batch scanning: 5 concurrent API requests per batch
+        const BATCH_SIZE = 5;
+        let processedCount = 0;
+        for (let i = 0; i < targetList.length; i += BATCH_SIZE) {
+          const batch = targetList.slice(i, i + BATCH_SIZE);
+          const results = await Promise.all(batch.map((item) => scanSymbol(item, collectAlert)));
+          results.forEach((scanned, batchIdx) => {
+            const item = batch[batchIdx];
+            const idx = currentFullList.findIndex((w) => w.symbol === item.symbol && w.interval === item.interval);
+            if (idx !== -1) {
+              currentFullList[idx] = scanned;
+            }
+          });
+
+          processedCount += batch.length;
+          const currentProgress = Math.min(targetList.length, processedCount);
+          batchScanControlRef.current?.update(currentProgress, targetList.length);
+          flushPendingAlerts();
+        }
+      } else {
+        // Sequential scanning fallback (for rate-limited keys)
+        for (let i = 0; i < targetList.length; i++) {
+          const item = targetList[i];
+          const scanned = await scanSymbol(item, collectAlert);
           const idx = currentFullList.findIndex((w) => w.symbol === item.symbol && w.interval === item.interval);
           if (idx !== -1) {
             currentFullList[idx] = scanned;
           }
-        });
-      }
-    } else {
-      // Sequential scanning fallback (for rate-limited keys)
-      for (let i = 0; i < targetList.length; i++) {
-        const item = targetList[i];
-        const scanned = await scanSymbol(item);
-        const idx = currentFullList.findIndex((w) => w.symbol === item.symbol && w.interval === item.interval);
-        if (idx !== -1) {
-          currentFullList[idx] = scanned;
-        }
 
-        if (i < targetList.length - 1) {
-          if (isPolygonActive) {
-            await new Promise((resolve) => setTimeout(resolve, 12000));
-          } else {
-            await new Promise((resolve) => setTimeout(resolve, 500));
+          batchScanControlRef.current?.update(i + 1, targetList.length);
+          flushPendingAlerts();
+
+          if (i < targetList.length - 1) {
+            if (isPolygonActive) {
+              await new Promise((resolve) => setTimeout(resolve, 12000));
+            } else {
+              await new Promise((resolve) => setTimeout(resolve, 500));
+            }
           }
         }
       }
+
+      saveWatchlist(currentFullList);
+      flushPendingAlerts(true);
+    } catch (err) {
+      console.error('Batch scan error:', err);
+      flushPendingAlerts(true);
+    } finally {
+      setIsBatchScanning(false);
+      batchScanControlRef.current?.complete(targetList.length);
     }
-    
-    saveWatchlist(currentFullList);
-    setIsScanning(false);
   };
+
+  const handleScanAllRef = useRef(handleScanAll);
+  handleScanAllRef.current = handleScanAll;
+  const stableHandleScanAll = React.useCallback(
+    () => handleScanAllRef.current(),
+    [],
+  );
 
   // 7. Polling Timer scheduler spacing reset
   useEffect(() => {
@@ -1291,7 +1383,7 @@ export default function MarketWatcher() {
           updated[index].status = matched;
         }
       }
-      localStorage.setItem('watcher-watchlist', JSON.stringify(updated));
+      persistWatchlist(updated);
       return updated;
     });
 
@@ -1379,7 +1471,7 @@ export default function MarketWatcher() {
                   lastAlertedType: matched !== 'none' ? matched : updated[index].lastAlertedType
                 };
               }
-              localStorage.setItem('watcher-watchlist', JSON.stringify(updated));
+              persistWatchlist(updated);
               return updated;
             });
           }
@@ -1412,7 +1504,12 @@ export default function MarketWatcher() {
   );
 
   const handleClearAlerts = React.useCallback(() => {
+    alertLogsRef.current = [];
     setAlertLogs([]);
+    if (alertPersistTimerRef.current !== null) {
+      window.clearTimeout(alertPersistTimerRef.current);
+      alertPersistTimerRef.current = null;
+    }
     localStorage.removeItem('watcher-alerts');
   }, []);
 
@@ -2324,14 +2421,12 @@ export default function MarketWatcher() {
                     </div>
                   )}
                   
-                  <button
-                    onClick={handleScanAll}
-                    disabled={isScanning || watchlist.length === 0}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-accent hover:bg-accent/80 text-white disabled:opacity-50 disabled:hover:bg-accent transition-colors"
-                  >
-                    <RefreshCw size={12} className={isScanning ? 'animate-spin' : ''} />
-                    Scan Now
-                  </button>
+                  <BatchScanControl
+                    ref={batchScanControlRef}
+                    disabled={watchlist.length === 0}
+                    isParallel={parallelScanEnabled && !isPolygonActive}
+                    onScan={stableHandleScanAll}
+                  />
                 </div>
               </div>
 
