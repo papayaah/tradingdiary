@@ -59,34 +59,49 @@ const TimeAgo = React.memo(function TimeAgo({ timestamp }: { timestamp: number }
   );
 });
 
-const MiniCandles = React.memo(function MiniCandles({ candles }: { candles: AlertCandle[] }) {
-  if (candles.length === 0) return null;
+function get1Point5HourCandleCount(interval: string = '5m'): number {
+  const clean = interval.replace(/[ms]/g, '');
+  const val = parseInt(clean, 10) || 5;
+  const isHour = interval.endsWith('h');
+  const minutesPerCandle = isHour ? val * 60 : val;
+  const count = Math.ceil((1.5 * 60) / Math.max(1, minutesPerCandle));
+  return Math.max(3, Math.min(15, count));
+}
+
+const MiniCandles = React.memo(function MiniCandles({ candles, interval = '5m' }: { candles: AlertCandle[]; interval?: string }) {
+  const displayCandles = React.useMemo(() => {
+    if (!candles || candles.length === 0) return [];
+    const count = get1Point5HourCandleCount(interval);
+    return candles.slice(-count);
+  }, [candles, interval]);
+
+  if (displayCandles.length === 0) return null;
 
   let maxValue = Number.NEGATIVE_INFINITY;
   let minValue = Number.POSITIVE_INFINITY;
-  for (const candle of candles) {
+  for (const candle of displayCandles) {
     maxValue = Math.max(maxValue, candle.high);
     minValue = Math.min(minValue, candle.low);
   }
 
   const range = maxValue - minValue || 1;
   const height = 28;
-  const candleWidth = 5;
-  const gap = 3;
+  const candleWidth = 4;
+  const gap = 2.5;
   const step = candleWidth + gap;
-  const totalWidth = candles.length * step - gap + 8;
+  const totalWidth = displayCandles.length * step - gap + 8;
   const getScaledY = (price: number) =>
     2 + (height - 4) - ((price - minValue) / range) * (height - 4);
 
   return (
     <svg width={totalWidth} height={height} className="overflow-visible select-none">
-      {candles.map((candle, index) => {
+      {displayCandles.map((candle, index) => {
         const x = index * step + 4;
         const color = candle.close >= candle.open ? '#10b981' : '#f43f5e';
         const openY = getScaledY(candle.open);
         const closeY = getScaledY(candle.close);
         return (
-          <g key={candle.time}>
+          <g key={candle.time || index}>
             <line
               x1={x + candleWidth / 2}
               y1={getScaledY(candle.high)}
@@ -110,16 +125,33 @@ const MiniCandles = React.memo(function MiniCandles({ candles }: { candles: Aler
   );
 });
 
+function get4HourCandleCount(interval: string): number {
+  const clean = interval.replace(/[ms]/g, '');
+  const val = parseInt(clean, 10) || 5;
+  const isHour = interval.endsWith('h');
+  const minutesPerCandle = isHour ? val * 60 : val;
+  const count = Math.ceil((4 * 60) / Math.max(1, minutesPerCandle));
+  return Math.max(4, count);
+}
+
 const ExpandedMiniChart = React.memo(function ExpandedMiniChart({
   candles,
+  interval = '5m',
 }: {
   candles: AlertCandle[];
+  interval?: string;
 }) {
-  if (!candles || candles.length === 0) return null;
+  const displayCandles = React.useMemo(() => {
+    if (!candles || candles.length === 0) return [];
+    const targetCount = get4HourCandleCount(interval);
+    return candles.slice(-targetCount);
+  }, [candles, interval]);
+
+  if (displayCandles.length === 0) return null;
 
   let maxPrice = Number.NEGATIVE_INFINITY;
   let minPrice = Number.POSITIVE_INFINITY;
-  for (const c of candles) {
+  for (const c of displayCandles) {
     maxPrice = Math.max(maxPrice, c.high);
     minPrice = Math.min(minPrice, c.low);
   }
@@ -139,8 +171,8 @@ const ExpandedMiniChart = React.memo(function ExpandedMiniChart({
   const getScaledY = (price: number) =>
     margin.top + plotHeight - ((price - lowYPrice) / fullRange) * plotHeight;
 
-  const step = plotWidth / Math.max(1, candles.length);
-  const candleWidth = Math.max(1.5, Math.min(8, step - 1));
+  const step = plotWidth / Math.max(1, displayCandles.length);
+  const candleWidth = Math.max(2, Math.min(10, step - 2));
 
   return (
     <div className="w-full flex flex-col items-center">
@@ -159,7 +191,7 @@ const ExpandedMiniChart = React.memo(function ExpandedMiniChart({
         </text>
 
         {/* Candlesticks */}
-        {candles.map((candle, idx) => {
+        {displayCandles.map((candle, idx) => {
           const x = margin.left + idx * step + step / 2;
           const color = candle.close >= candle.open ? '#10b981' : '#f43f5e';
           const openY = getScaledY(candle.open);
@@ -253,7 +285,7 @@ function AlertHistoryPanel({
                       </div>
                       {alert.candles && alert.candles.length > 0 && (
                         <div className="flex items-center bg-black/40 px-1.5 py-0.5 rounded border border-card-border/30 shadow-inner">
-                          <MiniCandles candles={alert.candles} />
+                          <MiniCandles candles={alert.candles} interval={alert.interval} />
                         </div>
                       )}
                     </div>
@@ -286,7 +318,7 @@ function AlertHistoryPanel({
                         </button>
                       </div>
                       <div className="bg-black/60 border border-card-border/50 rounded-xl p-2 flex flex-col items-center">
-                        <ExpandedMiniChart candles={alert.candles} />
+                        <ExpandedMiniChart candles={alert.candles} interval={alert.interval} />
                       </div>
                     </div>
                   )}

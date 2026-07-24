@@ -70,6 +70,15 @@ interface AlertLog {
 const ALERT_HISTORY_TTL_MS = 10 * 60 * 1000;
 const MAX_ALERT_HISTORY_ITEMS = 50;
 
+function get4HourCandleCount(interval: string): number {
+  const clean = interval.replace(/[ms]/g, '');
+  const val = parseInt(clean, 10) || 5;
+  const isHour = interval.endsWith('h');
+  const minutesPerCandle = isHour ? val * 60 : val;
+  const count = Math.ceil((4 * 60) / Math.max(1, minutesPerCandle));
+  return Math.max(4, count);
+}
+
 const pruneAlertHistory = (logs: AlertLog[], now = Date.now()) =>
   logs
     .filter((log) => Number.isFinite(log.createdAt) && now - log.createdAt < ALERT_HISTORY_TTL_MS)
@@ -846,8 +855,8 @@ export default function MarketWatcher() {
         type: type,
         details: message,
         price: price,
-        // Store up to 4 hours of intraday candles (240 candles for 1m, 48 for 5m, 24 for 10m)
-        candles: candles ? candles.slice(-240) : undefined
+        // Store exact 4-hour window of intraday candles (e.g. 24 candles for 10m, 48 for 5m, 240 for 1m)
+        candles: candles ? candles.slice(-get4HourCandleCount(interval)) : undefined
       };
       const updatedLogs = [newAlert, ...activeLogs].slice(0, MAX_ALERT_HISTORY_ITEMS);
       localStorage.setItem('watcher-alerts', JSON.stringify(updatedLogs));
@@ -2403,6 +2412,7 @@ export default function MarketWatcher() {
                     <option value="10m">10m</option>
                     <option value="15m">15m</option>
                     <option value="30m">30m</option>
+                    <option value="45m">45m</option>
                     <option value="1h">1h</option>
                   </select>
                 </div>
@@ -2859,6 +2869,7 @@ export default function MarketWatcher() {
                       <option value="10m">10m</option>
                       <option value="15m">15m</option>
                       <option value="30m">30m</option>
+                      <option value="45m">45m</option>
                       <option value="1h">1h</option>
                     </select>
                   </div>
