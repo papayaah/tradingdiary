@@ -841,7 +841,8 @@ export default function MarketWatcher() {
         type: type,
         details: message,
         price: price,
-        candles: candles ? candles.slice(-5) : undefined
+        // Store up to 4 hours of intraday candles (240 candles for 1m, 48 for 5m, 24 for 10m)
+        candles: candles ? candles.slice(-240) : undefined
       };
       const updatedLogs = [newAlert, ...activeLogs].slice(0, MAX_ALERT_HISTORY_ITEMS);
       localStorage.setItem('watcher-alerts', JSON.stringify(updatedLogs));

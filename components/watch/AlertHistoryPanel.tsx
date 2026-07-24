@@ -130,9 +130,9 @@ const ExpandedMiniChart = React.memo(function ExpandedMiniChart({
   const lowYPrice = minPrice - padding;
   const fullRange = highYPrice - lowYPrice || 1;
 
-  const width = 300;
-  const height = 120;
-  const margin = { top: 14, bottom: 16, left: 42, right: 12 };
+  const width = 320;
+  const height = 135;
+  const margin = { top: 16, bottom: 18, left: 45, right: 12 };
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
 
@@ -140,7 +140,7 @@ const ExpandedMiniChart = React.memo(function ExpandedMiniChart({
     margin.top + plotHeight - ((price - lowYPrice) / fullRange) * plotHeight;
 
   const step = plotWidth / Math.max(1, candles.length);
-  const candleWidth = Math.max(4, Math.min(10, step - 3));
+  const candleWidth = Math.max(1.5, Math.min(8, step - 1));
 
   return (
     <div className="w-full flex flex-col items-center">
@@ -167,18 +167,18 @@ const ExpandedMiniChart = React.memo(function ExpandedMiniChart({
           const highY = getScaledY(candle.high);
           const lowY = getScaledY(candle.low);
           const bodyTop = Math.min(openY, closeY);
-          const bodyHeight = Math.max(2, Math.abs(openY - closeY));
+          const bodyHeight = Math.max(1.5, Math.abs(openY - closeY));
 
           return (
             <g key={candle.time || idx}>
-              <line x1={x} y1={highY} x2={x} y2={lowY} stroke={color} strokeWidth={1} />
+              <line x1={x} y1={highY} x2={x} y2={lowY} stroke={color} strokeWidth={Math.max(0.8, candleWidth / 3)} />
               <rect
                 x={x - candleWidth / 2}
                 y={bodyTop}
                 width={candleWidth}
                 height={bodyHeight}
                 fill={color}
-                rx={1}
+                rx={0.5}
               />
             </g>
           );
