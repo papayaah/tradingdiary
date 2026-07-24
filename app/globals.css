@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* Scan the shared better-auth-connect package so its preset utility classes
+   (used by AuthCard / UserButton / IntegrationCard) are generated. */
+@source "../packages/better-auth-connect/src";
+
 :root {
   --background: #ffffff;
   --foreground: #1a1a2e;

@@ -9,6 +9,16 @@ interface PolygonAggregate {
     v: number; // volume
 }
 
+interface IntradayPriceRecord {
+    date?: string;
+    datetime?: string;
+    open: number | string;
+    high: number | string;
+    low: number | string;
+    close: number | string;
+    volume?: number | string;
+}
+
 export interface ChartProvider {
     name: string;
     fetchCandles(symbol: string, date: string, interval: string): Promise<OHLCCandle[]>;
@@ -124,7 +134,7 @@ function aggregateYahooCandles(candles: OHLCCandle[], factor: number): OHLCCandl
 /**
  * Yahoo Finance Provider (Free Fallback, less reliable)
  */
-class YahooProvider implements ChartProvider {
+export class YahooProvider implements ChartProvider {
     name = "Yahoo Finance";
     async fetchCandles(symbol: string, date: string, interval: string): Promise<OHLCCandle[]> {
         const needsAggregation = interval === '10m';
@@ -244,13 +254,13 @@ class TwelveDataProvider implements ChartProvider {
 
         const values = data.values || [];
         // Twelve Data returns newest first, so reverse to chronological order
-        const candles: OHLCCandle[] = values.slice().reverse().map((v: any) => ({
-            time: Math.floor(new Date(v.datetime).getTime() / 1000),
-            open: parseFloat(v.open),
-            high: parseFloat(v.high),
-            low: parseFloat(v.low),
-            close: parseFloat(v.close),
-            volume: parseInt(v.volume) || 0,
+        const candles: OHLCCandle[] = values.slice().reverse().map((v: IntradayPriceRecord) => ({
+            time: Math.floor(new Date(v.datetime || v.date || '').getTime() / 1000),
+            open: Number(v.open),
+            high: Number(v.high),
+            low: Number(v.low),
+            close: Number(v.close),
+            volume: Number(v.volume || 0),
         }));
 
         if (needsAggregation) {
@@ -261,27 +271,243 @@ class TwelveDataProvider implements ChartProvider {
     }
 }
 
+/**
+ * Tiingo IEX Provider
+ */
+class TiingoProvider implements ChartProvider {
+    name = "Tiingo";
+    apiKey: string;
+
+    constructor(apiKey: string) {
+        this.apiKey = apiKey;
+    }
+
+    private mapInterval(interval: string): string {
+        const val = parseInt(interval.replace(/[ms]/g, '')) || 5;
+        const isHour = interval.endsWith('h');
+        if (isHour) {
+            return `${val}hour`;
+        }
+        return `${val}min`;
+    }
+
+    private async fetchIntraday(
+        symbol: string,
+        startDate: string,
+        interval: string,
+        endDate?: string,
+    ): Promise<OHLCCandle[]> {
+        const freq = this.mapInterval(interval);
+        const dateParams = `startDate=${startDate}${endDate ? `&endDate=${endDate}` : ''}`;
+        const query = `${dateParams}&resampleFreq=${freq}&afterHours=true&token=${this.apiKey}`;
+        const cleanSymbol = symbol.toUpperCase();
+
+        // The consolidated equity feed covers the full 4:00 AM–8:00 PM ET
+        // session. Keep IEX as a compatibility fallback for accounts that
+        // haven't been enabled for the newer endpoint yet.
+        const urls = [
+            `https://api.tiingo.com/tiingo/equity/intraday/${cleanSymbol}/prices?${query}`,
+            `https://api.tiingo.com/iex/${cleanSymbol}/prices?${query}`,
+        ];
+
+        let lastStatus = 500;
+        for (const url of urls) {
+            const res = await fetch(url);
+            lastStatus = res.status;
+            if (!res.ok) continue;
+
+            const data = await res.json();
+            if (!Array.isArray(data)) continue;
+            return data.map((r: IntradayPriceRecord) => ({
+                time: Math.floor(new Date(r.date || r.datetime || '').getTime() / 1000),
+                open: Number(r.open),
+                high: Number(r.high),
+                low: Number(r.low),
+                close: Number(r.close),
+                volume: Number(r.volume || 0),
+            }));
+        }
+
+        throw new Error(`Tiingo API error: ${lastStatus}`);
+    }
+
+    async fetchCandles(symbol: string, date: string, interval: string): Promise<OHLCCandle[]> {
+        const formattedDate = `${date.substring(0, 4)}-${date.substring(4, 6)}-${date.substring(6, 8)}`;
+        return this.fetchIntraday(symbol, formattedDate, interval, formattedDate);
+    }
+
+    async fetchRecentCandles(symbol: string, interval: string): Promise<OHLCCandle[]> {
+        const start = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+        const formatDate = (d: Date) => d.toISOString().split('T')[0];
+        const formattedStart = formatDate(start);
+        // Omitting endDate asks Tiingo for all data through the current moment.
+        return this.fetchIntraday(symbol, formattedStart, interval);
+    }
+}
+
+function aggregate1mCandles(candles: OHLCCandle[], targetInterval: string): OHLCCandle[] {
+    const minutes = parseInt(targetInterval.replace(/[ms]/g, '')) || 1;
+    if (minutes <= 1) return candles;
+    const intervalSeconds = minutes * 60;
+    const groups = new Map<number, OHLCCandle[]>();
+
+    for (const c of candles) {
+        const bucketTime = Math.floor(c.time / intervalSeconds) * intervalSeconds;
+        if (!groups.has(bucketTime)) {
+            groups.set(bucketTime, []);
+        }
+        groups.get(bucketTime)!.push(c);
+    }
+
+    const aggregated: OHLCCandle[] = [];
+    for (const [time, chunk] of groups.entries()) {
+        const open = chunk[0].open;
+        const close = chunk[chunk.length - 1].close;
+        const high = Math.max(...chunk.map(c => c.high));
+        const low = Math.min(...chunk.map(c => c.low));
+        const volume = chunk.reduce((sum, c) => sum + c.volume, 0);
+
+        aggregated.push({ time, open, high, low, close, volume });
+    }
+    return aggregated;
+}
+
+/**
+ * Databento CME Futures Provider (GLBX.MDP3)
+ */
+export class DatabentoProvider implements ChartProvider {
+    name = "Databento (GLBX.MDP3 CME)";
+    private apiKey: string;
+
+    constructor(apiKey: string) {
+        this.apiKey = apiKey;
+    }
+
+    private mapSymbol(symbol: string): string {
+        let clean = symbol.toUpperCase().trim();
+        if (clean.endsWith('=F')) {
+            clean = clean.replace('=F', '');
+        }
+        if (!clean.includes('.')) {
+            clean = `${clean}.c.0`;
+        }
+        return clean;
+    }
+
+    async fetchCandles(symbol: string, date: string, interval: string): Promise<OHLCCandle[]> {
+        return this.fetchRecentCandles(symbol, interval);
+    }
+
+    async fetchRecentCandles(symbol: string, interval: string): Promise<OHLCCandle[]> {
+        if (!this.apiKey) {
+            throw new Error("Missing DATABENTO_API_KEY");
+        }
+
+        const dbSymbol = this.mapSymbol(symbol);
+        const basicAuth = Buffer.from(this.apiKey.trim() + ':').toString('base64');
+
+        const now = new Date();
+        const endHour = new Date(Math.floor(now.getTime() / (60 * 60 * 1000)) * (60 * 60 * 1000));
+        const startHour = new Date(endHour.getTime() - 24 * 60 * 60 * 1000);
+
+        const startIso = startHour.toISOString().replace(/\:\d{2}\:\d{2}\.\d{3}Z$/, ':00:00Z');
+        const endIso = endHour.toISOString().replace(/\:\d{2}\:\d{2}\.\d{3}Z$/, ':00:00Z');
+
+        const url = `https://hist.databento.com/v0/timeseries.get_range?dataset=GLBX.MDP3&symbols=${dbSymbol}&schema=ohlcv-1m&stype_in=continuous&stype_out=instrument_id&encoding=json&pretty_px=1&pretty_ts=1&start=${startIso}&end=${endIso}`;
+
+        const cleanRoot = symbol.toUpperCase().replace('=F', '').replace(/\..*$/, '').replace(/^\//, '');
+
+        let res = await fetch(url, {
+            headers: {
+                'Authorization': `Basic ${basicAuth}`
+            }
+        });
+
+        // Fallback to parent symbology (e.g., NQ.FUT) if continuous symbology fails
+        if (!res.ok) {
+            const parentSymbol = `${cleanRoot}.FUT`;
+            const fallbackUrl = `https://hist.databento.com/v0/timeseries.get_range?dataset=GLBX.MDP3&symbols=${parentSymbol}&schema=ohlcv-1m&stype_in=parent&stype_out=instrument_id&encoding=json&pretty_px=1&pretty_ts=1&start=${startIso}&end=${endIso}`;
+            res = await fetch(fallbackUrl, {
+                headers: {
+                    'Authorization': `Basic ${basicAuth}`
+                }
+            });
+        }
+
+        if (!res.ok) {
+            const errText = await res.text().catch(() => '');
+            throw new Error(`Databento API error ${res.status}: ${errText.substring(0, 100)}`);
+        }
+
+        const text = await res.text();
+        if (!text.trim()) return [];
+
+        const lines = text.trim().split('\n');
+        const raw1mCandles: OHLCCandle[] = [];
+
+        for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+                const record = JSON.parse(line);
+                let sec = 0;
+                if (typeof record.ts_event === 'number') {
+                    sec = Math.floor(record.ts_event / 1e9);
+                } else if (typeof record.ts_event === 'string') {
+                    sec = Math.floor(new Date(record.ts_event).getTime() / 1000);
+                }
+                
+                const open = typeof record.open === 'number' ? record.open : parseFloat(record.open);
+                const high = typeof record.high === 'number' ? record.high : parseFloat(record.high);
+                const low = typeof record.low === 'number' ? record.low : parseFloat(record.low);
+                const close = typeof record.close === 'number' ? record.close : parseFloat(record.close);
+                const volume = typeof record.volume === 'number' ? record.volume : parseFloat(record.volume || 0);
+
+                if (sec && !isNaN(close)) {
+                    raw1mCandles.push({ time: sec, open, high, low, close, volume });
+                }
+            } catch (e) {
+                // skip metadata or non-candle record
+            }
+        }
+
+        const aggregated = aggregate1mCandles(raw1mCandles, interval);
+        aggregated.sort((a, b) => a.time - b.time);
+        // Ensure we return the latest candles ending right now!
+        return aggregated.slice(-144);
+    }
+}
+
 export interface UserProviderConfig {
     preferredProvider?: string;
+    futuresProvider?: string;
+    databentoKey?: string;
     alpacaKeyId?: string;
     alpacaSecret?: string;
     twelveKey?: string;
     polygonKey?: string;
+    tiingoKey?: string;
 }
 
 /**
  * Factory to get the active provider based on environment variables or user config.
- * Falls back safely to Yahoo Finance if selected provider lacks an API key.
+ * Supports distinct routing for Equities vs Futures.
  */
 export function getActiveProvider(symbol?: string, userConfig?: UserProviderConfig): ChartProvider {
-    // If it's a Yahoo-specific ticker format (starts with ^, starts with /, or ends with =F), force YahooProvider
-    if (symbol) {
-        const upper = symbol.toUpperCase();
-        if (upper.startsWith('^') || upper.startsWith('/') || upper.endsWith('=F') || upper.includes('=')) {
-            return new YahooProvider();
+    const upperSymbol = symbol ? symbol.toUpperCase() : '';
+    const isFutures = upperSymbol.endsWith('=F') || upperSymbol.includes('.C.0') || upperSymbol.startsWith('/');
+
+    // Handle Futures Data Feed Selection separately
+    if (isFutures) {
+        const futuresPref = userConfig?.futuresProvider || 'databento';
+        const databentoKey = userConfig?.databentoKey || process.env.DATABENTO_API_KEY;
+
+        if ((futuresPref === 'databento' || futuresPref === 'auto') && databentoKey) {
+            return new DatabentoProvider(databentoKey);
         }
+        return new YahooProvider();
     }
 
+    // Handle Equities Data Feed Selection
     const pref = userConfig?.preferredProvider || 'auto';
 
     if (pref === 'alpaca') {
@@ -300,21 +526,30 @@ export function getActiveProvider(symbol?: string, userConfig?: UserProviderConf
         if (key) return new PolygonProvider();
     }
 
+    if (pref === 'tiingo') {
+        const key = userConfig?.tiingoKey || process.env.TIINGO_API_KEY;
+        if (key) return new TiingoProvider(key);
+    }
+
     if (pref === 'yahoo') {
         return new YahooProvider();
     }
 
-    // Default 'auto' fallback chain:
+    // Default 'auto' fallback chain for Equities:
+    if (userConfig?.tiingoKey || process.env.TIINGO_API_KEY) {
+        return new TiingoProvider(userConfig?.tiingoKey || process.env.TIINGO_API_KEY || '');
+    }
+
+    if (userConfig?.polygonKey || process.env.POLYGON_API_KEY) {
+        return new PolygonProvider();
+    }
+
     if (userConfig?.alpacaKeyId || process.env.ALPACA_API_KEY_ID || process.env.ALPACA_API_KEY) {
         return new AlpacaProvider();
     }
 
     if (userConfig?.twelveKey || process.env.TWELVE_DATA_API_KEY) {
         return new TwelveDataProvider();
-    }
-
-    if (userConfig?.polygonKey || process.env.POLYGON_API_KEY) {
-        return new PolygonProvider();
     }
 
     // Default: Yahoo
