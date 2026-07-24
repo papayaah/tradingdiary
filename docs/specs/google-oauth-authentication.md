@@ -2,7 +2,39 @@
 
 ## Status
 
-Draft
+Partially implemented. Core Better Auth plumbing and Google sign-in work; the enforcement layer (route protection, environment validation, local-data account boundaries, tests) is not yet built. See **Implementation status** for the verified breakdown.
+
+## Implementation status
+
+As-built against the repository. Verified file paths are given so this section can be re-checked.
+
+### Done
+
+- **Better Auth + database driver** — `better-auth`, `drizzle-orm`, and the `postgres` driver are installed ([package.json](../../package.json)).
+- **Server auth config** — [lib/auth.ts](../../lib/auth.ts) configures `betterAuth()` with the Google social provider, the Drizzle adapter, and `trustedOrigins`.
+- **Browser auth client** — [lib/auth-client.ts](../../lib/auth-client.ts) exposes `authClient` via `createAuthClient`.
+- **Auth route handler** — [app/api/auth/[...all]/route.ts](../../app/api/auth/[...all]/route.ts) mounts Better Auth through `toNextJsHandler`.
+- **Auth tables + migration** — `user`, `account`, `session`, `verification` defined in [lib/db/server/schema.ts](../../lib/db/server/schema.ts); created by [drizzle/0000_init.sql](../../drizzle/0000_init.sql).
+- **Protected-route pages exist** — `/dashboard`, `/journal`, `/portfolio`, `/replay`, `/import`, `/media`, `/settings` (and an extra `/watch`) all exist under `app/(journal)/`. Note: they exist but are not access-protected — see TODO.
+- **Session-authorized API (example)** — [app/api/watch/sync/route.ts](../../app/api/watch/sync/route.ts) derives `userId` from the server session and never trusts a client-supplied id.
+- **`better-auth-connect` client wiring** — `IntegrationProvider` wraps the app in [components/providers/ClientProviders.tsx](../../components/providers/ClientProviders.tsx); `useIntegrationContext()` drives sign-in/out in [app/login/page.tsx](../../app/login/page.tsx) and [components/auth/LoginButton.tsx](../../components/auth/LoginButton.tsx). Only the package's client/session context is used; its prebuilt UI cards/presets and `server/*` schema helpers are not (the app hand-rolls the login UI and server schema).
+
+### Partial
+
+- **Login page** — exists at [app/login/page.tsx](../../app/login/page.tsx), not the proposed `app/(auth)/login/`. Button label is "Sign in with Google" (spec says "Continue with Google"). Missing Terms/Privacy copy and the "Your journal is private…" line. No return-URL handling. `callbackURL` falls back to a hardcoded `http://localhost:3001`.
+- **Server session helper** — the correct pattern (`auth.api.getSession({ headers })`) is used, but inline in one route only; no shared, reusable helper module.
+- **Account menu + sign-out** — [components/auth/LoginButton.tsx](../../components/auth/LoginButton.tsx) shows profile image/name/email and signs out, but does not redirect to `/login` after sign-out.
+
+### TODO
+
+- **Route protection** — no `proxy.ts`/`middleware.ts` and no session guard in [app/(journal)/layout.tsx](../../app/(journal)/layout.tsx). All "protected" pages are reachable while unauthenticated. No `/login`→`/dashboard` redirect for already-signed-in users. (Blocks four acceptance criteria; also a real access bug today.)
+- **Environment validation** — no fail-fast on missing `BETTER_AUTH_SECRET`/`BETTER_AUTH_URL`/`GOOGLE_CLIENT_*`; [lib/auth.ts](../../lib/auth.ts) casts env vars unchecked, and [lib/db/server/index.ts](../../lib/db/server/index.ts) falls back to a hardcoded `DATABASE_URL`. Remove the fallback and fail clearly at startup.
+- **Local-data account boundaries** — [lib/db/database.ts](../../lib/db/database.ts) opens a fixed `'tradingdiary'` IndexedDB name with no per-user partitioning. The app is effectively in undeclared "device-local" mode; the shared-device rule (one user's local data must not surface for another) is unenforced. Pick and communicate one of the two behaviors in **Local data and account boundaries**.
+- **Return-URL restore** — capture and validate a relative return URL at `/login` and restore it after successful sign-in.
+- **Post-sign-out redirect** — send the user to `/login` after `signOut()`.
+- **Auth tests** — none exist; add coverage for protected-route redirects, callback failure, sign-out, and API authorization boundaries.
+- **Account deletion** — specified in this doc but absent from the implementation sequence and code; schedule or explicitly defer alongside sync.
+- **Login copy/label** — align button label and add the privacy/terms text from the UX section.
 
 ## Summary
 
@@ -223,15 +255,17 @@ Local device data must be handled explicitly: offer the user a separate choice t
 
 ## Suggested implementation sequence
 
-1. Install Better Auth and the required PostgreSQL adapter/driver.
-2. Add auth configuration, schema migration, and environment validation.
-3. Configure the Google OAuth application for development.
-4. Add the auth route, browser client, and login page.
-5. Add server-side session helpers and protected-route behavior.
-6. Add the signed-in account menu and sign-out.
-7. Partition local IndexedDB data by authenticated user or explicitly retain device-local mode.
-8. Protect all user-owned server endpoints and media routes.
-9. Add integration tests, security checks, privacy copy, and production OAuth configuration.
+Status markers reflect the current codebase: ✅ done, 🟡 partial, ⬜ not started.
+
+1. ✅ Install Better Auth and the required PostgreSQL adapter/driver.
+2. 🟡 Add auth configuration, schema migration, and environment validation. *(Config + migration done; environment validation missing, and `DATABASE_URL` has a hardcoded fallback to remove.)*
+3. ⬜ Configure the Google OAuth application for development. *(Client wiring is present; per-environment redirect URIs and consent-screen setup not verified in-repo.)*
+4. 🟡 Add the auth route, browser client, and login page. *(Route + client done; login page location, label, copy, and return-URL handling incomplete.)*
+5. ⬜ Add server-side session helpers and protected-route behavior. *(Session read exists inline in one route; no shared helper and no route protection.)*
+6. 🟡 Add the signed-in account menu and sign-out. *(Works; missing post-sign-out redirect to `/login`.)*
+7. ⬜ Partition local IndexedDB data by authenticated user or explicitly retain device-local mode.
+8. 🟡 Protect all user-owned server endpoints and media routes. *(`watch/sync` is authorized; no page-level protection; other endpoints unaudited.)*
+9. ⬜ Add integration tests, security checks, privacy copy, and production OAuth configuration.
 
 ## Open product decisions
 
