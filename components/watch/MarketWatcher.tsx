@@ -179,6 +179,11 @@ export default function MarketWatcher() {
     const saved = localStorage.getItem('watcher-consecutive-candles');
     return saved !== null ? parseInt(saved, 10) : 3;
   });
+  const [overrideGlobalMinMove, setOverrideGlobalMinMove] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const saved = localStorage.getItem('watcher-override-global-min-move');
+    return saved !== null ? saved === 'true' : false;
+  });
 
   // Sorting state for Watchlist table
   const [sortColumn, setSortColumn] = useState<'symbol' | 'interval' | 'minMove' | 'status' | null>(null);
@@ -916,7 +921,8 @@ export default function MarketWatcher() {
       const scanCandles = isFuturesOrCrypto
         ? candles
         : filterCandlesByWindow(filterCurrentDayOnly(candles), activeWindowRef.current);
-      const { matched, message, time } = detectPattern(scanCandles, item.minMovePercent, requiredCandleCount);
+      const targetMinMove = overrideGlobalMinMove ? newMinMove : item.minMovePercent;
+      const { matched, message, time } = detectPattern(scanCandles, targetMinMove, requiredCandleCount);
       const status = scanCandles.length === 0 ? 'no-data' as const : matched;
 
       // Trigger Alert if pattern matched and hasn't been alerted for this candle/direction yet
@@ -1016,8 +1022,9 @@ export default function MarketWatcher() {
 
         // If the scanned item is currently expanded in the Watchlist tab, update testResult live so the chart updates instantly
         if (expandedRowIndexRef.current === idx && scanned.candles && scanned.candles.length > 0) {
-          const { matched, message } = detectPattern(scanned.candles, item.minMovePercent, requiredCandleCount);
-          const allMatches = scanAllPatterns(scanned.candles, item.minMovePercent, requiredCandleCount);
+          const targetMinMove = overrideGlobalMinMove ? newMinMove : item.minMovePercent;
+          const { matched, message } = detectPattern(scanned.candles, targetMinMove, requiredCandleCount);
+          const allMatches = scanAllPatterns(scanned.candles, targetMinMove, requiredCandleCount);
           setTestResult({
             success: true,
             patternMatched: matched,
@@ -2329,46 +2336,66 @@ export default function MarketWatcher() {
               </div>
 
               {/* WATCHLIST CATEGORY SWITCHER (Stocks vs Futures) */}
-              <div className="flex flex-wrap items-center gap-2 mb-6 p-1 bg-muted-bg/30 rounded-xl border border-card-border/30 w-fit">
-                <button
-                  onClick={() => {
-                    setWatchlistCategory('stocks');
-                    localStorage.setItem('watcher-watchlist-category', 'stocks');
-                  }}
-                  className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    watchlistCategory === 'stocks'
-                      ? 'bg-accent text-white shadow-sm'
-                      : 'text-muted hover:text-foreground'
-                  }`}
-                >
-                  📈 Stocks ({watchlist.filter((w) => !w.symbol.includes('=F')).length})
-                </button>
-                <button
-                  onClick={() => {
-                    setWatchlistCategory('futures');
-                    localStorage.setItem('watcher-watchlist-category', 'futures');
-                  }}
-                  className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                    watchlistCategory === 'futures'
-                      ? 'bg-accent text-white shadow-sm font-bold'
-                      : 'text-muted hover:text-foreground'
-                  }`}
-                >
-                  ⚡ Futures (24H Continuous) ({watchlist.filter((w) => w.symbol.includes('=F')).length})
-                </button>
-                <button
-                  onClick={() => {
-                    setWatchlistCategory('all');
-                    localStorage.setItem('watcher-watchlist-category', 'all');
-                  }}
-                  className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    watchlistCategory === 'all'
-                      ? 'bg-accent text-white shadow-sm'
-                      : 'text-muted hover:text-foreground'
-                  }`}
-                >
-                  All Tickers ({watchlist.length})
-                </button>
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div className="flex items-center gap-1.5 bg-muted-bg/40 p-1 rounded-xl border border-card-border/50">
+                  <button
+                    onClick={() => {
+                      setWatchlistCategory('stocks');
+                      localStorage.setItem('watcher-watchlist-category', 'stocks');
+                    }}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                      watchlistCategory === 'stocks'
+                        ? 'bg-accent text-white shadow-sm'
+                        : 'text-muted hover:text-foreground'
+                    }`}
+                  >
+                    📈 Stocks ({watchlist.filter((w) => !w.symbol.includes('=F')).length})
+                  </button>
+                  <button
+                    onClick={() => {
+                      setWatchlistCategory('futures');
+                      localStorage.setItem('watcher-watchlist-category', 'futures');
+                    }}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                      watchlistCategory === 'futures'
+                        ? 'bg-accent text-white shadow-sm font-bold'
+                        : 'text-muted hover:text-foreground'
+                    }`}
+                  >
+                    ⚡ Futures (24H) ({watchlist.filter((w) => w.symbol.includes('=F')).length})
+                  </button>
+                  <button
+                    onClick={() => {
+                      setWatchlistCategory('all');
+                      localStorage.setItem('watcher-watchlist-category', 'all');
+                    }}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                      watchlistCategory === 'all'
+                        ? 'bg-accent text-white shadow-sm'
+                        : 'text-muted hover:text-foreground'
+                    }`}
+                  >
+                    All Tickers ({watchlist.length})
+                  </button>
+                </div>
+
+                {/* Global Consecutive Candle Count Selector in Top Header */}
+                <div className="flex items-center gap-2 bg-muted-bg/40 px-3 py-1.5 rounded-xl border border-card-border/50 text-xs">
+                  <span className="text-muted font-semibold">Streak Length:</span>
+                  <select
+                    value={requiredCandleCount}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      setRequiredCandleCount(val);
+                      localStorage.setItem('watcher-consecutive-candles', String(val));
+                    }}
+                    className="bg-card-bg border border-card-border rounded px-2 py-1 text-foreground font-semibold cursor-pointer outline-none"
+                  >
+                    <option value={3}>3 Consecutive Candles (Default)</option>
+                    <option value={4}>4 Consecutive Candles (Stronger Trend)</option>
+                    <option value={5}>5 Consecutive Candles (Ultra Streak)</option>
+                  </select>
+                </div>
               </div>
 
               {/* WATCHLIST FORM */}
@@ -2417,9 +2444,20 @@ export default function MarketWatcher() {
                   </select>
                 </div>
 
-                <div className="sm:col-span-4 flex flex-col justify-between bg-card-bg border border-card-border rounded-xl px-3.5 py-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted text-[10px] font-semibold uppercase tracking-wider">MIN MOVE THRESHOLD</span>
+                <div className="sm:col-span-5 flex flex-col justify-between bg-card-bg border border-card-border rounded-xl px-3.5 py-2">
+                  <div className="flex items-center justify-between text-xs gap-2">
+                    <label className="flex items-center gap-1.5 cursor-pointer text-muted text-[10px] font-semibold uppercase tracking-wider hover:text-foreground" title="When checked, overrides all individual stock thresholds with this global slider value">
+                      <input
+                        type="checkbox"
+                        checked={overrideGlobalMinMove}
+                        onChange={(e) => {
+                          setOverrideGlobalMinMove(e.target.checked);
+                          localStorage.setItem('watcher-override-global-min-move', String(e.target.checked));
+                        }}
+                        className="rounded border-card-border text-accent focus:ring-accent h-3.5 w-3.5 cursor-pointer"
+                      />
+                      <span>Apply Global ({overrideGlobalMinMove ? 'Override All' : 'New Only'})</span>
+                    </label>
                     <div className="flex items-center gap-0.5 font-mono text-xs font-bold text-accent">
                       <input
                         type="number"
