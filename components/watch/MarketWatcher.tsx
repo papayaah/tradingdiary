@@ -2401,21 +2401,39 @@ export default function MarketWatcher() {
                   </select>
                 </div>
 
-                <div className="sm:col-span-3 relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted text-xs font-semibold">MIN MOVE</span>
+                <div className="sm:col-span-4 flex flex-col justify-between bg-card-bg border border-card-border rounded-xl px-3.5 py-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted text-[10px] font-semibold uppercase tracking-wider">MIN MOVE THRESHOLD</span>
+                    <div className="flex items-center gap-0.5 font-mono text-xs font-bold text-accent">
+                      <input
+                        type="number"
+                        step="0.05"
+                        min="0.05"
+                        max="3.00"
+                        value={newMinMove}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value) || 0.05;
+                          setNewMinMove(val);
+                          localStorage.setItem('watcher-new-min-move', String(val));
+                        }}
+                        className="w-12 bg-transparent text-right outline-none"
+                      />
+                      <span>%</span>
+                    </div>
+                  </div>
                   <input
-                    type="number"
-                    step="0.01"
-                    min="0"
+                    type="range"
+                    min="0.05"
+                    max="3.00"
+                    step="0.05"
                     value={newMinMove}
                     onChange={(e) => {
-                      const val = parseFloat(e.target.value) || 0;
+                      const val = parseFloat(e.target.value) || 0.05;
                       setNewMinMove(val);
                       localStorage.setItem('watcher-new-min-move', String(val));
                     }}
-                    className="w-full bg-card-bg border border-card-border focus:border-accent focus:ring-1 focus:ring-accent rounded-xl py-2.5 pl-22 pr-8 text-sm text-foreground outline-none transition-all"
+                    className="w-full h-1.5 bg-muted-bg rounded-lg appearance-none cursor-pointer accent-accent mt-1"
                   />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted text-xs font-medium">%</span>
                 </div>
 
                 <div className="sm:col-span-2">
@@ -2821,14 +2839,18 @@ export default function MarketWatcher() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1.5">Min Move %</label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-muted">Min Move %</label>
+                      <span className="font-mono text-xs font-bold text-accent">{testMinMove.toFixed(2)}%</span>
+                    </div>
                     <input
-                      type="number"
-                      step="0.01"
-                      min="0"
+                      type="range"
+                      min="0.05"
+                      max="3.00"
+                      step="0.05"
                       value={testMinMove}
-                      onChange={(e) => setTestMinMove(parseFloat(e.target.value) || 0)}
-                      className="w-full bg-muted-bg border border-card-border focus:border-accent focus:ring-1 focus:ring-accent rounded-xl px-3.5 py-2.5 text-sm text-foreground outline-none transition-all"
+                      onChange={(e) => setTestMinMove(parseFloat(e.target.value) || 0.05)}
+                      className="w-full h-2.5 bg-card-bg border border-card-border rounded-xl appearance-none cursor-pointer accent-accent my-2"
                     />
                   </div>
                 </div>
