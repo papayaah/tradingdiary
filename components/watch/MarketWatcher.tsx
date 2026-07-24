@@ -1371,6 +1371,21 @@ export default function MarketWatcher() {
   }, []);
 
   const handleAlertCardClick = (log: AlertLog) => {
+    // 1. Ensure Watchlist tab is active
+    setActiveTab('watchlist');
+
+    // 2. Reset active search and status filters so target item is guaranteed to be visible
+    setSearchTerm('');
+    setFilterMode('all');
+
+    // 3. Ensure category filter includes the target symbol
+    const isFuture = log.symbol.includes('=F');
+    if (isFuture && watchlistCategory === 'stocks') {
+      setWatchlistCategory('futures');
+    } else if (!isFuture && watchlistCategory === 'futures') {
+      setWatchlistCategory('stocks');
+    }
+
     const index = watchlist.findIndex(
       (w) => w.symbol.toUpperCase() === log.symbol.toUpperCase() && w.interval === log.interval
     );
@@ -1384,7 +1399,7 @@ export default function MarketWatcher() {
         if (element) {
           element.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
-      }, 100);
+      }, 150);
     }
   };
   const alertCardClickRef = useRef(handleAlertCardClick);
