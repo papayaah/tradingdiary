@@ -165,6 +165,11 @@ export default function MarketWatcher() {
     const saved = localStorage.getItem('watcher-parallel-scan');
     return saved !== null ? saved === 'true' : true;
   });
+  const [requiredCandleCount, setRequiredCandleCount] = useState<number>(() => {
+    if (typeof window === 'undefined') return 3;
+    const saved = localStorage.getItem('watcher-consecutive-candles');
+    return saved !== null ? parseInt(saved, 10) : 3;
+  });
 
   // Sorting state for Watchlist table
   const [sortColumn, setSortColumn] = useState<'symbol' | 'interval' | 'minMove' | 'status' | null>(null);
@@ -902,7 +907,7 @@ export default function MarketWatcher() {
       const scanCandles = isFuturesOrCrypto
         ? candles
         : filterCandlesByWindow(filterCurrentDayOnly(candles), activeWindowRef.current);
-      const { matched, message, time } = detectPattern(scanCandles, item.minMovePercent);
+      const { matched, message, time } = detectPattern(scanCandles, item.minMovePercent, requiredCandleCount);
       const status = scanCandles.length === 0 ? 'no-data' as const : matched;
 
       // Trigger Alert if pattern matched and hasn't been alerted for this candle/direction yet
@@ -1002,8 +1007,8 @@ export default function MarketWatcher() {
 
         // If the scanned item is currently expanded in the Watchlist tab, update testResult live so the chart updates instantly
         if (expandedRowIndexRef.current === idx && scanned.candles && scanned.candles.length > 0) {
-          const { matched, message } = detectPattern(scanned.candles, item.minMovePercent);
-          const allMatches = scanAllPatterns(scanned.candles, item.minMovePercent);
+          const { matched, message } = detectPattern(scanned.candles, item.minMovePercent, requiredCandleCount);
+          const allMatches = scanAllPatterns(scanned.candles, item.minMovePercent, requiredCandleCount);
           setTestResult({
             success: true,
             patternMatched: matched,
@@ -1297,8 +1302,8 @@ export default function MarketWatcher() {
       // Instantly show existing cached candles if available for quick feedback
       if (item.candles && item.candles.length > 0) {
         const currentDayCandles = filterCurrentDayOnly(item.candles);
-        const allMatches = scanAllPatterns(currentDayCandles, item.minMovePercent);
-        const { matched, message } = detectPattern(currentDayCandles, item.minMovePercent);
+        const allMatches = scanAllPatterns(currentDayCandles, item.minMovePercent, requiredCandleCount);
+        const { matched, message } = detectPattern(currentDayCandles, item.minMovePercent, requiredCandleCount);
 
         setTestResult({
           success: true,
@@ -1325,8 +1330,8 @@ export default function MarketWatcher() {
             const sessionCandles = isFuturesOrCrypto
               ? freshCandles
               : filterCandlesByWindow(filterCurrentDayOnly(freshCandles), activeWindowRef.current);
-            const allMatches = scanAllPatterns(sessionCandles, item.minMovePercent);
-            const { matched, message, time } = detectPattern(sessionCandles, item.minMovePercent);
+            const allMatches = scanAllPatterns(sessionCandles, item.minMovePercent, requiredCandleCount);
+            const { matched, message, time } = detectPattern(sessionCandles, item.minMovePercent, requiredCandleCount);
             const status = sessionCandles.length === 0 ? 'no-data' as const : matched;
 
             const alreadyAlerted = item.lastAlertedCandleTime === time && item.lastAlertedType === matched;
@@ -2648,21 +2653,40 @@ export default function MarketWatcher() {
               {/* Global Watchlist Settings & Notification Test Controls */}
               <div className="mt-6 pt-6 border-t border-card-border space-y-4 text-xs text-muted">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                  <div className="flex items-center gap-2">
-                    <span>Scan Interval Frequency:</span>
-                    <select
-                      value={scanIntervalMinutes}
-                      onChange={(e) => handleIntervalChange(parseFloat(e.target.value))}
-                      className="bg-card-bg border border-card-border rounded px-2 py-1 text-foreground font-medium"
-                    >
-                      <option value={0.25}>15 Seconds (Real-time)</option>
-                      <option value={0.5}>30 Seconds (Ultra Fast)</option>
-                      <option value={1}>1 Minute (Fast Test)</option>
-                      <option value={5}>5 Minutes</option>
-                      <option value={10}>10 Minutes</option>
-                      <option value={15}>15 Minutes</option>
-                      <option value={30}>30 Minutes</option>
-                    </select>
+                  <div className="flex flex-wrap items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <span>Scan Frequency:</span>
+                      <select
+                        value={scanIntervalMinutes}
+                        onChange={(e) => handleIntervalChange(parseFloat(e.target.value))}
+                        className="bg-card-bg border border-card-border rounded px-2 py-1 text-foreground font-medium"
+                      >
+                        <option value={0.25}>15 Seconds (Real-time)</option>
+                        <option value={0.5}>30 Seconds (Ultra Fast)</option>
+                        <option value={1}>1 Minute (Fast Test)</option>
+                        <option value={5}>5 Minutes</option>
+                        <option value={10}>10 Minutes</option>
+                        <option value={15}>15 Minutes</option>
+                        <option value={30}>30 Minutes</option>
+                      </select>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span>Required Consecutive Candles:</span>
+                      <select
+                        value={requiredCandleCount}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          setRequiredCandleCount(val);
+                          localStorage.setItem('watcher-consecutive-candles', String(val));
+                        }}
+                        className="bg-card-bg border border-card-border rounded px-2 py-1 text-foreground font-semibold cursor-pointer"
+                      >
+                        <option value={3}>3 Candles (Default)</option>
+                        <option value={4}>4 Candles (Stronger Trend)</option>
+                        <option value={5}>5 Candles (Ultra Streak)</option>
+                      </select>
+                    </div>
                   </div>
 
                   {watchlistCategory === 'futures' ? (

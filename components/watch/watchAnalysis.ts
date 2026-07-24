@@ -17,40 +17,37 @@ export interface PatternMatch {
 export const scanAllPatterns = (
   candles: Candle[],
   minMovePercent: number,
+  requiredCount: number = 3,
 ): PatternMatch[] => {
   const matches: PatternMatch[] = [];
-  if (candles.length < 3) return matches;
+  const count = Math.max(2, Math.min(10, requiredCount));
+  if (candles.length < count) return matches;
 
-  for (let index = 2; index < candles.length; index++) {
-    const first = candles[index - 2];
-    const second = candles[index - 1];
-    const third = candles[index];
+  for (let index = count - 1; index < candles.length; index++) {
+    const chunk = candles.slice(index - count + 1, index + 1);
 
-    const allGreen =
-      first.close > first.open
-      && second.close > second.open
-      && third.close > third.open;
-    const allRed =
-      first.close < first.open
-      && second.close < second.open
-      && third.close < third.open;
-    const ascending = third.close > second.close && second.close > first.close;
-    const descending = third.close < second.close && second.close < first.close;
-    const change = Math.abs((third.close - first.open) / first.open) * 100;
+    const allGreen = chunk.every((c) => c.close > c.open);
+    const allRed = chunk.every((c) => c.close < c.open);
+    const ascending = chunk.every((c, i) => i === 0 || c.close > chunk[i - 1].close);
+    const descending = chunk.every((c, i) => i === 0 || c.close < chunk[i - 1].close);
+
+    const first = chunk[0];
+    const last = chunk[chunk.length - 1];
+    const change = Math.abs((last.close - first.open) / first.open) * 100;
 
     if (allGreen && ascending && change >= minMovePercent) {
       matches.push({
-        time: third.time,
+        time: last.time,
         type: 'bullish',
         change,
-        message: `Bullish Setup (+${change.toFixed(2)}%)`,
+        message: `Bullish ${count}-Candle Move (+${change.toFixed(2)}%)`,
       });
     } else if (allRed && descending && change >= minMovePercent) {
       matches.push({
-        time: third.time,
+        time: last.time,
         type: 'bearish',
         change,
-        message: `Bearish Setup (-${change.toFixed(2)}%)`,
+        message: `Bearish ${count}-Candle Move (-${change.toFixed(2)}%)`,
       });
     }
   }
@@ -61,15 +58,17 @@ export const scanAllPatterns = (
 export const detectPattern = (
   candles: Candle[],
   minMovePercent: number,
+  requiredCount: number = 3,
 ) => {
-  if (candles.length < 3) {
+  const count = Math.max(2, Math.min(10, requiredCount));
+  if (candles.length < count) {
     return {
       matched: 'none' as const,
-      message: `Insufficient candles (${candles.length}/3)`,
+      message: `Insufficient candles (${candles.length}/${count})`,
     };
   }
 
-  const matches = scanAllPatterns(candles, minMovePercent);
+  const matches = scanAllPatterns(candles, minMovePercent, count);
   if (matches.length === 0) {
     return {
       matched: 'none' as const,
@@ -87,9 +86,9 @@ export const detectPattern = (
 
   return {
     matched: latestMatch.type,
-    message: `${latestMatch.type === 'bullish' ? 'Bullish' : 'Bearish'} Extended Move. Total change: ${
+    message: `${latestMatch.type === 'bullish' ? 'Bullish' : 'Bearish'} ${count}-Candle Move (${
       latestMatch.type === 'bullish' ? '+' : '-'
-    }${latestMatch.change.toFixed(2)}% (Min: ${minMovePercent}%)`,
+    }${latestMatch.change.toFixed(2)}%)`,
     time: latestMatch.time,
   };
 };
