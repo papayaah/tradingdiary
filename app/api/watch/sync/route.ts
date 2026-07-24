@@ -36,10 +36,17 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const watchlist = body.watchlist;
-    if (!Array.isArray(watchlist)) {
+    const rawWatchlist = body.watchlist;
+    if (!Array.isArray(rawWatchlist)) {
       return NextResponse.json({ error: 'Invalid watchlist format' }, { status: 400 });
     }
+
+    // Strip heavy candle objects before storing to keep payload lightweight (under 10KB)
+    const watchlist = rawWatchlist.map((item: any) => ({
+      symbol: String(item.symbol || '').toUpperCase(),
+      interval: String(item.interval || '5m'),
+      minMovePercent: typeof item.minMovePercent === 'number' ? item.minMovePercent : 0.1,
+    }));
 
     const existing = await db
       .select()

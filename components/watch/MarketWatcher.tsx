@@ -192,11 +192,31 @@ export default function MarketWatcher() {
     if (watchlistCategory === 'stocks') {
       return watchlist.filter((w) => !w.symbol.includes('=F'));
     }
-    if (watchlistCategory === 'futures') {
-      return watchlist.filter((w) => w.symbol.includes('=F'));
-    }
     return watchlist;
   }, [watchlist, watchlistCategory]);
+
+  const [cloudSyncNotice, setCloudSyncNotice] = useState<string | null>(null);
+
+  const handleSyncToCloud = async () => {
+    setCloudSyncNotice('Syncing...');
+    try {
+      const res = await fetch('/api/watch/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ watchlist }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success) {
+        setCloudSyncNotice(`Saved ${watchlist.length} items to cloud!`);
+      } else {
+        setCloudSyncNotice(data?.authenticated === false ? 'Sign in to sync' : 'Sync failed');
+      }
+    } catch {
+      setCloudSyncNotice('Network error');
+    }
+    setTimeout(() => setCloudSyncNotice(null), 3500);
+  };
+
 
   const sortedWatchlist = React.useMemo(() => {
     let list = [...categoryItems];
@@ -317,16 +337,29 @@ export default function MarketWatcher() {
         if (data?.watchlist && Array.isArray(data.watchlist)) {
           if (data.watchlist.length > 0) {
             setWatchlist((prevList) => {
-              // Smart Merge: Combine cloud items and local items by unique symbol
+              // Smart Merge: Combine cloud items and local items by unique symbol + interval
               const map = new Map<string, WatchItem>();
               for (const item of prevList) {
-                map.set(item.symbol.toUpperCase(), item);
+                if (item && item.symbol) {
+                  map.set(`${item.symbol.toUpperCase()}__${item.interval || '5m'}`, item);
+                }
               }
               for (const item of data.watchlist) {
-                map.set(item.symbol.toUpperCase(), item);
+                if (item && item.symbol) {
+                  map.set(`${item.symbol.toUpperCase()}__${item.interval || '5m'}`, item);
+                }
               }
               const merged = Array.from(map.values());
               localStorage.setItem('watcher-watchlist', JSON.stringify(merged));
+
+              // If local list had extra items, automatically sync full merged list back to cloud database
+              if (merged.length > data.watchlist.length) {
+                fetch('/api/watch/sync', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ watchlist: merged }),
+                }).catch(() => {});
+              }
               return merged;
             });
           } else {
@@ -470,11 +503,16 @@ export default function MarketWatcher() {
     setWatchlist(updated);
     localStorage.setItem('watcher-watchlist', JSON.stringify(updated));
     if (!skipCloudSync) {
-      // Push to cloud database if authenticated
+      // Strip heavy candle arrays before pushing to cloud API (keeps payload under 10KB)
+      const cleanList = updated.map((item) => ({
+        symbol: item.symbol,
+        interval: item.interval,
+        minMovePercent: item.minMovePercent,
+      }));
       fetch('/api/watch/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ watchlist: updated })
+        body: JSON.stringify({ watchlist: cleanList })
       }).catch(() => {});
     }
   };
