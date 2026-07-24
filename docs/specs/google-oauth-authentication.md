@@ -2,7 +2,7 @@
 
 ## Status
 
-Partially implemented. Core Better Auth plumbing and Google sign-in work; the enforcement layer (route protection, environment validation, local-data account boundaries, tests) is not yet built. See **Implementation status** for the verified breakdown.
+Partially implemented. Better Auth plumbing, Google sign-in, and the shared `better-auth-connect` sign-in UI work end to end. The remaining gaps are the enforcement layer (route protection, environment validation, local-data account boundaries, tests). See **Implementation status** for the verified breakdown.
 
 ## Implementation status
 
@@ -17,24 +17,26 @@ As-built against the repository. Verified file paths are given so this section c
 - **Auth tables + migration** — `user`, `account`, `session`, `verification` defined in [lib/db/server/schema.ts](../../lib/db/server/schema.ts); created by [drizzle/0000_init.sql](../../drizzle/0000_init.sql).
 - **Protected-route pages exist** — `/dashboard`, `/journal`, `/portfolio`, `/replay`, `/import`, `/media`, `/settings` (and an extra `/watch`) all exist under `app/(journal)/`. Note: they exist but are not access-protected — see TODO.
 - **Session-authorized API (example)** — [app/api/watch/sync/route.ts](../../app/api/watch/sync/route.ts) derives `userId` from the server session and never trusts a client-supplied id.
-- **`better-auth-connect` client wiring** — `IntegrationProvider` wraps the app in [components/providers/ClientProviders.tsx](../../components/providers/ClientProviders.tsx); `useIntegrationContext()` drives sign-in/out in [app/login/page.tsx](../../app/login/page.tsx) and [components/auth/LoginButton.tsx](../../components/auth/LoginButton.tsx). Only the package's client/session context is used; its prebuilt UI cards/presets and `server/*` schema helpers are not (the app hand-rolls the login UI and server schema).
+- **Shared sign-in UI via `better-auth-connect`** — the login and account surfaces are built from the shared package so the UI is unified across apps:
+  - The package now ships two auth-front-door components built on its `ComponentPreset` system: `AuthCard` (login surface) and `UserButton` (compact account chip + sign-out). These complement the pre-existing account-*connection* components (`IntegrationCard`, etc.), which target a different use case.
+  - `IntegrationProvider` wraps the app in [components/providers/ClientProviders.tsx](../../components/providers/ClientProviders.tsx).
+  - The login page [app/login/page.tsx](../../app/login/page.tsx) renders `<AuthCard>` with the `tailwindPreset` + `defaultIconSet`; the sidebar chip [components/auth/LoginButton.tsx](../../components/auth/LoginButton.tsx) wraps `<UserButton>`.
+  - Tailwind is configured to scan the package (`@source` in [app/globals.css](../../app/globals.css)) so the preset's utility classes are generated.
+- **Login page** — present, uses the shared `AuthCard`, shows the "Continue with Google" label and the privacy/terms footer copy. (Located at `app/login/`, not the originally proposed `app/(auth)/login/` — accepted deviation.)
+- **Return-URL restore** — [app/login/page.tsx](../../app/login/page.tsx) reads a `redirect`/`returnTo` query param, validates it as a same-origin relative path (`safeReturnTo`) to prevent open redirects, and passes it as the OAuth `callbackURL`.
+- **Account menu + sign-out** — `UserButton` shows profile image/name/email and signs out; the [LoginButton](../../components/auth/LoginButton.tsx) wrapper redirects to `/login` after sign-out.
 
 ### Partial
 
-- **Login page** — exists at [app/login/page.tsx](../../app/login/page.tsx), not the proposed `app/(auth)/login/`. Button label is "Sign in with Google" (spec says "Continue with Google"). Missing Terms/Privacy copy and the "Your journal is private…" line. No return-URL handling. `callbackURL` falls back to a hardcoded `http://localhost:3001`.
 - **Server session helper** — the correct pattern (`auth.api.getSession({ headers })`) is used, but inline in one route only; no shared, reusable helper module.
-- **Account menu + sign-out** — [components/auth/LoginButton.tsx](../../components/auth/LoginButton.tsx) shows profile image/name/email and signs out, but does not redirect to `/login` after sign-out.
 
 ### TODO
 
 - **Route protection** — no `proxy.ts`/`middleware.ts` and no session guard in [app/(journal)/layout.tsx](../../app/(journal)/layout.tsx). All "protected" pages are reachable while unauthenticated. No `/login`→`/dashboard` redirect for already-signed-in users. (Blocks four acceptance criteria; also a real access bug today.)
-- **Environment validation** — no fail-fast on missing `BETTER_AUTH_SECRET`/`BETTER_AUTH_URL`/`GOOGLE_CLIENT_*`; [lib/auth.ts](../../lib/auth.ts) casts env vars unchecked, and [lib/db/server/index.ts](../../lib/db/server/index.ts) falls back to a hardcoded `DATABASE_URL`. Remove the fallback and fail clearly at startup.
+- **Environment validation** — no fail-fast on missing `BETTER_AUTH_SECRET`/`BETTER_AUTH_URL`/`GOOGLE_CLIENT_*`; [lib/auth.ts](../../lib/auth.ts) casts env vars unchecked, and [lib/db/server/index.ts](../../lib/db/server/index.ts) falls back to a hardcoded `DATABASE_URL`. Remove the fallback and fail clearly at startup. (The production build currently logs Better Auth "default secret" / "base URL could not be determined" warnings when env is absent.)
 - **Local-data account boundaries** — [lib/db/database.ts](../../lib/db/database.ts) opens a fixed `'tradingdiary'` IndexedDB name with no per-user partitioning. The app is effectively in undeclared "device-local" mode; the shared-device rule (one user's local data must not surface for another) is unenforced. Pick and communicate one of the two behaviors in **Local data and account boundaries**.
-- **Return-URL restore** — capture and validate a relative return URL at `/login` and restore it after successful sign-in.
-- **Post-sign-out redirect** — send the user to `/login` after `signOut()`.
 - **Auth tests** — none exist; add coverage for protected-route redirects, callback failure, sign-out, and API authorization boundaries.
 - **Account deletion** — specified in this doc but absent from the implementation sequence and code; schedule or explicitly defer alongside sync.
-- **Login copy/label** — align button label and add the privacy/terms text from the UX section.
 
 ## Summary
 
@@ -260,9 +262,9 @@ Status markers reflect the current codebase: ✅ done, 🟡 partial, ⬜ not sta
 1. ✅ Install Better Auth and the required PostgreSQL adapter/driver.
 2. 🟡 Add auth configuration, schema migration, and environment validation. *(Config + migration done; environment validation missing, and `DATABASE_URL` has a hardcoded fallback to remove.)*
 3. ⬜ Configure the Google OAuth application for development. *(Client wiring is present; per-environment redirect URIs and consent-screen setup not verified in-repo.)*
-4. 🟡 Add the auth route, browser client, and login page. *(Route + client done; login page location, label, copy, and return-URL handling incomplete.)*
-5. ⬜ Add server-side session helpers and protected-route behavior. *(Session read exists inline in one route; no shared helper and no route protection.)*
-6. 🟡 Add the signed-in account menu and sign-out. *(Works; missing post-sign-out redirect to `/login`.)*
+4. ✅ Add the auth route, browser client, and login page. *(Route + client done; login page uses the shared `AuthCard`, with "Continue with Google" copy, privacy footer, and validated return-URL handling. Located at `app/login/` rather than `app/(auth)/login/`.)*
+5. 🟡 Add server-side session helpers and protected-route behavior. *(Session read exists inline in one route; no shared helper and no route protection — protection still TODO.)*
+6. ✅ Add the signed-in account menu and sign-out. *(Sidebar uses the shared `UserButton`; signs out and redirects to `/login`.)*
 7. ⬜ Partition local IndexedDB data by authenticated user or explicitly retain device-local mode.
 8. 🟡 Protect all user-owned server endpoints and media routes. *(`watch/sync` is authorized; no page-level protection; other endpoints unaudited.)*
 9. ⬜ Add integration tests, security checks, privacy copy, and production OAuth configuration.
