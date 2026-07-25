@@ -14,7 +14,8 @@ Tracks the **Suggested implementation sequence** below.
   - Provider credential (step 3): first pass uses the server-wide `POLYGON_API_KEY` env already present in docker-compose; encrypted per-user credentials deferred.
   - Deployment wiring: `redis` + `scanner` services added to [docker-compose.yml](../../docker-compose.yml) (Redis internal-only + AOF persistence; scanner on its own Dockerfile `scanner` target, shadow by default). Not yet built in-container or deployed — the runtime code path is proven via `npm run scanner` locally.
   - Deferred refinements: per-provider-credential Redis token bucket (the current limiter is a global worker throttle); a scan-jobs/claim table if in-flight jobs lost to a Redis flush must survive without re-waiting a full cadence.
-- ⬜ Steps 6–12 — event log→SSE, Bull Board, client refactor, JSON→rows migration, deployment, load test, Web Push.
+- ✅ **Step 6 — snapshot API + authenticated SSE (server side).** The durable event log + transactional `NOTIFY` already ship in the worker. Added: [lib/watch/snapshot.ts](../../lib/watch/snapshot.ts) (`buildSnapshot`: watches, states, recent alerts, scanner health, monotonic cursor); [lib/watch/events-bridge.ts](../../lib/watch/events-bridge.ts) (single dedicated `LISTEN watch_events` connection → per-user subscriber fan-out, plus `getEventsAfter` durable catch-up); [app/api/watch/state/route.ts](../../app/api/watch/state/route.ts) (auth'd snapshot); [app/api/watch/events/route.ts](../../app/api/watch/events/route.ts) (auth'd SSE: cursor/Last-Event-ID catch-up with ordered buffering + dedup, live subscribe, ~20s heartbeat, 60s session revalidation, 20-min max lifetime, disconnect cleanup). Verified against real Postgres: snapshot, catch-up, and live NOTIFY→subscriber delivery all work; production build compiles both routes.
+- ⬜ Steps 7–12 — Bull Board, **client refactor (consume snapshot + SSE)**, JSON→rows migration, deployment, load test, Web Push.
 
 ## Summary
 
