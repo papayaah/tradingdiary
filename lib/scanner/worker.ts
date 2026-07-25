@@ -159,6 +159,11 @@ export function createScanWorker(): Worker<ScanJob> {
   return new Worker<ScanJob>(
     SCAN_QUEUE,
     async (job: Job<ScanJob>) => processScanJob(job.data),
-    { connection: createConnection(), concurrency: scannerConfig.concurrency },
+    {
+      connection: createConnection(),
+      concurrency: scannerConfig.concurrency,
+      // First-pass provider throttle: cap jobs per window across the worker.
+      limiter: { max: scannerConfig.rateMax, duration: scannerConfig.rateDurationMs },
+    },
   );
 }

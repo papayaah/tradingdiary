@@ -36,3 +36,12 @@ COPY --from=builder /app/next.config.ts ./next.config.ts
 EXPOSE 3000
 CMD ["npm","run","start","--","-p","3000","-H","0.0.0.0"]
 
+# ---------------------------------------------------------------------------
+# Scanner worker image. Reuses the builder (full source + all deps incl. tsx);
+# runtime env (DATABASE_URL, REDIS_URL, provider keys) is supplied by compose,
+# overriding the build-time placeholders inherited from the builder stage.
+# ---------------------------------------------------------------------------
+FROM builder AS scanner
+ENV NODE_ENV=production
+CMD ["npm","run","scanner"]
+

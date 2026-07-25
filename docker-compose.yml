@@ -3,6 +3,7 @@ services:
     container_name: ${APP_NAME:-tradingdiary}
     build:
       context: .
+      target: runner
     restart: unless-stopped
     depends_on:
       - postgres
@@ -38,6 +39,39 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
+  # Redis backs BullMQ (queue, scheduling, retries). Internal to the compose
+  # network only — no published host port — so it cannot clash with or be
+  # reached from outside this project. Default maxmemory-policy is noeviction.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+
+  # Long-lived market scanner worker (separate from web so a web restart never
+  # spawns duplicate loops). Defaults to shadow mode: scans and persists state
+  # but creates no user-visible alerts until SCANNER_SHADOW=false.
+  scanner:
+    container_name: ${APP_NAME:-tradingdiary}-scanner
+    build:
+      context: .
+      target: scanner
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: redis://redis:6379
+      SCANNER_SHADOW: ${SCANNER_SHADOW:-true}
+      SCANNER_WORKER_ID: ${SCANNER_WORKER_ID:-scanner-1}
+      POLYGON_API_KEY: ${POLYGON_API_KEY:-}
+      DATABENTO_API_KEY: ${DATABENTO_API_KEY:-}
+      TIINGO_API_KEY: ${TIINGO_API_KEY:-}
+
 volumes:
   pgdata:
   media_storage:
+  redis_data:

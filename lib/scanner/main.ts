@@ -17,6 +17,17 @@ async function main() {
 
   await writeHeartbeat('ok', { event: 'startup' });
 
+  // Startup reconciliation: immediately enqueue any already-due watches rather
+  // than waiting for the first interval. Because the scheduler reads due watches
+  // from PostgreSQL every tick and enqueues with deterministic job ids, a Redis
+  // flush self-heals here and on subsequent ticks without creating duplicates.
+  try {
+    const r = await scheduleDueWatches();
+    console.log(`[scanner] startup reconcile due=${r.due} enqueued=${r.enqueued} deferred=${r.deferred}`);
+  } catch (err) {
+    console.error('[scanner] startup reconcile error:', err instanceof Error ? err.message : err);
+  }
+
   const scheduleTimer = setInterval(async () => {
     try {
       const r = await scheduleDueWatches();

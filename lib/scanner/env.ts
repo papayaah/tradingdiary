@@ -17,6 +17,13 @@ export const scannerConfig = {
   // Per-request provider timeout.
   fetchTimeoutMs: Number(process.env.SCANNER_FETCH_TIMEOUT_MS ?? 15000),
 
+  // First-pass rate limit: cap jobs processed per window across the worker,
+  // which bounds provider request volume. A per-provider-credential Redis token
+  // bucket is the scale-up refinement (see spec) once multiple providers/plans
+  // must be throttled independently.
+  rateMax: Number(process.env.SCANNER_RATE_MAX ?? 10),
+  rateDurationMs: Number(process.env.SCANNER_RATE_DURATION_MS ?? 1000),
+
   // Stable identifier for this worker instance (heartbeat key).
   workerId: process.env.SCANNER_WORKER_ID || 'scanner-1',
 
