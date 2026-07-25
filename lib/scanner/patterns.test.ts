@@ -1,0 +1,114 @@
+import { describe, it, expect } from 'vitest';
+import { detectPattern, scanAllPatterns, PATTERN_VERSION, type Candle } from './patterns';
+
+/**
+ * Build an ascending (all-green) run of `n` candles ending at time `endTime`
+ * (one unit apart), rising by `stepPct` of the running close each step.
+ */
+function greenRun(n: number, startOpen = 100, stepPct = 1, endTime = n): Candle[] {
+  const candles: Candle[] = [];
+  let prevClose = startOpen;
+  for (let i = 0; i < n; i++) {
+    const open = i === 0 ? startOpen : prevClose;
+    const close = open * (1 + stepPct / 100);
+    candles.push({ time: endTime - (n - 1 - i), open, high: close, low: open, close, volume: 1000 });
+    prevClose = close;
+  }
+  return candles;
+}
+
+/** Mirror of greenRun but falling (all-red, descending). */
+function redRun(n: number, startOpen = 100, stepPct = 1, endTime = n): Candle[] {
+  const candles: Candle[] = [];
+  let prevClose = startOpen;
+  for (let i = 0; i < n; i++) {
+    const open = i === 0 ? startOpen : prevClose;
+    const close = open * (1 - stepPct / 100);
+    candles.push({ time: endTime - (n - 1 - i), open, high: open, low: close, close, volume: 1000 });
+    prevClose = close;
+  }
+  return candles;
+}
+
+describe('PATTERN_VERSION', () => {
+  it('is a positive integer (dedup keys on it)', () => {
+    expect(Number.isInteger(PATTERN_VERSION)).toBe(true);
+    expect(PATTERN_VERSION).toBeGreaterThan(0);
+  });
+});
+
+describe('detectPattern — threshold behavior', () => {
+  it('does not match below the threshold', () => {
+    // 3 green candles ~1%/step => ~3% total move; require 5%.
+    const candles = greenRun(3, 100, 1);
+    const result = detectPattern(candles, 5, 3);
+    expect(result.matched).toBe('none');
+  });
+
+  it('matches at/above the threshold (bullish)', () => {
+    const candles = greenRun(3, 100, 1); // ~3.03% total
+    const result = detectPattern(candles, 3, 3);
+    expect(result.matched).toBe('bullish');
+    expect(result.time).toBe(candles[candles.length - 1].time);
+  });
+
+  it('matches a descending run as bearish', () => {
+    // Compounding down 1%/step over 3 candles is ~2.97% (0.99^3), so use a
+    // threshold below that; the up-move counterpart compounds to ~3.03%.
+    const candles = redRun(3, 100, 1);
+    const result = detectPattern(candles, 2.5, 3);
+    expect(result.matched).toBe('bearish');
+  });
+});
+
+describe('detectPattern — qualify-later behavior', () => {
+  it('a candle that did not qualify earlier qualifies once it crosses the threshold', () => {
+    // Earlier scan: move is only ~2%, threshold 3% => no match.
+    const early = greenRun(3, 100, 0.66); // ~2% total
+    expect(detectPattern(early, 3, 3).matched).toBe('none');
+
+    // Later scan of the same window after the last candle extends the move.
+    const later = greenRun(3, 100, 1.2); // ~3.6% total
+    const result = detectPattern(later, 3, 3);
+    expect(result.matched).toBe('bullish');
+  });
+});
+
+describe('detectPattern — staleness and guards', () => {
+  it('reports "too old" when the qualifying setup is not the latest candle', () => {
+    // A qualifying 3-green run, then a trailing non-conforming (red) candle.
+    const run = greenRun(3, 100, 1, 3);
+    const trailing: Candle = { time: 4, open: 110, high: 110, low: 104, close: 105, volume: 1000 };
+    const result = detectPattern([...run, trailing], 3, 3);
+    expect(result.matched).toBe('none');
+    expect(result.message).toMatch(/too old/i);
+  });
+
+  it('reports insufficient candles when fewer than requiredCount', () => {
+    const result = detectPattern(greenRun(2, 100, 1), 1, 3);
+    expect(result.matched).toBe('none');
+    expect(result.message).toMatch(/insufficient/i);
+  });
+
+  it('clamps requiredCount into [2, 10]', () => {
+    const candles = greenRun(2, 100, 1);
+    // requiredCount 1 is clamped up to 2, so a 2-candle green run can match.
+    expect(detectPattern(candles, 1, 1).matched).toBe('bullish');
+  });
+});
+
+describe('scanAllPatterns', () => {
+  it('returns every qualifying window, not just the last', () => {
+    // 4 green candles => two overlapping 3-candle windows, both qualifying.
+    const candles = greenRun(4, 100, 1);
+    const matches = scanAllPatterns(candles, 2, 3);
+    expect(matches.length).toBe(2);
+    expect(matches.every((m) => m.type === 'bullish')).toBe(true);
+  });
+
+  it('returns nothing when the window is mixed (not all green/red)', () => {
+    const candles = greenRun(3, 100, 1);
+    candles[1] = { ...candles[1], close: candles[1].open * 0.99, low: candles[1].open * 0.99 }; // make middle red
+    expect(scanAllPatterns(candles, 0.1, 3)).toHaveLength(0);
+  });
+});

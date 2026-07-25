@@ -2,7 +2,15 @@
 
 ## Status
 
-Draft
+Draft — foundation in progress.
+
+## Implementation status
+
+Tracks the **Suggested implementation sequence** below.
+
+- ✅ **Step 2 — pattern detector as a server-safe shared module.** Extracted to [lib/scanner/patterns.ts](../../lib/scanner/patterns.ts) (no React/DOM/storage deps), exports `PATTERN_VERSION`; [components/watch/watchAnalysis.ts](../../components/watch/watchAnalysis.ts) re-exports it so client code is unchanged. Unit-tested with Vitest ([lib/scanner/patterns.test.ts](../../lib/scanner/patterns.test.ts): threshold, bullish/bearish, qualify-later, staleness, clamps).
+- ✅ **Step 1 — normalized tables.** `server_watch`, `server_watch_state`, `server_watch_alert`, `scanner_heartbeat`, and `watch_event` (durable per-user event log with a monotonic `seq` cursor) added to [lib/db/server/schema.ts](../../lib/db/server/schema.ts) with the spec's unique constraints; migration [drizzle/0001_superb_kang.sql](../../drizzle/0001_superb_kang.sql). Note: this DB is `drizzle-kit push`-managed (the pre-existing `user_watchlists` table is absent from migration history), so apply with `npm run db:push`; adopting `db:migrate` on the existing DB would require a one-time baseline.
+- ⬜ Steps 3–12 — provider credentials (server-wide `POLYGON_API_KEY` already available for the first pass), Redis/BullMQ, scheduler + worker, event/SSE, Bull Board, client refactor, migration, deployment, load test, Web Push.
 
 ## Summary
 
