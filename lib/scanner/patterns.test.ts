@@ -112,3 +112,62 @@ describe('scanAllPatterns', () => {
     expect(scanAllPatterns(candles, 0.1, 3)).toHaveLength(0);
   });
 });
+
+describe('selectable pattern presets', () => {
+  const quietCandles = Array.from({ length: 10 }, (_, index): Candle => ({
+    time: index + 1,
+    open: 100,
+    high: 100.2,
+    low: 99.8,
+    close: index % 2 === 0 ? 100.1 : 99.9,
+    volume: 1000,
+  }));
+
+  it('detects a momentum burst relative to recent candle bodies', () => {
+    const burst: Candle = {
+      time: 11,
+      open: 100,
+      high: 102.2,
+      low: 99.9,
+      close: 102,
+      volume: 1200,
+    };
+    const result = detectPattern([...quietCandles, burst], 1, 3, 'momentum-burst');
+    expect(result.matched).toBe('bullish');
+    expect(result.message).toMatch(/momentum burst/i);
+  });
+
+  it('detects closes outside the prior 10-candle range', () => {
+    const breakout: Candle = {
+      time: 11,
+      open: 100,
+      high: 102.2,
+      low: 99.9,
+      close: 102,
+      volume: 1200,
+    };
+    expect(detectPattern([...quietCandles, breakout], 1, 3, 'range-breakout').matched).toBe('bullish');
+  });
+
+  it('requires doubled recent volume for volume expansion', () => {
+    const expansion: Candle = {
+      time: 11,
+      open: 100,
+      high: 101.2,
+      low: 99.9,
+      close: 101,
+      volume: 2200,
+    };
+    expect(detectPattern([...quietCandles, expansion], 0.5, 3, 'volume-expansion').matched).toBe('bullish');
+  });
+
+  it('detects a bullish engulfing reversal', () => {
+    const candles: Candle[] = [
+      { time: 1, open: 101, high: 101.2, low: 99.8, close: 100, volume: 1000 },
+      { time: 2, open: 99.8, high: 101.7, low: 99.6, close: 101.5, volume: 1200 },
+    ];
+    const result = detectPattern(candles, 1, 3, 'engulfing-reversal');
+    expect(result.matched).toBe('bullish');
+    expect(result.message).toMatch(/engulfing reversal/i);
+  });
+});

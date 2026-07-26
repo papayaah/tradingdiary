@@ -7,7 +7,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { LayoutGrid, List, RefreshCw } from 'lucide-react';
+import { LayoutGrid, List, RefreshCw, X } from 'lucide-react';
 
 export type WatchlistView = 'compact' | 'table';
 
@@ -211,8 +211,9 @@ function TickerInput({ placeholder, onSearch, onAdd }, ref) {
           onClick={() => setValue('')}
           className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground text-xs"
           title="Clear ticker filter"
+          aria-label="Clear ticker filter"
         >
-          ✕
+          <X size={14} />
         </button>
       )}
     </div>

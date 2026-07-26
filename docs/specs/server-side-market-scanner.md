@@ -15,7 +15,20 @@ Tracks the **Suggested implementation sequence** below.
   - Deployment wiring: `redis` + `scanner` services added to [docker-compose.yml](../../docker-compose.yml) (Redis internal-only + AOF persistence; scanner on its own Dockerfile `scanner` target, shadow by default). Not yet built in-container or deployed — the runtime code path is proven via `npm run scanner` locally.
   - Deferred refinements: per-provider-credential Redis token bucket (the current limiter is a global worker throttle); a scan-jobs/claim table if in-flight jobs lost to a Redis flush must survive without re-waiting a full cadence.
 - ✅ **Step 6 — snapshot API + authenticated SSE (server side).** The durable event log + transactional `NOTIFY` already ship in the worker. Added: [lib/watch/snapshot.ts](../../lib/watch/snapshot.ts) (`buildSnapshot`: watches, states, recent alerts, scanner health, monotonic cursor); [lib/watch/events-bridge.ts](../../lib/watch/events-bridge.ts) (single dedicated `LISTEN watch_events` connection → per-user subscriber fan-out, plus `getEventsAfter` durable catch-up); [app/api/watch/state/route.ts](../../app/api/watch/state/route.ts) (auth'd snapshot); [app/api/watch/events/route.ts](../../app/api/watch/events/route.ts) (auth'd SSE: cursor/Last-Event-ID catch-up with ordered buffering + dedup, live subscribe, ~20s heartbeat, 60s session revalidation, 20-min max lifetime, disconnect cleanup). Verified against real Postgres: snapshot, catch-up, and live NOTIFY→subscriber delivery all work; production build compiles both routes.
+- 🟨 **Selectable pattern presets (client path).** The watch page now offers preview-backed selection for Consecutive Move, Momentum Burst, Range Breakout, Volume Expansion, and Engulfing Reversal. All share the server-safe detector module and the existing Consecutive Move remains the default. Before Step 7 makes the server scanner authoritative, add `patternId` to the normalized watch row and worker job path so the server honors the same persisted selection.
 - ⬜ Steps 7–12 — Bull Board, **client refactor (consume snapshot + SSE)**, JSON→rows migration, deployment, load test, Web Push.
+
+### Running and testing locally
+
+Prerequisites: local **PostgreSQL** and **Redis** running, and a `.env.local` with at least `DATABASE_URL` (plus `REDIS_URL` if not the default `redis://127.0.0.1:6379`, and a provider key such as `POLYGON_API_KEY` for equities — Yahoo needs no key).
+
+1. **Create the scanner tables once:** `npm run db:push` (this DB is push-managed; see the Step 1 note).
+2. **Web app + APIs:** `npm run dev` — serves `GET /api/watch/state` (snapshot) and `GET /api/watch/events` (SSE). This does **not** start the scanner.
+3. **Scanner worker (separate terminal):** `npm run scanner` — scheduler + worker loop in shadow mode (writes `server_watch_state`, creates no alerts). Loads `.env.local` automatically.
+4. **One-shot proof** (seeds a watch, runs a single scan, prints the persisted state): `npx tsx lib/scanner/dev-run.ts AAPL 5m`.
+5. **Inspect results:** open `/api/watch/state` in a logged-in browser for the JSON snapshot, or run `npx tsx lib/watch/dev-events.ts` to exercise the snapshot builder + `LISTEN` bridge (catch-up + live delivery) against your DB.
+
+**What you cannot see yet:** the `/watch` page still runs the *legacy in-browser* scanner and does **not** consume the snapshot/SSE — that is the Step 8 client refactor. Until then the server pipeline is exercised only through the worker, the dev harnesses, and the API endpoints, not the UI. Nothing writes to `server_watch` from the UI yet (Step 9 migration), so seed watches via `dev-run.ts` or SQL.
 
 ## Summary
 
@@ -45,7 +58,7 @@ This design fixes the architectural source of the current watch-page lag: the pa
 - Replacing provider APIs with an exchange-direct market-data feed.
 - Guaranteeing mobile operating-system notifications while the browser is closed in the first release.
 - Running a scanner inside a serverless request handler.
-- Changing the existing ascending and descending pattern definitions.
+- Changing the existing ascending and descending Consecutive Move definition; new detectors are opt-in presets.
 
 ## User experience
 
@@ -176,6 +189,7 @@ interface ServerWatch {
   symbol: string;
   assetClass: 'equity' | 'futures' | 'crypto';
   interval: string;
+  patternId: 'consecutive' | 'momentum-burst' | 'range-breakout' | 'volume-expansion' | 'engulfing-reversal';
   minMovePercent: number;
   session: 'rth' | 'pre' | 'ext' | 'all';
   enabled: boolean;

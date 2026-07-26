@@ -18,13 +18,15 @@ import {
   History,
   Search,
   Sliders,
+  ChartCandlestick,
+  Bitcoin,
   Moon,
   Zap,
   ArrowUpDown,
   ArrowUp,
   ArrowDown
 } from 'lucide-react';
-import { openDB } from 'idb';
+import { getChartDB } from '@/lib/chart/cache';
 import AlertHistoryPanel from './AlertHistoryPanel';
 import {
   BatchScanControl,
@@ -37,10 +39,13 @@ import {
 } from './WatchControls';
 import {
   detectPattern,
+  isPatternId,
   scanAllPatterns,
   type Candle,
+  type PatternId,
   type PatternMatch,
 } from './watchAnalysis';
+import PatternSelector from './PatternSelector';
 import WatchlistRow from './WatchlistRow';
 import CompactWatchlist, {
   type CompactWatchlistEntry,
@@ -56,6 +61,7 @@ interface WatchItem {
   candles?: Candle[];
   lastAlertedCandleTime?: number;
   lastAlertedType?: 'bullish' | 'bearish';
+  lastAlertedPatternId?: PatternId;
 }
 
 interface AlertLog {
@@ -81,6 +87,22 @@ interface PendingAlert {
 
 const ALERT_HISTORY_TTL_MS = 10 * 60 * 1000;
 const MAX_ALERT_HISTORY_ITEMS = 50;
+type WatchlistCategory = 'stocks' | 'crypto' | 'futures' | 'all';
+
+const isFuturesSymbol = (symbol: string) => symbol.toUpperCase().includes('=F');
+const isCryptoSymbol = (symbol: string) => symbol.toUpperCase().endsWith('-USD');
+
+const FUTURES_QUICK_PRESETS = [
+  { label: 'NQ (Nasdaq)', symbol: 'NQ=F' },
+  { label: 'ES (S&P 500)', symbol: 'ES=F' },
+  { label: 'YM (Dow)', symbol: 'YM=F' },
+  { label: 'RTY (Russell)', symbol: 'RTY=F' },
+  { label: 'CL (Oil)', symbol: 'CL=F' },
+  { label: 'GC (Gold)', symbol: 'GC=F' },
+  { label: 'SI (Silver)', symbol: 'SI=F' },
+  { label: 'ZB (Bonds)', symbol: 'ZB=F' },
+  { label: 'BTC (CME BTC)', symbol: 'BTC=F' },
+] as const;
 
 function get4HourCandleCount(interval: string): number {
   const clean = interval.replace(/[ms]/g, '');
@@ -103,6 +125,7 @@ const getPersistedWatchlist = (items: WatchItem[]): WatchItem[] =>
     minMovePercent: item.minMovePercent,
     lastAlertedCandleTime: item.lastAlertedCandleTime,
     lastAlertedType: item.lastAlertedType,
+    lastAlertedPatternId: item.lastAlertedPatternId,
   }));
 
 const persistWatchlist = (items: WatchItem[]) => {
@@ -113,7 +136,7 @@ const persistWatchlist = (items: WatchItem[]) => {
 async function getLiveCache(symbol: string, interval: string) {
   if (typeof window === 'undefined') return null;
   try {
-    const db = await openDB('tradingdiary-charts', 1);
+    const db = await getChartDB();
     const key = `live|${symbol.toUpperCase()}|${interval}`;
     const record = await db.get('ohlc', key);
     // 60-second TTL (Time To Live) to prevent duplicate calls but ensure fresh data
@@ -129,7 +152,7 @@ async function getLiveCache(symbol: string, interval: string) {
 async function setLiveCache(symbol: string, interval: string, candles: Candle[], provider: string): Promise<void> {
   if (typeof window === 'undefined') return;
   try {
-    const db = await openDB('tradingdiary-charts', 1);
+    const db = await getChartDB();
     const key = `live|${symbol.toUpperCase()}|${interval}`;
     await db.put('ohlc', {
       symbol: symbol.toUpperCase(),
@@ -209,6 +232,11 @@ export default function MarketWatcher() {
     const saved = localStorage.getItem('watcher-consecutive-candles');
     return saved !== null ? parseInt(saved, 10) : 3;
   });
+  const [selectedPatternId, setSelectedPatternId] = useState<PatternId>(() => {
+    if (typeof window === 'undefined') return 'consecutive';
+    const saved = localStorage.getItem('watcher-selected-pattern');
+    return isPatternId(saved) ? saved : 'consecutive';
+  });
   const [overrideGlobalMinMove, setOverrideGlobalMinMove] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     const saved = localStorage.getItem('watcher-override-global-min-move');
@@ -222,7 +250,7 @@ export default function MarketWatcher() {
   // Search, Category, and Filtering state for Watchlist table
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [filterMode, setFilterMode] = useState<'all' | 'alerts' | 'errors'>('all');
-  const [watchlistCategory, setWatchlistCategory] = useState<'stocks' | 'futures' | 'all'>('stocks');
+  const [watchlistCategory, setWatchlistCategory] = useState<WatchlistCategory>('stocks');
   const handleWatchlistViewChange = React.useCallback((view: WatchlistView) => {
     setWatchlistView(view);
     localStorage.setItem('watcher-watchlist-view', view);
@@ -244,10 +272,34 @@ export default function MarketWatcher() {
 
   const categoryItems = React.useMemo(() => {
     if (watchlistCategory === 'stocks') {
-      return watchlist.filter((w) => !w.symbol.includes('=F'));
+      return watchlist.filter((w) => !isFuturesSymbol(w.symbol) && !isCryptoSymbol(w.symbol));
+    }
+    if (watchlistCategory === 'crypto') {
+      return watchlist.filter((w) => isCryptoSymbol(w.symbol));
+    }
+    if (watchlistCategory === 'futures') {
+      return watchlist.filter((w) => isFuturesSymbol(w.symbol));
     }
     return watchlist;
   }, [watchlist, watchlistCategory]);
+
+  const handlePatternChange = React.useCallback((patternId: PatternId) => {
+    setSelectedPatternId(patternId);
+    localStorage.setItem('watcher-selected-pattern', patternId);
+
+    // Re-evaluate cached candles immediately so the rows reflect the new
+    // detector without creating a burst of network requests.
+    setWatchlist((current) => current.map((item) => {
+      if (!item.candles?.length) return item;
+      const { matched } = detectPattern(
+        item.candles,
+        item.minMovePercent,
+        requiredCandleCount,
+        patternId,
+      );
+      return { ...item, status: matched };
+    }));
+  }, [requiredCandleCount]);
 
   const [cloudSyncNotice, setCloudSyncNotice] = useState<string | null>(null);
 
@@ -432,7 +484,7 @@ export default function MarketWatcher() {
       setActiveTab(savedActiveTab);
     }
     const savedCategory = localStorage.getItem('watcher-watchlist-category');
-    if (savedCategory === 'stocks' || savedCategory === 'futures' || savedCategory === 'all') {
+    if (savedCategory === 'stocks' || savedCategory === 'crypto' || savedCategory === 'futures' || savedCategory === 'all') {
       setWatchlistCategory(savedCategory);
     }
     const savedWatchlistView = localStorage.getItem('watcher-watchlist-view');
@@ -971,11 +1023,18 @@ export default function MarketWatcher() {
         ? candles
         : filterCandlesByWindow(filterCurrentDayOnly(candles), activeWindowRef.current);
       const targetMinMove = overrideGlobalMinMove ? newMinMove : item.minMovePercent;
-      const { matched, message, time } = detectPattern(scanCandles, targetMinMove, requiredCandleCount);
+      const { matched, message, time } = detectPattern(
+        scanCandles,
+        targetMinMove,
+        requiredCandleCount,
+        selectedPatternId,
+      );
       const status = scanCandles.length === 0 ? 'no-data' as const : matched;
 
       // Trigger Alert if pattern matched and hasn't been alerted for this candle/direction yet
-      const alreadyAlerted = item.lastAlertedCandleTime === time && item.lastAlertedType === matched;
+      const alreadyAlerted = item.lastAlertedCandleTime === time
+        && item.lastAlertedType === matched
+        && item.lastAlertedPatternId === selectedPatternId;
       if (scanCandles.length > 0 && matched !== 'none' && !alreadyAlerted) {
         triggerAlert(
           item.symbol,
@@ -995,7 +1054,8 @@ export default function MarketWatcher() {
         candles,
         lastError: scanCandles.length === 0 ? 'No candles available for today’s selected ET session' : undefined,
         lastAlertedCandleTime: matched !== 'none' ? time : item.lastAlertedCandleTime,
-        lastAlertedType: matched !== 'none' ? matched : item.lastAlertedType
+        lastAlertedType: matched !== 'none' ? matched : item.lastAlertedType,
+        lastAlertedPatternId: matched !== 'none' ? selectedPatternId : item.lastAlertedPatternId,
       };
     } catch (err) {
       console.error(`Error scanning ${item.symbol}:`, err);
@@ -1009,9 +1069,9 @@ export default function MarketWatcher() {
   };
 
   const getScanSpacingSeconds = () => {
-    if (watchlist.length === 0) return 60;
+    if (categoryItems.length === 0) return 60;
     const intervalSeconds = scanIntervalMinutes * 60;
-    let spacing = intervalSeconds / watchlist.length;
+    let spacing = intervalSeconds / categoryItems.length;
     if (isPolygonActive && spacing < 12) {
       spacing = 12; // Enforce Polygon free tier rate limit spacing
     }
@@ -1046,13 +1106,13 @@ export default function MarketWatcher() {
   expandedRowIndexRef.current = expandedRowIndex;
 
   // Derived scanner state used by the UI
-  const isCurrentCategoryFutures = watchlistCategory === 'futures';
-  const marketAutoPaused = autoPauseEnabled && !marketOpen && !isCurrentCategoryFutures;
+  const isStocksCategory = watchlistCategory === 'stocks';
+  const marketAutoPaused = autoPauseEnabled && !marketOpen && isStocksCategory;
   const effectivelyActive = !isScannerPaused && !marketAutoPaused;
   const windowStartLabel = activeWindow === 'rth' ? '9:30 AM ET' : '4:00 AM ET';
 
   const handleScanNext = async () => {
-    const currentList = categoryItemsRef.current.length > 0 ? categoryItemsRef.current : watchlistRef.current;
+    const currentList = categoryItemsRef.current;
     if (currentList.length === 0 || isBackgroundScanning || isBatchScanning) return;
 
     const indexToScan = nextScanIndexRef.current % currentList.length;
@@ -1080,8 +1140,18 @@ export default function MarketWatcher() {
         // If the scanned item is currently expanded in the Watchlist tab, update testResult live so the chart updates instantly
         if (expandedRowIndexRef.current === idx && scanned.candles && scanned.candles.length > 0) {
           const targetMinMove = overrideGlobalMinMove ? newMinMove : item.minMovePercent;
-          const { matched, message } = detectPattern(scanned.candles, targetMinMove, requiredCandleCount);
-          const allMatches = scanAllPatterns(scanned.candles, targetMinMove, requiredCandleCount);
+          const { matched, message } = detectPattern(
+            scanned.candles,
+            targetMinMove,
+            requiredCandleCount,
+            selectedPatternId,
+          );
+          const allMatches = scanAllPatterns(
+            scanned.candles,
+            targetMinMove,
+            requiredCandleCount,
+            selectedPatternId,
+          );
           setTestResult({
             success: true,
             patternMatched: matched,
@@ -1109,7 +1179,7 @@ export default function MarketWatcher() {
 
   // Scan all items in the current active category (manual override Scan Now button)
   const handleScanAll = async () => {
-    const targetList = categoryItemsRef.current.length > 0 ? categoryItemsRef.current : watchlist;
+    const targetList = categoryItemsRef.current;
     if (isBatchScanning || targetList.length === 0) return;
     setIsBatchScanning(true);
     batchScanControlRef.current?.start(targetList.length);
@@ -1192,14 +1262,15 @@ export default function MarketWatcher() {
   // 7. Polling Timer scheduler spacing reset
   useEffect(() => {
     lastScanTimeRef.current = Date.now();
-    if (nextScanIndex >= watchlist.length) {
+    if (nextScanIndexRef.current >= categoryItems.length) {
+      nextScanIndexRef.current = 0;
       setNextScanIndex(0);
     }
-  }, [watchlist.length, scanIntervalMinutes]);
+  }, [categoryItems.length, scanIntervalMinutes, watchlistCategory]);
 
   // Polling Timer scheduler loop (Uses Web Worker to bypass Chrome background tab throttling)
   useEffect(() => {
-    if (watchlist.length === 0) return;
+    if (categoryItems.length === 0) return;
 
     // Reset last scan time on restart/resume
     lastScanTimeRef.current = Date.now();
@@ -1210,8 +1281,8 @@ export default function MarketWatcher() {
       setMarketOpen(open);
 
       if (isScannerPaused) return; // Manually paused
-      const isFuturesCategory = watchlistCategoryRef.current === 'futures';
-      if (autoPauseEnabledRef.current && !open && !isFuturesCategory) return; // Auto-paused outside session
+      const isStocksCategory = watchlistCategoryRef.current === 'stocks';
+      if (autoPauseEnabledRef.current && !open && isStocksCategory) return; // Auto-paused outside the equities session
 
       const elapsed = Math.floor((Date.now() - lastScanTimeRef.current) / 1000);
       const remaining = spacingSecondsRef.current - elapsed;
@@ -1280,7 +1351,7 @@ export default function MarketWatcher() {
       }
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [watchlist.length, isScannerPaused]);
+  }, [categoryItems.length, isScannerPaused, watchlistCategory]);
 
 
 
@@ -1307,6 +1378,11 @@ export default function MarketWatcher() {
     if (!symbol) return false;
     if (watchlistCategory === 'futures' && !symbol.includes('=F')) {
       symbol = `${symbol}=F`;
+    } else if (watchlistCategory === 'crypto') {
+      const compactSymbol = symbol.replace(/[-/]/g, '');
+      symbol = compactSymbol.endsWith('USD')
+        ? `${compactSymbol.slice(0, -3)}-USD`
+        : `${compactSymbol}-USD`;
     }
     if (watchlist.some(w => w.symbol === symbol && w.interval === newInterval)) {
       showAddNotice('duplicate', `${symbol} (${newInterval}) is already in your watchlist.`);
@@ -1379,7 +1455,12 @@ export default function MarketWatcher() {
         };
         // Re-run setup scan client-side for this symbol if candles are already present
         if (updated[index].candles && updated[index].candles.length > 0) {
-          const { matched } = detectPattern(updated[index].candles, val);
+          const { matched } = detectPattern(
+            updated[index].candles,
+            val,
+            requiredCandleCount,
+            selectedPatternId,
+          );
           updated[index].status = matched;
         }
       }
@@ -1410,8 +1491,18 @@ export default function MarketWatcher() {
       // Instantly show existing cached candles if available for quick feedback
       if (item.candles && item.candles.length > 0) {
         const currentDayCandles = filterCurrentDayOnly(item.candles);
-        const allMatches = scanAllPatterns(currentDayCandles, item.minMovePercent, requiredCandleCount);
-        const { matched, message } = detectPattern(currentDayCandles, item.minMovePercent, requiredCandleCount);
+        const allMatches = scanAllPatterns(
+          currentDayCandles,
+          item.minMovePercent,
+          requiredCandleCount,
+          selectedPatternId,
+        );
+        const { matched, message } = detectPattern(
+          currentDayCandles,
+          item.minMovePercent,
+          requiredCandleCount,
+          selectedPatternId,
+        );
 
         setTestResult({
           success: true,
@@ -1438,11 +1529,23 @@ export default function MarketWatcher() {
             const sessionCandles = isFuturesOrCrypto
               ? freshCandles
               : filterCandlesByWindow(filterCurrentDayOnly(freshCandles), activeWindowRef.current);
-            const allMatches = scanAllPatterns(sessionCandles, item.minMovePercent, requiredCandleCount);
-            const { matched, message, time } = detectPattern(sessionCandles, item.minMovePercent, requiredCandleCount);
+            const allMatches = scanAllPatterns(
+              sessionCandles,
+              item.minMovePercent,
+              requiredCandleCount,
+              selectedPatternId,
+            );
+            const { matched, message, time } = detectPattern(
+              sessionCandles,
+              item.minMovePercent,
+              requiredCandleCount,
+              selectedPatternId,
+            );
             const status = sessionCandles.length === 0 ? 'no-data' as const : matched;
 
-            const alreadyAlerted = item.lastAlertedCandleTime === time && item.lastAlertedType === matched;
+            const alreadyAlerted = item.lastAlertedCandleTime === time
+              && item.lastAlertedType === matched
+              && item.lastAlertedPatternId === selectedPatternId;
             if (sessionCandles.length > 0 && matched !== 'none' && !alreadyAlerted) {
               triggerAlert(item.symbol, item.interval, matched, message, sessionCandles[sessionCandles.length - 1]?.close || 0, sessionCandles);
             }
@@ -1468,7 +1571,10 @@ export default function MarketWatcher() {
                   lastError: sessionCandles.length === 0 ? 'No candles available for today’s selected ET session' : undefined,
                   lastChecked: new Date().toLocaleTimeString(),
                   lastAlertedCandleTime: matched !== 'none' ? time : updated[index].lastAlertedCandleTime,
-                  lastAlertedType: matched !== 'none' ? matched : updated[index].lastAlertedType
+                  lastAlertedType: matched !== 'none' ? matched : updated[index].lastAlertedType,
+                  lastAlertedPatternId: matched !== 'none'
+                    ? selectedPatternId
+                    : updated[index].lastAlertedPatternId,
                 };
               }
               persistWatchlist(updated);
@@ -1522,11 +1628,14 @@ export default function MarketWatcher() {
     setFilterMode('all');
 
     // 3. Ensure category filter includes the target symbol
-    const isFuture = log.symbol.includes('=F');
-    if (isFuture && watchlistCategory === 'stocks') {
-      setWatchlistCategory('futures');
-    } else if (!isFuture && watchlistCategory === 'futures') {
-      setWatchlistCategory('stocks');
+    const targetCategory: WatchlistCategory = isFuturesSymbol(log.symbol)
+      ? 'futures'
+      : isCryptoSymbol(log.symbol)
+        ? 'crypto'
+        : 'stocks';
+    if (watchlistCategory !== targetCategory) {
+      setWatchlistCategory(targetCategory);
+      localStorage.setItem('watcher-watchlist-category', targetCategory);
     }
 
     const index = watchlist.findIndex(
@@ -1588,8 +1697,18 @@ export default function MarketWatcher() {
         await setLiveCache(symbol, testInterval, candles, providerName);
       }
 
-      const { matched, message } = detectPattern(candles, testMinMove);
-      const allMatches = scanAllPatterns(candles, testMinMove);
+      const { matched, message } = detectPattern(
+        candles,
+        testMinMove,
+        requiredCandleCount,
+        selectedPatternId,
+      );
+      const allMatches = scanAllPatterns(
+        candles,
+        testMinMove,
+        requiredCandleCount,
+        selectedPatternId,
+      );
 
       setTestResult({
         success: true,
@@ -1714,14 +1833,14 @@ export default function MarketWatcher() {
 
   // Price analysis & pattern scanning computed dynamically on the filtered candles
   const currentPattern = React.useMemo(
-    () => detectPattern(testerCandles, testMinMove),
+    () => detectPattern(testerCandles, testMinMove, requiredCandleCount, selectedPatternId),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [testerCandles, testMinMove, testInterval],
+    [testerCandles, testMinMove, testInterval, requiredCandleCount, selectedPatternId],
   );
   const { matched: currentPatternMatched, message: currentPatternMessage } = currentPattern;
   const currentMatches = React.useMemo(
-    () => scanAllPatterns(testerCandles, testMinMove),
-    [testerCandles, testMinMove],
+    () => scanAllPatterns(testerCandles, testMinMove, requiredCandleCount, selectedPatternId),
+    [testerCandles, testMinMove, requiredCandleCount, selectedPatternId],
   );
 
   const getDisplayedCandles = () => {
@@ -2393,15 +2512,13 @@ export default function MarketWatcher() {
                     <span>{isScannerPaused ? 'Scanner Paused' : marketAutoPaused ? 'Market Closed' : 'Scanner Active'}</span>
                   </button>
 
-                  {effectivelyActive && watchlist.length > 0 && (
+                  {effectivelyActive && categoryItems.length > 0 && (
                     <div className="flex items-center gap-2 text-xs bg-muted-bg border border-card-border px-3 py-1.5 rounded-lg text-muted">
                       <Clock size={12} className="text-accent" />
                       <span>
                         Next scan:{' '}
                         <span className="text-foreground font-semibold">
-                          {(categoryItems.length > 0 ? categoryItems : watchlist)[
-                            nextScanIndex % (categoryItems.length > 0 ? categoryItems.length : watchlist.length)
-                          ]?.symbol}
+                          {categoryItems[nextScanIndex % categoryItems.length]?.symbol}
                         </span>{' '}
                         in{' '}
                         <span className="font-mono text-accent font-bold">
@@ -2414,7 +2531,7 @@ export default function MarketWatcher() {
                     </div>
                   )}
 
-                  {marketAutoPaused && !isScannerPaused && watchlist.length > 0 && (
+                  {marketAutoPaused && !isScannerPaused && categoryItems.length > 0 && (
                     <div className="flex items-center gap-2 text-xs bg-slate-500/10 border border-slate-500/20 px-3 py-1.5 rounded-lg text-slate-400">
                       <Moon size={12} />
                       <span>Auto-paused until session open ({windowStartLabel})</span>
@@ -2423,14 +2540,14 @@ export default function MarketWatcher() {
                   
                   <BatchScanControl
                     ref={batchScanControlRef}
-                    disabled={watchlist.length === 0}
+                    disabled={categoryItems.length === 0}
                     isParallel={parallelScanEnabled && !isPolygonActive}
                     onScan={stableHandleScanAll}
                   />
                 </div>
               </div>
 
-              {/* WATCHLIST CATEGORY SWITCHER (Stocks vs Futures) */}
+              {/* WATCHLIST CATEGORY SWITCHER */}
               <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                 <div className="flex items-center gap-1.5 bg-muted-bg/40 p-1 rounded-xl border border-card-border/50">
                   <button
@@ -2438,13 +2555,30 @@ export default function MarketWatcher() {
                       setWatchlistCategory('stocks');
                       localStorage.setItem('watcher-watchlist-category', 'stocks');
                     }}
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                       watchlistCategory === 'stocks'
                         ? 'bg-accent text-white shadow-sm'
                         : 'text-muted hover:text-foreground'
                     }`}
                   >
-                    📈 Stocks ({watchlist.filter((w) => !w.symbol.includes('=F')).length})
+                    <ChartCandlestick size={14} />
+                    <span>
+                      Stocks ({watchlist.filter((w) => !isFuturesSymbol(w.symbol) && !isCryptoSymbol(w.symbol)).length})
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setWatchlistCategory('crypto');
+                      localStorage.setItem('watcher-watchlist-category', 'crypto');
+                    }}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                      watchlistCategory === 'crypto'
+                        ? 'bg-accent text-white shadow-sm font-bold'
+                        : 'text-muted hover:text-foreground'
+                    }`}
+                  >
+                    <Bitcoin size={14} />
+                    <span>Crypto (24/7) ({watchlist.filter((w) => isCryptoSymbol(w.symbol)).length})</span>
                   </button>
                   <button
                     onClick={() => {
@@ -2457,7 +2591,8 @@ export default function MarketWatcher() {
                         : 'text-muted hover:text-foreground'
                     }`}
                   >
-                    ⚡ Futures (24H) ({watchlist.filter((w) => w.symbol.includes('=F')).length})
+                    <Zap size={14} />
+                    <span>Futures (24H) ({watchlist.filter((w) => isFuturesSymbol(w.symbol)).length})</span>
                   </button>
                   <button
                     onClick={() => {
@@ -2474,24 +2609,28 @@ export default function MarketWatcher() {
                   </button>
                 </div>
 
-                {/* Global Consecutive Candle Count Selector in Top Header */}
-                <div className="flex items-center gap-2 bg-muted-bg/40 px-3 py-1.5 rounded-xl border border-card-border/50 text-xs">
-                  <span className="text-muted font-semibold">Streak Length:</span>
-                  <select
-                    value={requiredCandleCount}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value, 10);
-                      setRequiredCandleCount(val);
-                      localStorage.setItem('watcher-consecutive-candles', String(val));
-                    }}
-                    className="bg-card-bg border border-card-border rounded px-2 py-1 text-foreground font-semibold cursor-pointer outline-none"
-                  >
-                    <option value={3}>3 Consecutive Candles (Default)</option>
-                    <option value={4}>4 Consecutive Candles (Stronger Trend)</option>
-                    <option value={5}>5 Consecutive Candles (Ultra Streak)</option>
-                  </select>
-                </div>
+                {/* Consecutive Move is the only preset with a configurable streak length. */}
+                {selectedPatternId === 'consecutive' ? (
+                  <div className="flex items-center gap-2 bg-muted-bg/40 px-3 py-1.5 rounded-xl border border-card-border/50 text-xs">
+                    <span className="text-muted font-semibold">Streak Length:</span>
+                    <select
+                      value={requiredCandleCount}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        setRequiredCandleCount(val);
+                        localStorage.setItem('watcher-consecutive-candles', String(val));
+                      }}
+                      className="bg-card-bg border border-card-border rounded px-2 py-1 text-foreground font-semibold cursor-pointer outline-none"
+                    >
+                      <option value={3}>3 Consecutive Candles (Default)</option>
+                      <option value={4}>4 Consecutive Candles (Stronger Trend)</option>
+                      <option value={5}>5 Consecutive Candles (Ultra Streak)</option>
+                    </select>
+                  </div>
+                ) : null}
               </div>
+
+              <PatternSelector value={selectedPatternId} onChange={handlePatternChange} />
 
               {/* WATCHLIST FORM */}
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 mb-6 bg-muted-bg/30 p-4 rounded-xl border border-card-border">
@@ -2513,7 +2652,13 @@ export default function MarketWatcher() {
                 )}
                 <TickerInput
                   ref={tickerInputRef}
-                  placeholder={watchlistCategory === 'futures' ? 'e.g. NQ=F, ES=F, CL=F' : 'e.g. AAPL, BTC-USD'}
+                  placeholder={
+                    watchlistCategory === 'futures'
+                      ? 'e.g. NQ=F, ES=F, CL=F'
+                      : watchlistCategory === 'crypto'
+                        ? 'e.g. BTC, ETH, SOL'
+                        : 'e.g. AAPL, NVDA, SPY'
+                  }
                   onSearch={setSearchTerm}
                   onAdd={stableAddSymbol}
                 />
@@ -2595,52 +2740,34 @@ export default function MarketWatcher() {
                 </div>
               </div>
 
-              {/* QUICK PRESETS TOOLBAR */}
-              <div className="flex flex-wrap items-center gap-1.5 mb-6 text-xs bg-muted-bg/10 p-3 rounded-xl border border-card-border/30">
-                <span className="text-muted font-bold mr-1 flex items-center gap-1">
-                  ⚡ Quick Presets:
-                </span>
-                {(watchlistCategory === 'futures'
-                  ? [
-                      { label: 'NQ (Nasdaq)', symbol: 'NQ=F' },
-                      { label: 'ES (S&P 500)', symbol: 'ES=F' },
-                      { label: 'YM (Dow)', symbol: 'YM=F' },
-                      { label: 'RTY (Russell)', symbol: 'RTY=F' },
-                      { label: 'CL (Oil)', symbol: 'CL=F' },
-                      { label: 'GC (Gold)', symbol: 'GC=F' },
-                      { label: 'SI (Silver)', symbol: 'SI=F' },
-                      { label: 'ZB (Bonds)', symbol: 'ZB=F' },
-                      { label: 'BTC (CME BTC)', symbol: 'BTC=F' },
-                    ]
-                  : [
-                      { label: 'AAPL', symbol: 'AAPL' },
-                      { label: 'NVDA', symbol: 'NVDA' },
-                      { label: 'TSLA', symbol: 'TSLA' },
-                      { label: 'SPY', symbol: 'SPY' },
-                      { label: 'QQQ', symbol: 'QQQ' },
-                      { label: 'AMZN', symbol: 'AMZN' },
-                      { label: 'MSFT', symbol: 'MSFT' },
-                      { label: 'BTC-USD', symbol: 'BTC-USD' },
-                    ]
-                ).map((preset) => {
-                  const exists = watchlist.some((w) => w.symbol === preset.symbol && w.interval === newInterval);
-                  return (
-                    <button
-                      key={preset.symbol}
-                      onClick={() => handleAddPreset(preset.symbol)}
-                      disabled={exists}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
-                        exists
-                          ? 'bg-muted-bg/30 text-muted/40 border-card-border/20 cursor-not-allowed'
-                          : 'bg-card-bg border-card-border hover:border-accent text-foreground hover:text-accent cursor-pointer shadow-sm'
-                      }`}
-                      title={exists ? `${preset.symbol} (${newInterval}) is already in your watchlist` : `Click to add ${preset.symbol} (${newInterval})`}
-                    >
-                      + {preset.label}
-                    </button>
-                  );
-                })}
-              </div>
+              {/* FUTURES QUICK PRESETS TOOLBAR */}
+              {watchlistCategory === 'futures' && (
+                <div className="flex flex-wrap items-center gap-1.5 mb-6 text-xs bg-muted-bg/10 p-3 rounded-xl border border-card-border/30">
+                  <span className="text-muted font-bold mr-1 flex items-center gap-1">
+                    <Zap size={13} />
+                    Quick Presets:
+                  </span>
+                  {FUTURES_QUICK_PRESETS.map((preset) => {
+                    const exists = watchlist.some((w) => w.symbol === preset.symbol && w.interval === newInterval);
+                    return (
+                      <button
+                        key={preset.symbol}
+                        onClick={() => handleAddPreset(preset.symbol)}
+                        disabled={exists}
+                        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
+                          exists
+                            ? 'bg-muted-bg/30 text-muted/40 border-card-border/20 cursor-not-allowed'
+                            : 'bg-card-bg border-card-border hover:border-accent text-foreground hover:text-accent cursor-pointer shadow-sm'
+                        }`}
+                        title={exists ? `${preset.symbol} (${newInterval}) is already in your watchlist` : `Click to add ${preset.symbol} (${newInterval})`}
+                      >
+                        <Plus size={12} />
+                        <span>{preset.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* WATCHLIST ITEMS LIST */}
               {watchlist.length === 0 ? (
@@ -2814,28 +2941,35 @@ export default function MarketWatcher() {
                       </select>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <span>Required Consecutive Candles:</span>
-                      <select
-                        value={requiredCandleCount}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value, 10);
-                          setRequiredCandleCount(val);
-                          localStorage.setItem('watcher-consecutive-candles', String(val));
-                        }}
-                        className="bg-card-bg border border-card-border rounded px-2 py-1 text-foreground font-semibold cursor-pointer"
-                      >
-                        <option value={3}>3 Candles (Default)</option>
-                        <option value={4}>4 Candles (Stronger Trend)</option>
-                        <option value={5}>5 Candles (Ultra Streak)</option>
-                      </select>
-                    </div>
+                    {selectedPatternId === 'consecutive' ? (
+                      <div className="flex items-center gap-2">
+                        <span>Required Consecutive Candles:</span>
+                        <select
+                          value={requiredCandleCount}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setRequiredCandleCount(val);
+                            localStorage.setItem('watcher-consecutive-candles', String(val));
+                          }}
+                          className="bg-card-bg border border-card-border rounded px-2 py-1 text-foreground font-semibold cursor-pointer"
+                        >
+                          <option value={3}>3 Candles (Default)</option>
+                          <option value={4}>4 Candles (Stronger Trend)</option>
+                          <option value={5}>5 Candles (Ultra Streak)</option>
+                        </select>
+                      </div>
+                    ) : null}
                   </div>
 
                   {watchlistCategory === 'futures' ? (
                     <div className="flex items-center gap-1.5 text-xs text-amber-400 font-semibold bg-amber-500/10 px-3 py-1.5 rounded-lg border border-amber-500/20">
                       <Zap size={14} />
                       <span>Futures Scanner Mode: 24/7 Continuous Monitoring (Asian, European & US Sessions)</span>
+                    </div>
+                  ) : watchlistCategory === 'crypto' ? (
+                    <div className="flex items-center gap-1.5 text-xs text-orange-400 font-semibold bg-orange-500/10 px-3 py-1.5 rounded-lg border border-orange-500/20">
+                      <Bitcoin size={14} />
+                      <span>Crypto Scanner Mode: 24/7 Continuous Monitoring</span>
                     </div>
                   ) : (
                     <div className="flex flex-wrap items-center gap-3">
@@ -2849,7 +2983,10 @@ export default function MarketWatcher() {
                           }}
                           className="rounded border-card-border text-accent focus:ring-accent h-3.5 w-3.5 cursor-pointer"
                         />
-                        <span>⚡ Parallel Batch Scan (Fast 5x Mode)</span>
+                        <span className="flex items-center gap-1.5">
+                          <Zap size={13} />
+                          Parallel Batch Scan (Fast 5x Mode)
+                        </span>
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer select-none hover:text-foreground transition-colors">
                         <input
@@ -2972,7 +3109,7 @@ export default function MarketWatcher() {
                 <Search size={18} className="text-accent" /> Pattern Tester
               </h2>
               <p className="text-xs text-muted mb-6">
-                Fetch recent candles for a specific symbol immediately and verify if they match the consecutive candle rule.
+                Fetch recent candles for a specific symbol immediately and verify whether it matches the selected pattern.
               </p>
 
               <form onSubmit={handleRunTest} className="space-y-4">
@@ -3086,10 +3223,20 @@ export default function MarketWatcher() {
                         )}
                       </div>
                       <div>
-                        <div className="text-xs font-bold text-foreground">
-                          {currentPatternMatched === 'bullish' && '🚨 BULLISH PATTERN DETECTED'}
-                          {currentPatternMatched === 'bearish' && '🚨 BEARISH PATTERN DETECTED'}
-                          {currentPatternMatched === 'none' && 'NO PATTERN MATCHED'}
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                          {currentPatternMatched === 'bullish' && (
+                            <>
+                              <TrendingUp size={14} className="text-emerald-400" />
+                              <span>BULLISH PATTERN DETECTED</span>
+                            </>
+                          )}
+                          {currentPatternMatched === 'bearish' && (
+                            <>
+                              <TrendingDown size={14} className="text-rose-400" />
+                              <span>BEARISH PATTERN DETECTED</span>
+                            </>
+                          )}
+                          {currentPatternMatched === 'none' && <span>NO PATTERN MATCHED</span>}
                         </div>
                         <p className="text-muted text-[11px] mt-1 leading-relaxed">{currentPatternMessage}</p>
                       </div>
