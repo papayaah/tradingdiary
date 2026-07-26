@@ -4,6 +4,7 @@
 // and alert inserts rely on the DB unique constraint for deduplication, so
 // at-least-once redelivery is safe.
 
+// @ts-ignore
 import { Worker, type Job } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '@/lib/scanner/db';

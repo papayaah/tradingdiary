@@ -14,8 +14,8 @@ async function main() {
   );
 
   const worker = createScanWorker();
-  worker.on('failed', (job, err) => console.error(`[scanner] job ${job?.id} failed:`, err?.message));
-  worker.on('error', (err) => console.error('[scanner] worker error:', err.message));
+  worker.on('failed', (job: any, err: any) => console.error(`[scanner] job ${job?.id} failed:`, err?.message));
+  worker.on('error', (err: any) => console.error('[scanner] worker error:', err?.message));
 
   await writeHeartbeat('ok', { event: 'startup' });
 

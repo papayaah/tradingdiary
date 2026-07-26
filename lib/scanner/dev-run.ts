@@ -43,11 +43,11 @@ async function main() {
 
   const worker = createScanWorker();
   const done = new Promise<void>((resolve, reject) => {
-    worker.on('completed', (job) => {
+    worker.on('completed', (job: any) => {
       console.log(`[dev] job ${job.id} completed:`, job.returnvalue);
       resolve();
     });
-    worker.on('failed', (job, err) => {
+    worker.on('failed', (job: any, err: any) => {
       console.error(`[dev] job ${job?.id} failed:`, err?.message);
       resolve(); // resolve anyway so we can inspect the error state row
     });

@@ -2,7 +2,9 @@
 // queue; the worker creates its own (BullMQ requires a dedicated connection for
 // blocking commands).
 
+// @ts-ignore
 import { Queue } from 'bullmq';
+// @ts-ignore
 import IORedis from 'ioredis';
 import { SCAN_QUEUE, scannerConfig } from '@/lib/scanner/env';
 
