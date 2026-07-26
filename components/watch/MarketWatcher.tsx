@@ -50,6 +50,8 @@ import WatchlistRow from './WatchlistRow';
 import CompactWatchlist, {
   type CompactWatchlistEntry,
 } from './CompactWatchlist';
+import { authClient } from '@/lib/auth-client';
+import { useServerWatchStream } from '@/hooks/useServerWatchStream';
 
 interface WatchItem {
   symbol: string;
@@ -57,6 +59,7 @@ interface WatchItem {
   minMovePercent: number;
   lastChecked?: string;
   status?: 'bullish' | 'bearish' | 'none' | 'no-data' | 'error';
+  lastPrice?: number;
   lastError?: string;
   candles?: Candle[];
   lastAlertedCandleTime?: number;
@@ -246,6 +249,83 @@ export default function MarketWatcher() {
   // Sorting state for Watchlist table
   const [sortColumn, setSortColumn] = useState<'symbol' | 'interval' | 'minMove' | 'status' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const { data: sessionData } = authClient.useSession();
+  const isAuthenticated = !!sessionData?.user;
+
+  // Server-side Live SSE Stream Integration
+  const { connected: isSseConnected } = useServerWatchStream({
+    enabled: isAuthenticated,
+    onStateUpdate: (data) => {
+      if (!data?.symbol) return;
+      setWatchlist((prev) =>
+        prev.map((item) => {
+          if (item.symbol.toUpperCase() === data.symbol.toUpperCase() && item.interval === data.interval) {
+            const mappedStatus =
+              data.status === 'bullish' || data.status === 'bearish'
+                ? data.status
+                : data.status === 'no-data' || data.status === 'error'
+                ? data.status
+                : 'none';
+            return {
+              ...item,
+              status: mappedStatus,
+              lastPrice: data.lastPrice ?? item.lastPrice,
+              lastChecked: data.lastScannedAt ? new Date(data.lastScannedAt).toLocaleTimeString() : new Date().toLocaleTimeString(),
+              candles: data.recentCandles && data.recentCandles.length > 0 ? data.recentCandles : item.candles,
+              lastError: data.lastError ?? item.lastError,
+            };
+          }
+          return item;
+        })
+      );
+    },
+    onAlert: (data) => {
+      if (!data?.symbol) return;
+      const type: 'bullish' | 'bearish' = data.matchedPattern?.includes('bearish') ? 'bearish' : 'bullish';
+      const msg = `${type.toUpperCase()} move on ${data.symbol} (${data.interval}). Matched ${data.matchedPattern}.`;
+      
+      const newAlert: AlertLog = {
+        id: data.alertId || `alert-${Date.now()}-${Math.random()}`,
+        createdAt: data.createdAt ? new Date(data.createdAt).getTime() : Date.now(),
+        symbol: data.symbol,
+        interval: data.interval,
+        type,
+        details: msg,
+        price: data.candles?.[data.candles.length - 1]?.close || 0,
+        candles: data.candles || [],
+      };
+
+      setAlertLogs((prev) => [newAlert, ...prev.slice(0, 99)]);
+      if (isSoundEnabled) playAlertSound(type);
+      sendDesktopNotification(data.symbol, type, msg, data.candles);
+    },
+  });
+
+  // Load initial snapshot when authenticated
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const baseUrl = process.env.NEXT_PUBLIC_SERVER_URL || '';
+    fetch(`${baseUrl}/api/watch/state`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((snapshot) => {
+        if (!snapshot) return;
+        if (Array.isArray(snapshot.alerts) && snapshot.alerts.length > 0) {
+          const mappedAlerts: AlertLog[] = snapshot.alerts.map((a: any) => ({
+            id: a.id,
+            createdAt: a.createdAt ? new Date(a.createdAt).getTime() : Date.now(),
+            symbol: a.symbol,
+            interval: a.interval,
+            type: a.matchedPattern?.includes('bearish') ? 'bearish' : 'bullish',
+            details: `${a.matchedPattern?.toUpperCase() || 'ALERT'} on ${a.symbol} (${a.interval})`,
+            price: a.candles?.[a.candles.length - 1]?.close || 0,
+            candles: a.candles || [],
+          }));
+          setAlertLogs(mappedAlerts);
+        }
+      })
+      .catch((err) => console.error('[snapshot] fetch error:', err));
+  }, [isAuthenticated]);
 
   // Search, Category, and Filtering state for Watchlist table
   const [searchTerm, setSearchTerm] = useState<string>('');
