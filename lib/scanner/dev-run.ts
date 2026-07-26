@@ -4,6 +4,7 @@
 //
 //   DATABASE_URL=... REDIS_URL=... SCANNER_SHADOW=true npx tsx lib/scanner/dev-run.ts SYMBOL
 
+import '@/lib/scanner/load-env'; // must be first: load .env.local before db import
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/scanner/db';
 import { user, serverWatch, serverWatchState } from '@/lib/db/server/schema';

@@ -1,6 +1,8 @@
 // Scanner entrypoint (the `scanner` service CMD). Starts the worker, ticks the
 // scheduler on an interval, maintains a heartbeat, and shuts down gracefully.
 
+// Must be first: loads .env.local before any module reads process.env at import.
+import '@/lib/scanner/load-env';
 import { scannerConfig } from '@/lib/scanner/env';
 import { scheduleDueWatches } from '@/lib/scanner/scheduler';
 import { createScanWorker, writeHeartbeat } from '@/lib/scanner/worker';
