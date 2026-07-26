@@ -6,6 +6,7 @@ export interface WatchStateUpdatePayload {
   watchId: string;
   symbol: string;
   interval: string;
+  patternId: string;
   status: 'normal' | 'bullish' | 'bearish' | 'no-data' | 'error';
   lastPrice?: number | null;
   lastCandleTime?: string | null;
@@ -21,6 +22,8 @@ export interface WatchAlertPayload {
   userId: string;
   symbol: string;
   interval: string;
+  direction: 'bullish' | 'bearish';
+  patternId: string;
   matchedPattern: string;
   minMovePercent: number;
   candles: any[];
@@ -97,9 +100,9 @@ export function useServerWatchStream({
             cursorRef.current = event.seq;
           }
 
-          if (event.type === 'watch_state' || event.type === 'state_update') {
+          if (event.type === 'watch.state' || event.type === 'watch_state' || event.type === 'state_update') {
             onStateUpdateRef.current?.(event.payload);
-          } else if (event.type === 'alert') {
+          } else if (event.type === 'alert.created' || event.type === 'alert') {
             onAlertRef.current?.(event.payload);
           } else if (event.type === 'scanner_heartbeat' || event.type === 'scanner_status') {
             const isOnline = event.payload?.online ?? true;

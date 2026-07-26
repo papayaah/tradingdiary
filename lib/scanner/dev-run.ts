@@ -27,6 +27,7 @@ async function main() {
       symbol: SYMBOL,
       assetClass: 'equity',
       interval: INTERVAL,
+      patternId: 'consecutive',
       minMovePercent: 0.1,
       session: 'all',
       enabled: true,

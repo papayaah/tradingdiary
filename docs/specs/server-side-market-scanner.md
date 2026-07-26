@@ -249,7 +249,7 @@ interface ServerWatchAlert {
 }
 ```
 
-Enforce deduplication in PostgreSQL, not only in memory. A unique constraint must cover `(watch_id, candle_time, direction, pattern_version)`. This guarantees:
+Enforce deduplication in PostgreSQL, not only in memory. A unique constraint must cover `(watch_id, candle_time, direction, pattern_id, pattern_version)`. This guarantees:
 
 - Repeated scans of an already-alerted 10-minute candle do not create another alert.
 - A candle that did not qualify earlier may alert on a later scan after crossing the threshold.

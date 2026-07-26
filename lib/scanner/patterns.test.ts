@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { detectPattern, scanAllPatterns, PATTERN_VERSION, type Candle } from './patterns';
+import {
+  detectPattern,
+  PATTERN_DEFINITIONS,
+  scanAllPatterns,
+  PATTERN_VERSION,
+  type Candle,
+} from './patterns';
 
 /**
  * Build an ascending (all-green) run of `n` candles ending at time `endTime`
@@ -122,6 +128,18 @@ describe('selectable pattern presets', () => {
     close: index % 2 === 0 ? 100.1 : 99.9,
     volume: 1000,
   }));
+
+  it('registers every detector under a unique id', () => {
+    const ids = PATTERN_DEFINITIONS.map((definition) => definition.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toEqual([
+      'consecutive',
+      'momentum-burst',
+      'range-breakout',
+      'volume-expansion',
+      'engulfing-reversal',
+    ]);
+  });
 
   it('detects a momentum burst relative to recent candle bodies', () => {
     const burst: Candle = {

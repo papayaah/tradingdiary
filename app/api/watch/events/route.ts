@@ -44,7 +44,13 @@ export async function GET(request: NextRequest) {
 
       const sendEvent = (e: WatchEventRow) => {
         if (e.seq <= cursor) return; // already delivered (dedup vs catch-up)
-        if (enqueue(`id: ${e.seq}\nevent: ${e.type}\ndata: ${JSON.stringify(e.payload)}\n\n`)) {
+        const envelope = {
+          seq: e.seq,
+          id: e.id,
+          type: e.type,
+          payload: e.payload,
+        };
+        if (enqueue(`id: ${e.seq}\ndata: ${JSON.stringify(envelope)}\n\n`)) {
           cursor = e.seq;
         }
       };

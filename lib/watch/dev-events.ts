@@ -17,7 +17,8 @@ async function main() {
     .insert(serverWatch)
     .values({
       userId: UID, symbol: 'AAPL', assetClass: 'equity', interval: '5m',
-      minMovePercent: 0.5, session: 'all', enabled: true, scanFrequencySeconds: 60,
+      patternId: 'consecutive', minMovePercent: 0.5, session: 'all',
+      enabled: true, scanFrequencySeconds: 60,
       nextScanAt: new Date().toISOString(),
     })
     .onConflictDoUpdate({ target: [serverWatch.userId, serverWatch.symbol, serverWatch.interval], set: { enabled: true } })

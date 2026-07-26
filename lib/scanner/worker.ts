@@ -4,9 +4,8 @@
 // and alert inserts rely on the DB unique constraint for deduplication, so
 // at-least-once redelivery is safe.
 
-// @ts-ignore
 import { Worker, type Job } from 'bullmq';
-import { and, eq, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { db } from '@/lib/scanner/db';
 import {
   serverWatch,
@@ -15,7 +14,12 @@ import {
   scannerHeartbeat,
   watchEvent,
 } from '@/lib/db/server/schema';
-import { scanAllPatterns, PATTERN_VERSION } from '@/lib/scanner/patterns';
+import {
+  DEFAULT_PATTERN_ID,
+  isPatternId,
+  scanAllPatterns,
+  PATTERN_VERSION,
+} from '@/lib/scanner/patterns';
 import { fetchCandles, boundRecent } from '@/lib/scanner/candles';
 import { isSessionActive, type AssetClass, type WatchSession } from '@/lib/scanner/sessions';
 import { SCAN_QUEUE, scannerConfig } from '@/lib/scanner/env';
@@ -69,15 +73,19 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
   }
 
   const last = candles[candles.length - 1];
-  const hasData = candles.length >= REQUIRED_CANDLES && !!last;
+  const hasData = candles.length > 0 && !!last;
+  const patternId = isPatternId(watch.patternId) ? watch.patternId : DEFAULT_PATTERN_ID;
 
-  const matches = hasData ? scanAllPatterns(candles, watch.minMovePercent, REQUIRED_CANDLES) : [];
+  const matches = hasData
+    ? scanAllPatterns(candles, watch.minMovePercent, REQUIRED_CANDLES, patternId)
+    : [];
   const latest = matches.length ? matches[matches.length - 1] : null;
   const isCurrent = !!latest && !!last && latest.time === last.time;
   const matched = isCurrent ? latest.type : null;
 
   const status: ScanOutcome['status'] = !hasData ? 'no-data' : matched ?? 'normal';
   const willAlert = !!matched && !scannerConfig.shadow;
+  let createdAlertId: string | null = null;
 
   await db.transaction(async (tx) => {
     await tx
@@ -122,12 +130,14 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
           price: last.close,
           changePercent: latest.change,
           message: latest.message,
+          patternId: latest.patternId,
           patternVersion: PATTERN_VERSION,
         })
         .onConflictDoNothing()
         .returning();
 
       if (alertRow) {
+        createdAlertId = alertRow.id;
         // Send Web Push notification to all user devices (closed browser alerts)
         const { sendWebPushToUser } = await import('@/lib/scanner/push');
         void sendWebPushToUser(watch.userId, {
@@ -141,12 +151,39 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
     }
 
     // Durable event + wakeup signal (consumed by the future SSE layer).
+    const eventType = createdAlertId ? 'alert.created' : 'watch.state';
+    const eventPayload = createdAlertId && latest
+      ? {
+          alertId: createdAlertId,
+          watchId: watch.id,
+          symbol: watch.symbol,
+          interval: watch.interval,
+          direction: latest.type,
+          patternId: latest.patternId,
+          matchedPattern: latest.message,
+          minMovePercent: watch.minMovePercent,
+          candles: boundRecent(candles),
+          createdAt: nowIso,
+        }
+      : {
+          watchId: watch.id,
+          symbol: watch.symbol,
+          interval: watch.interval,
+          patternId,
+          status,
+          lastPrice: last?.close,
+          lastCandleTime: last ? new Date(last.time * 1000).toISOString() : null,
+          lastScannedAt: nowIso,
+          lastProvider: providerName,
+          lastError: null,
+          recentCandles: boundRecent(candles),
+        };
     const [evt] = await tx
       .insert(watchEvent)
       .values({
         userId: watch.userId,
-        type: willAlert ? 'alert.created' : 'watch.state',
-        payload: { watchId: watch.id, status },
+        type: eventType,
+        payload: eventPayload,
       })
       .returning({ id: watchEvent.id });
     if (evt) {
@@ -154,7 +191,7 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
     }
   });
 
-  return { status, alerted: willAlert };
+  return { status, alerted: createdAlertId !== null };
 }
 
 export async function writeHeartbeat(status = 'ok', detail?: unknown): Promise<void> {

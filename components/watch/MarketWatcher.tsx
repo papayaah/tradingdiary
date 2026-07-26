@@ -282,7 +282,7 @@ export default function MarketWatcher() {
     },
     onAlert: (data) => {
       if (!data?.symbol) return;
-      const type: 'bullish' | 'bearish' = data.matchedPattern?.includes('bearish') ? 'bearish' : 'bullish';
+      const type: 'bullish' | 'bearish' = data.direction === 'bearish' ? 'bearish' : 'bullish';
       const msg = `${type.toUpperCase()} move on ${data.symbol} (${data.interval}). Matched ${data.matchedPattern}.`;
       
       const newAlert: AlertLog = {
@@ -316,10 +316,10 @@ export default function MarketWatcher() {
             createdAt: a.createdAt ? new Date(a.createdAt).getTime() : Date.now(),
             symbol: a.symbol,
             interval: a.interval,
-            type: a.matchedPattern?.includes('bearish') ? 'bearish' : 'bullish',
-            details: `${a.matchedPattern?.toUpperCase() || 'ALERT'} on ${a.symbol} (${a.interval})`,
-            price: a.candles?.[a.candles.length - 1]?.close || 0,
-            candles: a.candles || [],
+            type: a.direction === 'bearish' ? 'bearish' : 'bullish',
+            details: a.message || `${a.patternId || 'Pattern'} on ${a.symbol} (${a.interval})`,
+            price: a.price || 0,
+            candles: [],
           }));
           setAlertLogs(mappedAlerts);
         }
@@ -363,9 +363,33 @@ export default function MarketWatcher() {
     return watchlist;
   }, [watchlist, watchlistCategory]);
 
+  const syncScannerSettings = React.useCallback((
+    items: WatchItem[],
+    patternId: PatternId = selectedPatternId,
+    session = activeWindow,
+    frequencyMinutes = scanIntervalMinutes,
+  ) => {
+    const cleanList = items.map((item) => ({
+      symbol: item.symbol,
+      interval: item.interval,
+      minMovePercent: item.minMovePercent,
+    }));
+    return fetch('/api/watch/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        watchlist: cleanList,
+        patternId,
+        session,
+        scanFrequencySeconds: Math.round(frequencyMinutes * 60),
+      }),
+    });
+  }, [activeWindow, scanIntervalMinutes, selectedPatternId]);
+
   const handlePatternChange = React.useCallback((patternId: PatternId) => {
     setSelectedPatternId(patternId);
     localStorage.setItem('watcher-selected-pattern', patternId);
+    void syncScannerSettings(watchlist, patternId).catch(() => {});
 
     // Re-evaluate cached candles immediately so the rows reflect the new
     // detector without creating a burst of network requests.
@@ -379,18 +403,14 @@ export default function MarketWatcher() {
       );
       return { ...item, status: matched };
     }));
-  }, [requiredCandleCount]);
+  }, [requiredCandleCount, syncScannerSettings, watchlist]);
 
   const [cloudSyncNotice, setCloudSyncNotice] = useState<string | null>(null);
 
   const handleSyncToCloud = async () => {
     setCloudSyncNotice('Syncing...');
     try {
-      const res = await fetch('/api/watch/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ watchlist }),
-      });
+      const res = await syncScannerSettings(watchlist);
       const data = await res.json().catch(() => null);
       if (res.ok && data?.success) {
         setCloudSyncNotice(`Saved ${watchlist.length} items to cloud!`);
@@ -517,6 +537,19 @@ export default function MarketWatcher() {
             setWatchlist(data.watchlist);
             persistWatchlist(data.watchlist);
           }
+        }
+        if (isPatternId(data?.patternId)) {
+          setSelectedPatternId(data.patternId);
+          localStorage.setItem('watcher-selected-pattern', data.patternId);
+        }
+        if (data?.session === 'rth' || data?.session === 'pre' || data?.session === 'ext' || data?.session === 'all') {
+          setActiveWindow(data.session);
+          localStorage.setItem('watcher-active-window', data.session);
+        }
+        if (typeof data?.scanFrequencySeconds === 'number' && data.scanFrequencySeconds >= 60) {
+          const minutes = data.scanFrequencySeconds / 60;
+          setScanIntervalMinutes(minutes);
+          localStorage.setItem('watcher-scan-interval', String(minutes));
         }
       })
       .catch(() => {});
@@ -648,17 +681,7 @@ export default function MarketWatcher() {
     setWatchlist(updated);
     persistWatchlist(updated);
     if (!skipCloudSync) {
-      // Strip heavy candle arrays before pushing to cloud API (keeps payload under 10KB)
-      const cleanList = updated.map((item) => ({
-        symbol: item.symbol,
-        interval: item.interval,
-        minMovePercent: item.minMovePercent,
-      }));
-      fetch('/api/watch/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ watchlist: cleanList })
-      }).catch(() => {});
+      syncScannerSettings(updated).catch(() => {});
     }
   };
 
@@ -1439,6 +1462,7 @@ export default function MarketWatcher() {
   const handleIntervalChange = (mins: number) => {
     setScanIntervalMinutes(mins);
     localStorage.setItem('watcher-scan-interval', String(mins));
+    void syncScannerSettings(watchlist, selectedPatternId, activeWindow, mins).catch(() => {});
   };
 
   const showAddNotice = (type: 'success' | 'duplicate', message: string) => {
@@ -3084,8 +3108,14 @@ export default function MarketWatcher() {
                         value={activeWindow}
                         disabled={!autoPauseEnabled}
                         onChange={(e) => {
-                          setActiveWindow(e.target.value as 'rth' | 'pre' | 'ext' | 'all');
-                          localStorage.setItem('watcher-active-window', e.target.value);
+                          const session = e.target.value as 'rth' | 'pre' | 'ext' | 'all';
+                          setActiveWindow(session);
+                          localStorage.setItem('watcher-active-window', session);
+                          void syncScannerSettings(
+                            watchlist,
+                            selectedPatternId,
+                            session,
+                          ).catch(() => {});
                         }}
                         className="bg-card-bg border border-card-border rounded px-2 py-1 text-foreground font-medium disabled:opacity-50 cursor-pointer"
                       >

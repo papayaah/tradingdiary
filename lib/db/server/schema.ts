@@ -78,6 +78,9 @@ export const userWatchlists = pgTable("user_watchlists", {
     id: uuid("id").primaryKey().defaultRandom(),
     userId: text("user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
     watchlist: jsonb("watchlist").notNull(),
+    patternId: text("pattern_id").notNull().default('consecutive'),
+    session: text("session").notNull().default('pre'),
+    scanFrequencySeconds: integer("scan_frequency_seconds").notNull().default(600),
     updatedAt: timestamp("updated_at", { mode: 'string' }).defaultNow(),
 });
 
@@ -96,6 +99,7 @@ export const serverWatch = pgTable("server_watch", {
     symbol: text("symbol").notNull(),
     assetClass: text("asset_class").notNull(), // 'equity' | 'futures' | 'crypto'
     interval: text("interval").notNull(),
+    patternId: text("pattern_id").notNull().default('consecutive'),
     minMovePercent: doublePrecision("min_move_percent").notNull(),
     session: text("session").notNull(), // 'rth' | 'pre' | 'ext' | 'all'
     enabled: boolean("enabled").notNull().default(true),
@@ -138,11 +142,18 @@ export const serverWatchAlert = pgTable("server_watch_alert", {
     price: doublePrecision("price").notNull(),
     changePercent: doublePrecision("change_percent").notNull(),
     message: text("message").notNull(),
+    patternId: text("pattern_id").notNull().default('consecutive'),
     patternVersion: integer("pattern_version").notNull(),
     createdAt: timestamp("created_at", { mode: 'string' }).notNull().defaultNow(),
 }, (t) => [
-    // At most one alert per candle per direction per pattern version.
-    uniqueIndex("server_watch_alert_dedup_uq").on(t.watchId, t.candleTime, t.direction, t.patternVersion),
+    // At most one alert per candle, direction, detector, and detector version.
+    uniqueIndex("server_watch_alert_dedup_uq").on(
+      t.watchId,
+      t.candleTime,
+      t.direction,
+      t.patternId,
+      t.patternVersion,
+    ),
     // Recent-alerts queries per user.
     index("server_watch_alert_user_idx").on(t.userId, t.createdAt),
 ]);
