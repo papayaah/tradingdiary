@@ -28,7 +28,7 @@ Prerequisites: local **PostgreSQL** and **Redis** running, and a `.env.local` wi
 4. **One-shot proof** (seeds a watch, runs a single scan, prints the persisted state): `npx tsx lib/scanner/dev-run.ts AAPL 5m`.
 5. **Inspect results:** open `/api/watch/state` in a logged-in browser for the JSON snapshot, or run `npx tsx lib/watch/dev-events.ts` to exercise the snapshot builder + `LISTEN` bridge (catch-up + live delivery) against your DB.
 
-**What you cannot see yet:** the `/watch` page still runs the *legacy in-browser* scanner and does **not** consume the snapshot/SSE — that is the Step 8 client refactor. Until then the server pipeline is exercised only through the worker, the dev harnesses, and the API endpoints, not the UI. Nothing writes to `server_watch` from the UI yet (Step 9 migration), so seed watches via `dev-run.ts` or SQL.
+**Notes:** the `/watch` page now loads the server snapshot and consumes the live SSE stream (Step 8), and watchlist edits sync directly into `server_watch` rows (Step 9), so the scanner picks them up without manual seeding. The `dev-run.ts` / `dev-events.ts` harnesses remain useful for exercising the worker and the `LISTEN` bridge in isolation. Web Push (Step 10) additionally requires `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` in the environment.
 
 ## Summary
 
