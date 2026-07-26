@@ -51,7 +51,8 @@ export async function GET(request: NextRequest) {
     const isFutures = symbol.toUpperCase().endsWith('=F')
       || symbol.toUpperCase().includes('.C.0')
       || symbol.startsWith('/');
-    if (!isFutures && provider.name !== 'Yahoo Finance' && !hasCurrentNewYorkCandles(candles)) {
+    const isCrypto = symbol.toUpperCase().endsWith('-USD');
+    if (!isFutures && !isCrypto && provider.name !== 'Yahoo Finance' && !hasCurrentNewYorkCandles(candles)) {
       const fallback = new YahooProvider();
       const fallbackCandles = await fallback.fetchRecentCandles(symbol, interval);
       if (hasCurrentNewYorkCandles(fallbackCandles)) {

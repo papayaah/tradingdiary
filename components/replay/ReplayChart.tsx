@@ -260,27 +260,43 @@ export default function ReplayChart({
             .sort((a,b) => (a.time as number) - (b.time as number));
 
         if (tradePriceSeriesRef.current) {
-            const tradePriceData = transactions
-                .map(t => {
-                    const [h, m, s] = t.time.split(':').map(Number);
-                    const tradeTimeUtc = Math.floor(Date.UTC(year, month, day, h, m, s || 0) / 1000) - etOffset;
+            // Merge trades that fall on the same timestamp — a candlestick series
+            // requires strictly-ascending, unique times, so multiple fills at the
+            // same second must collapse into a single bar rather than duplicate.
+            const byTime = new Map<number, any>();
+            for (const t of transactions) {
+                const [h, m, s] = t.time.split(':').map(Number);
+                const tradeTimeUtc = Math.floor(Date.UTC(year, month, day, h, m, s || 0) / 1000) - etOffset;
 
-                    if (tradeTimeUtc > currentUtcTimestamp) return null;
+                if (tradeTimeUtc > currentUtcTimestamp) continue;
 
-                    const isBuy = t.side === 'BUYTOOPEN' || t.side === 'BUYTOCLOSE';
-                    return {
-                        time: (tradeTimeUtc + etOffset) as Time,
+                const time = tradeTimeUtc + etOffset;
+                const isBuy = t.side === 'BUYTOOPEN' || t.side === 'BUYTOCLOSE';
+                const color = isBuy ? '#4ade80' : '#f87171';
+
+                const existing = byTime.get(time);
+                if (existing) {
+                    // Aggregate concurrent fills into one OHLC bar.
+                    existing.high = Math.max(existing.high, t.price);
+                    existing.low = Math.min(existing.low, t.price);
+                    existing.close = t.price; // last fill wins for close/color
+                    existing.color = color;
+                    existing.borderColor = color;
+                } else {
+                    byTime.set(time, {
+                        time: time as Time,
                         open: t.price,
                         high: t.price,
                         low: t.price,
                         close: t.price,
                         // We use colors to distinguish buy/sell since O=C
-                        color: isBuy ? '#4ade80' : '#f87171',
-                        borderColor: isBuy ? '#4ade80' : '#f87171',
-                    };
-                })
-                .filter((d): d is any => d !== null)
-                .sort((a, b) => a.time - b.time);
+                        color,
+                        borderColor: color,
+                    });
+                }
+            }
+            const tradePriceData = Array.from(byTime.values())
+                .sort((a, b) => (a.time as number) - (b.time as number));
 
             tradePriceSeriesRef.current.setData(tradePriceData);
         }
@@ -318,11 +334,22 @@ export default function ReplayChart({
         const zoomEnd = maxTrade > 0 ? (maxTrade + marginSeconds) : dayEndET;
 
         setTimeout(() => {
-          if (chartRef.current) {
-            chartRef.current.timeScale().setVisibleRange({
+          if (!chartRef.current) return;
+          const timeScale = chartRef.current.timeScale();
+          try {
+            timeScale.setVisibleRange({
               from: (zoomStart + etOffset) as Time,
               to: (zoomEnd + etOffset) as Time,
             });
+          } catch {
+            // The requested window can map to no bars when the provider returns
+            // sparse/thin intraday data (e.g. illiquid symbols) — fall back to
+            // showing whatever candles we do have instead of crashing.
+            try {
+              timeScale.fitContent();
+            } catch {
+              /* nothing we can do; leave the default view */
+            }
           }
         }, 200);
     }, [allCandles.length, interval, date, transactions.length, etOffset]);

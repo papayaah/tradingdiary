@@ -19,6 +19,13 @@ interface IntradayPriceRecord {
     volume?: number | string;
 }
 
+interface TiingoCryptoPriceResponse {
+    ticker?: string;
+    baseCurrency?: string;
+    quoteCurrency?: string;
+    priceData?: IntradayPriceRecord[] | IntradayPriceRecord;
+}
+
 export interface ChartProvider {
     name: string;
     fetchCandles(symbol: string, date: string, interval: string): Promise<OHLCCandle[]>;
@@ -345,6 +352,96 @@ class TiingoProvider implements ChartProvider {
     }
 }
 
+/**
+ * Tiingo Crypto Provider
+ *
+ * App symbols use a separator (BTC-USD), while Tiingo's public crypto REST
+ * endpoint uses concatenated base/quote symbols (BTCUSD).
+ */
+class TiingoCryptoProvider implements ChartProvider {
+    name = "Tiingo Crypto";
+    private apiKey: string;
+
+    constructor(apiKey: string) {
+        this.apiKey = apiKey;
+    }
+
+    private mapSymbol(symbol: string): string {
+        return symbol.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    }
+
+    private mapInterval(interval: string): string {
+        const val = parseInt(interval.replace(/[ms]/g, '')) || 5;
+        return interval.endsWith('h') ? `${val}hour` : `${val}min`;
+    }
+
+    private async fetchCryptoCandles(
+        symbol: string,
+        startDate: string,
+        interval: string,
+        endDate?: string,
+    ): Promise<OHLCCandle[]> {
+        const ticker = this.mapSymbol(symbol);
+        const params = new URLSearchParams({
+            tickers: ticker,
+            startDate,
+            resampleFreq: this.mapInterval(interval),
+            token: this.apiKey,
+        });
+        if (endDate) params.set('endDate', endDate);
+
+        const res = await fetch(`https://api.tiingo.com/tiingo/crypto/prices?${params.toString()}`);
+        if (!res.ok) {
+            throw new Error(`Tiingo Crypto API error: ${res.status}`);
+        }
+
+        const payload = await res.json() as TiingoCryptoPriceResponse[];
+        if (!Array.isArray(payload)) return [];
+
+        const candles: OHLCCandle[] = [];
+        for (const pair of payload) {
+            const priceData = Array.isArray(pair.priceData)
+                ? pair.priceData
+                : pair.priceData
+                    ? [pair.priceData]
+                    : [];
+
+            for (const record of priceData) {
+                const time = Math.floor(new Date(record.date || record.datetime || '').getTime() / 1000);
+                const open = Number(record.open);
+                const high = Number(record.high);
+                const low = Number(record.low);
+                const close = Number(record.close);
+                const volume = Number(record.volume || 0);
+
+                if (
+                    Number.isFinite(time)
+                    && Number.isFinite(open)
+                    && Number.isFinite(high)
+                    && Number.isFinite(low)
+                    && Number.isFinite(close)
+                ) {
+                    candles.push({ time, open, high, low, close, volume });
+                }
+            }
+        }
+
+        candles.sort((a, b) => a.time - b.time);
+        return candles;
+    }
+
+    async fetchCandles(symbol: string, date: string, interval: string): Promise<OHLCCandle[]> {
+        const formattedDate = `${date.substring(0, 4)}-${date.substring(4, 6)}-${date.substring(6, 8)}`;
+        return this.fetchCryptoCandles(symbol, formattedDate, interval, formattedDate);
+    }
+
+    async fetchRecentCandles(symbol: string, interval: string): Promise<OHLCCandle[]> {
+        const start = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+        const formattedStart = start.toISOString().split('T')[0];
+        return this.fetchCryptoCandles(symbol, formattedStart, interval);
+    }
+}
+
 function aggregate1mCandles(candles: OHLCCandle[], targetInterval: string): OHLCCandle[] {
     const minutes = parseInt(targetInterval.replace(/[ms]/g, '')) || 1;
     if (minutes <= 1) return candles;
@@ -495,6 +592,7 @@ export interface UserProviderConfig {
 export function getActiveProvider(symbol?: string, userConfig?: UserProviderConfig): ChartProvider {
     const upperSymbol = symbol ? symbol.toUpperCase() : '';
     const isFutures = upperSymbol.endsWith('=F') || upperSymbol.includes('.C.0') || upperSymbol.startsWith('/');
+    const isCrypto = upperSymbol.endsWith('-USD');
 
     // Handle Futures Data Feed Selection separately
     if (isFutures) {
@@ -509,6 +607,17 @@ export function getActiveProvider(symbol?: string, userConfig?: UserProviderConf
 
     // Handle Equities Data Feed Selection
     const pref = userConfig?.preferredProvider || 'auto';
+
+    // Crypto uses Tiingo's dedicated crypto endpoint, not its equity/IEX
+    // endpoints. Yahoo remains the zero-config fallback for crypto symbols.
+    if (isCrypto) {
+        if (pref === 'yahoo') return new YahooProvider();
+        if (pref === 'tiingo' || pref === 'auto') {
+            const key = userConfig?.tiingoKey || process.env.TIINGO_API_KEY;
+            if (key) return new TiingoCryptoProvider(key);
+        }
+        return new YahooProvider();
+    }
 
     if (pref === 'alpaca') {
         const keyId = userConfig?.alpacaKeyId || process.env.ALPACA_API_KEY_ID || process.env.ALPACA_API_KEY;
