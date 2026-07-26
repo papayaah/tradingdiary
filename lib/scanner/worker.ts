@@ -110,7 +110,7 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
     if (willAlert && latest && last) {
       // Dedup is enforced by the unique index; a repeat scan of the same candle
       // no-ops here. Non-qualifying scans insert no alert row at all.
-      await tx
+      const [alertRow] = await tx
         .insert(serverWatchAlert)
         .values({
           userId: watch.userId,
@@ -124,7 +124,20 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
           message: latest.message,
           patternVersion: PATTERN_VERSION,
         })
-        .onConflictDoNothing();
+        .onConflictDoNothing()
+        .returning();
+
+      if (alertRow) {
+        // Send Web Push notification to all user devices (closed browser alerts)
+        const { sendWebPushToUser } = await import('@/lib/scanner/push');
+        void sendWebPushToUser(watch.userId, {
+          symbol: watch.symbol,
+          interval: watch.interval,
+          matchedPattern: latest.type,
+          message: latest.message,
+          price: last.close,
+        });
+      }
     }
 
     // Durable event + wakeup signal (consumed by the future SSE layer).

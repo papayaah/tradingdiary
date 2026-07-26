@@ -169,3 +169,15 @@ export const watchEvent = pgTable("watch_event", {
     // Per-user catch-up: events after a given cursor.
     index("watch_event_user_seq_idx").on(t.userId, t.seq),
 ]);
+
+// Web Push device subscriptions for closed-browser mobile & desktop push notifications.
+export const userPushSubscription = pgTable("user_push_subscription", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
+    endpoint: text("endpoint").notNull().unique(),
+    keys: jsonb("keys").notNull(), // { p256dh: string, auth: string }
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at", { mode: 'string' }).notNull().defaultNow(),
+}, (t) => [
+    index("user_push_sub_user_idx").on(t.userId),
+]);
