@@ -120,9 +120,13 @@ export function aggregateByDay(
   const allDateAccums: DateAccum[] = [];
 
   for (const [symbol, entries] of bySymbol) {
-    // Sort chronologically: by effective date, then by time within the day
+    // FIFO must follow TRUE execution order (raw file date+time), never the
+    // cutoff-shifted date. The cutoff only decides which day a realized amount
+    // is *attributed* to — reordering the matching itself pairs closes with the
+    // wrong lots and produces nonsensical P&L. Sort by raw timestamp here and
+    // bucket each closing trade's realized P&L into its effective date below.
     entries.sort((a, b) => {
-      const dateCmp = a.eDate.localeCompare(b.eDate);
+      const dateCmp = a.t.date.localeCompare(b.t.date);
       if (dateCmp !== 0) return dateCmp;
       return timeToMinutes(a.t.time) - timeToMinutes(b.t.time);
     });
@@ -138,96 +142,90 @@ export function aggregateByDay(
     const openLots: FIFOLot[] = [];
     let runningPosition = 0;
 
-    // Sub-group entries by effective date (preserving chronological order)
-    const dateGroups: { date: string; items: { t: TransactionRecord; eDate: string }[] }[] = [];
-    for (const entry of entries) {
-      const last = dateGroups[dateGroups.length - 1];
-      if (last && last.date === entry.eDate) {
-        last.items.push(entry);
-      } else {
-        dateGroups.push({ date: entry.eDate, items: [entry] });
+    // One accumulator per effective (cutoff-shifted) date, keyed by that date.
+    const accumsByDate = new Map<string, DateAccum>();
+
+    for (const { t, eDate } of entries) {
+      let accum = accumsByDate.get(eDate);
+      if (!accum) {
+        accum = {
+          symbol,
+          companyName: t.companyName,
+          date: eDate,
+          transactions: [],
+          realizedGross: 0,
+          realizedCommission: 0,
+          unrealizedPnL: undefined,
+          endPosition: 0,
+          endAvgCost: 0,
+          side,
+        };
+        accumsByDate.set(eDate, accum);
+        allDateAccums.push(accum);
       }
-    }
 
-    for (const group of dateGroups) {
-      let dayRealizedGross = 0;
-      let dayRealizedCommission = 0;
-      let dayUnrealizedPnL: number | undefined = undefined;
-      const dayTxns: TransactionRecord[] = [];
+      accum.transactions.push(t);
+      const isOpening = t.side === 'BUYTOOPEN' || t.side === 'SELLTOOPEN';
+      const qty = Math.abs(t.quantity);
 
-      for (const { t } of group.items) {
-        dayTxns.push(t);
-        const isOpening = t.side === 'BUYTOOPEN' || t.side === 'SELLTOOPEN';
-        const qty = Math.abs(t.quantity);
+      // If transaction has manual realized P&L, add it directly
+      if (t.realizedPnL != null) {
+        accum.realizedGross += t.realizedPnL;
+      }
 
-        // If transaction has manual realized P&L, add it directly
-        if (t.realizedPnL != null) {
-          dayRealizedGross += t.realizedPnL;
-        }
+      // Capture imported unrealized P&L
+      if (t.unrealizedPnL != null) {
+        accum.unrealizedPnL = t.unrealizedPnL;
+      }
 
-        // Capture imported unrealized P&L
-        if (t.unrealizedPnL != null) {
-          dayUnrealizedPnL = t.unrealizedPnL;
-        }
+      if (isOpening && qty > 0) {
+        openLots.push({
+          qty,
+          costPerShare: Math.abs(t.totalValue) / qty,
+          commission: t.commission,
+        });
+        runningPosition += (t.side === 'BUYTOOPEN' ? qty : -qty);
+      } else if (!isOpening && qty > 0) {
+        // Closing transaction — match against open lots FIFO
+        let remaining = qty;
+        const closePrice = Math.abs(t.totalValue) / qty;
 
-        if (isOpening && qty > 0) {
-          openLots.push({
-            qty,
-            costPerShare: Math.abs(t.totalValue) / qty,
-            commission: t.commission,
-          });
-          runningPosition += (t.side === 'BUYTOOPEN' ? qty : -qty);
-        } else if (!isOpening && qty > 0) {
-          // Closing transaction — match against open lots FIFO
-          let remaining = qty;
-          const closePrice = Math.abs(t.totalValue) / qty;
+        while (remaining > 0.001 && openLots.length > 0) {
+          const lot = openLots[0];
+          const matched = Math.min(remaining, lot.qty);
 
-          while (remaining > 0.001 && openLots.length > 0) {
-            const lot = openLots[0];
-            const matched = Math.min(remaining, lot.qty);
-
-            const isLong = t.side === 'SELLTOCLOSE';
-            if (isLong) {
-              dayRealizedGross += (closePrice - lot.costPerShare) * matched;
-            } else {
-              dayRealizedGross += (lot.costPerShare - closePrice) * matched;
-            }
-
-            // Allocate opening lot commission proportionally
-            const lotFraction = matched / (matched + (lot.qty - matched));
-            dayRealizedCommission += lot.commission * lotFraction;
-            lot.commission -= lot.commission * lotFraction;
-
-            lot.qty -= matched;
-            remaining -= matched;
-
-            if (lot.qty < 0.001) {
-              openLots.shift();
-            }
+          const isLong = t.side === 'SELLTOCLOSE';
+          if (isLong) {
+            accum.realizedGross += (closePrice - lot.costPerShare) * matched;
+          } else {
+            accum.realizedGross += (lot.costPerShare - closePrice) * matched;
           }
 
-          // Add closing transaction's commission
-          dayRealizedCommission += t.commission;
-          runningPosition += (t.side === 'BUYTOCLOSE' ? qty : -qty);
+          // Allocate opening lot commission proportionally
+          const lotFraction = matched / (matched + (lot.qty - matched));
+          accum.realizedCommission += lot.commission * lotFraction;
+          lot.commission -= lot.commission * lotFraction;
+
+          lot.qty -= matched;
+          remaining -= matched;
+
+          if (lot.qty < 0.001) {
+            openLots.shift();
+          }
         }
+
+        // Add closing transaction's commission
+        accum.realizedCommission += t.commission;
+        runningPosition += (t.side === 'BUYTOCLOSE' ? qty : -qty);
       }
 
-      // Snapshot of open lots at end of this date
+      // Snapshot open-lot state after this trade. Since the cutoff only shifts
+      // dates forward, effective dates are non-decreasing in execution order,
+      // so the last write for a given date reflects its end-of-day position.
       const openQty = openLots.reduce((s, l) => s + l.qty, 0);
       const openCost = openLots.reduce((s, l) => s + l.qty * l.costPerShare, 0);
-
-      allDateAccums.push({
-        symbol,
-        companyName: dayTxns[0].companyName,
-        date: group.date,
-        transactions: dayTxns,
-        realizedGross: dayRealizedGross,
-        realizedCommission: dayRealizedCommission,
-        unrealizedPnL: dayUnrealizedPnL,
-        endPosition: Math.round(runningPosition * 100) / 100,
-        endAvgCost: openQty > 0.001 ? openCost / openQty : 0,
-        side,
-      });
+      accum.endPosition = Math.round(runningPosition * 100) / 100;
+      accum.endAvgCost = openQty > 0.001 ? openCost / openQty : 0;
     }
   }
 

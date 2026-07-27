@@ -39,8 +39,6 @@ export default function ColumnMapper({
     onCancel
 }: ColumnMapperProps) {
     const [mapping, setMapping] = useState<ColumnMapping>(initialMapping);
-    // We don't have UI for side-mapping editing yet, relying on auto-detect or defaults for now
-    // but we pass it through.
     const [sideMap, setSideMap] = useState<SideValueMapping>(initialSideMap);
 
     const handleFieldChange = (scKey: keyof NormalizedTransaction, headerName: string | '') => {
@@ -55,34 +53,30 @@ export default function ColumnMapper({
         });
     };
 
-    const isMapped = (header: string) => Object.values(mapping).includes(header);
-
     const isValid = () => {
-        // Symbol is always required
         if (!mapping.symbol) return false;
-
-        // If PnL is mapped, we can proceed even without Qty/Price
         if (mapping.realizedPnL) return true;
-
-        // Otherwise, need standard trade info
         return !!(mapping.quantity && mapping.price);
     };
 
     return (
         <div className="space-y-6">
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center bg-card-bg p-6 rounded-2xl border border-card-border shadow-sm">
                 <div>
-                    <h2 className="text-2xl font-bold">Map Columns</h2>
-                    <p className="text-muted-foreground">Match your file's columns to the journal fields.</p>
+                    <h2 className="text-2xl font-bold text-foreground">Map Columns</h2>
+                    <p className="text-sm text-muted">Match your file's columns to the journal fields.</p>
                 </div>
                 <div className="flex gap-2">
-                    <button onClick={onCancel} className="px-4 py-2 border rounded hover:bg-muted">
+                    <button
+                        onClick={onCancel}
+                        className="px-4 py-2 border border-card-border rounded-xl bg-card-bg hover:bg-muted/50 text-foreground transition-all text-sm font-semibold"
+                    >
                         Cancel
                     </button>
                     <button
                         onClick={() => onConfirm(mapping, sideMap)}
                         disabled={!isValid()}
-                        className="px-4 py-2 bg-primary text-primary-foreground rounded hover:opacity-90 disabled:opacity-50"
+                        className="px-6 py-2 bg-accent text-white rounded-xl hover:bg-accent/90 transition-all shadow-sm disabled:opacity-50 font-semibold text-sm"
                     >
                         Preview Import
                     </button>
@@ -90,17 +84,16 @@ export default function ColumnMapper({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-
                 {/* Mapping Form */}
-                <div className="space-y-4">
+                <div className="space-y-4 bg-card-bg p-6 rounded-2xl border border-card-border shadow-sm">
                     {SCHEMA_FIELDS.map(({ key, label, recommended, defaultLabel }) => (
                         <div key={key} className="grid grid-cols-[140px_1fr] items-center gap-4">
-                            <label className={`text-sm font-medium ${recommended ? 'text-foreground' : 'text-muted-foreground'}`}>
-                                {label} {recommended && <span className="text-red-500">*</span>}
-                                {defaultLabel && !mapping[key] && <div className="text-[10px] text-muted-foreground font-normal leading-tight">{defaultLabel}</div>}
+                            <label className={`text-sm font-medium ${recommended ? 'text-foreground font-semibold' : 'text-muted'}`}>
+                                {label} {recommended && <span className="text-loss">*</span>}
+                                {defaultLabel && !mapping[key] && <div className="text-[10px] text-muted font-normal leading-tight">{defaultLabel}</div>}
                             </label>
                             <select
-                                className="p-2 border rounded bg-background"
+                                className="p-2.5 border border-card-border rounded-xl bg-card-bg text-foreground text-sm outline-none focus:border-accent"
                                 value={mapping[key] || ''}
                                 onChange={(e) => handleFieldChange(key, e.target.value)}
                             >
@@ -116,29 +109,29 @@ export default function ColumnMapper({
                 </div>
 
                 {/* Live Preview */}
-                <div className="border rounded-lg overflow-hidden bg-muted/10">
-                    <div className="bg-muted p-3 text-sm font-medium border-b">
+                <div className="border border-card-border rounded-2xl overflow-hidden bg-card-bg shadow-sm">
+                    <div className="bg-table-header-bg p-3.5 text-xs uppercase tracking-wider font-semibold text-muted border-b border-card-border">
                         Sample Preview (First 5 Rows)
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm">
-                            <thead className="bg-muted/50">
+                            <thead className="bg-table-header-bg text-muted border-b border-card-border text-xs uppercase tracking-wider">
                                 <tr>
                                     {SCHEMA_FIELDS.filter(f => mapping[f.key]).map(f => (
-                                        <th key={f.key} className="p-2 text-left font-medium whitespace-nowrap">
+                                        <th key={f.key} className="p-2.5 text-left font-semibold whitespace-nowrap">
                                             {f.label}
                                         </th>
                                     ))}
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody className="divide-y divide-card-border/60">
                                 {sampleRows.slice(0, 5).map((row, i) => (
-                                    <tr key={i} className="border-b last:border-0 hover:bg-muted/20">
+                                    <tr key={i} className="hover:bg-table-row-hover transition-colors">
                                         {SCHEMA_FIELDS.filter(f => mapping[f.key]).map(f => {
                                             const header = mapping[f.key];
                                             const val = header ? row[header] : '';
                                             return (
-                                                <td key={f.key} className="p-2 truncate max-w-[150px]">
+                                                <td key={f.key} className="p-2.5 truncate max-w-[150px] text-foreground font-mono text-xs">
                                                     {val}
                                                 </td>
                                             );
@@ -148,12 +141,12 @@ export default function ColumnMapper({
                             </tbody>
                         </table>
                     </div>
-                    <div className="p-3 text-xs text-muted-foreground">
+                    <div className="p-3 text-xs text-muted">
                         * Only mapped columns are shown in preview.
                     </div>
                 </div>
-
             </div>
         </div>
     );
 }
+

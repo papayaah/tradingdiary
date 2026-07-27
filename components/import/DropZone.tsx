@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
+import { FileText, Image as ImageIcon, Clipboard, ClipboardCheck, Loader2 } from 'lucide-react';
 
 interface DropZoneProps {
   onData: (data: File | string, type: 'file' | 'text' | 'image') => void;
@@ -111,29 +112,35 @@ export default function DropZone({ onData, isProcessing }: DropZoneProps) {
       tabIndex={0}
       onPaste={(e) => handlePaste(e as any)}
       className={`
-        border-2 border-dashed rounded-xl p-12 text-center transition-colors cursor-pointer outline-none
-        ${(isProcessing || pasteDetected) ? 'border-primary bg-primary/10 shadow-[0_0_20px_-5px_rgba(var(--primary-rgb),0.3)]' : isDragActive ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-muted/50'}
+        border-2 border-dashed rounded-2xl p-12 text-center transition-all cursor-pointer outline-none bg-card-bg/60
+        ${(isProcessing || pasteDetected) ? 'border-accent bg-accent-light/50 shadow-sm' : isDragActive ? 'border-accent bg-accent-light/30' : 'border-card-border hover:border-accent/50 hover:bg-card-bg'}
       `}
     >
       <input {...getInputProps()} />
       {(isProcessing || pasteDetected) ? (
         <div className="space-y-4">
-          <div className="flex justify-center text-4xl mb-4 animate-bounce">
-            {isProcessing ? '⏳' : '📋'}
+          <div className="flex justify-center mb-4">
+            {isProcessing ? (
+              <Loader2 className="w-10 h-10 text-accent animate-spin" />
+            ) : (
+              <ClipboardCheck className="w-10 h-10 text-accent animate-pulse" />
+            )}
           </div>
-          <h3 className="text-xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+          <h3 className="text-xl font-bold text-foreground">
             {isProcessing ? 'Analyzing Data...' : 'Paste Received!'}
           </h3>
           <p className="text-muted text-sm italic">This takes about 10-15 seconds for images</p>
         </div>
       ) : (
         <div className="space-y-6">
-          <div className="flex justify-center text-5xl mb-2 group-hover:scale-110 transition-transform">
-            📄 <span className="mx-2 opacity-50">/</span> 🖼️
+          <div className="flex items-center justify-center gap-3 text-muted group-hover:scale-105 group-hover:text-foreground transition-all">
+            <FileText className="w-10 h-10 stroke-[1.5]" />
+            <span className="text-xl font-light opacity-40">/</span>
+            <ImageIcon className="w-10 h-10 stroke-[1.5]" />
           </div>
 
           <div className="space-y-2">
-            <h3 className="text-xl font-bold">Drop files here or click to browse</h3>
+            <h3 className="text-xl font-bold text-foreground">Drop files here or click to browse</h3>
             <p className="text-muted text-sm max-w-sm mx-auto leading-relaxed">
               Supports <span className="text-foreground font-semibold">CSV, TSV, TXT, TLG, eSignal</span>, URLs, and <span className="text-foreground font-semibold">Screenshots</span> (PNG/JPG).
             </p>
@@ -172,14 +179,14 @@ export default function DropZone({ onData, isProcessing }: DropZoneProps) {
                   setPasteError('Clipboard access is unavailable. Use Cmd+V or Ctrl+V instead.');
                 }
               }}
-              className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-full font-semibold shadow-lg hover:bg-primary/90 hover:scale-105 active:scale-95 transition-all"
+              className="flex items-center gap-2 px-5 py-2.5 bg-accent text-white rounded-xl text-sm font-semibold shadow-sm hover:bg-accent/90 transition-all"
             >
-              <span className="text-xl">📋</span>
+              <Clipboard className="w-4 h-4" />
               Paste from Clipboard
             </button>
 
             <p className="text-xs text-muted">
-              <span className="keyboard-shortcut kbd px-1.5 py-0.5 rounded border border-border bg-muted/30">Cmd+V</span> works anywhere too!
+              <span className="keyboard-shortcut kbd px-1.5 py-0.5 rounded border border-card-border bg-muted-bg text-foreground font-medium">Cmd+V</span> works anywhere too!
             </p>
             {pasteError && (
               <p role="alert" className="text-xs text-loss">

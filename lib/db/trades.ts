@@ -68,3 +68,92 @@ export async function clearAllData() {
   await tx.objectStore('tradeNotes').clear();
   await tx.done;
 }
+
+export async function deleteAccount(accountId: string) {
+  const db = await getDB();
+  const tx = db.transaction(['accounts', 'transactions', 'positions'], 'readwrite');
+  
+  await tx.objectStore('accounts').delete(accountId);
+
+  const txStore = tx.objectStore('transactions');
+  const accountTxns = await txStore.index('by-accountId').getAllKeys(accountId);
+  for (const key of accountTxns) {
+    await txStore.delete(key);
+  }
+
+  const posStore = tx.objectStore('positions');
+  const accountPositions = await posStore.index('by-accountId').getAll(accountId);
+  for (const pos of accountPositions) {
+    if (pos.id !== undefined) {
+      await posStore.delete(pos.id);
+    }
+  }
+
+  await tx.done;
+}
+
+export async function deleteAccountTrades(accountId: string) {
+  const db = await getDB();
+  const tx = db.transaction(['transactions', 'positions'], 'readwrite');
+  
+  const txStore = tx.objectStore('transactions');
+  const accountTxns = await txStore.index('by-accountId').getAllKeys(accountId);
+  for (const key of accountTxns) {
+    await txStore.delete(key);
+  }
+
+  const posStore = tx.objectStore('positions');
+  const accountPositions = await posStore.index('by-accountId').getAll(accountId);
+  for (const pos of accountPositions) {
+    if (pos.id !== undefined) {
+      await posStore.delete(pos.id);
+    }
+  }
+
+  await tx.done;
+}
+
+export async function deleteTradesByDateRange(
+  startDate: string,
+  endDate: string,
+  accountId?: string
+): Promise<number> {
+  const db = await getDB();
+  const tx = db.transaction(['transactions', 'positions'], 'readwrite');
+  const txStore = tx.objectStore('transactions');
+  
+  let txns: TransactionRecord[] = [];
+  if (accountId && accountId !== 'all') {
+    txns = await txStore.index('by-accountId').getAll(accountId);
+  } else {
+    txns = await txStore.getAll();
+  }
+
+  // Filter transactions within the date range (formatted as YYYY-MM-DD or YYYYMMDD)
+  const cleanStart = startDate.replace(/-/g, '');
+  const cleanEnd = endDate.replace(/-/g, '');
+
+  let count = 0;
+  for (const t of txns) {
+    const cleanDate = t.date.replace(/-/g, '');
+    if (cleanDate >= cleanStart && cleanDate <= cleanEnd) {
+      await txStore.delete(t.tradeId);
+      count++;
+    }
+  }
+
+  // Recalculate/clear positions for affected accounts if needed
+  if (count > 0 && accountId && accountId !== 'all') {
+    const posStore = tx.objectStore('positions');
+    const accountPositions = await posStore.index('by-accountId').getAll(accountId);
+    for (const pos of accountPositions) {
+      if (pos.id !== undefined) {
+        await posStore.delete(pos.id);
+      }
+    }
+  }
+
+  await tx.done;
+  return count;
+}
+

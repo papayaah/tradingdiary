@@ -12,7 +12,17 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const provider = getActiveProvider();
+    const cookies = request.cookies;
+    const provider = getActiveProvider(symbol, {
+      preferredProvider: cookies.get('watcher_pref_provider')?.value,
+      futuresProvider: cookies.get('watcher_futures_provider')?.value,
+      databentoKey: cookies.get('watcher_databento_key')?.value,
+      alpacaKeyId: cookies.get('watcher_alpaca_key_id')?.value,
+      alpacaSecret: cookies.get('watcher_alpaca_secret')?.value,
+      twelveKey: cookies.get('watcher_twelve_key')?.value,
+      polygonKey: cookies.get('watcher_polygon_key')?.value,
+      tiingoKey: cookies.get('watcher_tiingo_key')?.value,
+    });
     const candles = await provider.fetchCandles(symbol, date, interval);
 
     return NextResponse.json({ 

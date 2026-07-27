@@ -1,10 +1,9 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
-import { Upload, BookOpen, ArrowLeft } from 'lucide-react';
-import { getAllTransactions } from '@/lib/db/trades';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Upload, BookOpen, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
 import { getTradeDateCutoff } from '@/lib/settings';
 import { aggregateByDay, applyMarketPrices, type DailySummary } from '@/lib/trading/aggregator';
 import DayGroup from '@/components/journal/DayGroup';
@@ -12,6 +11,7 @@ import { useAccount } from '@/contexts/AccountContext';
 import { getTransactionsByAccount } from '@/lib/db/trades';
 
 export default function JournalPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const filterDate = searchParams.get('date');
   const { selectedAccountId } = useAccount();
@@ -78,6 +78,48 @@ export default function JournalPage() {
     return summaries.filter(s => s.date === filterDate);
   }, [summaries, filterDate]);
 
+  const currentDayIndex = useMemo(() => {
+    if (!summaries || !filterDate) return -1;
+    return summaries.findIndex((summary) => summary.date === filterDate);
+  }, [summaries, filterDate]);
+
+  const previousDay = currentDayIndex >= 0 ? summaries?.[currentDayIndex + 1] : undefined;
+  const nextDay = currentDayIndex > 0 ? summaries?.[currentDayIndex - 1] : undefined;
+
+  const navigateToDay = useCallback((date: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('date', date);
+    router.push(`/journal?${params.toString()}`);
+  }, [router, searchParams]);
+
+  useEffect(() => {
+    if (!filterDate) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      const target = event.target;
+      if (
+        target instanceof HTMLElement
+        && (target.isContentEditable
+          || target.tagName === 'INPUT'
+          || target.tagName === 'TEXTAREA'
+          || target.tagName === 'SELECT')
+      ) {
+        return;
+      }
+
+      if (event.key === 'ArrowLeft' && previousDay) {
+        event.preventDefault();
+        navigateToDay(previousDay.date);
+      } else if (event.key === 'ArrowRight' && nextDay) {
+        event.preventDefault();
+        navigateToDay(nextDay.date);
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [filterDate, navigateToDay, nextDay, previousDay]);
+
   if (summaries === null) {
     // ... animation placeholder
     return (
@@ -124,7 +166,7 @@ export default function JournalPage() {
       </div>
 
       {filterDate && (
-        <div className="flex items-center justify-between bg-accent/5 backdrop-blur-sm p-5 rounded-2xl border border-accent/20 shadow-sm animate-in fade-in slide-in-from-top-4 duration-300">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-accent/5 backdrop-blur-sm p-5 rounded-2xl border border-accent/20 shadow-sm animate-in fade-in slide-in-from-top-4 duration-300">
           <div className="flex items-center gap-4">
             <div className="p-2.5 bg-accent/10 rounded-xl text-accent shadow-inner">
               <BookOpen size={24} />
@@ -134,13 +176,40 @@ export default function JournalPage() {
               <p className="text-[10px] font-bold text-muted uppercase tracking-widest mt-0.5">Focusing on {displaySummaries?.length || 0} trading day</p>
             </div>
           </div>
-          <Link
-            href="/journal"
-            className="flex items-center gap-2 text-xs font-bold text-accent hover:text-accent/80 transition-colors bg-accent/10 hover:bg-accent/20 px-4 py-2 rounded-xl border border-accent/10"
-          >
-            <ArrowLeft size={14} />
-            Show All History
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center rounded-xl border border-accent/10 bg-accent/10 p-1">
+              <button
+                type="button"
+                onClick={() => previousDay && navigateToDay(previousDay.date)}
+                disabled={!previousDay}
+                aria-label="View previous trading day"
+                title="Previous trading day (Left Arrow)"
+                className="inline-flex h-8 w-9 items-center justify-center rounded-lg text-accent transition-colors hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+              >
+                <ChevronLeft size={17} />
+              </button>
+              <span className="hidden px-2 text-[10px] font-bold uppercase tracking-wider text-muted lg:inline">
+                Use arrow keys
+              </span>
+              <button
+                type="button"
+                onClick={() => nextDay && navigateToDay(nextDay.date)}
+                disabled={!nextDay}
+                aria-label="View next trading day"
+                title="Next trading day (Right Arrow)"
+                className="inline-flex h-8 w-9 items-center justify-center rounded-lg text-accent transition-colors hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+              >
+                <ChevronRight size={17} />
+              </button>
+            </div>
+            <Link
+              href="/journal"
+              className="flex items-center gap-2 text-xs font-bold text-accent hover:text-accent/80 transition-colors bg-accent/10 hover:bg-accent/20 px-4 py-2.5 rounded-xl border border-accent/10"
+            >
+              <ArrowLeft size={14} />
+              Show All History
+            </Link>
+          </div>
         </div>
       )}
 

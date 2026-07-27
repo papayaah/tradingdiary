@@ -382,15 +382,15 @@ export default function ImportPage() {
         </div>
 
         {providerInfo && (
-          <div className="bg-muted/30 border border-border/50 rounded-2xl px-4 py-3 flex items-center gap-3 backdrop-blur-sm self-start md:self-auto">
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+          <div className="bg-card-bg border border-card-border rounded-2xl px-4 py-3 flex items-center gap-3 self-start md:self-auto shadow-sm">
+            <div className="w-10 h-10 rounded-xl bg-accent-light flex items-center justify-center text-accent">
               <Cpu size={20} />
             </div>
             <div>
               <div className="text-[10px] text-muted uppercase font-bold tracking-widest leading-none mb-1">Active AI Engine</div>
               <div className="flex items-center gap-2">
                 <span className="text-sm font-bold text-foreground">{providerInfo.name}</span>
-                <span className="text-[10px] px-1.5 py-0.5 bg-accent/10 text-accent rounded-md font-medium uppercase">{activeModelId?.split('/').pop() || activeModelId}</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-accent-light text-accent rounded-md font-medium uppercase">{activeModelId?.split('/').pop() || activeModelId}</span>
               </div>
             </div>
           </div>
@@ -403,22 +403,22 @@ export default function ImportPage() {
 
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t border-border" />
+              <span className="w-full border-t border-card-border" />
             </div>
             <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-background px-2 text-muted-foreground font-medium">Or</span>
+              <span className="bg-background px-3 text-muted font-bold tracking-wider">Or</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 max-w-xl mx-auto w-full">
+          <div className="flex items-center gap-3 max-w-xl mx-auto w-full">
             <div className="relative flex-1">
-              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-muted-foreground">
+              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-muted">
                 <LinkIcon size={18} />
               </div>
               <input
                 type="text"
                 placeholder="Paste a URL (e.g. from dropfile.dev)..."
-                className="w-full bg-muted/50 border border-border rounded-xl pl-11 pr-4 py-3 text-sm outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all font-medium"
+                className="w-full bg-card-bg border border-card-border rounded-xl pl-11 pr-4 py-3 text-sm text-foreground placeholder:text-muted outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 transition-all font-medium"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     const url = e.currentTarget.value.trim();
@@ -428,7 +428,7 @@ export default function ImportPage() {
               />
             </div>
             <button
-              className="px-6 py-3 bg-primary text-primary-foreground rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors shadow-sm"
+              className="px-6 py-3 bg-accent text-white rounded-xl text-sm font-semibold hover:bg-accent/90 transition-all shadow-sm shrink-0"
               onClick={(e) => {
                 const input = e.currentTarget.previousElementSibling?.querySelector('input') as HTMLInputElement;
                 const url = input?.value.trim();

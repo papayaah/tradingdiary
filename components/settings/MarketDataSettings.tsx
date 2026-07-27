@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Key, ShieldCheck, Zap, Database, Check, Activity, Flame } from 'lucide-react';
+import { Key, ShieldCheck, Zap, Database, Check, Activity, Flame, TrendingUp } from 'lucide-react';
 
 export default function MarketDataSettings() {
   const [preferredProvider, setPreferredProvider] = useState<string>('tiingo');
@@ -174,8 +174,9 @@ export default function MarketDataSettings() {
 
       {/* Equities Provider Selector */}
       <div className="space-y-3">
-        <label className="text-xs font-bold uppercase tracking-wider text-muted block">
-          📈 Equities Data Engine (Stocks & ETFs)
+        <label className="text-xs font-bold uppercase tracking-wider text-muted flex items-center gap-1.5">
+          <TrendingUp className="w-3.5 h-3.5 text-accent" />
+          <span>Equities Data Engine (Stocks & ETFs)</span>
         </label>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
           {[

@@ -32,6 +32,33 @@ export interface ChartProvider {
     fetchRecentCandles(symbol: string, interval: string): Promise<OHLCCandle[]>;
 }
 
+// IBKR/TWS-style futures symbols: ROOT + month code + 1-2 digit year.
+// e.g. MNQU6 (Micro Nasdaq, Sep 2026), MGCQ6 (Micro Gold, Aug 2026), ESZ25.
+// Month codes: F G H J K M N Q U V X Z.
+const IBKR_FUTURES_RE = /^([A-Z]{1,4})[FGHJKMNQUVXZ]\d{1,2}$/;
+
+/**
+ * Detect futures symbols across the notations we ingest:
+ * Yahoo (NQ=F), Databento continuous (NQ.C.0), slash-prefixed (/NQ),
+ * and IBKR contract codes (MNQU6).
+ */
+export function isFuturesSymbol(symbol: string): boolean {
+    const s = symbol.toUpperCase().trim();
+    return s.endsWith('=F') || s.includes('.C.0') || s.startsWith('/') || IBKR_FUTURES_RE.test(s);
+}
+
+/**
+ * Reduce any futures notation to its product root (MNQU6 -> MNQ, /NQ -> NQ,
+ * NQ=F -> NQ, NQ.C.0 -> NQ) so each provider can rebuild its own symbology.
+ */
+export function futuresRoot(symbol: string): string {
+    let s = symbol.toUpperCase().trim();
+    if (s.startsWith('/')) s = s.slice(1);
+    s = s.replace('=F', '').replace(/\..*$/, '');
+    const m = s.match(IBKR_FUTURES_RE);
+    return m ? m[1] : s;
+}
+
 /**
  * Polygon.io Provider (Highly Reliable)
  */
@@ -146,7 +173,11 @@ export class YahooProvider implements ChartProvider {
     async fetchCandles(symbol: string, date: string, interval: string): Promise<OHLCCandle[]> {
         const needsAggregation = interval === '10m';
         const fetchInterval = needsAggregation ? '5m' : interval;
-        const cleanSymbol = symbol.startsWith('/') ? symbol.substring(1) : symbol;
+        // Yahoo serves futures under a continuous "ROOT=F" ticker (e.g. MNQ=F),
+        // not IBKR contract codes like MNQU6, so map futures to that form.
+        const cleanSymbol = isFuturesSymbol(symbol)
+            ? `${futuresRoot(symbol)}=F`
+            : symbol.startsWith('/') ? symbol.substring(1) : symbol;
 
         const year = parseInt(date.substring(0, 4));
         const month = parseInt(date.substring(4, 6)) - 1;
@@ -192,7 +223,9 @@ export class YahooProvider implements ChartProvider {
     async fetchRecentCandles(symbol: string, interval: string): Promise<OHLCCandle[]> {
         const needsAggregation = interval === '10m';
         const fetchInterval = needsAggregation ? '5m' : interval;
-        const cleanSymbol = symbol.startsWith('/') ? symbol.substring(1) : symbol;
+        const cleanSymbol = isFuturesSymbol(symbol)
+            ? `${futuresRoot(symbol)}=F`
+            : symbol.startsWith('/') ? symbol.substring(1) : symbol;
 
         const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(cleanSymbol)}?interval=${fetchInterval}&range=2d&includePrePost=true`;
 
@@ -482,13 +515,10 @@ export class DatabentoProvider implements ChartProvider {
 
     private mapSymbol(symbol: string): string {
         let clean = symbol.toUpperCase().trim();
-        if (clean.endsWith('=F')) {
-            clean = clean.replace('=F', '');
-        }
-        if (!clean.includes('.')) {
-            clean = `${clean}.c.0`;
-        }
-        return clean;
+        if (clean.includes('.')) return clean;
+        // Reduce IBKR contract codes (MNQU6) and Yahoo tickers (MNQ=F) to the
+        // product root before requesting Databento's continuous front month.
+        return `${futuresRoot(clean)}.c.0`;
     }
 
     async fetchCandles(symbol: string, date: string, interval: string): Promise<OHLCCandle[]> {
@@ -512,7 +542,7 @@ export class DatabentoProvider implements ChartProvider {
 
         const url = `https://hist.databento.com/v0/timeseries.get_range?dataset=GLBX.MDP3&symbols=${dbSymbol}&schema=ohlcv-1m&stype_in=continuous&stype_out=instrument_id&encoding=json&pretty_px=1&pretty_ts=1&start=${startIso}&end=${endIso}`;
 
-        const cleanRoot = symbol.toUpperCase().replace('=F', '').replace(/\..*$/, '').replace(/^\//, '');
+        const cleanRoot = futuresRoot(symbol);
 
         let res = await fetch(url, {
             headers: {
@@ -591,7 +621,7 @@ export interface UserProviderConfig {
  */
 export function getActiveProvider(symbol?: string, userConfig?: UserProviderConfig): ChartProvider {
     const upperSymbol = symbol ? symbol.toUpperCase() : '';
-    const isFutures = upperSymbol.endsWith('=F') || upperSymbol.includes('.C.0') || upperSymbol.startsWith('/');
+    const isFutures = symbol ? isFuturesSymbol(symbol) : false;
     const isCrypto = upperSymbol.endsWith('-USD');
 
     // Handle Futures Data Feed Selection separately

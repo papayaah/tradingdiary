@@ -20,9 +20,9 @@ export default function APIKeyInput() {
     }
 
     return (
-        <div className="space-y-8 max-w-4xl">
-            <div className="bg-card text-card-foreground p-6 rounded-lg border shadow-sm">
-                <h3 className="text-lg font-medium mb-6">AI Configuration</h3>
+        <div className="space-y-8">
+            <div className="bg-card-bg border border-card-border p-6 rounded-2xl shadow-sm">
+                <h3 className="text-lg font-bold text-foreground mb-6">AI Configuration</h3>
 
                 <AIProviderSelector
                     onProviderSelect={handleProviderSelect}
@@ -33,8 +33,8 @@ export default function APIKeyInput() {
                 />
             </div>
 
-            <div className="bg-card text-card-foreground p-6 rounded-lg border shadow-sm">
-                <h3 className="text-lg font-medium mb-6">Usage & Costs</h3>
+            <div className="bg-card-bg border border-card-border p-6 rounded-2xl shadow-sm">
+                <h3 className="text-lg font-bold text-foreground mb-6">Usage & Costs</h3>
                 <UsageStats
                     stats={aiContext.usageStats}
                     onReset={aiContext.resetUsageStats}

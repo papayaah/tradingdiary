@@ -132,21 +132,36 @@ export default function ReplayTimeline({
       Math.abs(Math.max(...allValues)),
       1
     );
-    return { maxAbs, scale: (PNL_AREA_HEIGHT / 2 - 4) / maxAbs };
+    return { maxAbs, scale: (PNL_AREA_HEIGHT / 2 - 6) / maxAbs };
   }, [snapshots]);
 
   const pnlMid = TOP_PADDING + symbolsHeight + 4 + PNL_AREA_HEIGHT / 2;
 
-  // P&L polyline points (clipped to current time, stable scale)
+  // P&L polyline points (sorted chronologically left-to-right, deduplicated by timeSeconds)
   const pnlPoints = useMemo(() => {
-    const pts: { x: number; y: number }[] = [];
-    for (const snap of snapshots) {
-      if (snap.timeSeconds > currentTimeSeconds) break;
-      pts.push({
-        x: timeToX(snap.timeSeconds),
-        y: pnlMid - snap.cumulativeNetPnL * pnlScale.scale,
-      });
+    if (snapshots.length === 0) return [];
+
+    // Filter by current time and sort strictly ascending by timeSeconds
+    const validSnaps = snapshots
+      .filter((s) => s.timeSeconds <= currentTimeSeconds)
+      .sort((a, b) => a.timeSeconds - b.timeSeconds);
+
+    if (validSnaps.length === 0) return [];
+
+    // Deduplicate snapshots at identical timeSeconds (keep latest cumulative P&L)
+    const timeMap = new Map<number, number>();
+    for (const snap of validSnaps) {
+      timeMap.set(snap.timeSeconds, snap.cumulativeNetPnL);
     }
+
+    const pts: { x: number; y: number }[] = [];
+    timeMap.forEach((pnl, timeSec) => {
+      pts.push({
+        x: timeToX(timeSec),
+        y: pnlMid - pnl * pnlScale.scale,
+      });
+    });
+
     return pts;
   }, [snapshots, currentTimeSeconds, pnlMid, pnlScale.scale, timeToX]);
 
