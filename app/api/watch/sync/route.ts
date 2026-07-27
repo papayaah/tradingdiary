@@ -59,6 +59,19 @@ const parseScanFrequency = (value: unknown): number => {
   return Math.max(60, Math.min(86_400, Math.round(value)));
 };
 
+// Asset classes the user has switched off. Watches in these classes are synced
+// as enabled=false, so the scheduler and worker skip them entirely (no scans,
+// no alerts, no push) while keeping the rows so they can be re-enabled later.
+const parseDisabledAssetClasses = (value: unknown): Set<AssetClass> => {
+  const disabled = new Set<AssetClass>();
+  if (Array.isArray(value)) {
+    for (const v of value) {
+      if (v === 'equity' || v === 'futures' || v === 'crypto') disabled.add(v);
+    }
+  }
+  return disabled;
+};
+
 export async function GET(request: NextRequest) {
   try {
     const session = await auth.api.getSession({ headers: request.headers });
@@ -110,6 +123,7 @@ export async function POST(request: NextRequest) {
     const patternId = parsePatternId(body.patternId);
     const watchSession = parseSession(body.session);
     const scanFrequencySeconds = parseScanFrequency(body.scanFrequencySeconds);
+    const disabledAssetClasses = parseDisabledAssetClasses(body.disabledAssetClasses);
     const userId = session.user.id;
     const nowIso = new Date().toISOString();
 
@@ -156,17 +170,21 @@ export async function POST(request: NextRequest) {
       }
 
       for (const watch of watchlist) {
+        const assetClass = assetClassFor(watch.symbol);
+        // Watches in a switched-off asset class sync as disabled, so the
+        // scheduler/worker skip them (no scans, alerts, or push) until re-enabled.
+        const enabled = !disabledAssetClasses.has(assetClass);
         await tx
           .insert(serverWatch)
           .values({
             userId,
             symbol: watch.symbol,
-            assetClass: assetClassFor(watch.symbol),
+            assetClass,
             interval: watch.interval,
             patternId,
             minMovePercent: watch.minMovePercent,
             session: watchSession,
-            enabled: true,
+            enabled,
             scanFrequencySeconds,
             nextScanAt: nowIso,
             updatedAt: nowIso,
@@ -174,11 +192,11 @@ export async function POST(request: NextRequest) {
           .onConflictDoUpdate({
             target: [serverWatch.userId, serverWatch.symbol, serverWatch.interval],
             set: {
-              assetClass: assetClassFor(watch.symbol),
+              assetClass,
               patternId,
               minMovePercent: watch.minMovePercent,
               session: watchSession,
-              enabled: true,
+              enabled,
               scanFrequencySeconds,
               updatedAt: nowIso,
             },

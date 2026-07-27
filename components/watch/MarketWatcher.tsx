@@ -91,6 +91,14 @@ interface PendingAlert {
 const ALERT_HISTORY_TTL_MS = 10 * 60 * 1000;
 const MAX_ALERT_HISTORY_ITEMS = 50;
 type WatchlistCategory = 'stocks' | 'crypto' | 'futures' | 'all';
+// Categories that can be switched off for background scanning/alerts. Mapped to
+// the server's asset-class names for the sync payload.
+type ScanCategory = 'stocks' | 'crypto' | 'futures';
+const CATEGORY_TO_ASSET_CLASS: Record<ScanCategory, string> = {
+  stocks: 'equity',
+  crypto: 'crypto',
+  futures: 'futures',
+};
 
 const isFuturesSymbol = (symbol: string) => symbol.toUpperCase().includes('=F');
 const isCryptoSymbol = (symbol: string) => symbol.toUpperCase().endsWith('-USD');
@@ -381,6 +389,12 @@ export default function MarketWatcher() {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [filterMode, setFilterMode] = useState<'all' | 'alerts' | 'errors'>('all');
   const [watchlistCategory, setWatchlistCategory] = useState<WatchlistCategory>('stocks');
+  // Asset classes the user has switched off. Synced to the server so the scanner
+  // skips them entirely (no scans/alerts/push); a ref mirrors it so every
+  // syncScannerSettings call includes the current value without a signature change.
+  const [disabledCategories, setDisabledCategories] = useState<ScanCategory[]>([]);
+  const disabledCategoriesRef = useRef<ScanCategory[]>([]);
+  disabledCategoriesRef.current = disabledCategories;
   const handleWatchlistViewChange = React.useCallback((view: WatchlistView) => {
     setWatchlistView(view);
     localStorage.setItem('watcher-watchlist-view', view);
@@ -432,9 +446,22 @@ export default function MarketWatcher() {
         patternId,
         session,
         scanFrequencySeconds: Math.round(frequencyMinutes * 60),
+        disabledAssetClasses: disabledCategoriesRef.current.map((c) => CATEGORY_TO_ASSET_CLASS[c]),
       }),
     });
   }, [activeWindow, scanIntervalMinutes, selectedPatternId]);
+
+  // Toggle a whole category's background scanning/alerts. Updates the ref first
+  // so the immediate sync sends the new value.
+  const toggleCategoryScanning = React.useCallback((category: ScanCategory) => {
+    const next = disabledCategoriesRef.current.includes(category)
+      ? disabledCategoriesRef.current.filter((c) => c !== category)
+      : [...disabledCategoriesRef.current, category];
+    disabledCategoriesRef.current = next;
+    setDisabledCategories(next);
+    localStorage.setItem('watcher-disabled-categories', JSON.stringify(next));
+    void syncScannerSettings(watchlist).catch(() => {});
+  }, [syncScannerSettings, watchlist]);
 
   const handlePatternChange = React.useCallback((patternId: PatternId) => {
     setSelectedPatternId(patternId);
@@ -649,6 +676,21 @@ export default function MarketWatcher() {
     const savedCategory = localStorage.getItem('watcher-watchlist-category');
     if (savedCategory === 'stocks' || savedCategory === 'crypto' || savedCategory === 'futures' || savedCategory === 'all') {
       setWatchlistCategory(savedCategory);
+    }
+    const savedDisabled = localStorage.getItem('watcher-disabled-categories');
+    if (savedDisabled) {
+      try {
+        const parsed = JSON.parse(savedDisabled);
+        if (Array.isArray(parsed)) {
+          const valid = parsed.filter(
+            (c): c is ScanCategory => c === 'stocks' || c === 'crypto' || c === 'futures',
+          );
+          disabledCategoriesRef.current = valid;
+          setDisabledCategories(valid);
+        }
+      } catch {
+        // ignore malformed value
+      }
     }
     const savedWatchlistView = localStorage.getItem('watcher-watchlist-view');
     if (savedWatchlistView === 'compact' || savedWatchlistView === 'table') {
@@ -2764,6 +2806,31 @@ export default function MarketWatcher() {
                   >
                     All Tickers ({watchlist.length})
                   </button>
+                </div>
+
+                {/* Per-category alert switches: turn a whole asset class off so the
+                    server scanner skips it (no scans/alerts/push), symbols kept. */}
+                <div className="flex items-center gap-1.5" title="Turn a category's background alerts on or off">
+                  {(['stocks', 'crypto', 'futures'] as const).map((cat) => {
+                    const off = disabledCategories.includes(cat);
+                    return (
+                      <button
+                        key={cat}
+                        onClick={() => toggleCategoryScanning(cat)}
+                        title={off
+                          ? `${cat} alerts are OFF — click to turn on`
+                          : `${cat} alerts are ON — click to turn off`}
+                        className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide border transition-all ${
+                          off
+                            ? 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20'
+                            : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
+                        }`}
+                      >
+                        {off ? <BellOff size={12} /> : <Bell size={12} />}
+                        <span>{cat}</span>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 {/* Consecutive Move is the only preset with a configurable streak length. */}
