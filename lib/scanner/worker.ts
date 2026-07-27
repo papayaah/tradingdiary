@@ -146,14 +146,35 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
           matchedPattern: latest.type,
           message: latest.message,
           price: last.close,
+          alertId: createdAlertId,
+          createdAt: nowIso,
         });
       }
     }
 
-    // Durable event + wakeup signal (consumed by the future SSE layer).
-    const eventType = createdAlertId ? 'alert.created' : 'watch.state';
-    const eventPayload = createdAlertId && latest
-      ? {
+    // Durable events + wakeup signal (consumed by the SSE layer). A watch.state
+    // event is always emitted so the watchlist row reflects the latest scan; an
+    // alerting scan additionally emits alert.created. Emitting both means an
+    // alert no longer leaves the row's status/price/candles lagging a cycle (N1).
+    const statePayload = {
+      watchId: watch.id,
+      symbol: watch.symbol,
+      interval: watch.interval,
+      patternId,
+      status,
+      lastPrice: last?.close,
+      lastCandleTime: last ? new Date(last.time * 1000).toISOString() : null,
+      lastScannedAt: nowIso,
+      lastProvider: providerName,
+      lastError: null,
+      recentCandles: boundRecent(candles),
+    };
+
+    const events: Array<{ type: string; payload: unknown }> = [];
+    if (createdAlertId && latest) {
+      events.push({
+        type: 'alert.created',
+        payload: {
           alertId: createdAlertId,
           watchId: watch.id,
           symbol: watch.symbol,
@@ -164,30 +185,20 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
           minMovePercent: watch.minMovePercent,
           candles: boundRecent(candles),
           createdAt: nowIso,
-        }
-      : {
-          watchId: watch.id,
-          symbol: watch.symbol,
-          interval: watch.interval,
-          patternId,
-          status,
-          lastPrice: last?.close,
-          lastCandleTime: last ? new Date(last.time * 1000).toISOString() : null,
-          lastScannedAt: nowIso,
-          lastProvider: providerName,
-          lastError: null,
-          recentCandles: boundRecent(candles),
-        };
-    const [evt] = await tx
-      .insert(watchEvent)
-      .values({
-        userId: watch.userId,
-        type: eventType,
-        payload: eventPayload,
-      })
-      .returning({ id: watchEvent.id });
-    if (evt) {
-      await tx.execute(sql`select pg_notify('watch_events', ${evt.id})`);
+        },
+      });
+    }
+    // State last, so it carries the highest seq and settles the row after the alert.
+    events.push({ type: 'watch.state', payload: statePayload });
+
+    for (const e of events) {
+      const [evt] = await tx
+        .insert(watchEvent)
+        .values({ userId: watch.userId, type: e.type, payload: e.payload })
+        .returning({ id: watchEvent.id });
+      if (evt) {
+        await tx.execute(sql`select pg_notify('watch_events', ${evt.id})`);
+      }
     }
   });
 

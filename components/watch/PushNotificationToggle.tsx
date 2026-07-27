@@ -24,24 +24,35 @@ export default function PushNotificationToggle() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+  const serverConfigured = !!vapidPublicKey;
+
+  const [iosNeedsInstall, setIosNeedsInstall] = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
 
-    // Register service worker
-    navigator.serviceWorker
-      .register('/sw.js')
-      .then((reg) => {
-        return reg.pushManager.getSubscription();
-      })
+    // The service worker is registered app-wide (see ServiceWorkerRegistrar);
+    // here we only reflect the current subscription state.
+    navigator.serviceWorker.ready
+      .then((reg) => reg.pushManager.getSubscription())
       .then((sub) => {
-        if (sub) {
-          setSubscribed(true);
-        }
+        if (sub) setSubscribed(true);
       })
       .catch((err) => {
-        console.error('Service Worker registration failed:', err);
+        console.error('Push subscription lookup failed:', err);
       });
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const ua = window.navigator.userAgent;
+    // iPadOS reports as "Macintosh"; the touch check disambiguates it.
+    const isIOS = /iphone|ipad|ipod/i.test(ua) || (/Macintosh/.test(ua) && 'ontouchend' in document);
+    const standalone =
+      (window.navigator as unknown as { standalone?: boolean }).standalone === true ||
+      window.matchMedia?.('(display-mode: standalone)').matches === true;
+    // iOS 16.4+ only allows push subscription from an installed standalone PWA.
+    setIosNeedsInstall(isIOS && !standalone);
   }, []);
 
   const handleTogglePush = async () => {
@@ -138,12 +149,12 @@ export default function PushNotificationToggle() {
 
         <button
           onClick={handleTogglePush}
-          disabled={loading}
+          disabled={loading || (!serverConfigured && !subscribed)}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all shadow-sm ${
             subscribed
               ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20'
               : 'bg-emerald-500 hover:bg-emerald-600 text-white'
-          } disabled:opacity-50`}
+          } disabled:opacity-50 disabled:cursor-not-allowed`}
         >
           {loading ? (
             <RefreshCw size={14} className="animate-spin" />
@@ -158,6 +169,20 @@ export default function PushNotificationToggle() {
           )}
         </button>
       </div>
+
+      {!serverConfigured && (
+        <div className="text-xs p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-500 font-medium">
+          Push is not configured on this server yet, so closed-browser alerts are unavailable.
+          Live alerts still work while this tab is open.
+        </div>
+      )}
+
+      {serverConfigured && iosNeedsInstall && !subscribed && (
+        <div className="text-xs p-2.5 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-400 font-medium">
+          On iPhone/iPad, first add Trading Diary to your Home Screen (Share → “Add to Home Screen”),
+          then open it from there and enable alerts. iOS only allows push from the installed app.
+        </div>
+      )}
 
       {statusMessage && (
         <div className="text-xs p-2.5 rounded-lg bg-muted-bg border border-card-border text-muted font-medium">
