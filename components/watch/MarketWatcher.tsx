@@ -628,6 +628,22 @@ export default function MarketWatcher() {
           setScanIntervalMinutes(minutes);
           localStorage.setItem('watcher-scan-interval', String(minutes));
         }
+        // Category on/off is server-authoritative: hydrate the toggles from the
+        // server's actual enabled flags, not localStorage, so every device shows
+        // the true state and the server is the single source of truth.
+        if (Array.isArray(data?.disabledAssetClasses)) {
+          const ASSET_CLASS_TO_CATEGORY: Record<string, ScanCategory> = {
+            equity: 'stocks',
+            crypto: 'crypto',
+            futures: 'futures',
+          };
+          const cats = data.disabledAssetClasses
+            .map((c: string) => ASSET_CLASS_TO_CATEGORY[c])
+            .filter((c: ScanCategory | undefined): c is ScanCategory => !!c);
+          disabledCategoriesRef.current = cats;
+          setDisabledCategories(cats);
+          localStorage.setItem('watcher-disabled-categories', JSON.stringify(cats));
+        }
       })
       .catch(() => {});
 

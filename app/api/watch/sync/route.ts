@@ -72,6 +72,27 @@ const parseDisabledAssetClasses = (value: unknown): Set<AssetClass> => {
   return disabled;
 };
 
+// A category is "off" when it has at least one watch and every one is disabled.
+// Derived from server_watch so the client's toggles reflect server truth.
+async function computeDisabledAssetClasses(userId: string): Promise<AssetClass[]> {
+  const rows = await db
+    .select({ assetClass: serverWatch.assetClass, enabled: serverWatch.enabled })
+    .from(serverWatch)
+    .where(eq(serverWatch.userId, userId));
+  const tally = new Map<string, { enabled: number; total: number }>();
+  for (const r of rows) {
+    const t = tally.get(r.assetClass) ?? { enabled: 0, total: 0 };
+    t.total += 1;
+    if (r.enabled) t.enabled += 1;
+    tally.set(r.assetClass, t);
+  }
+  const disabled: AssetClass[] = [];
+  for (const [cls, t] of tally) {
+    if (t.total > 0 && t.enabled === 0) disabled.push(cls as AssetClass);
+  }
+  return disabled;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const session = await auth.api.getSession({ headers: request.headers });
@@ -85,10 +106,17 @@ export async function GET(request: NextRequest) {
       .where(eq(userWatchlists.userId, session.user.id))
       .limit(1);
 
+    // Derive the disabled asset classes from the authoritative server_watch
+    // rows (a class is "off" when it has watches and none are enabled). This is
+    // the source of truth the client hydrates its category toggles from, so the
+    // UI reflects the server rather than stale localStorage.
+    const disabledAssetClasses = await computeDisabledAssetClasses(session.user.id);
+
     if (records.length === 0) {
       return NextResponse.json({
         watchlist: null,
         patternId: DEFAULT_PATTERN_ID,
+        disabledAssetClasses,
         authenticated: true,
       });
     }
@@ -99,6 +127,7 @@ export async function GET(request: NextRequest) {
       patternId: parsePatternId(record.patternId),
       session: parseSession(record.session),
       scanFrequencySeconds: record.scanFrequencySeconds,
+      disabledAssetClasses,
       authenticated: true,
     });
   } catch (error) {
