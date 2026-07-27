@@ -1,0 +1,584 @@
+# Background and Closed-Browser Alert Delivery
+
+## Status
+
+Draft — investigation complete, implementation not started.
+
+Companion to [`server-side-market-scanner.md`](./server-side-market-scanner.md), which marks
+Step 10 (Web Push) as complete. That step delivered the **code**; this spec covers the
+**configuration and correctness gaps** that leave it inert in production, plus the hardening
+needed for reliable delivery when no tab is in the foreground.
+
+Audited against commit `e2bb69f`.
+
+## Implementation status
+
+- ⬜ **Step 1 — VAPID key provisioning.** Generate keys; wire through Dockerfile build args, compose, and server `.env`.
+- ⬜ **Step 2 — Verify `SCANNER_SHADOW=false` in production.** No alert rows are created in shadow mode, so no push can ever fire.
+- ⬜ **Step 3 — Web app manifest + icons.** Required before iOS will permit push subscription.
+- ⬜ **Step 4 — Service worker registration in root layout.** Currently only registers on `/settings`.
+- ⬜ **Step 5 — Notification deduplication.** Service worker and page both fire for the same alert.
+- ⬜ **Step 6 — Wire the snapshot cursor into the stream.** Every page load currently replays the full event history and re-fires notifications for old alerts.
+- ⬜ **Step 7 — SSE liveness watchdog.** Client cannot currently detect a silently dead stream.
+- ⬜ **Step 8 — Emit `watch.state` alongside `alert.created`.** Watchlist row lags one scan cycle on alerting scans.
+- ⬜ **Step 9 — End-to-end verification matrix.** Desktop background, desktop closed, Android, iOS PWA.
+
+---
+
+## Summary
+
+The scanner runs 24/7 on the server, but alert **delivery** to the user currently depends on an
+open, foreground browser tab. Server-Sent Events cannot reach a suspended, frozen, or closed
+browser — that is an architectural property of SSE, not a bug. Web Push is the mechanism that
+covers those cases, and the code for it already exists in the repository. It has never worked in
+production because the VAPID keys are not passed to any container, and because the client-side
+public key must be injected at Docker **build** time rather than runtime.
+
+This spec records the conceptual distinction between the two transports, audits the current
+state of both paths, and specifies the work required to make closed-browser and mobile alerting
+function.
+
+---
+
+## Background: why SSE alone is insufficient
+
+### The two transports are structurally different
+
+**SSE is a connection owned by the page.** `new EventSource(...)`
+(`hooks/useServerWatchStream.ts:83`) opens an HTTP connection from the tab's JavaScript context.
+It shares that context's lifecycle: no tab, no connection, no events.
+
+**Web Push is a connection owned by the browser or the operating system.** The server never
+contacts the page. It contacts the browser vendor's push service, which relays to a background
+process that briefly wakes the service worker:
+
+```
+scanner worker
+  └─ web-push (VAPID-signed, encrypted payload)
+       └─ FCM (Chrome/Edge) │ Mozilla autopush (Firefox) │ APNs (Safari)
+            └─ browser or OS background process
+               (one shared connection for every push-enabled site)
+                 └─ wakes public/sw.js for a few seconds
+                      └─ self.registration.showNotification()
+                           └─ OS notification tray
+```
+
+No tab is involved at any point. On Android the relay is handled by Google Play Services at the
+OS level, so the browser itself need not be running.
+
+| | SSE | Web Push |
+|---|---|---|
+| Connection held by | the tab's JS | browser / OS process |
+| Tab must be open | yes | no |
+| Browser must be running | yes | no |
+| Survives a locked phone | no | yes |
+| Delivery target | JS callbacks in the page | service worker → notification tray |
+| Payload | unlimited, streaming | ~4 KB, single shot |
+| Ordering and replay | yes (`cursor` + `Last-Event-ID`) | none — best effort, may be dropped |
+| User permission | not required | explicit grant required |
+| Can update the DOM | yes | no (service worker has no DOM) |
+
+### What actually breaks delivery today
+
+A backgrounded desktop tab is *not* the primary failure. SSE is not throttled the way timers are,
+so a hidden desktop tab generally keeps receiving. Delivery fails when:
+
+- **Mobile Safari / Chrome Android** suspend the background tab within seconds.
+- **The browser is closed** or the laptop sleeps.
+- **Chrome Memory Saver** freezes or discards a hidden tab (roughly 5 minutes of inactivity).
+- **`new Notification()`** (`components/watch/MarketWatcher.tsx:887`) is used — it requires a live
+  page, and throws outright on Chrome for Android, which mandates
+  `ServiceWorkerRegistration.showNotification()`.
+
+### Both transports are retained
+
+They serve different purposes and the worker already fans out to both from the same alert row
+(`lib/scanner/worker.ts:130-190`):
+
+- **SSE delivers data** — the enriched `alert.created` payload with candles, live `watch.state`
+  rows, price updates. Rich, ordered, replayable. Only useful while a page is open.
+- **Push delivers attention** — a few hundred bytes whose only job is to make a device buzz.
+
+Push is best-effort with no ordering or delivery guarantee; if a device is offline the relay holds
+the message for a TTL and then drops it. The durable `watch_event` table and the SSE cursor remain
+the source of truth: push is the doorbell, the database is the record. On reconnect,
+`/api/watch/state` plus cursor replay fill in anything push missed.
+
+---
+
+## Goals
+
+- Deliver pattern alerts to desktop and mobile when no tab is in the foreground, when the tab is
+  discarded, and when the browser is fully closed.
+- Support iOS as an installed Home Screen PWA.
+- Produce exactly one user-visible notification per alert, regardless of how many transports and
+  open tabs the user has.
+- Fail loudly and visibly when push is misconfigured, rather than silently sending nothing.
+- Detect and recover from a silently dead SSE stream.
+
+## Non-goals
+
+- Replacing SSE. It remains the transport for live UI state.
+- Guaranteed push delivery or ordering — the platform does not offer it.
+- Silent (data-only) push. `userVisibleOnly: true` is mandatory on Chrome; every push must produce
+  a visible notification or the subscription is eventually revoked.
+- Native mobile applications.
+- Per-watch or per-pattern notification routing and quiet hours (possible follow-up).
+
+---
+
+## Current state audit (commit `e2bb69f`)
+
+### Working
+
+The SSE envelope mismatch found earlier in this investigation has been fixed:
+
+- `app/api/watch/events/route.ts:47` sends an **unnamed** event carrying a
+  `{seq, id, type, payload}` envelope. Previously it sent `event: alert.created`, a *named* event,
+  which `EventSource.onmessage` never fires for — only `addEventListener('alert.created', …)`
+  would have received it. Nothing arrived at the client at all.
+- `hooks/useServerWatchStream.ts:103` matches `watch.state` and `alert.created`.
+- `lib/scanner/worker.ts:154` enriches the event payload with `symbol`, `interval`, `direction`,
+  `patternId`, `candles`, and `createdAt`.
+- `components/watch/MarketWatcher.tsx:285` reads `data.direction` rather than substring-matching
+  `matchedPattern`.
+
+Foreground live alerts are therefore expected to work. The push path is not.
+
+### Blocking defects
+
+**B1 — VAPID keys reach neither container, and the public key needs a build arg.**
+`docker-compose.yml` passes no `VAPID_*` variable to the `web` service (lines 11–23) or the
+`scanner` service (lines 65–72), and `Dockerfile` declares no `ARG`. Two distinct failures:
+
+- `NEXT_PUBLIC_VAPID_PUBLIC_KEY` is inlined into the client bundle by Next.js **at build time**.
+  Supplying it as a runtime environment variable has no effect. Today
+  `components/watch/PushNotificationToggle.tsx:26` always resolves `undefined`, so the toggle can
+  only ever report *"VAPID public key not configured on server."*
+- `VAPID_PRIVATE_KEY` is absent from the **scanner** service, which is the process that actually
+  sends push. `lib/scanner/push.ts:24` returns `0` immediately and logs nothing — a silent no-op
+  that is indistinguishable from "no subscriptions".
+
+**B2 — `SCANNER_SHADOW` defaults to `true`** (`docker-compose.yml:68`). With shadow mode on,
+`willAlert = !!matched && !scannerConfig.shadow` (`lib/scanner/worker.ts:85`) is always false, no
+`server_watch_alert` rows are inserted, and neither push nor `alert.created` ever fires. If the
+production `.env` has not overridden this, it alone accounts for total silence.
+
+**B3 — No web app manifest.** `public/` contains no `manifest.json`. iOS 16.4+ only permits push
+subscription for a site installed to the Home Screen as a standalone PWA, which requires a
+manifest with `display: standalone`. iOS push is currently impossible regardless of key
+configuration.
+
+**B4 — Duplicate notifications.** Once push works, `public/sw.js:35` shows an OS notification for
+every push while `components/watch/MarketWatcher.tsx:887` independently fires `new Notification()`
+from the page for the same alert over SSE. An open desktop tab receives two banners. Multiple open
+tabs multiply this further.
+
+**B5 — Service worker registered only on `/settings`.** Registration lives in
+`components/watch/PushNotificationToggle.tsx:32`, whose only mount point is
+`app/(journal)/settings/page.tsx`. A user who never opens Settings has no service worker at all.
+
+**B6 — The snapshot cursor is discarded, so every page load replays the entire event history.**
+`lib/watch/snapshot.ts:64` returns a `cursor` (the user's current `max(watch_event.seq)`)
+specifically so the stream can resume from it. The snapshot consumer at
+`components/watch/MarketWatcher.tsx:305-327` reads only `snapshot.alerts` and drops the cursor,
+and the hook call at `components/watch/MarketWatcher.tsx:257` passes no `initialCursor`. The hook
+therefore defaults to `initialCursor = 0` (`hooks/useServerWatchStream.ts:54`), connects with no
+`cursor` query parameter, and `app/api/watch/events/route.ts:77` runs
+`getEventsAfter(userId, 0)` — returning the user's **entire** event history up to the 500-row
+limit in `lib/watch/events-bridge.ts:90-97`.
+
+Observed symptom: opening the tab produces a burst of desktop notifications for alerts that fired
+hours earlier. `onAlert` fires once per replayed event, each call reaching
+`sendDesktopNotification` (`components/watch/MarketWatcher.tsx:301`). Because the notification
+`tag` embeds `Date.now()` (`components/watch/MarketWatcher.tsx:882`) nothing collapses, so every
+historical alert renders as its own banner. The alert log is also double-populated: the snapshot
+sets it once, then the replay prepends the same alerts again.
+
+This is the direct cause of the reported "alerts only arrive when I open the tab" behaviour. Note
+that it is *not* delayed delivery — the notifications are stale replays, not queued alerts.
+
+**B7 — All current macOS/desktop notifications come from the page, not from push.** Given B1, no
+push has ever been sent. Every notification observed to date originates from `new Notification()`
+at `components/watch/MarketWatcher.tsx:887`, driven by SSE, and therefore requires a live tab.
+macOS renders these through Notification Center identically to push notifications, which makes the
+push path appear functional when it is entirely inert. Worth stating explicitly so the Step 1 work
+is not mistaken for a no-op.
+
+### Non-blocking issues
+
+**N1 — Alerting scans emit no state update.** `lib/scanner/worker.ts:154` sets `eventType` to
+*either* `alert.created` *or* `watch.state`, never both. `onAlert`
+(`components/watch/MarketWatcher.tsx:283`) only appends to `alertLogs`; it does not call
+`setWatchlist`. The watchlist row's status, price, and candles therefore lag until the next scan
+cycle — the moment the alert fires is precisely when the row does not update.
+
+**N2 — Snapshot-restored alerts have no candles.** `components/watch/MarketWatcher.tsx:322` maps
+history with `candles: []`, so restored alert cards and their generated chart icons render empty.
+
+**N3 — No client-side stream watchdog.** The server heartbeat is a `: ping` **comment**
+(`app/api/watch/events/route.ts:90`). Comments keep proxies from timing out, but `EventSource`
+discards them entirely — they are not observable from JavaScript. The client can therefore not
+distinguish a healthy idle stream from one that died without firing `onerror` (NAT timeout, sleep
+or wake, captive portal). Only an explicit `onerror` triggers reconnect. The 20-minute
+`MAX_LIFETIME_MS` close is fine — `EventSource` reconnects automatically with `Last-Event-ID`.
+
+---
+
+## Implementation
+
+### Step 1 — VAPID key provisioning
+
+Generate one key pair. It is permanent: rotating it invalidates every stored subscription in
+`user_push_subscription`, silently, with no way to notify affected devices.
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+**1a. Local development** — add to `.env.local` (note: no `.env.local` currently exists in the
+working tree; create one):
+
+```
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=B...   # ~87 chars, URL-safe base64
+VAPID_PRIVATE_KEY=...               # ~43 chars — never expose to the client
+VAPID_SUBJECT=mailto:david.ang@chord.co
+```
+
+**1b. `Dockerfile`** — the public key must be present during `npm run build`. Add to the
+`builder` stage, before `RUN npm run build`:
+
+```dockerfile
+FROM node:24-bookworm-slim AS builder
+WORKDIR /app
+...
+ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY=""
+ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
+RUN npm run build
+```
+
+The `scanner` stage inherits from `builder`, so it picks this up automatically; its private key
+still arrives at runtime from compose.
+
+**1c. `docker-compose.yml`** — add a build arg to the `web` service and runtime env to **both**
+services. The scanner is the sender and needs the private key; the web service needs the private
+key only if push is ever sent from a route handler (it is not today, but keep them symmetric to
+avoid a confusing future failure).
+
+```yaml
+  web:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
+    environment:
+      ...
+      NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_SUBJECT: ${VAPID_SUBJECT}
+
+  scanner:
+    environment:
+      ...
+      NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_SUBJECT: ${VAPID_SUBJECT}
+```
+
+**1d. Server `.env`** — `deploy.sh:53` points compose at `/srv/tradingdiary/.env`, and
+`deploy.sh:88` excludes `.env` from the rsync, so this must be edited on the server by hand. Add
+the three variables there.
+
+**1e. Fail loudly.** `lib/scanner/push.ts:24` currently returns `0` in silence. Log once at module
+load and once per suppressed send:
+
+```ts
+if (!vapidPublicKey || !vapidPrivateKey) {
+  console.error('[web-push] VAPID keys missing — push notifications are DISABLED');
+}
+```
+
+Also log the per-user outcome in `sendWebPushToUser` (`sent`, `total`, and the endpoint host on
+failure), so a future silent failure is diagnosable from `docker compose logs scanner`.
+
+**1f. Surface it in the UI.** `PushNotificationToggle` should distinguish "not configured on
+server" from "not subscribed", and show a persistent warning in the former case rather than only
+revealing it when the user clicks.
+
+### Step 2 — Confirm `SCANNER_SHADOW=false` in production
+
+```bash
+ssh <server> "cd /srv/tradingdiary && grep SCANNER_SHADOW .env"
+docker compose exec scanner env | grep SCANNER_SHADOW
+```
+
+If unset, the compose default of `true` applies and no alerts exist to notify about. Set
+`SCANNER_SHADOW=false` in the server `.env` and recreate the scanner container. Consider making
+this explicit in `.env.deploy.example` and adding a startup log line in the worker stating which
+mode it is running in.
+
+### Step 3 — Web app manifest and icons
+
+Create `app/manifest.ts` (Next.js App Router generates `/manifest.webmanifest` from it, so it does
+not need to live in `public/`):
+
+```ts
+import type { MetadataRoute } from 'next';
+
+export default function manifest(): MetadataRoute.Manifest {
+  return {
+    name: 'Trading Diary',
+    short_name: 'Diary',
+    description: 'Your personal trading journal',
+    start_url: '/watch',
+    display: 'standalone',
+    background_color: '#0a0a0a',
+    theme_color: '#0a0a0a',
+    icons: [
+      { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+      { src: '/icons/icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ],
+  };
+}
+```
+
+Add `public/icons/` with those three PNGs — `public/` currently holds only the Next.js starter
+SVGs and `favicon.ico`, and `sw.js:26-27` references `/favicon.ico` for both `icon` and `badge`,
+which renders poorly on Android. Point the service worker at the 192px icon and add a monochrome
+badge.
+
+**iOS requirements, all mandatory:**
+- The site must be served over HTTPS (already true).
+- The user must add it to the Home Screen via the Share sheet — this cannot be triggered
+  programmatically.
+- `Notification.requestPermission()` must be called from a **user gesture** inside the installed
+  standalone app. The current toggle's click handler satisfies this, but only when run from the
+  installed PWA, not from Safari.
+- Push subscription made in Safari will not work; it must be made from within the installed app.
+
+Add an iOS-specific hint to `PushNotificationToggle`: detect iOS plus
+`window.navigator.standalone === false` and instruct the user to install to the Home Screen first.
+
+### Step 4 — Register the service worker at app scope
+
+Move registration out of `PushNotificationToggle` into a small client component mounted from
+`app/layout.tsx` (via `ClientProviders`, which is already the client boundary):
+
+```tsx
+'use client';
+import { useEffect } from 'react';
+
+export function ServiceWorkerRegistrar() {
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      console.error('[sw] registration failed:', err);
+    });
+  }, []);
+  return null;
+}
+```
+
+`PushNotificationToggle` then uses `navigator.serviceWorker.ready` (it already does at line 62)
+and drops its own `register()` call, keeping only subscription state management.
+
+Note `sw.js` already calls `skipWaiting()` and `clients.claim()`, so updates activate immediately.
+Ensure the deploy does not long-cache `/sw.js` — a stale service worker is sticky.
+
+### Step 5 — Notification deduplication
+
+Make the **service worker the sole owner of OS notifications**. Rationale: it is the only path
+that works in every state, and Chrome's `userVisibleOnly` contract requires it to show something
+regardless.
+
+**In `public/sw.js`** — always `showNotification`, but tell any open page so it can update its UI
+without producing a second banner:
+
+```js
+event.waitUntil((async () => {
+  const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  for (const client of clientList) {
+    client.postMessage({ type: 'push-alert', data });
+  }
+  await self.registration.showNotification(title, options);
+})());
+```
+
+**In `MarketWatcher.tsx`** — stop calling `sendDesktopNotification` from the SSE `onAlert` handler
+(line 301) when a push subscription is active. Keep the sound, the alert log, and the in-app UI.
+Gate on actual subscription state rather than a guess:
+
+```ts
+const pushActive = useRef(false);
+useEffect(() => {
+  navigator.serviceWorker?.ready
+    .then((reg) => reg.pushManager.getSubscription())
+    .then((sub) => { pushActive.current = !!sub; })
+    .catch(() => {});
+}, []);
+```
+
+When `pushActive.current` is false — permission denied, unsupported browser, no subscription — the
+page keeps its existing `new Notification()` behaviour as the fallback for an open tab.
+
+Also replace the `tag` values in both places. `sw.js:28` uses `push-${symbol}-${Date.now()}` and
+`MarketWatcher.tsx:882` uses `${symbol}-${type}-${Date.now()}`; the timestamp defeats the entire
+purpose of `tag`, which is to let a newer notification for the same symbol replace an older one.
+Use the stable `alertId` from the payload, or `${symbol}-${interval}-${direction}`.
+
+### Step 6 — Wire the snapshot cursor into the stream
+
+Fixes B6. Two changes, both small, plus one guard.
+
+**6a. Capture the cursor from the snapshot.** In `components/watch/MarketWatcher.tsx:305-327`,
+store `snapshot.cursor` in state and hold the SSE connection until it has been read. The hook
+currently only consumes `initialCursor` on mount (`hooks/useServerWatchStream.ts:55`), so passing
+it late has no effect — gate the connection instead:
+
+```ts
+const [snapshotCursor, setSnapshotCursor] = useState<number | null>(null);
+// in the snapshot .then():
+setSnapshotCursor(typeof snapshot.cursor === 'number' ? snapshot.cursor : 0);
+
+const { connected: isSseConnected } = useServerWatchStream({
+  enabled: isAuthenticated && snapshotCursor !== null,
+  initialCursor: snapshotCursor ?? 0,
+  ...
+});
+```
+
+Connecting only after the snapshot resolves is correct rather than merely convenient: the snapshot
+already contains the current state and recent alerts, so replaying events that predate it is pure
+duplication. Anything committed between the snapshot query and the stream opening is still
+delivered, because the cursor is a monotonic `seq` and `getEventsAfter` is strictly greater-than.
+
+**6b. Suppress notifications for replayed events.** Even with a correct cursor, a reconnect after a
+long offline period legitimately replays a backlog, and firing a banner per item is wrong. Gate
+the notification — not the alert log — on recency:
+
+```ts
+const alertAge = Date.now() - new Date(data.createdAt).getTime();
+if (alertAge < 120_000) {
+  sendDesktopNotification(data.symbol, type, msg, data.candles);
+  if (isSoundEnabled) playAlertSound(type);
+}
+```
+
+The alert still enters `alertLogs` regardless, so history stays complete. Apply the same guard in
+`public/sw.js` once push is live — include `createdAt` in the push payload from
+`lib/scanner/worker.ts:133` and skip notifications for anything materially stale.
+
+**6c. Deduplicate the alert log.** The snapshot sets `alertLogs`
+(`components/watch/MarketWatcher.tsx:325`) and the replay prepends to it
+(`components/watch/MarketWatcher.tsx:299`), so overlapping items appear twice. Merge by `alertId`
+rather than blind prepend — the IDs are stable, so a `Map` keyed on `id` is sufficient.
+
+**6d. Persist the cursor across reloads (optional).** `EventSource` sends `Last-Event-ID`
+automatically on its *own* reconnects, and `app/api/watch/events/route.ts:22` already prefers that
+header over the query parameter, so mid-session reconnects are already correct. Only a full page
+reload resets to the snapshot cursor, which 6a makes cheap. Persisting to `localStorage` is
+therefore not required, and risks a stale cursor skipping events after a long absence.
+
+### Step 7 — SSE liveness watchdog
+
+The server's `: ping` comment is invisible to `EventSource`. Two options; prefer the first.
+
+**Preferred — emit a real heartbeat event.** In `app/api/watch/events/route.ts:90`, alongside the
+comment, send a parseable envelope that the client can observe:
+
+```ts
+timers.push(setInterval(() => {
+  enqueue(`: ping\n\n`);
+  enqueue(`data: ${JSON.stringify({ type: 'stream.heartbeat', payload: { t: Date.now() } })}\n\n`);
+}, HEARTBEAT_MS));
+```
+
+Deliberately omit the `id:` field so the heartbeat does not advance the client cursor.
+
+**Client side**, in `useServerWatchStream.ts`: record `lastMessageAt` on every `onmessage`, and run
+a watchdog interval that force-reconnects when the gap exceeds roughly `2.5 × HEARTBEAT_MS` (50 s):
+
+```ts
+const lastMessageAt = useRef(Date.now());
+// in onmessage: lastMessageAt.current = Date.now();
+// watchdog:
+const wd = setInterval(() => {
+  if (Date.now() - lastMessageAt.current > 50_000) {
+    eventSource?.close();
+    connect();
+  }
+}, 15_000);
+```
+
+Handle `stream.heartbeat` as a no-op in the type dispatch at line 100 so it does not fall through.
+
+Additionally, add a `visibilitychange` listener that force-reconnects when the tab becomes visible
+and `eventSource.readyState !== EventSource.OPEN` — this is the wake-from-sleep case, where the
+socket is dead but no error has fired. Note that the watchdog interval is itself throttled in a
+hidden tab, which is acceptable: push covers the hidden case, and the visibility handler covers
+the return to foreground.
+
+Finally, replace the fixed `setTimeout(connect, 5000)` reconnect (line 119) with exponential
+backoff plus jitter, capped at ~30 s, so a server restart does not produce a synchronised
+reconnect storm across every open tab.
+
+### Step 8 — Emit `watch.state` alongside `alert.created`
+
+In `lib/scanner/worker.ts:154`, when an alert row is created, insert **two** `watch_event` rows in
+the same transaction — the `alert.created` event and the `watch.state` event — rather than
+choosing between them. Both are already fanned out by the existing `pg_notify` bridge and the
+client already handles each type independently, so no client change is required beyond removing
+the assumption that an alert implies a state update.
+
+Alternatively, have `onAlert` in `MarketWatcher.tsx:283` also call `setWatchlist` to patch the
+matching row. The worker-side fix is preferable: it keeps the durable event log complete for any
+future client.
+
+### Step 9 — Verification matrix
+
+Each row must be checked independently; passing on desktop Chrome tells you very little about iOS.
+
+| Scenario | Expected | How to test |
+|---|---|---|
+| Tab open and focused | Exactly one notification, plus sound and alert log entry | `npx tsx lib/scanner/dev-run.ts AAPL 5m` against a threshold that will trigger |
+| Tab open, backgrounded | Exactly one notification (from the service worker) | Focus another window, trigger a scan |
+| Tab discarded by Chrome | One notification | `chrome://discards` → discard the tab, trigger |
+| Browser fully closed, desktop | One notification | Quit the browser (macOS: verify it is fully quit), trigger |
+| Android, browser backgrounded | One notification | Chrome on Android, subscribe, background, trigger |
+| iOS, installed PWA, locked | One notification | Add to Home Screen, subscribe from inside the app, lock, trigger |
+| Subscription expired | Row deleted from `user_push_subscription`, no crash | Revoke site notification permission, trigger, check the 404/410 branch at `push.ts:54` |
+| Reconnect after sleep | No duplicate alert log entries, no gap | Sleep the laptop 10 min, wake, confirm cursor replay |
+
+For local push testing without a full deploy, `web-push` can send directly from a script using a
+subscription row copied out of `user_push_subscription`.
+
+---
+
+## Risks and constraints
+
+- **VAPID keys are permanent.** Rotating them invalidates every stored subscription silently. Back
+  them up alongside `BETTER_AUTH_SECRET`.
+- **`userVisibleOnly` is enforced.** Push cannot be used as a silent data channel. Receiving a
+  push without calling `showNotification()` produces a browser-generated "This site has been
+  updated in the background" notification, and repeated offences revoke the subscription.
+- **Push delivery is not guaranteed.** No ordering, no acknowledgement, TTL-bounded retention for
+  offline devices. The durable `watch_event` table plus cursor replay remains the correctness
+  guarantee; push is a best-effort nudge.
+- **Payloads are ~4 KB.** Do not attempt to send candle arrays through push. `push.ts` currently
+  sends a compact object, which is correct — keep it that way.
+- **Notification volume.** A large watchlist on a short interval can generate many alerts. Consider
+  per-user rate limiting or coalescing in `sendWebPushToUser` before this becomes a support issue.
+- **`packages/ai-connect` is a submodule or workspace package** — unrelated to this work, but note
+  that the Docker build copies `packages/` and a stale checkout will surface as a build failure
+  during the Step 1 rebuild.
+
+## Open questions
+
+- Should push respect the watch `session` setting (RTH / extended / all), or fire whenever the
+  scanner produces an alert? The scanner already gates scanning by session, so this may be moot.
+- Should users be able to choose which patterns push versus only appear in the in-app log?
+- Do we want quiet hours, and if so, evaluated in the user's timezone on the server or on the
+  device?
+- Should the notification body include the price and percentage move? Currently `sw.js:19` uses
+  the pattern message only, while the payload from `worker.ts:135` also carries `price`.
