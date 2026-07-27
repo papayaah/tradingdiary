@@ -4,6 +4,10 @@ services:
     build:
       context: .
       target: runner
+      args:
+        # Inlined into the client bundle at build time. Must also be set in the
+        # server .env so this interpolation resolves during `docker compose build`.
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
     restart: unless-stopped
     depends_on:
       - postgres
@@ -21,6 +25,11 @@ services:
       ADMIN_EMAILS: ${ADMIN_EMAILS}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       POLYGON_API_KEY: ${POLYGON_API_KEY}
+      # Web Push. The web process does not currently send push, but keep the keys
+      # symmetric with the scanner so a future route handler cannot fail silently.
+      NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_SUBJECT: ${VAPID_SUBJECT}
     ports:
       - "127.0.0.1:${APP_PORT:-3000}:3000"
     volumes:
@@ -70,6 +79,11 @@ services:
       POLYGON_API_KEY: ${POLYGON_API_KEY:-}
       DATABENTO_API_KEY: ${DATABENTO_API_KEY:-}
       TIINGO_API_KEY: ${TIINGO_API_KEY:-}
+      # Web Push: the scanner is the process that actually sends push, so it needs
+      # both keys at runtime (read from process.env by lib/scanner/push.ts).
+      NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:support@tradingdiary.app}
 
 volumes:
   pgdata:

@@ -13,6 +13,18 @@ async function main() {
       `concurrency=${scannerConfig.concurrency} redis=${scannerConfig.redisUrl}`,
   );
 
+  // Surface push readiness at startup (push.ts is otherwise lazily imported on
+  // the first alert, so a missing key would go unnoticed until then).
+  const pushReady = !!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && !!process.env.VAPID_PRIVATE_KEY;
+  if (scannerConfig.shadow) {
+    console.warn('[scanner] SHADOW MODE — no user-visible alerts or push will be sent (set SCANNER_SHADOW=false to enable)');
+  }
+  if (!pushReady) {
+    console.error('[scanner] Web Push DISABLED — VAPID keys missing; closed-browser alerts will not be delivered');
+  } else {
+    console.log('[scanner] Web Push keys present');
+  }
+
   const worker = createScanWorker();
   worker.on('failed', (job: any, err: any) => console.error(`[scanner] job ${job?.id} failed:`, err?.message));
   worker.on('error', (err: any) => console.error('[scanner] worker error:', err?.message));

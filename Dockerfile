@@ -17,6 +17,11 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Dummy values for build-time only (Next.js evaluates API routes during build)
 ENV DATABASE_URL="postgresql://build:build@localhost:5432/build"
 ENV BETTER_AUTH_SECRET="build-time-placeholder"
+# The Web Push public key is inlined into the client bundle at build time, so it
+# must be present here (a runtime env var has no effect on NEXT_PUBLIC_* values).
+# The matching private key is supplied at runtime by compose to the scanner.
+ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY=""
+ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
 RUN npm run build
 
 FROM node:24-bookworm-slim AS runner
