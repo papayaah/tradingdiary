@@ -6,7 +6,6 @@ import {
   BookOpen,
   Image as ImageIcon,
   LayoutDashboard,
-  Upload,
   TrendingUp,
   Settings,
   Wallet,
@@ -30,9 +29,7 @@ const navItems = [
   { href: '/portfolio', label: 'Portfolio', icon: PieChart },
   { href: '/journal', label: 'Journal', icon: BookOpen },
   { href: '/watch', label: 'Market Watch', icon: Bell },
-  { href: '/import', label: 'Import', icon: Upload },
-  { href: '/media', label: 'Media', icon: ImageIcon },
-  { href: '/login', label: 'Cloud Sync', icon: TrendingUp },
+  { href: '/media', label: 'Library', icon: ImageIcon },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -100,7 +97,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
       <nav className="flex-1 py-2 px-2 space-y-0.5">
         {navItems.map((item) => {
           const isActive = pathname === item.href;
-          const isImporting = item.href === '/import' && isProcessing;
+          const isImporting = item.href === '/media' && isProcessing;
           const Icon = isImporting ? () => <div className="animate-spin rounded-full h-4 w-4 border-2 border-accent border-t-transparent" /> : item.icon;
 
           return (

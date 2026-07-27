@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense } from 'react';
-import { TrendingUp } from 'lucide-react';
+import { ArrowLeft, TrendingUp } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AuthCard } from '@/packages/better-auth-connect/src/components';
 import { tailwindPreset } from '@/packages/better-auth-connect/src/presets/tailwind';
@@ -25,7 +25,21 @@ function LoginContent() {
     const returnTo = safeReturnTo(searchParams.get('redirect') ?? searchParams.get('returnTo'));
 
     return (
-        <div className="min-h-screen flex flex-col items-center justify-center gap-8 bg-gray-50 dark:bg-gray-900 px-6 py-12">
+        <div className="relative min-h-screen flex flex-col items-center justify-center gap-8 bg-gray-50 dark:bg-gray-900 px-6 py-12">
+            <button
+                type="button"
+                onClick={() => {
+                    if (window.history.length > 1) {
+                        router.back();
+                    } else {
+                        router.push(returnTo);
+                    }
+                }}
+                className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white/80 px-3 py-2 text-sm font-bold text-gray-700 shadow-sm transition hover:bg-white dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-200 dark:hover:bg-gray-800 sm:left-6 sm:top-6"
+            >
+                <ArrowLeft size={16} />
+                Back
+            </button>
             <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-600/30">
                     <TrendingUp size={22} className="text-white" />
