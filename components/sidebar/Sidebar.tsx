@@ -6,7 +6,6 @@ import {
   BookOpen,
   Image as ImageIcon,
   LayoutDashboard,
-  Play,
   Upload,
   TrendingUp,
   Settings,
@@ -30,7 +29,6 @@ const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/portfolio', label: 'Portfolio', icon: PieChart },
   { href: '/journal', label: 'Journal', icon: BookOpen },
-  { href: '/replay', label: 'Replay', icon: Play },
   { href: '/watch', label: 'Market Watch', icon: Bell },
   { href: '/import', label: 'Import', icon: Upload },
   { href: '/media', label: 'Media', icon: ImageIcon },
@@ -42,8 +40,6 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname();
   const { isProcessing } = useImport();
   const { accounts, selectedAccountId, setSelectedAccountId } = useAccount();
-
-  const selectedAccount = accounts.find(a => a.accountId === selectedAccountId);
 
   return (
     <aside

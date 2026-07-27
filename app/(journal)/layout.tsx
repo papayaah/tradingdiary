@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import Sidebar from '@/components/sidebar/Sidebar';
+import { ReplayProvider } from '@/components/replay/ReplayProvider';
 import { MediaLibraryProvider } from '@/packages/react-media-library/src/components/MediaLibraryProvider';
 import { ImportProvider } from '@/contexts/ImportContext';
 import { AccountProvider } from '@/contexts/AccountContext';
@@ -13,11 +15,15 @@ export default function JournalLayout({
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const pathname = usePathname();
+  const isDirectReplay = pathname === '/replay';
 
   useEffect(() => {
-    const saved = localStorage.getItem('sidebar-collapsed');
-    if (saved === 'true') setCollapsed(true);
-    setMounted(true);
+    const frame = requestAnimationFrame(() => {
+      setCollapsed(localStorage.getItem('sidebar-collapsed') === 'true');
+      setMounted(true);
+    });
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   const toggle = () => {
@@ -31,7 +37,9 @@ export default function JournalLayout({
   if (!mounted) {
     return (
       <div className="flex h-screen">
-        <div className="w-[220px] bg-sidebar-bg border-r border-sidebar-border" />
+        {!isDirectReplay && (
+          <div className="w-[220px] bg-sidebar-bg border-r border-sidebar-border" />
+        )}
         <main className="flex-1" />
       </div>
     );
@@ -41,12 +49,14 @@ export default function JournalLayout({
     <AccountProvider>
       <MediaLibraryProvider>
         <ImportProvider>
-          <div className="flex h-screen overflow-hidden">
-            <Sidebar collapsed={collapsed} onToggle={toggle} />
-            <main className="flex-1 overflow-y-auto bg-background">
-              {children}
-            </main>
-          </div>
+          <ReplayProvider>
+            <div className="flex h-screen overflow-hidden">
+              {!isDirectReplay && <Sidebar collapsed={collapsed} onToggle={toggle} />}
+              <main className="flex-1 overflow-y-auto bg-background">
+                {children}
+              </main>
+            </div>
+          </ReplayProvider>
         </ImportProvider>
       </MediaLibraryProvider>
     </AccountProvider>

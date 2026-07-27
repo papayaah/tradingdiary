@@ -3,10 +3,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { Upload, LayoutDashboard, Calendar, Filter } from 'lucide-react';
-import { getAllTransactions } from '@/lib/db/trades';
 import { getTradeDateCutoff } from '@/lib/settings';
 import { aggregateByDay, type DailySummary } from '@/lib/trading/aggregator';
-import { computeDashboard, type DashboardData } from '@/lib/trading/dashboard';
+import { computeDashboard } from '@/lib/trading/dashboard';
 import { timeToSeconds, computePnLTimeline } from '@/lib/replay/engine';
 import type { TransactionRecord } from '@/lib/db/schema';
 import MonthlyCalendar from '@/components/dashboard/MonthlyCalendar';
@@ -316,7 +315,6 @@ export default function DashboardPage() {
             startTimeSeconds={latestDay.startTime}
             endTimeSeconds={latestDay.endTime}
             snapshots={latestDay.snapshots}
-            prevVisibleCount={latestDay.transactions.length}
           />
         </div>
       )}

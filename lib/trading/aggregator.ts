@@ -77,7 +77,8 @@ function effectiveDate(t: TransactionRecord, cutoffTime?: string | null): string
 
 interface FIFOLot {
   qty: number;
-  costPerShare: number;
+  entryPrice: number;
+  multiplier: number;
   commission: number;
 }
 
@@ -181,14 +182,15 @@ export function aggregateByDay(
       if (isOpening && qty > 0) {
         openLots.push({
           qty,
-          costPerShare: Math.abs(t.totalValue) / qty,
+          entryPrice: Math.abs(t.price),
+          multiplier: t.multiplier || 1,
           commission: t.commission,
         });
         runningPosition += (t.side === 'BUYTOOPEN' ? qty : -qty);
       } else if (!isOpening && qty > 0) {
         // Closing transaction — match against open lots FIFO
         let remaining = qty;
-        const closePrice = Math.abs(t.totalValue) / qty;
+        const closePrice = Math.abs(t.price);
 
         while (remaining > 0.001 && openLots.length > 0) {
           const lot = openLots[0];
@@ -196,9 +198,9 @@ export function aggregateByDay(
 
           const isLong = t.side === 'SELLTOCLOSE';
           if (isLong) {
-            accum.realizedGross += (closePrice - lot.costPerShare) * matched;
+            accum.realizedGross += (closePrice - lot.entryPrice) * matched * lot.multiplier;
           } else {
-            accum.realizedGross += (lot.costPerShare - closePrice) * matched;
+            accum.realizedGross += (lot.entryPrice - closePrice) * matched * lot.multiplier;
           }
 
           // Allocate opening lot commission proportionally
@@ -223,7 +225,7 @@ export function aggregateByDay(
       // dates forward, effective dates are non-decreasing in execution order,
       // so the last write for a given date reflects its end-of-day position.
       const openQty = openLots.reduce((s, l) => s + l.qty, 0);
-      const openCost = openLots.reduce((s, l) => s + l.qty * l.costPerShare, 0);
+      const openCost = openLots.reduce((s, l) => s + l.qty * l.entryPrice, 0);
       accum.endPosition = Math.round(runningPosition * 100) / 100;
       accum.endAvgCost = openQty > 0.001 ? openCost / openQty : 0;
     }
@@ -340,12 +342,11 @@ export function applyMarketPrices(
       if (marketPrice == null) continue;
 
       const multiplier = trade.transactions[0]?.multiplier || 1;
-      const currentMarketValue = marketPrice * multiplier;
 
       if (trade.side === 'LONG') {
-        trade.unrealizedPnL = (currentMarketValue - trade.openAvgCost) * Math.abs(trade.netQuantity);
+        trade.unrealizedPnL = (marketPrice - trade.openAvgCost) * Math.abs(trade.netQuantity) * multiplier;
       } else {
-        trade.unrealizedPnL = (trade.openAvgCost - currentMarketValue) * Math.abs(trade.netQuantity);
+        trade.unrealizedPnL = (trade.openAvgCost - marketPrice) * Math.abs(trade.netQuantity) * multiplier;
       }
     }
   }

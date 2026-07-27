@@ -55,6 +55,21 @@ export async function getTransactionsByAccount(accountId: string): Promise<Trans
   return db.getAllFromIndex('transactions', 'by-accountId', accountId);
 }
 
+export async function saveManualTransaction(
+  account: AccountRecord | null,
+  transaction: TransactionRecord
+) {
+  const db = await getDB();
+  const stores = account ? ['accounts', 'transactions'] as const : ['transactions'] as const;
+  const tx = db.transaction(stores, 'readwrite');
+
+  if (account) {
+    await tx.objectStore('accounts').put(account);
+  }
+  await tx.objectStore('transactions').put(transaction);
+  await tx.done;
+}
+
 export async function clearAllData() {
   const db = await getDB();
   const tx = db.transaction(
@@ -156,4 +171,3 @@ export async function deleteTradesByDateRange(
   await tx.done;
   return count;
 }
-

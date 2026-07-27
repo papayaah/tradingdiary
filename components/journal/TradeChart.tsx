@@ -15,7 +15,7 @@ import {
 import { fetchCandles } from '@/lib/chart/fetch';
 import type { TransactionRecord } from '@/lib/db/schema';
 import { Loader2, Play } from 'lucide-react';
-import Link from 'next/link';
+import { useReplay } from '@/components/replay/ReplayProvider';
 
 interface TradeChartProps {
   symbol: string;
@@ -47,6 +47,7 @@ function getETOffsetSeconds(dateStr: string): number {
 }
 
 export default function TradeChart({ symbol, date, transactions, interval: defaultInterval = '5m' }: TradeChartProps) {
+  const { openReplay } = useReplay();
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const [loading, setLoading] = useState(true);
@@ -281,13 +282,17 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
           </div>
         </div>
         <div className="flex gap-2 items-center">
-          <Link
-            href={`/replay?date=${date}&symbol=${symbol}`}
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              openReplay({ date, symbol });
+            }}
             className="flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-accent/10 text-accent hover:bg-accent hover:text-white rounded transition-all mr-2"
           >
             <Play size={10} fill="currentColor" />
             Replay Trade
-          </Link>
+          </button>
           <div className="flex items-center gap-1.5 bg-muted-bg/50 p-1 rounded-xl border border-card-border/40">
             {INTERVALS.map((iv) => (
               <button

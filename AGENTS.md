@@ -11,3 +11,16 @@
 
 - Continue working on the currently checked-out branch unless the user explicitly asks for a new branch.
 - Do not create `agent/*`, `codex/*`, or similarly attributed branches unless the user explicitly requests one.
+
+## UI and interaction design
+
+- Prefer centered inline panels, expandable sections, drawers that remain in the page flow, or dedicated routes over modal dialogs.
+- Do not introduce a modal, backdrop, or focus-trapping overlay for forms and routine create/edit workflows unless the user explicitly requests one or the action genuinely requires a blocking confirmation.
+- Keep users in context: embedded forms should appear near the action that opened them, preserve page navigation and scroll position, and collapse cleanly after saving or cancellation.
+- Use the term "embedded panel" for an in-page form; do not implement an "embedded modal" as an overlay disguised as page content.
+
+## Code organization
+
+- Keep feature code modular and domain-focused. Prefer small components, hooks, utilities, and data-access functions with one clear responsibility over large all-in-one files.
+- Put reusable feature pieces in a dedicated folder and keep route/page components focused on composition and page-level state.
+- Share behavior between pages instead of copying forms, validation, normalization, or persistence logic.

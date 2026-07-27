@@ -29,6 +29,7 @@ export default function FloatingTradePanel({
   onClose,
 }: FloatingTradePanelProps) {
   const [isExpanded, setIsExpanded] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
   const { accounts, selectedAccountId } = useAccount();
   const activeAccount = accounts.find((a) => a.accountId === selectedAccountId);
   const currency = activeAccount?.currency || 'USD';
@@ -39,14 +40,23 @@ export default function FloatingTradePanel({
   const dragOrigin = useRef({ mx: 0, my: 0, px: 0, py: 0 });
 
   useEffect(() => {
+    const media = window.matchMedia('(max-width: 639px)');
+    const update = () => setIsMobile(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+
+  useEffect(() => {
+    if (isMobile) return;
     const frame = requestAnimationFrame(() => {
       setPosition({
-        x: window.innerWidth - 364,
-        y: window.innerHeight - 520,
+        x: Math.max(0, window.innerWidth - 364),
+        y: Math.max(0, window.innerHeight - 520),
       });
     });
     return () => cancelAnimationFrame(frame);
-  }, []);
+  }, [isMobile]);
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -65,7 +75,7 @@ export default function FloatingTradePanel({
   }, []);
 
   const onDragStart = (e: React.MouseEvent) => {
-    if (!position) return;
+    if (isMobile || !position) return;
     e.preventDefault();
     isDragging.current = true;
     dragOrigin.current = { mx: e.clientX, my: e.clientY, px: position.x, py: position.y };
@@ -92,16 +102,18 @@ export default function FloatingTradePanel({
 
   return (
     <div
-      className="fixed z-50 w-[340px] rounded-2xl border border-card-border bg-card-bg/95 backdrop-blur-xl shadow-2xl shadow-black/20 overflow-hidden"
+      className="fixed z-50 w-auto rounded-2xl border border-card-border bg-card-bg/95 backdrop-blur-xl shadow-2xl shadow-black/20 overflow-hidden sm:w-[340px]"
       style={
-        position
+        isMobile
+          ? { left: 8, right: 8, bottom: 88 }
+          : position
           ? { left: position.x, top: position.y }
           : { right: 24, bottom: 96 }
       }
     >
       {/* Header — drag handle */}
       <div
-        className="flex items-center justify-between px-3 py-2.5 border-b border-card-border bg-muted-bg/30 cursor-grab active:cursor-grabbing select-none"
+        className="flex items-center justify-between px-3 py-2.5 border-b border-card-border bg-muted-bg/30 cursor-default sm:cursor-grab sm:active:cursor-grabbing select-none"
         onMouseDown={onDragStart}
       >
         <div className="flex items-center gap-2">
@@ -154,7 +166,7 @@ export default function FloatingTradePanel({
       </div>
 
       {isExpanded && (
-        <div className="max-h-[420px] overflow-y-auto">
+        <div className="max-h-[50dvh] overflow-y-auto sm:max-h-[420px]">
           {/* Active Trip */}
           {activeTrip && (
             <div className="mx-3 mt-3 mb-2 rounded-xl border border-accent/30 bg-accent/5 p-3 relative overflow-hidden">

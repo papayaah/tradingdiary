@@ -3,12 +3,13 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Upload, BookOpen, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Upload, BookOpen, ArrowLeft, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { getTradeDateCutoff } from '@/lib/settings';
 import { aggregateByDay, applyMarketPrices, type DailySummary } from '@/lib/trading/aggregator';
 import DayGroup from '@/components/journal/DayGroup';
 import { useAccount } from '@/contexts/AccountContext';
 import { getTransactionsByAccount } from '@/lib/db/trades';
+import { ManualTradePanel } from '@/components/trades/manual-entry/ManualTradePanel';
 
 export default function JournalPage() {
   const router = useRouter();
@@ -17,6 +18,8 @@ export default function JournalPage() {
   const { selectedAccountId } = useAccount();
 
   const [summaries, setSummaries] = useState<DailySummary[] | null>(null);
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     async function load() {
@@ -71,7 +74,7 @@ export default function JournalPage() {
       }
     }
     load();
-  }, [selectedAccountId]);
+  }, [selectedAccountId, refreshKey]);
 
   const displaySummaries = useMemo(() => {
     if (!summaries || !filterDate) return summaries;
@@ -135,23 +138,28 @@ export default function JournalPage() {
   }
 
   if (summaries.length === 0) {
-    // ... empty state logic
     return (
-      <div className="flex flex-col items-center justify-center min-h-full gap-4 text-center p-8">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-muted-bg">
-          <BookOpen size={32} className="text-muted" />
+      <div className="mx-auto flex min-h-full max-w-4xl flex-col justify-center gap-7 p-6">
+        <div className="text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-muted-bg">
+            <BookOpen size={32} className="text-muted" />
+          </div>
+          <h2 className="mt-4 text-xl font-semibold text-foreground">No trades yet</h2>
+          <p className="mx-auto mt-2 max-w-sm text-sm text-muted">
+            Add one manually below, or import your existing trading history.
+          </p>
+          <Link
+            href="/import"
+            className="mt-4 inline-flex items-center gap-2 text-sm font-bold text-accent hover:underline"
+          >
+            <Upload size={15} />
+            Import instead
+          </Link>
         </div>
-        <h2 className="text-xl font-semibold text-foreground">No trades yet</h2>
-        <p className="text-sm text-muted max-w-sm">
-          Import your trading data to see your journal. Drop a .tlg file on the Import page to get started.
-        </p>
-        <Link
-          href="/import"
-          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-accent text-white hover:bg-accent/90 transition-colors"
-        >
-          <Upload size={16} />
-          Import Trades
-        </Link>
+        <ManualTradePanel
+          title="Add your first trade"
+          onSaved={() => setRefreshKey((key) => key + 1)}
+        />
       </div>
     );
   }
@@ -163,7 +171,25 @@ export default function JournalPage() {
           <h1 className="text-3xl font-black text-foreground tracking-tight mb-1">Trading Journal</h1>
           <p className="text-sm text-muted font-medium">Capture your trades, thoughts, and market analysis.</p>
         </div>
+        <button
+          type="button"
+          onClick={() => setShowManualEntry((visible) => !visible)}
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 text-sm font-bold text-white transition hover:bg-accent/90"
+        >
+          <Plus size={16} />
+          Add Trade
+        </button>
       </div>
+
+      {showManualEntry && (
+        <ManualTradePanel
+          onClose={() => setShowManualEntry(false)}
+          onSaved={() => {
+            setRefreshKey((key) => key + 1);
+            setShowManualEntry(false);
+          }}
+        />
+      )}
 
       {filterDate && (
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-accent/5 backdrop-blur-sm p-5 rounded-2xl border border-accent/20 shadow-sm animate-in fade-in slide-in-from-top-4 duration-300">

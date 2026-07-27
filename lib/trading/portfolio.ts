@@ -6,6 +6,7 @@ export interface Holding {
   quantity: number;
   averageCost: number;
   totalCost: number;
+  multiplier: number;
   currentPrice?: number;
   marketValue?: number;
   unrealizedPnL?: number;
@@ -15,7 +16,8 @@ export interface Holding {
 
 interface FIFOLot {
   qty: number;
-  costPerShare: number;
+  entryPrice: number;
+  multiplier: number;
 }
 
 export function computePortfolio(transactions: TransactionRecord[]): Holding[] {
@@ -49,7 +51,8 @@ export function computePortfolio(transactions: TransactionRecord[]): Holding[] {
       if (isOpening && qty > 0) {
         openLots.push({
           qty,
-          costPerShare: Math.abs(t.totalValue) / qty,
+          entryPrice: Math.abs(t.price),
+          multiplier: t.multiplier || 1,
         });
         runningPosition += (t.side === 'BUYTOOPEN' ? qty : -qty);
       } else if (!isOpening && qty > 0) {
@@ -67,14 +70,23 @@ export function computePortfolio(transactions: TransactionRecord[]): Holding[] {
 
     if (Math.abs(runningPosition) > 0.001) {
       const totalQty = openLots.reduce((s, l) => s + l.qty, 0);
-      const totalCost = openLots.reduce((s, l) => s + l.qty * l.costPerShare, 0);
+      const totalCost = openLots.reduce(
+        (sum, lot) => sum + lot.qty * lot.entryPrice * lot.multiplier,
+        0
+      );
+      const weightedEntryPrice = openLots.reduce(
+        (sum, lot) => sum + lot.qty * lot.entryPrice,
+        0
+      );
+      const multiplier = openLots[0]?.multiplier || 1;
       
       holdings.push({
         symbol,
         companyName,
         quantity: runningPosition,
-        averageCost: totalQty > 0 ? totalCost / totalQty : 0,
+        averageCost: totalQty > 0 ? weightedEntryPrice / totalQty : 0,
         totalCost: totalCost,
+        multiplier,
         lastUpdate: txns[txns.length - 1].date,
       });
     }

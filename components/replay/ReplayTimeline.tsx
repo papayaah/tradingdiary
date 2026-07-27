@@ -24,7 +24,6 @@ interface ReplayTimelineProps {
   startTimeSeconds: number;
   endTimeSeconds: number;
   snapshots: PnLSnapshot[];
-  prevVisibleCount: number;
   onSeek?: (timeSeconds: number) => void;
 }
 
@@ -35,7 +34,6 @@ export default function ReplayTimeline({
   startTimeSeconds,
   endTimeSeconds,
   snapshots,
-  prevVisibleCount,
   onSeek,
 }: ReplayTimelineProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -57,11 +55,11 @@ export default function ReplayTimeline({
   const symbolsHeight = symbols.length * ROW_HEIGHT;
   const totalHeight = TOP_PADDING + symbolsHeight + PNL_AREA_HEIGHT + AXIS_HEIGHT;
 
-  const timeToX = (seconds: number) => {
+  const timeToX = useCallback((seconds: number) => {
     if (isNaN(seconds) || timeRange <= 0) return LEFT_LABEL_WIDTH;
     const fraction = (seconds - startTimeSeconds) / timeRange;
     return LEFT_LABEL_WIDTH + fraction * timelineWidth;
-  };
+  }, [startTimeSeconds, timeRange, timelineWidth]);
 
   // Time axis ticks (dynamic interval to avoid overlaps)
   const ticks = useMemo(() => {
@@ -319,14 +317,13 @@ export default function ReplayTimeline({
         })}
 
         {/* Visible trades */}
-        {visibleTrades.map((t, idx) => {
+        {visibleTrades.map((t) => {
           const symIdx = symbols.indexOf(t.symbol);
           if (symIdx < 0) return null;
           const x = timeToX(t.timeSeconds);
           const y = TOP_PADDING + symIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
           const isBuy = t.side === 'BUYTOOPEN' || t.side === 'BUYTOCLOSE';
           const r = Math.max(3.5, Math.min(8, Math.abs(t.quantity) / (t.price < 5 ? 1000 : 500)));
-          const isNew = idx >= prevVisibleCount;
 
           return (
             <circle
@@ -338,8 +335,8 @@ export default function ReplayTimeline({
               stroke="var(--card-bg)"
               strokeWidth={1.5}
               opacity={0.9}
-              className={isNew ? 'trade-appear' : undefined}
-              style={isNew ? { transformOrigin: `${x}px ${y}px` } : undefined}
+              className="trade-appear"
+              style={{ transformOrigin: `${x}px ${y}px` }}
             >
               <title>
                 {t.symbol} {t.side} {Math.abs(t.quantity)}@{t.price.toFixed(2)} {t.time}

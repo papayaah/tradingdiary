@@ -8,13 +8,15 @@ import {
   Info, 
   Wallet,
   ArrowUpRight,
-  Target
+  Target,
+  Plus
 } from 'lucide-react';
 import { useAccount } from '@/contexts/AccountContext';
 import { getTransactionsByAccount } from '@/lib/db/trades';
 import { computePortfolio, Holding } from '@/lib/trading/portfolio';
 import { formatCurrency } from '@/lib/currency';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
+import { ManualTradePanel } from '@/components/trades/manual-entry/ManualTradePanel';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
 
@@ -25,6 +27,8 @@ export default function PortfolioPage() {
 
   const [holdings, setHoldings] = useState<Holding[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     async function load() {
@@ -45,19 +49,18 @@ export default function PortfolioPage() {
           const res = await fetch(`/api/quotes?symbols=${symbols.join(',')}`);
           if (res.ok) {
             const prices = await res.json();
-            // prices is Record<string, Record<string, number>>
-            // We want the latest price for each symbol
+            // Current quote endpoint returns Record<symbol, price>.
             computed.forEach(h => {
-              const symbolPrices = prices[h.symbol];
-              if (symbolPrices) {
-                const dates = Object.keys(symbolPrices).sort();
-                const latestPrice = symbolPrices[dates[dates.length - 1]];
-                if (latestPrice) {
-                  h.currentPrice = latestPrice;
-                  h.marketValue = latestPrice * Math.abs(h.quantity);
-                  h.unrealizedPnL = h.marketValue - h.totalCost;
-                  h.unrealizedPnLPercent = (h.unrealizedPnL / h.totalCost) * 100;
-                }
+              const latestPrice = prices[h.symbol];
+              if (typeof latestPrice === 'number') {
+                h.currentPrice = latestPrice;
+                h.marketValue = latestPrice * Math.abs(h.quantity) * h.multiplier;
+                h.unrealizedPnL = h.quantity > 0
+                  ? h.marketValue - h.totalCost
+                  : h.totalCost - h.marketValue;
+                h.unrealizedPnLPercent = h.totalCost > 0
+                  ? (h.unrealizedPnL / h.totalCost) * 100
+                  : 0;
               }
             });
           }
@@ -70,7 +73,7 @@ export default function PortfolioPage() {
       setLoading(false);
     }
     load();
-  }, [selectedAccountId]);
+  }, [selectedAccountId, refreshKey]);
 
   const stats = useMemo(() => {
     if (!holdings) return null;
@@ -101,14 +104,20 @@ export default function PortfolioPage() {
 
   if (!holdings || holdings.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center p-8">
-        <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-muted-bg border border-card-border">
-          <PieChartIcon size={40} className="text-muted" />
+      <div className="mx-auto flex min-h-[60vh] max-w-4xl flex-col justify-center gap-7 p-6">
+        <div className="text-center">
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-muted-bg border border-card-border">
+            <PieChartIcon size={40} className="text-muted" />
+          </div>
+          <h2 className="mt-4 text-2xl font-bold text-foreground">No open positions</h2>
+          <p className="mx-auto mt-2 max-w-sm text-sm text-muted">
+            Add a position with only a symbol and the number of shares or contracts.
+          </p>
         </div>
-        <h2 className="text-2xl font-bold text-foreground">No open positions</h2>
-        <p className="text-sm text-muted max-w-sm">
-          Your portfolio is currently empty. Any buys you haven't sold yet will appear here.
-        </p>
+        <ManualTradePanel
+          title="Add your first position"
+          onSaved={() => setRefreshKey((key) => key + 1)}
+        />
       </div>
     );
   }
@@ -126,6 +135,14 @@ export default function PortfolioPage() {
         </div>
 
         <div className="flex gap-4">
+          <button
+            type="button"
+            onClick={() => setShowManualEntry((visible) => !visible)}
+            className="inline-flex items-center gap-2 self-center rounded-xl bg-accent px-4 py-3 text-sm font-bold text-white transition hover:bg-accent/90"
+          >
+            <Plus size={16} />
+            Add Position
+          </button>
           <div className="bg-card-bg/50 backdrop-blur-md border border-card-border p-5 rounded-2xl shadow-sm min-w-[200px]">
              <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-1">Total Market Value</p>
              <p className="text-2xl font-black text-foreground">
@@ -138,6 +155,17 @@ export default function PortfolioPage() {
           </div>
         </div>
       </div>
+
+      {showManualEntry && (
+        <ManualTradePanel
+          title="Add a position"
+          onClose={() => setShowManualEntry(false)}
+          onSaved={() => {
+            setRefreshKey((key) => key + 1);
+            setShowManualEntry(false);
+          }}
+        />
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Table */}
