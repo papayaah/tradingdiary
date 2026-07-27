@@ -5,6 +5,7 @@ import { IntegrationProvider } from '@/packages/better-auth-connect/src/componen
 import { AIManagementProvider } from '@/packages/ai-connect/src/components';
 import { authClient } from '@/lib/auth-client';
 import { Toaster } from 'sonner';
+import { ServiceWorkerRegistrar } from '@/components/providers/ServiceWorkerRegistrar';
 
 export function ClientProviders({ children }: { children: ReactNode }) {
     return (
@@ -12,6 +13,7 @@ export function ClientProviders({ children }: { children: ReactNode }) {
             <AIManagementProvider>
                 {children}
                 <Toaster richColors position="top-right" />
+                <ServiceWorkerRegistrar />
             </AIManagementProvider>
         </IntegrationProvider>
     );

@@ -253,9 +253,32 @@ export default function MarketWatcher() {
   const { data: sessionData } = authClient.useSession();
   const isAuthenticated = !!sessionData?.user;
 
+  // Event cursor captured from the initial snapshot. The SSE stream must resume
+  // from here rather than seq 0, otherwise every page load replays the entire
+  // event history and re-fires notifications for hours-old alerts (spec B6).
+  const [snapshotCursor, setSnapshotCursor] = useState<number | null>(null);
+
+  // Whether an active Web Push subscription exists. When true, the service
+  // worker owns the OS banner (it fires even with the tab closed and is required
+  // to by Chrome's userVisibleOnly contract), so the page must not also fire one
+  // for the same alert (spec B4). The in-app log and sound still run here.
+  const pushActiveRef = useRef(false);
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.ready
+      .then((reg) => reg.pushManager.getSubscription())
+      .then((sub) => {
+        pushActiveRef.current = !!sub;
+      })
+      .catch(() => {});
+  }, []);
+
   // Server-side Live SSE Stream Integration
   const { connected: isSseConnected } = useServerWatchStream({
-    enabled: isAuthenticated,
+    // Hold the connection until the snapshot cursor is known so we resume from
+    // it instead of replaying history.
+    enabled: isAuthenticated && snapshotCursor !== null,
+    initialCursor: snapshotCursor ?? 0,
     onStateUpdate: (data) => {
       if (!data?.symbol) return;
       setWatchlist((prev) =>
@@ -284,10 +307,12 @@ export default function MarketWatcher() {
       if (!data?.symbol) return;
       const type: 'bullish' | 'bearish' = data.direction === 'bearish' ? 'bearish' : 'bullish';
       const msg = `${type.toUpperCase()} move on ${data.symbol} (${data.interval}). Matched ${data.matchedPattern}.`;
-      
+
+      const alertId = data.alertId || `alert-${Date.now()}-${Math.random()}`;
+      const createdAtMs = data.createdAt ? new Date(data.createdAt).getTime() : Date.now();
       const newAlert: AlertLog = {
-        id: data.alertId || `alert-${Date.now()}-${Math.random()}`,
-        createdAt: data.createdAt ? new Date(data.createdAt).getTime() : Date.now(),
+        id: alertId,
+        createdAt: createdAtMs,
         symbol: data.symbol,
         interval: data.interval,
         type,
@@ -296,9 +321,25 @@ export default function MarketWatcher() {
         candles: data.candles || [],
       };
 
-      setAlertLogs((prev) => [newAlert, ...prev.slice(0, 99)]);
+      // Always record in the log, but merge by id so a snapshot entry and its
+      // replayed stream event do not appear twice (spec B6c).
+      setAlertLogs((prev) => {
+        if (prev.some((a) => a.id === alertId)) return prev;
+        return [newAlert, ...prev].slice(0, 100);
+      });
+
+      // Only alert (sound + banner) for genuinely fresh events. A reconnect after
+      // a long offline period legitimately replays a backlog; firing a banner per
+      // item would be wrong (spec B6b).
+      const isFresh = Date.now() - createdAtMs < 120_000;
+      if (!isFresh) return;
+
       if (isSoundEnabled) playAlertSound(type);
-      sendDesktopNotification(data.symbol, type, msg, data.candles);
+      // When push is active the service worker fires the OS banner (works with
+      // the tab closed too); firing here as well would double-notify (spec B4).
+      if (!pushActiveRef.current) {
+        sendDesktopNotification(data.symbol, type, msg, data.candles, `${data.symbol}-${data.interval}-${type}`);
+      }
     },
   });
 
@@ -309,7 +350,11 @@ export default function MarketWatcher() {
     fetch(`${baseUrl}/api/watch/state`)
       .then((res) => (res.ok ? res.json() : null))
       .then((snapshot) => {
-        if (!snapshot) return;
+        if (!snapshot) {
+          // Fall back to seq 0 so the stream still connects if the snapshot fails.
+          setSnapshotCursor(0);
+          return;
+        }
         if (Array.isArray(snapshot.alerts) && snapshot.alerts.length > 0) {
           const mappedAlerts: AlertLog[] = snapshot.alerts.map((a: any) => ({
             id: a.id,
@@ -323,8 +368,13 @@ export default function MarketWatcher() {
           }));
           setAlertLogs(mappedAlerts);
         }
+        // Capture the cursor last so the stream connects resuming from here.
+        setSnapshotCursor(typeof snapshot.cursor === 'number' ? snapshot.cursor : 0);
       })
-      .catch((err) => console.error('[snapshot] fetch error:', err));
+      .catch((err) => {
+        console.error('[snapshot] fetch error:', err);
+        setSnapshotCursor(0);
+      });
   }, [isAuthenticated]);
 
   // Search, Category, and Filtering state for Watchlist table
@@ -889,7 +939,7 @@ export default function MarketWatcher() {
     }
   };
 
-  const sendDesktopNotification = (symbol: string, type: 'bullish' | 'bearish', text: string, candles?: Candle[]) => {
+  const sendDesktopNotification = (symbol: string, type: 'bullish' | 'bearish', text: string, candles?: Candle[], tagKey?: string) => {
     if (
       typeof window !== 'undefined'
       && 'Notification' in window
@@ -902,7 +952,10 @@ export default function MarketWatcher() {
 
         const notificationOptions: NotificationOptions & { image?: string } = {
           body: cleanText,
-          tag: `${symbol}-${type}-${Date.now()}`,
+          // Stable tag so a newer alert for the same symbol/interval/direction
+          // replaces an older banner instead of stacking (spec B4/B5). A per-call
+          // timestamp would defeat the purpose of tag entirely.
+          tag: tagKey ? `alert-${tagKey}` : `${symbol}-${type}`,
           icon: iconUrl,
           image: iconUrl
         };

@@ -92,8 +92,16 @@ export async function GET(request: NextRequest) {
       for (const e of buffer) sendEvent(e);
       buffer.length = 0;
 
-      // Heartbeat comment keeps the connection and proxies alive.
-      timers.push(setInterval(() => enqueue(`: ping\n\n`), HEARTBEAT_MS) as unknown as NodeJS.Timeout);
+      // Heartbeat: the `: ping` comment keeps proxies from timing out but is
+      // invisible to EventSource. A parseable heartbeat event alongside it lets
+      // the client detect a silently dead stream. It carries no `id:`, so it
+      // never advances the client cursor.
+      timers.push(
+        setInterval(() => {
+          enqueue(`: ping\n\n`);
+          enqueue(`data: ${JSON.stringify({ type: 'stream.heartbeat', payload: { t: Date.now() } })}\n\n`);
+        }, HEARTBEAT_MS) as unknown as NodeJS.Timeout,
+      );
 
       // Periodic session revalidation: close immediately if revoked/expired.
       timers.push(

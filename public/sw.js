@@ -21,18 +21,39 @@ self.addEventListener('push', (event) => {
       .replace(/📈|📉|🚨/g, '')
       .trim();
 
+    // Stable tag: a newer alert for the same symbol/interval/direction replaces
+    // an older banner rather than stacking, and aligns with the in-page tag so
+    // the two paths collapse into one banner if they ever race.
+    const direction = data.matchedPattern || data.direction || '';
+    const tag = `alert-${symbol}-${data.interval || ''}-${direction}`;
+
     const options = {
       body: cleanMsg,
-      icon: '/favicon.ico',
-      badge: '/favicon.ico',
-      tag: `push-${symbol}-${Date.now()}`,
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      tag,
       data: {
         url: data.url || `/watch?symbol=${symbol}`,
         symbol,
       },
     };
 
-    event.waitUntil(self.registration.showNotification(title, options));
+    // Always show — Chrome's userVisibleOnly contract requires a visible
+    // notification for every push — but first tell any open page so it can
+    // update its in-app UI without producing a second banner.
+    event.waitUntil(
+      (async () => {
+        try {
+          const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+          for (const client of clientList) {
+            client.postMessage({ type: 'push-alert', data });
+          }
+        } catch (err) {
+          console.error('[sw] client postMessage failed:', err);
+        }
+        await self.registration.showNotification(title, options);
+      })(),
+    );
   } catch (err) {
     console.error('[sw] Push payload error:', err);
   }
