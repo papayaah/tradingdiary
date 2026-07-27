@@ -34,8 +34,14 @@ export function wrapPostgres(client: any) {
 const connectionString = process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/tradingdiary';
 
 const client = postgres(connectionString, {
-    // Standard setup for local VPS or manual deployment
-    max: 1, // Serverless friendly
+    // This runs as a long-lived container (not serverless), so it needs a real
+    // connection pool. At max: 1 a `db.transaction()` reserves the only
+    // connection and any concurrent query gets `undefined`, which postgres-js
+    // surfaces as "Cannot read properties of undefined (reading 'queue')" /
+    // "setting 'onclose'" — that crash was silently failing every settings sync
+    // (POST /api/watch/sync), so pattern/session/frequency/category changes
+    // never persisted.
+    max: Number(process.env.DATABASE_POOL_MAX ?? 10),
 });
 
 // Apply the Date serialization wrapper
