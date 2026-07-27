@@ -33,18 +33,16 @@ export function wrapPostgres(client: any) {
 
 const connectionString = process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/tradingdiary';
 
+// Long-lived container (not serverless) → use a real connection pool. At max: 1
+// a db.transaction() starved concurrent queries and postgres-js crashed with
+// "reading 'queue'" — which silently failed every settings sync.
+//
+// Do NOT re-wrap client.unsafe here: that wrapper made postgres-js reject
+// pooled transactions with "UNSAFE_TRANSACTION: Only use sql.begin ... or
+// max: 1". Nothing in the app relies on the wrapper, and the scanner client
+// (unwrapped, pooled) runs the same drizzle transactions correctly.
 const client = postgres(connectionString, {
-    // This runs as a long-lived container (not serverless), so it needs a real
-    // connection pool. At max: 1 a `db.transaction()` reserves the only
-    // connection and any concurrent query gets `undefined`, which postgres-js
-    // surfaces as "Cannot read properties of undefined (reading 'queue')" /
-    // "setting 'onclose'" — that crash was silently failing every settings sync
-    // (POST /api/watch/sync), so pattern/session/frequency/category changes
-    // never persisted.
     max: Number(process.env.DATABASE_POOL_MAX ?? 10),
 });
 
-// Apply the Date serialization wrapper
-const wrappedClient = wrapPostgres(client);
-
-export const db = drizzle(wrappedClient, { schema });
+export const db = drizzle(client, { schema });
