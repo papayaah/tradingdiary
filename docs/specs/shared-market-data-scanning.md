@@ -1,0 +1,570 @@
+# Shared Market-Data Scanning Across Users
+
+## Status
+
+Proposed.
+
+## Related specification
+
+This document extends [Server-Side Market Scanner and Live Watch Clients](./server-side-market-scanner.md). The existing scanner remains responsible for user watches, pattern evaluation, alert persistence, SSE events, and Web Push. This specification changes how scanner jobs acquire candles so equivalent watches do not repeatedly call a market-data provider.
+
+## Summary
+
+The current scanner schedules and processes one job per user watch. A watch is uniquely identified by `(userId, symbol, interval)`, and each job fetches candles before evaluating that user's detector. Consequently, five users watching `AAPL` at `10m` can generate approximately five equivalent provider requests per scan window.
+
+Market candles are not user-specific. The scanner should acquire an eligible candle snapshot once and reuse it across all watches that can legally and technically share that data. Pattern selection, thresholds, schedules, watch state, alerts, events, and notifications remain isolated per user.
+
+The implementation should proceed in two stages:
+
+1. **Exact-request sharing:** deduplicate concurrent and recently completed fetches with the same provider entitlement, canonical symbol, requested interval, fetch scope, and time bucket.
+2. **Base-interval aggregation:** where provider semantics permit, fetch a small canonical interval such as `1m` once and derive `5m`, `10m`, `15m`, and other supported intervals.
+
+Exact-request sharing delivers most of the immediate protection against duplicated API calls with substantially less risk. Aggregation is an additional optimization, not a prerequisite.
+
+## Goals
+
+- Prevent provider usage from scaling linearly with the number of users watching the same market data.
+- Preserve independent per-user patterns, thresholds, sessions, scan frequencies, alerts, and notification preferences.
+- Support users watching the same symbol at different intervals.
+- Preserve current intrabar alert behavior unless a detector explicitly requires completed candles.
+- Respect provider credentials, subscriptions, exchange entitlements, and redistribution restrictions.
+- Avoid duplicate upstream requests when workers process equivalent jobs concurrently.
+- Continue to recover safely after Redis loss, worker restarts, provider failures, and job retries.
+- Provide metrics that show cache efficiency and actual upstream request volume.
+- Allow incremental rollout without replacing the existing `server_watch` and alert data models.
+
+## Non-goals
+
+- Sharing private watchlists, thresholds, patterns, alerts, or notification settings between users.
+- Redistributing one user's paid market-data entitlement to other users without explicit authorization and provider permission.
+- Building an exchange-direct tick plant.
+- Storing an unlimited historical market-data archive.
+- Guaranteeing that every provider can be normalized to one universal base interval.
+- Changing the meaning of the existing pattern detectors as part of this optimization.
+
+## Current behavior
+
+The current unit of scheduling and queue deduplication is a user-owned watch:
+
+```text
+server_watch row
+    └── BullMQ job: watchId + scheduledFor
+            └── provider.fetchRecentCandles(symbol, interval)
+                    └── evaluate one user's pattern and threshold
+```
+
+BullMQ collapses duplicate delivery of the same watch job, but different users have different watch IDs. It therefore does not collapse equivalent market-data requests across users.
+
+The provider limiter caps request throughput, but limiting does not reduce the number of provider calls. Duplicate jobs are delayed rather than shared.
+
+## Proposed architecture
+
+Separate market-data acquisition from user-watch evaluation:
+
+```text
+Due user watches
+      │
+      ├── group/share eligibility
+      ▼
+┌───────────────────────────────┐
+│ Market-data acquisition      │
+│ - canonical request key      │
+│ - Redis snapshot cache       │
+│ - distributed single-flight  │
+│ - provider rate limit        │
+└──────────────┬────────────────┘
+               │ one reusable candle snapshot
+        ┌──────┴───────────────┐
+        ▼                      ▼
+ User A evaluation        User B evaluation
+ consecutive / 0.25%     momentum / 0.50%
+        │                      │
+        ▼                      ▼
+ isolated state, alerts, events, and notifications
+```
+
+The system shares only the immutable market-data snapshot. Evaluation remains a per-watch operation because users may have different:
+
+- pattern IDs;
+- minimum movement thresholds;
+- enabled states;
+- scan frequencies;
+- session preferences;
+- alert history and deduplication state;
+- notification subscriptions.
+
+Pattern evaluation is local CPU work and is expected to be much cheaper than an upstream provider request.
+
+## Canonical market-data request
+
+Every acquisition must be described by a canonical request:
+
+```ts
+interface MarketDataRequest {
+  providerScope: string;
+  canonicalSymbol: string;
+  interval: string;
+  fetchScope: string;
+  timeBucket: number;
+}
+```
+
+### Provider scope
+
+`providerScope` identifies data that may safely be reused together. It must include enough information to prevent accidental entitlement crossover.
+
+Examples:
+
+- `yahoo:public`
+- `polygon:server-account`
+- `databento:server-account`
+- `polygon:user-credential:<credentialId>`
+
+Two requests may share data only when their provider scopes are compatible under the application's credential policy and the provider's terms. A per-user credential is private by default. Data fetched using it must not be served to another user unless an explicit entitlement and licensing policy permits that sharing.
+
+Raw API keys, tokens, or secrets must never appear in Redis keys, logs, jobs, metrics, or events.
+
+### Canonical symbol
+
+Equivalent provider-specific symbols must normalize before creating a cache key.
+
+Examples:
+
+- `MNQ`, `/MNQ`, and `MNQU6` may map to Yahoo's continuous `MNQ=F` request when Yahoo is the selected provider.
+- Equity symbols normalize case and provider-required exchange suffixes.
+- Crypto pairs normalize separators such as `BTCUSD` and `BTC-USD` according to the selected provider.
+
+Normalization is provider-aware. Symbols must not be merged merely because their display labels resemble one another.
+
+### Interval
+
+For exact-request sharing, the interval is the provider interval being requested, such as `1m` or `10m`.
+
+For base-interval aggregation, it is the canonical stored interval, normally `1m`. Derived intervals identify their aggregation policy separately and do not cause another upstream request.
+
+### Fetch scope
+
+The fetch scope captures provider request details that materially change the returned candles, including:
+
+- regular trading hours versus extended hours;
+- lookback or required candle count;
+- adjustment policy;
+- futures contract or continuous-contract policy;
+- venue or feed when relevant.
+
+User-specific pattern settings do not belong in the fetch scope.
+
+### Time bucket
+
+The time bucket keeps reuse bounded and makes retries deterministic. For example, a scanner refreshing once per minute can use the current UTC minute as the acquisition bucket.
+
+Requests in the same bucket may share a snapshot. A later bucket may reuse a still-fresh snapshot or perform a new provider request according to the cache freshness policy.
+
+## Exact-request sharing
+
+Exact sharing is the first implementation phase.
+
+For a canonical acquisition key:
+
+```text
+market-data:v1:<providerScope>:<symbol>:<interval>:<fetchScope>:<timeBucket>
+```
+
+the worker performs:
+
+1. Read a fresh candle snapshot from Redis.
+2. If present, return it without calling the provider.
+3. If absent, attempt to acquire a short distributed single-flight lock.
+4. The lock owner fetches from the provider, sanitizes the result, stores it with a bounded TTL, and releases the lock.
+5. Other workers briefly wait for the snapshot and then reuse it.
+6. If the lock owner fails or times out, another worker may acquire the expired lock and retry.
+
+A plain cache without single-flight protection is insufficient: five concurrent misses could still generate five upstream requests.
+
+### Suggested Redis records
+
+```text
+market-data:snapshot:<hash>  -> bounded serialized candles + metadata
+market-data:lock:<hash>      -> lock owner token, short TTL
+market-data:error:<hash>     -> optional short negative-cache record
+```
+
+Snapshot metadata should include:
+
+```ts
+interface SharedCandleSnapshot {
+  provider: string;
+  canonicalSymbol: string;
+  interval: string;
+  fetchedAt: string;
+  sourceTimeBucket: number;
+  candles: CandleSnapshot[];
+}
+```
+
+Only a bounded recent window should be cached. PostgreSQL remains authoritative for each user's watch state and alerts; Redis candle snapshots are disposable.
+
+## Different user intervals
+
+Different intervals are handled using a hybrid strategy.
+
+### Exact interval reuse
+
+If one user watches `AAPL 1m` and two users watch `AAPL 10m`, the first phase creates at most:
+
+- one shared `AAPL 1m` request per applicable fetch window;
+- one shared `AAPL 10m` request per applicable fetch window.
+
+The two `10m` users share their request even if they use different patterns.
+
+### Base-interval aggregation
+
+Where safe, the second phase fetches `1m` candles once and derives larger intervals:
+
+```text
+AAPL 1m provider snapshot
+   ├── 1m detector evaluations
+   ├── aggregate to 5m
+   ├── aggregate to 10m
+   └── aggregate to 15m
+```
+
+Aggregation must:
+
+- align buckets to the exchange session and provider timestamps;
+- compute open from the first bar and close from the last bar;
+- use the maximum high and minimum low;
+- sum volume without double counting;
+- preserve timezone and daylight-saving behavior;
+- distinguish a partially formed candle from a completed candle;
+- reject derived output when required base bars are missing or stale.
+
+The scanner initially preserves the existing evaluation behavior: a latest in-progress candle may be evaluated repeatedly as new base bars arrive. Its derived `candleTime` remains the stable start of the interval bucket, so the existing alert uniqueness constraint continues to prevent duplicate alerts for the same direction, detector, and candle. A candle that did not previously qualify may still alert after later data causes it to qualify.
+
+Some providers offer better or more complete native higher-interval candles than can be derived from their `1m` endpoint. The system must maintain a provider capability table and use native intervals when aggregation would reduce correctness.
+
+## Different patterns and thresholds
+
+Patterns and thresholds are not part of the shared acquisition key.
+
+Given one `AAPL 10m` snapshot:
+
+```text
+User A: Consecutive Move, minimum 0.25%
+User B: Momentum Burst, minimum 0.50%
+User C: Range Breakout, minimum 0.10%
+```
+
+the scanner runs three evaluations against the same candle array. Each evaluation writes only to its own `server_watch_state`, `server_watch_alert`, `watch_event`, and Web Push recipients.
+
+Detector versions remain part of alert deduplication. Updating one pattern implementation must not invalidate or overwrite another user's alert history.
+
+## Different scan frequencies
+
+Acquisition cadence and user evaluation cadence are separate concepts.
+
+- Market data is refreshed at the fastest cadence currently required by eligible watches within a provider scope.
+- Each watch is evaluated only when its PostgreSQL `nextScanAt` is due.
+- A slower watch may reuse a snapshot fetched for a faster watch if it is fresh enough.
+- A fast watch must not be delayed merely because most users chose a slower frequency.
+
+Example:
+
+```text
+User A: AAPL 1m, evaluate every 60 seconds
+User B: AAPL 10m, evaluate every 10 minutes
+User C: AAPL 10m, evaluate every 5 minutes
+```
+
+The acquisition layer may refresh `AAPL 1m` every minute. User A evaluates each minute, User C evaluates every five minutes using the latest derived `10m` candle, and User B evaluates every ten minutes.
+
+PostgreSQL remains the source of truth for each watch's schedule. Redis freshness must not silently change a user's requested evaluation cadence.
+
+## Sessions and market calendars
+
+Session eligibility remains per watch. A watch outside its configured session is deferred without triggering an acquisition solely for that watch.
+
+Sharing is allowed when the fetched candle scope contains sufficient data for every participating watch. A broad extended-hours fetch may be filtered independently for regular-hours evaluation, provided that:
+
+- session filtering is deterministic;
+- aggregation buckets use the correct session anchor;
+- no pre-market bar leaks into an RTH-only detector window;
+- the provider license permits the shared request.
+
+Futures and crypto require their own calendar and maintenance-window rules. A single equity session helper must not be applied to all asset classes.
+
+## Scheduler and worker responsibilities
+
+### Scheduler
+
+The scheduler continues selecting due `server_watch` rows from PostgreSQL. The first phase does not require grouping all watches into one large job; independent watch jobs can call the shared acquisition service and still deduplicate provider requests through Redis.
+
+This minimizes migration risk and preserves existing retry behavior.
+
+A later optimization may group due watches by acquisition key and enqueue one acquisition job plus evaluation jobs. That should be considered only if per-watch queue overhead becomes material.
+
+### Acquisition service
+
+Add a server-only service with a narrow interface:
+
+```ts
+interface SharedCandleService {
+  getCandles(request: MarketDataRequest): Promise<SharedCandleSnapshot>;
+}
+```
+
+It owns:
+
+- provider selection and entitlement partitioning;
+- canonical symbols and fetch scopes;
+- cache lookup and TTL policy;
+- distributed single-flight locking;
+- provider requests and timeouts;
+- sanitization and bounded snapshots;
+- safe interval aggregation;
+- acquisition metrics.
+
+It does not own pattern detection, user state, alert creation, SSE, or Web Push.
+
+### Watch evaluator
+
+The existing worker becomes an evaluator:
+
+1. Load the user watch.
+2. Confirm it remains enabled and in session.
+3. Request a candle snapshot from `SharedCandleService`.
+4. Run the watch's detector and threshold.
+5. Transactionally update that watch's state, alert, and event.
+6. Notify only that user.
+
+## Freshness and TTL policy
+
+TTL should reflect the smallest interval and normal provider delay.
+
+Initial guidance:
+
+- single-flight lock: 10–30 seconds, always shorter than provider timeout plus a small recovery margin;
+- successful `1m` snapshot: approximately 45–75 seconds;
+- successful higher-interval snapshot: no longer than the configured scan frequency and normally a small fraction of the interval;
+- provider error negative cache: 5–15 seconds to prevent a retry storm;
+- derived snapshots: no longer than their underlying base snapshot.
+
+These values must be configuration, not scattered constants. The cache record's `fetchedAt` is authoritative for freshness; Redis TTL alone is not sufficient metadata.
+
+## Failure and recovery behavior
+
+### Redis unavailable
+
+The scanner may fall back to direct provider fetching under the existing global rate limiter, or deliberately fail and retry based on an environment-controlled policy. Production should prefer bounded degradation over an uncontrolled request storm.
+
+### Lock owner crashes
+
+The lock expires automatically. Waiting workers use bounded jitter and may retry after expiration. Lock release must compare the owner token so one worker cannot release another worker's lock.
+
+### Provider failure
+
+Store a very short negative-cache record for the acquisition key. All affected watches receive an error or retry outcome without each causing another immediate provider request.
+
+One provider scope's failure must not poison another provider scope.
+
+### Partial or stale base candles
+
+Do not derive a larger interval if required base candles are inconsistent, duplicated, out of order, or older than the accepted freshness window. Fall back to a native interval request where supported; otherwise mark the affected evaluation `no-data` or `error` without fabricating candles.
+
+### Redis data loss
+
+No durable user data is lost. Subsequent evaluations repopulate snapshots from the provider. PostgreSQL schedules, watch states, alerts, and events remain authoritative.
+
+## Rate limiting
+
+Rate limits apply to actual upstream provider calls, not cache hits or pattern evaluations.
+
+Use a provider-scoped distributed limiter so multiple scanner processes share the same quota. Metrics must distinguish:
+
+- evaluation jobs;
+- cache hits;
+- cache misses;
+- lock waiters;
+- upstream requests;
+- provider throttles;
+- provider errors.
+
+Retries must re-enter acquisition through the shared cache rather than bypassing it.
+
+## Privacy and security
+
+- Candle snapshots contain public or licensed market data, never user watch metadata.
+- Redis keys must not contain user IDs unless provider entitlement partitioning requires a non-reversible credential identifier.
+- Credentials must not appear in cache values.
+- Per-user state and alerts remain keyed by `watchId` and `userId` in PostgreSQL.
+- A user must never receive another user's watch state, alert, SSE event, or push notification.
+- Sharing must comply with provider licensing and exchange redistribution rules.
+- Administrator metrics should report aggregate key hashes and counts rather than private watchlist contents where practical.
+
+## Observability
+
+Add counters and timing histograms for:
+
+```text
+scanner_evaluations_total
+market_data_cache_hits_total
+market_data_cache_misses_total
+market_data_singleflight_waiters_total
+market_data_upstream_requests_total
+market_data_upstream_errors_total
+market_data_aggregation_total
+market_data_aggregation_failures_total
+market_data_fetch_duration_ms
+market_data_cache_age_ms
+```
+
+Useful derived indicators:
+
+- **request sharing ratio:** evaluations divided by upstream requests;
+- **cache hit rate:** hits divided by all acquisition attempts;
+- **single-flight effectiveness:** waiters served per lock-owner fetch;
+- **provider error fan-out:** affected evaluations per failed upstream call;
+- **aggregation coverage:** derived interval evaluations divided by all higher-interval evaluations.
+
+Logs should use a hashed acquisition key, provider name, interval, cache result, and duration. They must not log secrets.
+
+## Data model impact
+
+The first phase requires no PostgreSQL schema change.
+
+Existing tables continue to model:
+
+- `server_watch`: user-specific configuration and schedule;
+- `server_watch_state`: user-specific latest evaluation;
+- `server_watch_alert`: user-specific deduplicated alerts;
+- `watch_event`: user-specific delivery stream.
+
+Redis adds disposable acquisition snapshots and locks.
+
+If exact sharing and aggregation later require durable provider capability or canonical-symbol configuration, add explicit tables only after those rules can no longer be safely maintained as versioned code.
+
+## Suggested implementation sequence
+
+### Phase 0 — Baseline
+
+- Measure upstream calls by provider, symbol, interval, and minute.
+- Measure evaluations and provider errors.
+- Add a load test with multiple users watching identical symbols.
+
+### Phase 1 — Exact-request cache
+
+- Extract provider fetching behind `SharedCandleService`.
+- Create and test canonical acquisition keys.
+- Cache sanitized bounded snapshots in Redis.
+- Keep the existing per-watch queue and evaluation transaction.
+
+### Phase 2 — Distributed single-flight
+
+- Add token-owned Redis locks and bounded jitter.
+- Add short negative caching.
+- Verify concurrent equivalent jobs produce one upstream call.
+
+### Phase 3 — Provider capability registry
+
+- Define which native intervals, lookbacks, sessions, and aggregation paths are safe per provider and asset class.
+- Partition cache keys by entitlement scope.
+- Add symbol normalization fixtures for equities, futures, and crypto.
+
+### Phase 4 — Base-interval aggregation
+
+- Implement pure aggregation functions with exchange-aligned buckets.
+- Preserve in-progress candle identity and completed-candle status.
+- Compare derived output against native provider candles in shadow metrics.
+- Enable per provider and asset class only after parity meets an agreed threshold.
+
+### Phase 5 — Scheduler grouping, if needed
+
+- Consider acquisition-group jobs only if queue volume or database reads become a measured bottleneck.
+- Do not combine user evaluation transactions or notifications.
+
+## Acceptance criteria
+
+### Exact sharing
+
+- Five concurrent watches from five users with the same provider scope, symbol, interval, and fetch scope cause at most one upstream call per acquisition bucket.
+- All five watches are evaluated with their own pattern and threshold.
+- An alert for one user is not visible or delivered to another.
+- Retried jobs reuse the existing snapshot when fresh.
+
+### Different patterns
+
+- Users watching the same symbol and interval with different pattern IDs produce independent, correct outcomes from one candle snapshot.
+- Pattern-version alert deduplication remains unchanged.
+
+### Different intervals
+
+- Users sharing the same native interval reuse one provider request.
+- When aggregation is enabled, derived OHLCV matches exchange-aligned native candles within defined parity tolerances.
+- Missing base bars never produce fabricated complete candles.
+- In-progress derived candles retain a stable interval bucket timestamp.
+
+### Different frequencies
+
+- Fast watches receive evaluations at their configured cadence.
+- Slow watches do not create additional provider calls when a sufficiently fresh shared snapshot exists.
+- PostgreSQL `nextScanAt` remains authoritative.
+
+### Concurrency and failure
+
+- Concurrent cache misses use one lock owner.
+- Lock expiration recovers from worker termination.
+- Provider failure does not cause one immediate retry request per affected user.
+- Redis loss does not lose durable watches or alerts.
+
+### Provider isolation
+
+- Requests using different entitlement scopes never share cached data accidentally.
+- Redis keys and logs contain no raw credentials.
+
+## Test strategy
+
+### Unit tests
+
+- canonical request key construction;
+- provider-scope partitioning;
+- symbol normalization;
+- TTL and freshness decisions;
+- OHLCV aggregation and bucket alignment;
+- in-progress and completed candle handling;
+- missing, duplicated, and out-of-order base bars;
+- lock-token ownership.
+
+### Integration tests
+
+- multiple user watches with one exact acquisition key;
+- different patterns and thresholds using one snapshot;
+- exact interval sharing;
+- base-interval aggregation;
+- provider timeout and negative-cache fan-out;
+- worker crash while holding a lock;
+- Redis flush and repopulation;
+- per-user alert and event isolation.
+
+### Load tests
+
+Compare:
+
+1. 1,000 users watching 20 identical symbols;
+2. 1,000 users watching a mixed long tail;
+3. mixed `1m`, `5m`, and `10m` intervals;
+4. several patterns and thresholds per shared symbol;
+5. multiple scanner workers competing on the same Redis instance.
+
+The primary success measure is upstream requests per unique eligible acquisition key, not jobs processed per second.
+
+## Decisions captured by this specification
+
+- Keep `server_watch` user-specific.
+- Share market-data acquisition, not user evaluation or alert state.
+- Implement exact-request sharing before interval aggregation.
+- Use distributed single-flight in addition to caching.
+- Partition sharing by provider entitlement.
+- Preserve per-watch PostgreSQL scheduling.
+- Preserve current intrabar evaluation behavior during the optimization.
+- Treat Redis snapshots as disposable and PostgreSQL user state as authoritative.
+

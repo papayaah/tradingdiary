@@ -14,6 +14,9 @@
 
 ## UI and interaction design
 
+- Follow `docs/design-system.md` for all application UI.
+- Use semantic theme utilities (`background`, `foreground`, `muted`, `muted-bg`, `card-bg`, `card-border`, `accent`, `profit`, and `loss`) instead of raw gray/white/black palette values in feature interfaces.
+- New or changed UI must remain legible in both light and dark system themes. Do not fix theme problems with page-specific overrides when the shared token or reusable component is the correct boundary.
 - Prefer centered inline panels, expandable sections, drawers that remain in the page flow, or dedicated routes over modal dialogs.
 - Do not introduce a modal, backdrop, or focus-trapping overlay for forms and routine create/edit workflows unless the user explicitly requests one or the action genuinely requires a blocking confirmation.
 - Keep users in context: embedded forms should appear near the action that opened them, preserve page navigation and scroll position, and collapse cleanly after saving or cancellation.

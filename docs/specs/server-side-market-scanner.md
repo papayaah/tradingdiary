@@ -34,6 +34,8 @@ Prerequisites: local **PostgreSQL** and **Redis** running, and a `.env.local` wi
 
 Move watchlist scheduling, market-data retrieval, candle analysis, and alert deduplication out of the browser and into an independent scanner running on the remote server.
 
+Cross-user provider-request deduplication and safe interval aggregation are specified separately in [Shared Market-Data Scanning Across Users](./shared-market-data-scanning.md).
+
 The existing desktop and mobile web interfaces become lightweight clients. They load a server snapshot and receive incremental updates through Server-Sent Events (SSE). Scanning continues when every browser is closed, and all signed-in devices see the same watch state and recent alerts.
 
 This design fixes the architectural source of the current watch-page lag: the page must not schedule hundreds of symbols, fetch candles, analyze patterns, update the entire list, and render the interface on the same JavaScript thread.
