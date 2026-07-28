@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { recordProviderRequest } from '@/lib/metrics/provider-usage';
 
 /**
  * Fetches stock prices from Yahoo Finance's v8 chart API.
@@ -35,6 +36,9 @@ async function fetchCurrent(symbolList: string[]) {
   await Promise.allSettled(
     symbolList.map(async (symbol) => {
       const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
+      // Approximate: Next revalidate caching may serve some of these without a
+      // real network egress, so this can slightly overcount.
+      void recordProviderRequest('Yahoo Finance', 'owner');
       const res = await fetch(url, {
         headers: { 'User-Agent': 'Mozilla/5.0' },
         next: { revalidate: 300 },
@@ -82,6 +86,7 @@ async function fetchHistorical(symbolList: string[], from: string, to: string) {
   await Promise.allSettled(
     symbolList.map(async (symbol) => {
       const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&period1=${period1}&period2=${period2}`;
+      void recordProviderRequest('Yahoo Finance', 'owner');
       const res = await fetch(url, {
         headers: { 'User-Agent': 'Mozilla/5.0' },
         next: { revalidate: 3600 }, // historical data rarely changes

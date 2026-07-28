@@ -3,6 +3,7 @@ import TradeDateCutoff from '@/components/settings/TradeDateCutoff';
 import AccountSettings from '@/components/settings/AccountSettings';
 import MarketDataSettings from '@/components/settings/MarketDataSettings';
 import BullMQStatusCard from '@/components/settings/BullMQStatusCard';
+import ProviderStatsCard from '@/components/settings/ProviderStatsCard';
 import PushNotificationToggle from '@/components/watch/PushNotificationToggle';
 import DataManagementSettings from '@/components/settings/DataManagementSettings';
 
@@ -16,6 +17,7 @@ export default function SettingsPage() {
                 <DataManagementSettings />
                 <PushNotificationToggle />
                 <BullMQStatusCard />
+                <ProviderStatsCard />
                 <MarketDataSettings />
                 <TradeDateCutoff />
                 <APIKeyInput />

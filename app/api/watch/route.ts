@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getActiveProvider, YahooProvider } from '@/lib/chart/providers';
+import { recordProviderRequest } from '@/lib/metrics/provider-usage';
 
 const newYorkDate = (timestampMs: number) =>
   new Date(timestampMs).toLocaleDateString('en-US', {
@@ -54,6 +55,8 @@ export async function GET(request: NextRequest) {
     const isCrypto = symbol.toUpperCase().endsWith('-USD');
     if (!isFutures && !isCrypto && provider.name !== 'Yahoo Finance' && !hasCurrentNewYorkCandles(candles)) {
       const fallback = new YahooProvider();
+      // Constructed directly, so it bypasses the factory's tracking wrapper.
+      void recordProviderRequest(fallback.name, 'owner');
       const fallbackCandles = await fallback.fetchRecentCandles(symbol, interval);
       if (hasCurrentNewYorkCandles(fallbackCandles)) {
         candles = fallbackCandles;

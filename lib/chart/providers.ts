@@ -1,4 +1,26 @@
 import { OHLCCandle } from "./types";
+import { recordProviderRequest, type KeyOwner } from "@/lib/metrics/provider-usage";
+
+/**
+ * Wrap a provider so every outbound request is counted (by provider name and
+ * whose API key it uses). Recording is fire-and-forget and never affects the
+ * fetch. This is the single choke point for the factory below; direct
+ * provider construction elsewhere (e.g. the /api/watch Yahoo fallback and
+ * /api/quotes) records explicitly instead.
+ */
+function trackProvider(provider: ChartProvider, keyOwner: KeyOwner): ChartProvider {
+    return {
+        name: provider.name,
+        fetchCandles: (symbol: string, date: string, interval: string) => {
+            void recordProviderRequest(provider.name, keyOwner);
+            return provider.fetchCandles(symbol, date, interval);
+        },
+        fetchRecentCandles: (symbol: string, interval: string) => {
+            void recordProviderRequest(provider.name, keyOwner);
+            return provider.fetchRecentCandles(symbol, interval);
+        },
+    };
+}
 
 interface PolygonAggregate {
     t: number; // timestamp (ms)
@@ -624,15 +646,20 @@ export function getActiveProvider(symbol?: string, userConfig?: UserProviderConf
     const isFutures = symbol ? isFuturesSymbol(symbol) : false;
     const isCrypto = upperSymbol.endsWith('-USD');
 
+    // 'user' when the request will use a user-supplied key (their quota), else
+    // 'owner' (the app's env key — this is what costs the owner). Yahoo has no
+    // key and is recorded as 'owner' since it still leaves the owner's server.
+    const owner = (userKey?: string): KeyOwner => (userKey ? 'user' : 'owner');
+
     // Handle Futures Data Feed Selection separately
     if (isFutures) {
         const futuresPref = userConfig?.futuresProvider || 'databento';
         const databentoKey = userConfig?.databentoKey || process.env.DATABENTO_API_KEY;
 
         if ((futuresPref === 'databento' || futuresPref === 'auto') && databentoKey) {
-            return new DatabentoProvider(databentoKey);
+            return trackProvider(new DatabentoProvider(databentoKey), owner(userConfig?.databentoKey));
         }
-        return new YahooProvider();
+        return trackProvider(new YahooProvider(), 'owner');
     }
 
     // Handle Equities Data Feed Selection
@@ -641,56 +668,56 @@ export function getActiveProvider(symbol?: string, userConfig?: UserProviderConf
     // Crypto uses Tiingo's dedicated crypto endpoint, not its equity/IEX
     // endpoints. Yahoo remains the zero-config fallback for crypto symbols.
     if (isCrypto) {
-        if (pref === 'yahoo') return new YahooProvider();
+        if (pref === 'yahoo') return trackProvider(new YahooProvider(), 'owner');
         if (pref === 'tiingo' || pref === 'auto') {
             const key = userConfig?.tiingoKey || process.env.TIINGO_API_KEY;
-            if (key) return new TiingoCryptoProvider(key);
+            if (key) return trackProvider(new TiingoCryptoProvider(key), owner(userConfig?.tiingoKey));
         }
-        return new YahooProvider();
+        return trackProvider(new YahooProvider(), 'owner');
     }
 
     if (pref === 'alpaca') {
         const keyId = userConfig?.alpacaKeyId || process.env.ALPACA_API_KEY_ID || process.env.ALPACA_API_KEY;
         const secret = userConfig?.alpacaSecret || process.env.ALPACA_SECRET_KEY || process.env.ALPACA_API_SECRET;
-        if (keyId && secret) return new AlpacaProvider();
+        if (keyId && secret) return trackProvider(new AlpacaProvider(), owner(userConfig?.alpacaKeyId));
     }
 
     if (pref === 'twelve') {
         const key = userConfig?.twelveKey || process.env.TWELVE_DATA_API_KEY;
-        if (key) return new TwelveDataProvider();
+        if (key) return trackProvider(new TwelveDataProvider(), owner(userConfig?.twelveKey));
     }
 
     if (pref === 'polygon') {
         const key = userConfig?.polygonKey || process.env.POLYGON_API_KEY;
-        if (key) return new PolygonProvider();
+        if (key) return trackProvider(new PolygonProvider(), owner(userConfig?.polygonKey));
     }
 
     if (pref === 'tiingo') {
         const key = userConfig?.tiingoKey || process.env.TIINGO_API_KEY;
-        if (key) return new TiingoProvider(key);
+        if (key) return trackProvider(new TiingoProvider(key), owner(userConfig?.tiingoKey));
     }
 
     if (pref === 'yahoo') {
-        return new YahooProvider();
+        return trackProvider(new YahooProvider(), 'owner');
     }
 
     // Default 'auto' fallback chain for Equities:
     if (userConfig?.tiingoKey || process.env.TIINGO_API_KEY) {
-        return new TiingoProvider(userConfig?.tiingoKey || process.env.TIINGO_API_KEY || '');
+        return trackProvider(new TiingoProvider(userConfig?.tiingoKey || process.env.TIINGO_API_KEY || ''), owner(userConfig?.tiingoKey));
     }
 
     if (userConfig?.polygonKey || process.env.POLYGON_API_KEY) {
-        return new PolygonProvider();
+        return trackProvider(new PolygonProvider(), owner(userConfig?.polygonKey));
     }
 
     if (userConfig?.alpacaKeyId || process.env.ALPACA_API_KEY_ID || process.env.ALPACA_API_KEY) {
-        return new AlpacaProvider();
+        return trackProvider(new AlpacaProvider(), owner(userConfig?.alpacaKeyId));
     }
 
     if (userConfig?.twelveKey || process.env.TWELVE_DATA_API_KEY) {
-        return new TwelveDataProvider();
+        return trackProvider(new TwelveDataProvider(), owner(userConfig?.twelveKey));
     }
 
     // Default: Yahoo
-    return new YahooProvider();
+    return trackProvider(new YahooProvider(), 'owner');
 }
