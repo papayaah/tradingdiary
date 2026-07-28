@@ -1440,19 +1440,21 @@ export default function MarketWatcher() {
     );
 
     // Signed in: the server is authoritative. Don't browser-scan the provider —
-    // just pull the latest server state (zero provider calls).
+    // just pull the latest server state (zero provider calls). Report the count
+    // of visible rows so the progress reads sensibly (e.g. 6/6), not 1/1.
     if (isAuthenticatedRef.current) {
       if (isBatchScanning) return;
+      const count = categoryItemsRef.current.length || 1;
       setIsBatchScanning(true);
-      batchScanControlRef.current?.start(1);
-      batchScanControlRef.current?.update(1, 1);
+      batchScanControlRef.current?.start(count);
       try {
         await refreshFromServerSnapshot();
       } catch (err) {
         console.error('Snapshot refresh error:', err);
       } finally {
+        batchScanControlRef.current?.update(count, count);
+        batchScanControlRef.current?.complete(count);
         setIsBatchScanning(false);
-        batchScanControlRef.current?.complete(1);
       }
       return;
     }
