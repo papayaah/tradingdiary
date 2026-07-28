@@ -21,6 +21,8 @@ export interface AlertHistoryItem {
   type: 'bullish' | 'bearish';
   details: string;
   price: number;
+  intradayChange?: number | null;
+  intradayChangePercent?: number | null;
   candles?: AlertCandle[];
 }
 
@@ -236,6 +238,21 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
   onToggle,
   onAlertClick,
 }: AlertHistoryCardProps) {
+  const hasIntradayChange =
+    Number.isFinite(alert.intradayChange)
+    && Number.isFinite(alert.intradayChangePercent);
+  const intradayDirection = (alert.intradayChange ?? 0) > 0
+    ? 'profit'
+    : (alert.intradayChange ?? 0) < 0
+      ? 'loss'
+      : 'flat';
+  const formattedIntradayAmount = hasIntradayChange
+    ? `${(alert.intradayChange ?? 0) < 0 ? '-' : ''}$${Math.abs(alert.intradayChange ?? 0).toFixed(2)}`
+    : '';
+  const formattedIntradayPercent = hasIntradayChange
+    ? `${(alert.intradayChangePercent ?? 0).toFixed(2)}%`
+    : '';
+
   return (
     <div
       className={`p-3 rounded-xl border flex flex-col justify-between gap-2 text-xs hover:border-card-border/80 transition-all select-none ${
@@ -279,12 +296,30 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
           <p className="text-muted mt-1 text-[11px] leading-relaxed">{alert.details}</p>
         </div>
 
-        <div className="flex items-center justify-between gap-4 font-mono text-[10px] text-muted border-t border-card-border/20 pt-1.5 w-full">
-          <span>Price: ${alert.price.toFixed(2)}</span>
-          <div className="flex items-center gap-2.5">
-            <TimeAgo timestamp={alert.createdAt} />
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 font-mono text-[10px] text-muted border-t border-card-border/20 pt-1.5 w-full">
+          <div className="min-w-0 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span>Price: ${alert.price.toFixed(2)}</span>
+            {hasIntradayChange ? (
+              <span
+                className={
+                  intradayDirection === 'profit'
+                    ? 'text-profit'
+                    : intradayDirection === 'loss'
+                      ? 'text-loss'
+                      : 'text-muted'
+                }
+                title="Change from the previous regular-session close"
+              >
+                Day: {formattedIntradayAmount} ({formattedIntradayPercent})
+              </span>
+            ) : null}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="whitespace-nowrap">
+              <TimeAgo timestamp={alert.createdAt} />
+            </span>
             <span
-              className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border transition-all ${
+              className={`flex min-w-[98px] shrink-0 items-center justify-center gap-1 whitespace-nowrap text-[10px] font-semibold px-2 py-0.5 rounded-full border transition-all ${
               isExpanded
                 ? 'bg-accent text-white border-accent shadow-sm'
                 : 'bg-accent/10 text-accent border-accent/30 hover:bg-accent/20'

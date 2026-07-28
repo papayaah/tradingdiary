@@ -141,6 +141,8 @@ export const serverWatchAlert = pgTable("server_watch_alert", {
     candleTime: timestamp("candle_time", { mode: 'string' }).notNull(),
     price: doublePrecision("price").notNull(),
     changePercent: doublePrecision("change_percent").notNull(),
+    intradayChange: doublePrecision("intraday_change"),
+    intradayChangePercent: doublePrecision("intraday_change_percent"),
     message: text("message").notNull(),
     patternId: text("pattern_id").notNull().default('consecutive'),
     patternVersion: integer("pattern_version").notNull(),

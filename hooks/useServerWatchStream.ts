@@ -26,6 +26,9 @@ export interface WatchAlertPayload {
   patternId: string;
   matchedPattern: string;
   minMovePercent: number;
+  price?: number;
+  intradayChange?: number | null;
+  intradayChangePercent?: number | null;
   candles: any[];
   createdAt: string;
 }

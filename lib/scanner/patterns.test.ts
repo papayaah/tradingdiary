@@ -78,6 +78,31 @@ describe('detectPattern — qualify-later behavior', () => {
     const result = detectPattern(later, 3, 3);
     expect(result.matched).toBe('bullish');
   });
+
+  it('waits when the newest candle is tiny, then qualifies as that same candle grows', () => {
+    const firstTwo = redRun(2, 100, 1, 2);
+    const formingTiny: Candle = {
+      time: 3,
+      open: firstTwo[1].close,
+      high: firstTwo[1].close,
+      low: firstTwo[1].close * 0.9999,
+      close: firstTwo[1].close * 0.9999,
+      volume: 1000,
+    };
+
+    // The total three-candle move already exceeds 1.5%, but the newest body is
+    // only ~0.01%, so this is still a forming setup rather than an alert.
+    expect(detectPattern([...firstTwo, formingTiny], 1.5, 3).matched).toBe('none');
+
+    const formingStrong: Candle = {
+      ...formingTiny,
+      low: firstTwo[1].close * 0.995,
+      close: firstTwo[1].close * 0.995,
+    };
+
+    // A later scan of the same candle may alert once its body is meaningful.
+    expect(detectPattern([...firstTwo, formingStrong], 1.5, 3).matched).toBe('bearish');
+  });
 });
 
 describe('detectPattern — staleness and guards', () => {

@@ -24,6 +24,7 @@ import { fetchCandles, boundRecent } from '@/lib/scanner/candles';
 import { isSessionActive, type AssetClass, type WatchSession } from '@/lib/scanner/sessions';
 import { SCAN_QUEUE, scannerConfig } from '@/lib/scanner/env';
 import { createConnection, type ScanJob } from '@/lib/scanner/queue';
+import { calculateEquityIntradayChange } from '@/lib/market/intraday-change';
 
 const REQUIRED_CANDLES = 3;
 
@@ -85,6 +86,9 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
 
   const status: ScanOutcome['status'] = !hasData ? 'no-data' : matched ?? 'normal';
   const willAlert = !!matched && !scannerConfig.shadow;
+  const intradayChange = watch.assetClass === 'equity'
+    ? calculateEquityIntradayChange(candles)
+    : null;
   let createdAlertId: string | null = null;
 
   await db.transaction(async (tx) => {
@@ -129,6 +133,8 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
           candleTime: new Date(latest.time * 1000).toISOString(),
           price: last.close,
           changePercent: latest.change,
+          intradayChange: intradayChange?.amount,
+          intradayChangePercent: intradayChange?.percent,
           message: latest.message,
           patternId: latest.patternId,
           patternVersion: PATTERN_VERSION,
@@ -183,6 +189,9 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
           patternId: latest.patternId,
           matchedPattern: latest.message,
           minMovePercent: watch.minMovePercent,
+          price: last?.close,
+          intradayChange: intradayChange?.amount,
+          intradayChangePercent: intradayChange?.percent,
           candles: boundRecent(candles),
           createdAt: nowIso,
         },

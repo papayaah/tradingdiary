@@ -52,6 +52,10 @@ import CompactWatchlist, {
 } from './CompactWatchlist';
 import { authClient } from '@/lib/auth-client';
 import { useServerWatchStream } from '@/hooks/useServerWatchStream';
+import {
+  calculateEquityIntradayChange,
+  type IntradayChange,
+} from '@/lib/market/intraday-change';
 
 interface WatchItem {
   symbol: string;
@@ -75,6 +79,8 @@ interface AlertLog {
   type: 'bullish' | 'bearish';
   details: string;
   price: number;
+  intradayChange?: number | null;
+  intradayChangePercent?: number | null;
   candles?: Candle[];
 }
 
@@ -85,6 +91,8 @@ interface PendingAlert {
   type: 'bullish' | 'bearish';
   details: string;
   price: number;
+  intradayChange?: number | null;
+  intradayChangePercent?: number | null;
   candles?: Candle[];
 }
 
@@ -330,7 +338,9 @@ export default function MarketWatcher() {
         interval: data.interval,
         type,
         details: msg,
-        price: data.candles?.[data.candles.length - 1]?.close || 0,
+        price: data.price ?? data.candles?.[data.candles.length - 1]?.close ?? 0,
+        intradayChange: data.intradayChange,
+        intradayChangePercent: data.intradayChangePercent,
         candles: data.candles || [],
       };
 
@@ -377,6 +387,8 @@ export default function MarketWatcher() {
             type: a.direction === 'bearish' ? 'bearish' : 'bullish',
             details: a.message || `${a.patternId || 'Pattern'} on ${a.symbol} (${a.interval})`,
             price: a.price || 0,
+            intradayChange: a.intradayChange,
+            intradayChangePercent: a.intradayChangePercent,
             candles: [],
           }));
           setAlertLogs(mappedAlerts);
@@ -1160,6 +1172,7 @@ export default function MarketWatcher() {
     message: string,
     price: number,
     candles?: Candle[],
+    dailyMove?: IntradayChange | null,
     collector?: (alert: PendingAlert) => void,
   ) => {
     const alert: PendingAlert = {
@@ -1169,6 +1182,8 @@ export default function MarketWatcher() {
       type,
       details: message,
       price,
+      intradayChange: dailyMove?.amount,
+      intradayChangePercent: dailyMove?.percent,
       // Store the exact 4-hour window rather than the full provider response.
       candles: candles ? candles.slice(-get4HourCandleCount(interval)) : undefined,
     };
@@ -1252,6 +1267,9 @@ export default function MarketWatcher() {
         selectedPatternId,
       );
       const status = scanCandles.length === 0 ? 'no-data' as const : matched;
+      const dailyMove = isFuturesOrCrypto
+        ? null
+        : calculateEquityIntradayChange(candles);
 
       // Trigger Alert if pattern matched and hasn't been alerted for this candle/direction yet
       const alreadyAlerted = item.lastAlertedCandleTime === time
@@ -1265,6 +1283,7 @@ export default function MarketWatcher() {
           message,
           scanCandles[scanCandles.length - 1]?.close || 0,
           scanCandles,
+          dailyMove,
           alertCollector,
         );
       }
@@ -1827,12 +1846,23 @@ export default function MarketWatcher() {
               selectedPatternId,
             );
             const status = sessionCandles.length === 0 ? 'no-data' as const : matched;
+            const dailyMove = isFuturesOrCrypto
+              ? null
+              : calculateEquityIntradayChange(freshCandles);
 
             const alreadyAlerted = item.lastAlertedCandleTime === time
               && item.lastAlertedType === matched
               && item.lastAlertedPatternId === selectedPatternId;
             if (sessionCandles.length > 0 && matched !== 'none' && !alreadyAlerted) {
-              triggerAlert(item.symbol, item.interval, matched, message, sessionCandles[sessionCandles.length - 1]?.close || 0, sessionCandles);
+              triggerAlert(
+                item.symbol,
+                item.interval,
+                matched,
+                message,
+                sessionCandles[sessionCandles.length - 1]?.close || 0,
+                sessionCandles,
+                dailyMove,
+              );
             }
 
             setTestResult({
