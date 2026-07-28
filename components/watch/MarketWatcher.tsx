@@ -2728,7 +2728,7 @@ export default function MarketWatcher() {
             No setup triggers found in today&apos;s data.
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[400px] overflow-y-auto pr-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 max-h-[400px] overflow-y-auto pr-1">
             {currentMatches.map((m, mIdx) => {
               const isSelected = selectedSetupTime === m.time;
               return (
@@ -2769,7 +2769,7 @@ export default function MarketWatcher() {
   };
 
   return (
-    <div className="p-3 sm:p-5 md:p-6 max-w-7xl mx-auto space-y-5 text-foreground">
+    <div className="p-3 sm:p-5 md:p-6 w-full space-y-5 text-foreground">
 
       {/* COMPACT HEADER HERO */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-card-border/40">

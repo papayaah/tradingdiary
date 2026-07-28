@@ -187,7 +187,7 @@ export default function DashboardPage() {
   const { stats, summaries } = filteredData;
 
   return (
-    <div className="p-6 space-y-8 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-6 space-y-8 w-full">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-3xl font-black text-foreground tracking-tight mb-1">Trading Dashboard</h1>

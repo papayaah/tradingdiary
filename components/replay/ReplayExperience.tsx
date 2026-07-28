@@ -126,7 +126,7 @@ export default function ReplayExperience({
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-5 p-3 sm:space-y-6 sm:p-6">
+    <div className="w-full space-y-5 p-3 sm:space-y-6 sm:p-6">
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <div>
           <h1 className="mb-1 text-2xl font-black tracking-tight text-foreground sm:text-3xl">Trade Replay</h1>

@@ -9,7 +9,7 @@ import DataManagementSettings from '@/components/settings/DataManagementSettings
 
 export default function SettingsPage() {
     return (
-        <div className="container mx-auto py-8 max-w-5xl">
+        <div className="p-4 sm:p-6 space-y-8 w-full">
             <h1 className="text-3xl font-bold text-foreground mb-8">Settings</h1>
 
             <div className="space-y-8">

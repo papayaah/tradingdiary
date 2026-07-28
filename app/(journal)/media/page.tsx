@@ -24,7 +24,7 @@ function LibraryPageContent() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
+    <div className="w-full space-y-6 px-4 py-6 sm:px-6 sm:py-8">
       <header>
         <h1 className="text-3xl font-black tracking-tight text-foreground">Library</h1>
         <p className="mt-2 text-sm text-muted">
