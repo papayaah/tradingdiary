@@ -12,6 +12,9 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "video:studio": "remotion studio",
+    "video:render:consecutive": "remotion render ConsecutiveMove marketing/videos/output/consecutive-pattern-promo.mp4",
+    "video:gif:consecutive": "remotion render ConsecutiveMove marketing/videos/output/consecutive-pattern-promo.gif --codec=gif --scale=0.5",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
@@ -44,6 +47,7 @@
     "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "@remotion/cli": "^4.0.500",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -53,6 +57,7 @@
     "drizzle-kit": "^0.31.9",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "remotion": "^4.0.500",
     "tailwindcss": "^4",
     "tsx": "^4.23.1",
     "typescript": "^5",
