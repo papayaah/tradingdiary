@@ -1182,13 +1182,15 @@ export default function MarketWatcher() {
   const scanSymbol = async (
     item: WatchItem,
     alertCollector?: (alert: PendingAlert) => void,
+    forceFresh = false,
   ): Promise<WatchItem> => {
     try {
       let candles: Candle[] = [];
       let providerName = 'Polygon.io';
 
-      // 1. Try fetching from IndexedDB cache first
-      const cache = await getLiveCache(item.symbol, item.interval);
+      // 1. Try fetching from IndexedDB cache first (skipped on a manual refresh,
+      // which should always hit the provider for the freshest data).
+      const cache = forceFresh ? null : await getLiveCache(item.symbol, item.interval);
       const isFuturesOrCrypto = item.symbol.includes('=F') || item.symbol.includes('-USD');
       const cacheHasCurrentSession = cache && (
         isFuturesOrCrypto
@@ -1206,7 +1208,8 @@ export default function MarketWatcher() {
         const timeoutId = setTimeout(() => controller.abort(), 12000);
         
         try {
-          const res = await fetch(`/api/watch?symbol=${encodeURIComponent(item.symbol)}&interval=${item.interval}`, {
+          const cacheBust = forceFresh ? `&t=${Date.now()}` : '';
+          const res = await fetch(`/api/watch?symbol=${encodeURIComponent(item.symbol)}&interval=${item.interval}${cacheBust}`, {
             signal: controller.signal
           });
           clearTimeout(timeoutId);
@@ -1888,6 +1891,28 @@ export default function MarketWatcher() {
   removeSymbolRef.current = handleRemoveSymbol;
   const stableRemoveSymbol = React.useCallback(
     (symbol: string, interval: string) => removeSymbolRef.current(symbol, interval),
+    [],
+  );
+
+  // On-demand refresh of a single row: force a fresh provider fetch (bypassing
+  // cache and any auto-pause/scan cadence) and patch just that watchlist row.
+  const handleRefreshSymbol = async (symbol: string, interval: string) => {
+    const item = watchlistRef.current.find(
+      (w) => w.symbol === symbol && w.interval === interval,
+    );
+    if (!item) return;
+    const scanned = await scanSymbol(item, undefined, true);
+    const latestList = [...watchlistRef.current];
+    const idx = latestList.findIndex((w) => w.symbol === symbol && w.interval === interval);
+    if (idx !== -1) {
+      latestList[idx] = scanned;
+      saveWatchlist(latestList, true);
+    }
+  };
+  const refreshSymbolRef = useRef(handleRefreshSymbol);
+  refreshSymbolRef.current = handleRefreshSymbol;
+  const stableRefreshSymbol = React.useCallback(
+    (symbol: string, interval: string) => refreshSymbolRef.current(symbol, interval),
     [],
   );
 
@@ -3209,6 +3234,7 @@ export default function MarketWatcher() {
                               onToggle={stableToggleRow}
                               onSaveMinMove={stableSaveMinMove}
                               onRemove={stableRemoveSymbol}
+                              onRefresh={stableRefreshSymbol}
                             />
                             
                             {/* Expanded sub-row containing the chart */}

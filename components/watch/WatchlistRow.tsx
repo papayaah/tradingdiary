@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   Clock,
   Edit,
+  RefreshCw,
   Trash2,
   TrendingDown,
   TrendingUp,
@@ -27,6 +28,7 @@ interface WatchlistRowProps {
   onToggle: (index: number) => void;
   onSaveMinMove: (index: number, value: number) => void;
   onRemove: (symbol: string, interval: string) => void;
+  onRefresh: (symbol: string, interval: string) => Promise<void> | void;
 }
 
 function WatchlistRow({
@@ -36,9 +38,21 @@ function WatchlistRow({
   onToggle,
   onSaveMinMove,
   onRemove,
+  onRefresh,
 }: WatchlistRowProps) {
   const [editingValue, setEditingValue] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const latestPrice = miniCandles.at(-1)?.close;
+
+  const handleRefresh = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await onRefresh(item.symbol, item.interval);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const saveMinMove = () => {
     if (editingValue === null) return;
@@ -212,13 +226,23 @@ function WatchlistRow({
         )}
       </td>
       <td className="py-4 px-4 text-right">
-        <button
-          onClick={() => onRemove(item.symbol, item.interval)}
-          className="p-1.5 rounded-lg text-muted hover:bg-muted-bg hover:text-rose-500 transition-all"
-          title="Remove ticker"
-        >
-          <Trash2 size={15} />
-        </button>
+        <div className="inline-flex items-center gap-1">
+          <button
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="p-1.5 rounded-lg text-muted hover:bg-muted-bg hover:text-accent transition-all disabled:opacity-60"
+            title="Refresh this ticker now"
+          >
+            <RefreshCw size={15} className={isRefreshing ? 'animate-spin' : ''} />
+          </button>
+          <button
+            onClick={() => onRemove(item.symbol, item.interval)}
+            className="p-1.5 rounded-lg text-muted hover:bg-muted-bg hover:text-rose-500 transition-all"
+            title="Remove ticker"
+          >
+            <Trash2 size={15} />
+          </button>
+        </div>
       </td>
     </tr>
   );
