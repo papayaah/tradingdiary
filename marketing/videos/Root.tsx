@@ -1,4 +1,5 @@
 import { Composition } from 'remotion';
+import { ImportPromo } from './compositions/ImportPromo';
 import { PatternPromo } from './compositions/PatternPromo';
 import { patternPromos } from './patterns';
 
@@ -22,6 +23,14 @@ export function VideoRoot() {
           defaultProps={{ pattern }}
         />
       ))}
+      <Composition
+        id="ImportPromo"
+        component={ImportPromo}
+        durationInFrames={360}
+        fps={FPS}
+        width={WIDTH}
+        height={HEIGHT}
+      />
     </>
   );
 }

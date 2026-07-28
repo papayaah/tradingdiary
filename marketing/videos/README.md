@@ -14,6 +14,10 @@ npm run video:render:consecutive
 
 # Render a smaller GIF version
 npm run video:gif:consecutive
+
+# Render the fast IBKR import promotion
+npm run video:render:import
+npm run video:gif:import
 ```
 
 ## Structure

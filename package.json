@@ -15,6 +15,8 @@
     "video:studio": "remotion studio",
     "video:render:consecutive": "remotion render ConsecutiveMove marketing/videos/output/consecutive-pattern-promo.mp4",
     "video:gif:consecutive": "remotion render ConsecutiveMove marketing/videos/output/consecutive-pattern-promo.gif --codec=gif --scale=0.5",
+    "video:render:import": "remotion render ImportPromo marketing/videos/output/import-promo.mp4",
+    "video:gif:import": "remotion render ImportPromo marketing/videos/output/import-promo.gif --codec=gif --scale=0.5",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
