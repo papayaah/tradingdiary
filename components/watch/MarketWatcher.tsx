@@ -1397,12 +1397,70 @@ export default function MarketWatcher() {
   }, [nextScanIndex]);
 
   // Scan all items in the current active category (manual override Scan Now button)
+  // Pull the latest per-watch state from the server snapshot and apply it to the
+  // rows (status/price/candles) — no provider calls. Used as the authenticated
+  // "Scan Now All" behavior, since the server is the scanner.
+  const refreshFromServerSnapshot = React.useCallback(async () => {
+    const baseUrl = process.env.NEXT_PUBLIC_SERVER_URL || '';
+    const res = await fetch(`${baseUrl}/api/watch/state`);
+    if (!res.ok) return;
+    const snapshot = await res.json();
+    const watchById = new Map<string, { symbol: string; interval: string }>(
+      (snapshot.watches || []).map((w: { id: string; symbol: string; interval: string }) => [w.id, w]),
+    );
+    const stateByKey = new Map<string, Record<string, unknown>>();
+    for (const s of (snapshot.states || []) as Array<Record<string, unknown>>) {
+      const w = watchById.get(s.watchId as string);
+      if (w) stateByKey.set(`${w.symbol.toUpperCase()} ${w.interval}`, s);
+    }
+    setWatchlist((prev) =>
+      prev.map((item) => {
+        const s = stateByKey.get(`${item.symbol.toUpperCase()} ${item.interval}`);
+        if (!s) return item;
+        const status = s.status as string;
+        const mapped = status === 'bullish' || status === 'bearish' || status === 'no-data' || status === 'error' ? status : 'none';
+        return {
+          ...item,
+          status: mapped,
+          lastPrice: (s.lastPrice as number) ?? item.lastPrice,
+          lastChecked: s.lastScannedAt ? new Date(s.lastScannedAt as string).toLocaleTimeString() : item.lastChecked,
+          candles: Array.isArray(s.recentCandles) && s.recentCandles.length > 0 ? (s.recentCandles as Candle[]) : item.candles,
+          lastError: (s.lastError as string) ?? item.lastError,
+        };
+      }),
+    );
+  }, []);
+
   const handleScanAll = async () => {
-    const targetList = categoryItemsRef.current;
+    // Never scan a muted (switched-off) category.
+    const categoryOf = (symbol: string): ScanCategory =>
+      isFuturesSymbol(symbol) ? 'futures' : isCryptoSymbol(symbol) ? 'crypto' : 'stocks';
+    const targetList = categoryItemsRef.current.filter(
+      (w) => !disabledCategoriesRef.current.includes(categoryOf(w.symbol)),
+    );
+
+    // Signed in: the server is authoritative. Don't browser-scan the provider —
+    // just pull the latest server state (zero provider calls).
+    if (isAuthenticatedRef.current) {
+      if (isBatchScanning) return;
+      setIsBatchScanning(true);
+      batchScanControlRef.current?.start(1);
+      batchScanControlRef.current?.update(1, 1);
+      try {
+        await refreshFromServerSnapshot();
+      } catch (err) {
+        console.error('Snapshot refresh error:', err);
+      } finally {
+        setIsBatchScanning(false);
+        batchScanControlRef.current?.complete(1);
+      }
+      return;
+    }
+
     if (isBatchScanning || targetList.length === 0) return;
     setIsBatchScanning(true);
     batchScanControlRef.current?.start(targetList.length);
-    
+
     const currentFullList = [...watchlist];
     const canUseParallel = parallelScanEnabled && !isPolygonActive;
     const pendingAlerts: PendingAlert[] = [];
