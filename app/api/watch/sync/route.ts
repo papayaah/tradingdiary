@@ -50,7 +50,11 @@ const parsePatternId = (value: unknown): PatternId =>
 const parseSession = (value: unknown): WatchSession =>
   typeof value === 'string' && VALID_SESSIONS.has(value as WatchSession)
     ? value as WatchSession
-    : 'pre';
+    // Default to 'all' (never silently mute). 'pre' was a footgun: it only scans
+    // pre-market, so watches created without an explicit session went dark for
+    // the whole regular trading day. Only applies when session is unset/invalid;
+    // existing explicit choices are preserved.
+    : 'all';
 
 const parseScanFrequency = (value: unknown): number => {
   if (typeof value !== 'number' || !Number.isFinite(value)) {

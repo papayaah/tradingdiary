@@ -260,6 +260,11 @@ export default function MarketWatcher() {
 
   const { data: sessionData } = authClient.useSession();
   const isAuthenticated = !!sessionData?.user;
+  // When signed in, the server scanner is authoritative and the browser must be
+  // a pure viewer (snapshot + SSE), not a second market-data fetcher. A ref lets
+  // the interval loop read the latest value without re-subscribing.
+  const isAuthenticatedRef = useRef(isAuthenticated);
+  isAuthenticatedRef.current = isAuthenticated;
 
   // Event cursor captured from the initial snapshot. The SSE stream must resume
   // from here rather than seq 0, otherwise every page load replays the entire
@@ -1494,6 +1499,7 @@ export default function MarketWatcher() {
       const open = isMarketOpen(activeWindowRef.current);
       setMarketOpen(open);
 
+      if (isAuthenticatedRef.current) return; // Signed in: the server scanner owns scanning; the browser does not fetch per-symbol (avoids double-scanning + duplicate provider load).
       if (isScannerPaused) return; // Manually paused
       const isStocksCategory = watchlistCategoryRef.current === 'stocks';
       if (autoPauseEnabledRef.current && !open && isStocksCategory) return; // Auto-paused outside the equities session
@@ -2724,10 +2730,12 @@ export default function MarketWatcher() {
                     ) : (
                       <span className={`w-2 h-2 rounded-full shrink-0 ${isScannerPaused ? 'bg-amber-500' : 'bg-emerald-500 animate-pulse'}`} />
                     )}
-                    <span>{isScannerPaused ? 'Scanner Paused' : marketAutoPaused ? 'Market Closed' : 'Scanner Active'}</span>
+                    <span>{isAuthenticated ? (isSseConnected ? 'Live · Server Scanning' : 'Connecting…') : isScannerPaused ? 'Scanner Paused' : marketAutoPaused ? 'Market Closed' : 'Scanner Active'}</span>
                   </button>
 
-                  {effectivelyActive && categoryItems.length > 0 && (
+                  {/* Browser round-robin countdown only applies to the signed-out
+                      local scanner; when authenticated the server scans, so hide it. */}
+                  {!isAuthenticated && effectivelyActive && categoryItems.length > 0 && (
                     <div className="flex items-center gap-2 text-xs bg-muted-bg border border-card-border px-3 py-1.5 rounded-lg text-muted">
                       <Clock size={12} className="text-accent" />
                       <span>
