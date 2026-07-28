@@ -21,6 +21,14 @@ The implementation should proceed in two stages:
 
 Exact-request sharing delivers most of the immediate protection against duplicated API calls with substantially less risk. Aggregation is an additional optimization, not a prerequisite.
 
+## Prerequisites (found during single-user rollout)
+
+Shared acquisition only reduces provider load if the scanner is the *sole* market-data consumer and already owns provider identity. Two gaps observed running the single-user scanner in production must be closed first, or sharing will not actually bound provider usage:
+
+1. **Server-authoritative provider configuration is required.** Sharing partitions by `providerScope` (a credential/entitlement identity), so provider *selection* and *credentials* must live server-side. Today they live in **browser cookies** and never reach the scanner — the server falls back to a server-wide env key regardless of the user's UI choice. You cannot construct a correct `providerScope`, nor honor per-user entitlement/licensing, while the credential is only in the browser. This is a **hard prerequisite** for per-user-credential sharing. See [Scanner Configuration: Server as the Source of Truth](./scanner-config-server-authority.md).
+
+2. **The browser must not fetch market data when a server scan is authoritative.** The legacy client still runs its own per-symbol round-robin fetch loop *in parallel* with the server scanner, using the browser's own cookie credential. That is an **uncounted second consumer**: it duplicates provider calls per signed-in tab, and it is invisible to the server-side acquisition cache and rate limiter. Every open tab re-adds linear provider load that shared acquisition can neither see nor bound. So "the authenticated browser is a pure viewer (snapshot + SSE only, no fetching)" is part of this spec's baseline, not an optimization. (Main scanner spec: "Remove from the browser: per-symbol automatic market-data fetches.")
+
 ## Goals
 
 - Prevent provider usage from scaling linearly with the number of users watching the same market data.
@@ -152,7 +160,12 @@ The fetch scope captures provider request details that materially change the ret
 - futures contract or continuous-contract policy;
 - venue or feed when relevant.
 
-User-specific pattern settings do not belong in the fetch scope.
+User-specific pattern settings do not belong in the fetch scope. **However, a detector's *data requirements* do** — because a shared snapshot must satisfy the most demanding detector among the watches sharing it:
+
+- **Volume-dependent detectors** (e.g. Volume Expansion) require candles that actually carry volume. A provider or endpoint that returns no/zero volume cannot serve those watches; the capability registry must record which providers return volume per asset class, and a shared fetch that omits volume must not be reused for a volume-dependent detector.
+- **Lookback-dependent detectors** (Momentum Burst, Range Breakout, Volume Expansion need ≥11 candles; Consecutive Move needs its streak length; Engulfing needs ≥2) require the fetch to return enough history. The shared fetch's lookback must cover the largest requirement among participating watches; a snapshot with too few bars yields `no-data` for the hungrier detector rather than a fabricated result.
+
+So the fetch scope encodes the *union* of data needs (volume + max lookback), while the pattern *choice* stays per-watch in evaluation.
 
 ### Time bucket
 
@@ -280,9 +293,29 @@ The acquisition layer may refresh `AAPL 1m` every minute. User A evaluates each 
 
 PostgreSQL remains the source of truth for each watch's schedule. Redis freshness must not silently change a user's requested evaluation cadence.
 
+### Worked example (all dimensions at once)
+
+Two users, overlapping lists, different everything:
+
+```text
+User A: 200 symbols incl. AAPL 1m,  Momentum Burst, 0.50%, evaluate every 60s
+User B: 200 symbols incl. AAPL 10m, Consecutive Move, 0.25%, evaluate every 10m
+        (150 of the 200 symbols overlap between A and B)
+```
+
+- **Today (no sharing):** ~400 provider fetches per A-cycle-equivalent — one per user-watch — scaling linearly with users. AAPL is fetched by A (1m) and by B (10m) independently, plus every overlapping symbol is fetched twice.
+- **Phase 1 (exact-request sharing):** fetches collapse to the number of unique `(providerScope, symbol, interval, fetchScope, timeBucket)` keys. The 150 overlapping symbols are fetched once *per distinct interval*; A's 1m and B's 10m of AAPL are still two fetches (different intervals), but a second user on AAPL 10m adds zero. Roughly: `unique(equity symbols) × unique(intervals in use)`, not `users × symbols`.
+- **Phase 2 (base-interval aggregation):** AAPL is fetched once at **1m**; B's 10m is **derived**, not fetched. Now overlapping symbols cost **one 1m fetch each** regardless of how many intervals or users consume them.
+- **Frequencies:** the 1m acquisition runs every minute for A; B (every 10m) reuses the freshest derived 10m snapshot and triggers **no** extra upstream call. A is never slowed to B's cadence.
+- **Patterns/thresholds:** A's Momentum Burst @0.50% and B's Consecutive Move @0.25% both evaluate against the same candle array; each writes only its own state/alerts/push.
+
+The invariant to hold: **upstream requests scale with unique eligible acquisition keys, never with user count** — and the browser contributes zero (see Prerequisites).
+
 ## Sessions and market calendars
 
 Session eligibility remains per watch. A watch outside its configured session is deferred without triggering an acquisition solely for that watch.
+
+The same exclusion applies to **disabled watches**. Users can switch a whole asset class off (stored as `server_watch.enabled = false`); disabled watches must be excluded from acquisition grouping entirely — they must never contribute a symbol/interval to a shared fetch, exactly like an out-of-session watch. A shared fetch is driven only by the set of currently **enabled, in-session** watches.
 
 Sharing is allowed when the fetched candle scope contains sufficient data for every participating watch. A broad extended-hours fetch may be filtered independently for regular-hours evaluation, provided that:
 
@@ -379,7 +412,7 @@ No durable user data is lost. Subsequent evaluations repopulate snapshots from t
 
 Rate limits apply to actual upstream provider calls, not cache hits or pattern evaluations.
 
-Use a provider-scoped distributed limiter so multiple scanner processes share the same quota. Metrics must distinguish:
+Use a provider-scoped distributed limiter so multiple scanner processes share the same quota. Note the **current** implementation is a single global BullMQ *worker* limiter (`SCANNER_RATE_MAX` per `SCANNER_RATE_DURATION_MS`, default 10/sec) that throttles job throughput regardless of provider — it does not partition by `providerScope` and does not coordinate across multiple worker containers. Migrating to a provider-scoped, Redis-backed distributed limiter is part of this work; until then, a single worker's global cap is the only protection and it must be tuned below the provider's real limit (which is per-plan, e.g. Tiingo Power vs Polygon free — the mismatch that caused live 429s in the single-user rollout). Metrics must distinguish:
 
 - evaluation jobs;
 - cache hits;

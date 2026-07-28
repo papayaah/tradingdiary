@@ -2,16 +2,21 @@
 
 ## Status
 
-Draft — Phases 1–3 implemented in code. Remaining before push is live end-to-end: set the
-server `.env` (VAPID keys + `SCANNER_SHADOW=false`) and rebuild, then run the Step 9
-verification matrix. iOS additionally requires the user to Add to Home Screen.
+**Implemented (archived 2026-07-28).** Web Push is live in production:
 
-Companion to [`server-side-market-scanner.md`](./server-side-market-scanner.md), which marks
-Step 10 (Web Push) as complete. That step delivered the **code**; this spec covers the
-**configuration and correctness gaps** that leave it inert in production, plus the hardening
-needed for reliable delivery when no tab is in the foreground.
+- VAPID keys (`NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`) are set in the server `.env`; the public key is **baked into the web bundle at build time** (Dockerfile build arg → `next build`).
+- The **scanner** container carries the keys and runs with `SCANNER_SHADOW=false`, so it actually sends push on a committed alert (`sendWebPushToUser`).
+- Service worker (`public/sw.js`), `/api/push/subscribe`, and per-user `user_push_subscription` rows are all in place.
 
-Audited against commit `e2bb69f`. Phase 1–2 implemented on `main` after that audit.
+Retained as the **operational playbook** for the traps that made this non-trivial and will recur on any fresh deploy: (1) `NEXT_PUBLIC_*` bakes at *build* time, so adding the key to `.env` and restarting does nothing — the web image must be **rebuilt**; (2) the scanner container must be **recreated** to pick up new env, or it silently logs "VAPID keys not configured"; (3) `SCANNER_SHADOW` defaults to `true` (silent) — a correct deploy produces no push until it is set to `false`.
+
+Remaining/optional: a live end-to-end delivery observation and the Step 9 verification matrix; iOS requires the user to Add to Home Screen (a PWA-install step, not code).
+
+Companion to [`server-side-market-scanner.md`](../server-side-market-scanner.md), which marks
+Step 10 (Web Push) as complete. That step delivered the **code**; this spec covered the
+**configuration and correctness gaps** that left it inert in production.
+
+Audited against commit `e2bb69f`; configuration completed and verified in production 2026-07-28.
 
 ## Implementation status
 

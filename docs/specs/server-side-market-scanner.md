@@ -13,7 +13,7 @@ Tracks the **Suggested implementation sequence** below.
 - ✅ **Steps 3–5 — Scanner worker daemon.** BullMQ worker, scheduler, Redis rate-limiting, and PostgreSQL scheduling running 24/7 in `tradingdiary-scanner` container.
 - ✅ **Step 6 — Snapshot API & live SSE stream.** `/api/watch/state` (auth'd snapshot) and `/api/watch/events` (auth'd live SSE stream with `pg_notify` bridge).
 - ✅ **Step 7 — BullMQ queue dashboard & health API.** `GET /api/admin/queues` route and `BullMQStatusCard` in Settings page.
-- ✅ **Step 8 — Client UI snapshot & live SSE integration.** `MarketWatcher.tsx` connected to load server snapshot, consume live SSE events, pause browser polling when authenticated, and trigger high-DPI canvas alerts.
+- 🟨 **Step 8 — Client UI snapshot & live SSE integration.** `MarketWatcher.tsx` loads the server snapshot, consumes live SSE events, and triggers high-DPI canvas alerts. **Gap found:** it does **not** actually pause the legacy per-symbol round-robin fetch loop when authenticated — the browser keeps scanning (using its cookie provider key) *in parallel* with the server scanner, so a signed-in tab double-scans and duplicates provider load. Completing Step 8 means making the authenticated browser a pure viewer (no per-symbol fetches); this is also a baseline prerequisite for [Shared Market-Data Scanning](./shared-market-data-scanning.md).
 - ✅ **Step 9 — Direct row sync.** Watchlist items sync directly into `server_watch` rows for background scanning.
 - ✅ **Step 10 — Closed-browser Web Push notifications.** VAPID keys, Service Worker (`public/sw.js`), `/api/push/subscribe` endpoint, and `sendWebPushToUser` worker integration for closed-browser mobile & desktop push alerts.
 - ✅ **Step 11 — Multi-container production deployment.** Live on `https://tradingdiary.app` with `web`, `scanner`, `postgres`, and `redis` services.
@@ -34,7 +34,7 @@ Prerequisites: local **PostgreSQL** and **Redis** running, and a `.env.local` wi
 
 Move watchlist scheduling, market-data retrieval, candle analysis, and alert deduplication out of the browser and into an independent scanner running on the remote server.
 
-Cross-user provider-request deduplication and safe interval aggregation are specified separately in [Shared Market-Data Scanning Across Users](./shared-market-data-scanning.md).
+Cross-user provider-request deduplication and safe interval aggregation are specified separately in [Shared Market-Data Scanning Across Users](./shared-market-data-scanning.md). Configuration that must move from the browser into server-authoritative storage (provider selection/credentials, pattern, session, thresholds) is specified in [Scanner Configuration: Server as the Source of Truth](./scanner-config-server-authority.md).
 
 The existing desktop and mobile web interfaces become lightweight clients. They load a server snapshot and receive incremental updates through Server-Sent Events (SSE). Scanning continues when every browser is closed, and all signed-in devices see the same watch state and recent alerts.
 
