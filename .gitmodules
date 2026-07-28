@@ -7,3 +7,6 @@
 [submodule "packages/better-auth-connect"]
 	path = packages/better-auth-connect
 	url = git@github.com:papayaah/better-auth-connect
+[submodule "packages/react-feedbox"]
+	path = packages/react-feedbox
+	url = git@github.com:papayaah/react-feedbox.git

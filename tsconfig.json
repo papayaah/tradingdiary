@@ -19,7 +19,10 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@reactkits.dev/react-feedbox": ["./packages/react-feedbox/src/index.ts"],
+      "@reactkits.dev/react-feedbox/styles.css": ["./packages/react-feedbox/src/styles.css"],
+      "@reactkits.dev/react-feedbox/*": ["./packages/react-feedbox/src/*"]
     }
   },
   "include": [
@@ -34,6 +37,8 @@
     "packages/ai-connect/src/**/*.tsx",
     "packages/react-media-library/src/**/*.ts",
     "packages/react-media-library/src/**/*.tsx",
+    "packages/react-feedbox/src/**/*.ts",
+    "packages/react-feedbox/src/**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "**/*.mts"
