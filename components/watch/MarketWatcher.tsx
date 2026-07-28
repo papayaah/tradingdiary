@@ -1411,11 +1411,11 @@ export default function MarketWatcher() {
     const stateByKey = new Map<string, Record<string, unknown>>();
     for (const s of (snapshot.states || []) as Array<Record<string, unknown>>) {
       const w = watchById.get(s.watchId as string);
-      if (w) stateByKey.set(`${w.symbol.toUpperCase()} ${w.interval}`, s);
+      if (w) stateByKey.set(`${w.symbol.toUpperCase()}\u0000${w.interval}`, s);
     }
     setWatchlist((prev) =>
       prev.map((item) => {
-        const s = stateByKey.get(`${item.symbol.toUpperCase()} ${item.interval}`);
+        const s = stateByKey.get(`${item.symbol.toUpperCase()}\u0000${item.interval}`);
         if (!s) return item;
         const status = s.status as string;
         const mapped = status === 'bullish' || status === 'bearish' || status === 'no-data' || status === 'error' ? status : 'none';
@@ -1432,19 +1432,20 @@ export default function MarketWatcher() {
   }, []);
 
   const handleScanAll = async () => {
-    // Never scan a muted (switched-off) category.
+    // "Scan All" spans the whole watchlist, not just the current tab — but skips
+    // any muted (switched-off) category regardless of which tab is showing.
     const categoryOf = (symbol: string): ScanCategory =>
       isFuturesSymbol(symbol) ? 'futures' : isCryptoSymbol(symbol) ? 'crypto' : 'stocks';
-    const targetList = categoryItemsRef.current.filter(
+    const targetList = watchlistRef.current.filter(
       (w) => !disabledCategoriesRef.current.includes(categoryOf(w.symbol)),
     );
 
     // Signed in: the server is authoritative. Don't browser-scan the provider —
     // just pull the latest server state (zero provider calls). Report the count
-    // of visible rows so the progress reads sensibly (e.g. 6/6), not 1/1.
+    // of watches acted on so the progress reads sensibly, not 1/1.
     if (isAuthenticatedRef.current) {
       if (isBatchScanning) return;
-      const count = categoryItemsRef.current.length || 1;
+      const count = targetList.length || 1;
       setIsBatchScanning(true);
       batchScanControlRef.current?.start(count);
       try {
@@ -2861,7 +2862,7 @@ export default function MarketWatcher() {
                     }`}
                   >
                     <Bitcoin size={14} />
-                    <span>Crypto (24/7) ({watchlist.filter((w) => isCryptoSymbol(w.symbol)).length})</span>
+                    <span>Crypto ({watchlist.filter((w) => isCryptoSymbol(w.symbol)).length})</span>
                   </button>
                   <button
                     onClick={() => {
@@ -2875,7 +2876,7 @@ export default function MarketWatcher() {
                     }`}
                   >
                     <Zap size={14} />
-                    <span>Futures (24H) ({watchlist.filter((w) => isFuturesSymbol(w.symbol)).length})</span>
+                    <span>Futures ({watchlist.filter((w) => isFuturesSymbol(w.symbol)).length})</span>
                   </button>
                   <button
                     onClick={() => {
