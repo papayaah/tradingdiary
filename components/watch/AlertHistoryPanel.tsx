@@ -464,7 +464,7 @@ function AlertHistoryPanel({
             No alerts triggered in this session.
           </div>
         ) : (
-          <div className="space-y-3 overflow-y-auto flex-1 pr-1 max-h-[550px]">
+          <div className="space-y-3 overflow-y-auto flex-1 pr-1 min-h-[500px] max-h-[calc(100vh-220px)]">
             {alerts.map((alert) => (
               <AlertHistoryCard
                 key={alert.id}
