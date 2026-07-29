@@ -8,6 +8,8 @@ import { AuthOverlayProvider } from '@/components/auth/AuthOverlayProvider';
 import { MediaLibraryProvider } from '@/packages/react-media-library/src/components/MediaLibraryProvider';
 import { ImportProvider } from '@/contexts/ImportContext';
 import { AccountProvider } from '@/contexts/AccountContext';
+import { WelcomeProvider } from '@/components/welcome/WelcomeContext';
+import WelcomeModal from '@/components/welcome/WelcomeModal';
 
 export default function JournalLayout({
   children,
@@ -52,12 +54,15 @@ export default function JournalLayout({
         <ImportProvider>
           <AuthOverlayProvider>
             <ReplayProvider>
-              <div className="flex h-screen overflow-hidden">
-                {!isDirectReplay && <Sidebar collapsed={collapsed} onToggle={toggle} />}
-                <main className="flex-1 overflow-y-auto bg-background">
-                  {children}
-                </main>
-              </div>
+              <WelcomeProvider>
+                <div className="flex h-screen overflow-hidden">
+                  {!isDirectReplay && <Sidebar collapsed={collapsed} onToggle={toggle} />}
+                  <main className="flex-1 overflow-y-auto bg-background">
+                    {children}
+                  </main>
+                  <WelcomeModal />
+                </div>
+              </WelcomeProvider>
             </ReplayProvider>
           </AuthOverlayProvider>
         </ImportProvider>
@@ -65,3 +70,4 @@ export default function JournalLayout({
     </AccountProvider>
   );
 }
+

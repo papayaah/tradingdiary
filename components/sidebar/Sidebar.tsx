@@ -13,10 +13,12 @@ import {
   ChevronLeft,
   ChevronRight,
   PieChart,
-  Bell
+  Bell,
+  Sparkles
 } from 'lucide-react';
 import { useImport } from '@/contexts/ImportContext';
 import { useAccount } from '@/contexts/AccountContext';
+import { useWelcome } from '@/components/welcome/WelcomeContext';
 import LoginButton from '@/components/auth/LoginButton';
 
 interface SidebarProps {
@@ -37,6 +39,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname();
   const { isProcessing } = useImport();
   const { accounts, selectedAccountId, setSelectedAccountId } = useAccount();
+  const { openWelcomeModal } = useWelcome();
 
   return (
     <aside
@@ -121,7 +124,18 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           );
         })}
       </nav>
-      <div className="p-2 border-t border-sidebar-border">
+      <div className="p-2 border-t border-sidebar-border space-y-1">
+        <button
+          onClick={openWelcomeModal}
+          className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold text-accent hover:bg-accent/10 transition-colors ${
+            collapsed ? 'justify-center px-0' : ''
+          }`}
+          title={collapsed ? 'Welcome & Demo Video' : undefined}
+        >
+          <Sparkles size={16} className="shrink-0" />
+          {!collapsed && <span>Welcome & Demo Video</span>}
+        </button>
+
         <div className="px-1 py-1">
           <LoginButton collapsed={collapsed} />
         </div>
@@ -129,3 +143,4 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
     </aside>
   );
 }
+

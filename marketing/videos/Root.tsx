@@ -1,6 +1,7 @@
 import { Composition } from 'remotion';
 import { ImportPromo } from './compositions/ImportPromo';
 import { PatternPromo } from './compositions/PatternPromo';
+import { ReplayPromo } from './compositions/ReplayPromo';
 import { patternPromos } from './patterns';
 
 const FPS = 30;
@@ -31,6 +32,15 @@ export function VideoRoot() {
         width={WIDTH}
         height={HEIGHT}
       />
+      <Composition
+        id="ReplayPromo"
+        component={ReplayPromo}
+        durationInFrames={330}
+        fps={FPS}
+        width={WIDTH}
+        height={HEIGHT}
+      />
     </>
   );
 }
+
