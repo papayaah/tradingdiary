@@ -24,8 +24,8 @@ export const user = pgTable('user', {
     email: text('email'),
     emailVerified: boolean('email_verified').notNull().default(false),
     image: text('image'),
-    createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { mode: 'string' }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
 });
 
 export const account = pgTable('account', {
@@ -36,22 +36,22 @@ export const account = pgTable('account', {
     accessToken: text('access_token'),
     refreshToken: text('refresh_token'),
     idToken: text('id_token'),
-    accessTokenExpiresAt: timestamp('access_token_expires_at', { mode: 'string' }),
-    refreshTokenExpiresAt: timestamp('refresh_token_expires_at', { mode: 'string' }),
+    accessTokenExpiresAt: timestamp('access_token_expires_at', { mode: 'date' }),
+    refreshTokenExpiresAt: timestamp('refresh_token_expires_at', { mode: 'date' }),
     scope: text('scope'),
-    createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { mode: 'string' }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
 });
 
 export const session = pgTable('session', {
     id: text('id').primaryKey(),
     userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
     token: text('token').notNull(),
-    expiresAt: timestamp('expires_at', { mode: 'string' }).notNull(),
+    expiresAt: timestamp('expires_at', { mode: 'date' }).notNull(),
     ipAddress: text('ip_address'),
     userAgent: text('user_agent'),
-    createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { mode: 'string' }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
 });
 
 export const verification = pgTable('verification', {
@@ -59,9 +59,9 @@ export const verification = pgTable('verification', {
     identifier: text('identifier').notNull(),
     token: text('token'),
     value: text('value').notNull(),
-    expiresAt: timestamp('expires_at', { mode: 'string' }).notNull(),
-    createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { mode: 'string' }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { mode: 'date' }).notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
 });
 
 // ============================================================================

@@ -55,3 +55,7 @@ terraform.tfvars.json
 .DS_Store
 .env.local
 .env.*.local
+# Local secrets that must never be committed (the broad `.env*` above is
+# intentionally disabled, so these need explicit rules).
+.env.deploy
+.env.local.bak*

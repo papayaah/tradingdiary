@@ -51,7 +51,10 @@ prod_dump() {
 }
 loc() { "$PSQL" "$LOCAL_URL" -v ON_ERROR_STOP=1 "$@"; }
 
-TABLES="server_watch server_watch_state"
+# user_watchlists is the source of truth the UI renders (via /api/watch/sync);
+# server_watch (+ state) is what the scanner reads and is derived from it. Sync
+# all three so the UI and the scanner both match prod.
+TABLES="user_watchlists server_watch server_watch_state"
 echo "==> db:pull — syncing watchlist data from prod (${SERVER_IP}) into local"
 
 # 1) Schema-heal: add any columns prod has that local is missing.
@@ -82,14 +85,17 @@ done < <(prod_sql "SELECT id||'|'||coalesce(email,'') FROM \"user\"")
 [ ${#LOCAL_IDS[@]} -gt 0 ] || { echo "No prod owner matched a local user. Nothing to sync."; exit 1; }
 
 # 3) Dump prod data and remap owner ids to the matching local ids.
-prod_dump -t server_watch -t server_watch_state > "$TMP/data.sql"
+prod_dump -t user_watchlists -t server_watch -t server_watch_state > "$TMP/data.sql"
 sed "${SED_ARGS[@]}" "$TMP/data.sql" > "$TMP/data.remapped.sql"
 
-# 4) Mirror into local in one transaction: delete these users' rows (state
-#    cascades via FK), then load prod's current set.
+# 4) Mirror into local in one transaction: delete these users' rows
+#    (server_watch_state cascades from server_watch), then load prod's set.
 {
   echo "BEGIN;"
-  for lid in "${LOCAL_IDS[@]}"; do echo "DELETE FROM server_watch WHERE user_id='$lid';"; done
+  for lid in "${LOCAL_IDS[@]}"; do
+    echo "DELETE FROM server_watch WHERE user_id='$lid';"
+    echo "DELETE FROM user_watchlists WHERE user_id='$lid';"
+  done
   cat "$TMP/data.remapped.sql"
   echo "COMMIT;"
 } > "$TMP/load.sql"
@@ -97,7 +103,8 @@ loc -f "$TMP/load.sql" >/dev/null
 
 # 5) Report.
 for lid in "${LOCAL_IDS[@]}"; do
-  cnt="$(loc -tAc "SELECT count(*) FROM server_watch WHERE user_id='$lid'")"
-  echo "   = local user ${lid}: ${cnt} watches"
+  sw="$(loc -tAc "SELECT count(*) FROM server_watch WHERE user_id='$lid'")"
+  uw="$(loc -tAc "SELECT coalesce(jsonb_array_length(watchlist),0) FROM user_watchlists WHERE user_id='$lid'")"
+  echo "   = local user ${lid}: ${sw} server_watch, ${uw:-0} watchlist items"
 done
 echo "==> Done. Your local DB now mirrors prod's watchlist."
