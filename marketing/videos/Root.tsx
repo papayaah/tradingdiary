@@ -1,4 +1,5 @@
 import { Composition } from 'remotion';
+import { AnalyticsPromo } from './compositions/AnalyticsPromo';
 import { ImportPromo } from './compositions/ImportPromo';
 import { PatternPromo } from './compositions/PatternPromo';
 import { ReplayPromo } from './compositions/ReplayPromo';
@@ -40,7 +41,16 @@ export function VideoRoot() {
         width={WIDTH}
         height={HEIGHT}
       />
+      <Composition
+        id="AnalyticsPromo"
+        component={AnalyticsPromo}
+        durationInFrames={330}
+        fps={FPS}
+        width={WIDTH}
+        height={HEIGHT}
+      />
     </>
   );
 }
+
 

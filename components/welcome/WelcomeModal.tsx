@@ -130,33 +130,27 @@ export default function WelcomeModal({ videoUrl = '/replay-promo.gif', title }: 
             )}
           </div>
 
-          {/* Key Value Proposition Grid */}
+          {/* Key Value Proposition Grid — 4 Full-Bleed Vertical Shorts */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="p-4 rounded-xl bg-muted-bg/50 border border-card-border hover:border-accent/40 transition-colors flex flex-col justify-between">
-              <div>
-                <div className="w-8 h-8 rounded-lg bg-accent/10 text-accent flex items-center justify-center mb-2.5">
-                  <BarChart3 size={18} />
-                </div>
-                <h4 className="text-sm font-semibold text-foreground mb-1">Visual Analytics</h4>
-                <p className="text-xs text-muted leading-relaxed">
-                  Track cumulative P&L, hold times, and win rates with real-time interactive charts.
-                </p>
-              </div>
+            {/* 1. Visual Analytics Short */}
+            <div className="relative rounded-xl border border-card-border hover:border-accent/40 transition-all overflow-hidden group min-h-[180px] flex flex-col justify-between bg-black">
+              <img
+                src="/analytics-promo.gif"
+                alt="Visual Analytics Equity Curve & Win Rate Short"
+                className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300 min-h-[180px]"
+              />
             </div>
 
-            <div className="p-4 rounded-xl bg-muted-bg/50 border border-card-border hover:border-accent/40 transition-colors flex flex-col justify-between">
-              <div>
-                <div className="w-8 h-8 rounded-lg bg-accent/10 text-accent flex items-center justify-center mb-2.5">
-                  <Bell size={18} />
-                </div>
-                <h4 className="text-sm font-semibold text-foreground mb-1">Market Pattern Watch</h4>
-                <p className="text-xs text-muted leading-relaxed">
-                  Scan symbols for technical price patterns and receive real-time alert notifications.
-                </p>
-              </div>
+            {/* 2. Market Pattern Watch Short */}
+            <div className="relative rounded-xl border border-card-border hover:border-accent/40 transition-all overflow-hidden group min-h-[180px] flex flex-col justify-between bg-black">
+              <img
+                src="/pattern-promo.gif"
+                alt="Market Pattern Detector Short"
+                className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300 min-h-[180px]"
+              />
             </div>
 
-            {/* Full-Bleed Replay Vertical Video Feature Card (No Overlays) */}
+            {/* 3. Bar-by-Bar Replay Short */}
             <div className="relative rounded-xl border border-card-border hover:border-accent/40 transition-all overflow-hidden group min-h-[180px] flex flex-col justify-between bg-black">
               <img
                 src="/replay-promo.gif"
@@ -165,16 +159,13 @@ export default function WelcomeModal({ videoUrl = '/replay-promo.gif', title }: 
               />
             </div>
 
-            <div className="p-4 rounded-xl bg-muted-bg/50 border border-card-border hover:border-accent/40 transition-colors flex flex-col justify-between">
-              <div>
-                <div className="w-8 h-8 rounded-lg bg-accent/10 text-accent flex items-center justify-center mb-2.5">
-                  <Upload size={18} />
-                </div>
-                <h4 className="text-sm font-semibold text-foreground mb-1">Multi-Broker Import</h4>
-                <p className="text-xs text-muted leading-relaxed">
-                  Seamlessly import CSV trade logs from all major brokers with automated formatting.
-                </p>
-              </div>
+            {/* 4. Multi-Broker Import Short */}
+            <div className="relative rounded-xl border border-card-border hover:border-accent/40 transition-all overflow-hidden group min-h-[180px] flex flex-col justify-between bg-black">
+              <img
+                src="/import-promo.gif"
+                alt="Multi-Broker CSV Import Short"
+                className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300 min-h-[180px]"
+              />
             </div>
           </div>
         </div>

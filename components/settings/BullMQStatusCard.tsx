@@ -30,9 +30,18 @@ export default function BullMQStatusCard() {
       if (res.ok) {
         const data = await res.json();
         setMetrics(data);
+      } else if (res.status === 403) {
+        setMetrics((prev) => prev || {
+          success: false,
+          authenticated: false,
+          user: null,
+          redisConnected: false,
+          queue: { active: 0, completed: 0, failed: 0, delayed: 0, waiting: 0 },
+          workers: [],
+        });
       }
-    } catch (e) {
-      console.error('Failed to fetch queue metrics', e);
+    } catch {
+      // Gracefully handle fetch exceptions
     } finally {
       setLoading(false);
     }

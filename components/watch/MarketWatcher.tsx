@@ -2852,21 +2852,23 @@ export default function MarketWatcher() {
                   {/* Browser round-robin countdown only applies to the signed-out
                       local scanner; when authenticated the server scans, so hide it. */}
                   {!isAuthenticated && effectivelyActive && categoryItems.length > 0 && (
-                    <div className="flex items-center gap-2 text-xs bg-muted-bg border border-card-border px-3 py-1.5 rounded-lg text-muted">
-                      <Clock size={12} className="text-accent" />
-                      <span>
-                        Next scan:{' '}
-                        <span className="text-foreground font-semibold">
+                    <div className="flex items-center gap-2 text-xs bg-muted-bg border border-card-border px-3 py-1.5 rounded-lg text-muted shrink-0 min-w-[15.5rem] justify-between">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <Clock size={12} className="text-accent shrink-0" />
+                        <span className="shrink-0">Next scan:</span>
+                        <span className="text-foreground font-semibold inline-flex items-center justify-center min-w-[3.75rem] max-w-[5.5rem] truncate px-1 py-0.5 rounded bg-card-bg/60 border border-card-border/40 text-center font-mono">
                           {categoryItems[nextScanIndex % categoryItems.length]?.symbol}
-                        </span>{' '}
-                        in{' '}
-                        <span className="font-mono text-accent font-bold">
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-muted">in</span>
+                        <span className="font-mono text-accent font-bold inline-block min-w-[2.25rem] text-right">
                           <ScanCountdown
                             key={`${nextScanIndex}-${scanIntervalMinutes}-${watchlistCategory}`}
                             seconds={spacingSeconds}
                           />
                         </span>
-                      </span>
+                      </div>
                     </div>
                   )}
 
