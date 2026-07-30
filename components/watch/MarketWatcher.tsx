@@ -1462,21 +1462,31 @@ export default function MarketWatcher() {
       (w) => !disabledCategoriesRef.current.includes(categoryOf(w.symbol)),
     );
 
-    // Signed in: the server is authoritative. Don't browser-scan the provider —
-    // just pull the latest server state (zero provider calls). Report the count
-    // of watches acted on so the progress reads sensibly, not 1/1.
+    // Signed in: the server scanner owns scanning. Force an immediate scan by
+    // marking the user's watches due now (POST /api/watch/scan-now); the running
+    // scanner picks them up within ~5s and rows update live over SSE. We poll the
+    // snapshot a few times so the progress bar reflects real elapsed work instead
+    // of completing instantly. (Requires the scanner to be running: always on in
+    // prod, `npm run scanner` locally.)
     if (isAuthenticatedRef.current) {
       if (isBatchScanning) return;
-      const count = targetList.length || 1;
+      const total = targetList.length || 1;
       setIsBatchScanning(true);
-      batchScanControlRef.current?.start(count);
+      batchScanControlRef.current?.start(total);
       try {
-        await refreshFromServerSnapshot();
+        const base = process.env.NEXT_PUBLIC_SERVER_URL || '';
+        await fetch(`${base}/api/watch/scan-now`, { method: 'POST' }).catch(() => {});
+        const ROUNDS = 6;
+        for (let i = 1; i <= ROUNDS; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          await refreshFromServerSnapshot();
+          batchScanControlRef.current?.update(Math.round((i / ROUNDS) * total), total);
+        }
       } catch (err) {
-        console.error('Snapshot refresh error:', err);
+        console.error('Scan-now error:', err);
       } finally {
-        batchScanControlRef.current?.update(count, count);
-        batchScanControlRef.current?.complete(count);
+        batchScanControlRef.current?.update(total, total);
+        batchScanControlRef.current?.complete(total);
         setIsBatchScanning(false);
       }
       return;
