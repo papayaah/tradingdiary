@@ -43,6 +43,10 @@ const connectionString = process.env.DATABASE_URL || 'postgres://postgres:postgr
 // (unwrapped, pooled) runs the same drizzle transactions correctly.
 const client = postgres(connectionString, {
     max: Number(process.env.DATABASE_POOL_MAX ?? 10),
+    // All schema timestamps are currently `timestamp without time zone`.
+    // Force a UTC session so ISO strings written by the app and PostgreSQL
+    // `now()` comparisons use the same clock on local and production hosts.
+    connection: { TimeZone: 'UTC' },
 });
 
 export const db = drizzle(client, { schema });

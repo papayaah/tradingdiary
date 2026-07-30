@@ -27,7 +27,10 @@ const connectionString =
 
 // Dedicated client: one connection is held by LISTEN, others serve row lookups,
 // so this never contends with the app's request-scoped (max: 1) client.
-const client = postgres(connectionString, { max: 3 });
+const client = postgres(connectionString, {
+  max: 3,
+  connection: { TimeZone: 'UTC' },
+});
 const bridgeDb = drizzle(client, { schema });
 
 const subscribers = new Set<Subscriber>();

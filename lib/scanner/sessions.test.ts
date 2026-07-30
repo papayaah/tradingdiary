@@ -38,7 +38,9 @@ describe('isSessionActive — pre / ext windows', () => {
   it('pre-market is 04:00–09:30', () => {
     expect(isSessionActive('pre', 'equity', estMonday(3, 59))).toBe(false);
     expect(isSessionActive('pre', 'equity', estMonday(4, 0))).toBe(true);
-    expect(isSessionActive('pre', 'equity', estMonday(9, 30))).toBe(false);
+    expect(isSessionActive('pre', 'equity', estMonday(9, 30))).toBe(true);
+    expect(isSessionActive('pre', 'equity', estMonday(15, 59))).toBe(true);
+    expect(isSessionActive('pre', 'equity', estMonday(16, 0))).toBe(false);
   });
   it('extended runs to 20:00', () => {
     expect(isSessionActive('ext', 'equity', estMonday(19, 59))).toBe(true);

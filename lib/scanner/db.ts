@@ -15,6 +15,7 @@ const connectionString =
 
 export const sqlClient = postgres(connectionString, {
   max: Math.max(4, scannerConfig.concurrency + 2),
+  connection: { TimeZone: 'UTC' },
 });
 
 export const db = drizzle(sqlClient, { schema });

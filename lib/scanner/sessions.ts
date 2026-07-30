@@ -56,7 +56,9 @@ export function isSessionActive(
     case 'rth':
       return minutes >= RTH_OPEN && minutes < RTH_CLOSE;
     case 'pre':
-      return minutes >= PRE_OPEN && minutes < RTH_OPEN;
+      // The UI's `pre` option means "Pre-market + Regular", not pre-market
+      // only. Keep the server scheduler aligned with its 04:00–16:00 ET label.
+      return minutes >= PRE_OPEN && minutes < RTH_CLOSE;
     case 'ext':
       return minutes >= PRE_OPEN && minutes < EXT_CLOSE;
     default:
