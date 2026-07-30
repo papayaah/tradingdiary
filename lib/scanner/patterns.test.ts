@@ -44,38 +44,52 @@ describe('PATTERN_VERSION', () => {
 });
 
 describe('detectPattern — threshold behavior', () => {
-  it('does not match below the threshold', () => {
-    // 3 green candles ~1%/step => ~3% total move; require 5%.
+  it('does not match when any candle body is below the threshold', () => {
     const candles = greenRun(3, 100, 1);
-    const result = detectPattern(candles, 5, 3);
+    candles[1] = {
+      ...candles[1],
+      close: candles[1].open * 1.001,
+      high: candles[1].open * 1.001,
+    };
+    // The overall first-open-to-last-close move is still well above 0.25%,
+    // but the middle candle body is only 0.10%.
+    const result = detectPattern(candles, 0.25, 3);
     expect(result.matched).toBe('none');
   });
 
-  it('matches at/above the threshold (bullish)', () => {
-    const candles = greenRun(3, 100, 1); // ~3.03% total
-    const result = detectPattern(candles, 3, 3);
+  it('matches when every bullish candle body meets the threshold', () => {
+    const candles = greenRun(3, 100, 0.3);
+    const result = detectPattern(candles, 0.25, 3);
     expect(result.matched).toBe('bullish');
     expect(result.time).toBe(candles[candles.length - 1].time);
   });
 
-  it('matches a descending run as bearish', () => {
-    // Compounding down 1%/step over 3 candles is ~2.97% (0.99^3), so use a
-    // threshold below that; the up-move counterpart compounds to ~3.03%.
-    const candles = redRun(3, 100, 1);
-    const result = detectPattern(candles, 2.5, 3);
+  it('matches when every bearish candle body meets the threshold', () => {
+    const candles = redRun(3, 100, 0.3);
+    const result = detectPattern(candles, 0.25, 3);
     expect(result.matched).toBe('bearish');
   });
 });
 
 describe('detectPattern — qualify-later behavior', () => {
   it('a candle that did not qualify earlier qualifies once it crosses the threshold', () => {
-    // Earlier scan: move is only ~2%, threshold 3% => no match.
-    const early = greenRun(3, 100, 0.66); // ~2% total
-    expect(detectPattern(early, 3, 3).matched).toBe('none');
+    const firstTwo = greenRun(2, 100, 0.5, 2);
+    const formingSmall: Candle = {
+      time: 3,
+      open: firstTwo[1].close,
+      high: firstTwo[1].close * 1.001,
+      low: firstTwo[1].close,
+      close: firstTwo[1].close * 1.001,
+      volume: 1000,
+    };
+    expect(detectPattern([...firstTwo, formingSmall], 0.25, 3).matched).toBe('none');
 
-    // Later scan of the same window after the last candle extends the move.
-    const later = greenRun(3, 100, 1.2); // ~3.6% total
-    const result = detectPattern(later, 3, 3);
+    const formingLarge: Candle = {
+      ...formingSmall,
+      high: firstTwo[1].close * 1.005,
+      close: firstTwo[1].close * 1.005,
+    };
+    const result = detectPattern([...firstTwo, formingLarge], 0.25, 3);
     expect(result.matched).toBe('bullish');
   });
 
@@ -90,18 +104,15 @@ describe('detectPattern — qualify-later behavior', () => {
       volume: 1000,
     };
 
-    // The total three-candle move already exceeds 1.5%, but the newest body is
-    // only ~0.01%, so this is still a forming setup rather than an alert.
-    expect(detectPattern([...firstTwo, formingTiny], 1.5, 3).matched).toBe('none');
+    expect(detectPattern([...firstTwo, formingTiny], 0.5, 3).matched).toBe('none');
 
     const formingStrong: Candle = {
       ...formingTiny,
-      low: firstTwo[1].close * 0.995,
-      close: firstTwo[1].close * 0.995,
+      low: firstTwo[1].close * 0.994,
+      close: firstTwo[1].close * 0.994,
     };
 
-    // A later scan of the same candle may alert once its body is meaningful.
-    expect(detectPattern([...firstTwo, formingStrong], 1.5, 3).matched).toBe('bearish');
+    expect(detectPattern([...firstTwo, formingStrong], 0.5, 3).matched).toBe('bearish');
   });
 });
 
@@ -110,7 +121,7 @@ describe('detectPattern — staleness and guards', () => {
     // A qualifying 3-green run, then a trailing non-conforming (red) candle.
     const run = greenRun(3, 100, 1, 3);
     const trailing: Candle = { time: 4, open: 110, high: 110, low: 104, close: 105, volume: 1000 };
-    const result = detectPattern([...run, trailing], 3, 3);
+    const result = detectPattern([...run, trailing], 0.5, 3);
     expect(result.matched).toBe('none');
     expect(result.message).toMatch(/too old/i);
   });
@@ -132,7 +143,7 @@ describe('scanAllPatterns', () => {
   it('returns every qualifying window, not just the last', () => {
     // 4 green candles => two overlapping 3-candle windows, both qualifying.
     const candles = greenRun(4, 100, 1);
-    const matches = scanAllPatterns(candles, 2, 3);
+    const matches = scanAllPatterns(candles, 0.5, 3);
     expect(matches.length).toBe(2);
     expect(matches.every((m) => m.type === 'bullish')).toBe(true);
   });

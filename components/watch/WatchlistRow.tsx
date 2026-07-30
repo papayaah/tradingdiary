@@ -97,7 +97,7 @@ function WatchlistRow({
         {editingValue !== null ? (
           <div className="relative z-20 flex flex-col gap-2 bg-card-bg border border-card-border shadow-xl rounded-xl p-3 min-w-[200px] animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between text-[11px] font-semibold text-muted">
-              <span>Min Move Threshold</span>
+              <span>Minimum Candle Body</span>
               <span className="font-mono text-accent font-bold">{editingValue}%</span>
             </div>
             <input
@@ -146,7 +146,7 @@ function WatchlistRow({
           <div
             onClick={() => setEditingValue(String(item.minMovePercent))}
             className="cursor-pointer hover:bg-muted-bg/50 px-2 py-1 -mx-2 rounded border border-transparent hover:border-card-border/40 text-xs text-foreground font-semibold inline-flex items-center gap-1.5 transition-all"
-            title="Click to edit threshold slider"
+            title="Click to edit minimum candle body"
           >
             <span>{item.minMovePercent}%</span>
             <Edit size={10} className="text-muted/40 opacity-0 group-hover:opacity-100 transition-opacity" />

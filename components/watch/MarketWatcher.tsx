@@ -1758,7 +1758,7 @@ export default function MarketWatcher() {
     saveWatchlist(updated);
   };
 
-  // Save inline edits to Min Move threshold
+  // Save inline edits to the minimum candle-body threshold.
   const handleSaveInlineMinMove = (index: number, val: number) => {
     setWatchlist((prevList) => {
       const updated = [...prevList];
@@ -3238,7 +3238,7 @@ export default function MarketWatcher() {
                         </th>
                         <th onClick={() => handleSort('minMove')} className="py-3 px-4 cursor-pointer select-none hover:text-foreground transition-colors group">
                           <div className="inline-flex items-center gap-1">
-                            <span>Min Move</span>
+                            <span>Min Body</span>
                             {sortColumn === 'minMove' ? (
                               sortDirection === 'asc' ? <ArrowUp size={12} className="text-accent" /> : <ArrowDown size={12} className="text-accent" />
                             ) : (
@@ -3529,7 +3529,7 @@ export default function MarketWatcher() {
 
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
-                      <label className="block text-xs font-semibold uppercase tracking-wider text-muted">Min Move %</label>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-muted">Min Candle Body %</label>
                       <span className="font-mono text-xs font-bold text-accent">{testMinMove.toFixed(2)}%</span>
                     </div>
                     <input

@@ -14,7 +14,7 @@ import type { Candle, PatternContext, PatternMatch } from './types';
  * Algorithm version stored alongside every alert. Bump this whenever detector
  * behavior changes in a way that could alter which candles match.
  */
-export const PATTERN_VERSION = 2;
+export const PATTERN_VERSION = 3;
 
 export const PATTERN_PRESETS = PATTERN_DEFINITIONS.map(
   ({ id, name, shortDescription }) => ({ id, name, shortDescription }),

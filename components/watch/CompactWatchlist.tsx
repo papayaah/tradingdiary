@@ -82,7 +82,7 @@ const CompactCard = React.memo(function CompactCard({
           <div className="mt-1 text-[10px] text-muted">
             {latestPrice === undefined ? 'No current price' : `$${latestPrice.toFixed(2)}`}
             <span className="mx-1.5 text-muted/30">·</span>
-            Min {item.minMovePercent}%
+            Body ≥ {item.minMovePercent}%
           </div>
         </div>
 
