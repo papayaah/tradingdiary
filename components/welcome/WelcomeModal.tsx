@@ -134,36 +134,48 @@ export default function WelcomeModal({ videoUrl = '/replay-promo.gif', title }: 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* 1. Visual Analytics Short */}
             <div className="relative rounded-xl border border-card-border hover:border-accent/40 transition-all overflow-hidden group min-h-[180px] flex flex-col justify-between bg-black">
-              <img
-                src="/analytics-promo.gif"
-                alt="Visual Analytics Equity Curve & Win Rate Short"
+              <video
+                src="/analytics-promo.mp4"
+                autoPlay
+                loop
+                muted
+                playsInline
                 className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300 min-h-[180px]"
               />
             </div>
 
             {/* 2. Market Pattern Watch Short */}
             <div className="relative rounded-xl border border-card-border hover:border-accent/40 transition-all overflow-hidden group min-h-[180px] flex flex-col justify-between bg-black">
-              <img
-                src="/pattern-promo.gif"
-                alt="Market Pattern Detector Short"
+              <video
+                src="/pattern-promo.mp4"
+                autoPlay
+                loop
+                muted
+                playsInline
                 className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300 min-h-[180px]"
               />
             </div>
 
             {/* 3. Bar-by-Bar Replay Short */}
             <div className="relative rounded-xl border border-card-border hover:border-accent/40 transition-all overflow-hidden group min-h-[180px] flex flex-col justify-between bg-black">
-              <img
-                src="/replay-promo.gif"
-                alt="Bar-by-Bar Trade Replay Short"
+              <video
+                src="/replay-promo.mp4"
+                autoPlay
+                loop
+                muted
+                playsInline
                 className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300 min-h-[180px]"
               />
             </div>
 
             {/* 4. Multi-Broker Import Short */}
             <div className="relative rounded-xl border border-card-border hover:border-accent/40 transition-all overflow-hidden group min-h-[180px] flex flex-col justify-between bg-black">
-              <img
-                src="/import-promo.gif"
-                alt="Multi-Broker CSV Import Short"
+              <video
+                src="/import-promo.mp4"
+                autoPlay
+                loop
+                muted
+                playsInline
                 className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300 min-h-[180px]"
               />
             </div>
