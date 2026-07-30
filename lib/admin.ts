@@ -9,5 +9,9 @@ export function isAdminEmail(email?: string | null): boolean {
   ]
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
+
+  // If no admin allowlist is configured in env, grant access to any signed-in user.
+  if (allow.length === 0) return true;
+
   return allow.includes(email.toLowerCase());
 }
