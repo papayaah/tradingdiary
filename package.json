@@ -19,9 +19,13 @@
     "video:gif:import": "npx -p @remotion/cli remotion render ImportPromo marketing/videos/output/import-promo.gif --codec=gif --scale=0.5",
     "video:render:replay": "npx -p @remotion/cli remotion render ReplayPromo marketing/videos/output/replay-promo.mp4",
     "video:gif:replay": "npx -p @remotion/cli remotion render ReplayPromo marketing/videos/output/replay-promo.gif --codec=gif --scale=0.5",
+    "video:render:analytics": "npx -p @remotion/cli remotion render AnalyticsPromo marketing/videos/output/analytics-promo.mp4",
+    "video:gif:analytics": "npx -p @remotion/cli remotion render AnalyticsPromo marketing/videos/output/analytics-promo.gif --codec=gif --scale=0.5",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push",
+    "db:schema:push": "drizzle-kit push",
+    "db:schema:pull": "drizzle-kit pull",
+    "db:pull": "bash scripts/db-pull.sh",
     "scanner": "tsx lib/scanner/main.ts"
   },
   "dependencies": {

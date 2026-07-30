@@ -8,8 +8,10 @@ import {
     integer,
     doublePrecision,
     bigserial,
+    date,
     index,
     uniqueIndex,
+    primaryKey,
 } from 'drizzle-orm/pg-core';
 
 // ============================================================================
@@ -193,4 +195,18 @@ export const userPushSubscription = pgTable("user_push_subscription", {
     createdAt: timestamp("created_at", { mode: 'string' }).notNull().defaultNow(),
 }, (t) => [
     index("user_push_sub_user_idx").on(t.userId),
+]);
+
+// Server-side market-data provider request counts (admin analytics). Kept in
+// sync with lib/metrics/provider-usage.ts, which also self-creates this table
+// (CREATE TABLE IF NOT EXISTS) on first write for environments without an
+// auto-migrate step. Defined here so drizzle-kit treats it as a managed table
+// and never proposes dropping it.
+export const providerRequestStats = pgTable("provider_request_stats", {
+    day: date("day").notNull(),
+    provider: text("provider").notNull(),
+    keyOwner: text("key_owner").notNull(),
+    count: integer("count").notNull().default(0),
+}, (t) => [
+    primaryKey({ columns: [t.day, t.provider, t.keyOwner] }),
 ]);
