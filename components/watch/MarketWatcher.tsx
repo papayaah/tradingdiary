@@ -1471,22 +1471,52 @@ export default function MarketWatcher() {
     if (isAuthenticatedRef.current) {
       if (isBatchScanning) return;
       const total = targetList.length || 1;
+      let scanCompleted = false;
       setIsBatchScanning(true);
       batchScanControlRef.current?.start(total);
       try {
         const base = process.env.NEXT_PUBLIC_SERVER_URL || '';
-        await fetch(`${base}/api/watch/scan-now`, { method: 'POST' }).catch(() => {});
+        // The browser may have a localStorage watchlist before this database has
+        // normalized server_watch rows (fresh local DB, new device, or restored
+        // browser state). Persist/normalize first so Scan Now never animates
+        // against a list the server does not actually know about.
+        const syncResponse = await syncScannerSettings(
+          watchlistRef.current,
+          selectedPatternId,
+          activeWindow,
+          scanIntervalMinutes,
+        );
+        const syncResult = await syncResponse.json().catch(() => null);
+        if (!syncResponse.ok || !syncResult?.success) {
+          throw new Error(syncResult?.error || 'Could not synchronize the watchlist');
+        }
+
+        const scanResponse = await fetch(`${base}/api/watch/scan-now`, { method: 'POST' });
+        const scanResult = await scanResponse.json().catch(() => null);
+        if (!scanResponse.ok) {
+          throw new Error(scanResult?.error || 'Could not request a server scan');
+        }
+        if (!scanResult?.enqueued) {
+          throw new Error('The server accepted zero enabled watches for scanning');
+        }
+
         const ROUNDS = 6;
         for (let i = 1; i <= ROUNDS; i++) {
           await new Promise((resolve) => setTimeout(resolve, 1500));
           await refreshFromServerSnapshot();
           batchScanControlRef.current?.update(Math.round((i / ROUNDS) * total), total);
         }
+        scanCompleted = true;
       } catch (err) {
         console.error('Scan-now error:', err);
+        batchScanControlRef.current?.fail(
+          err instanceof Error ? err.message : 'The server scan could not be started',
+        );
       } finally {
-        batchScanControlRef.current?.update(total, total);
-        batchScanControlRef.current?.complete(total);
+        if (scanCompleted) {
+          batchScanControlRef.current?.update(total, total);
+          batchScanControlRef.current?.complete(total);
+        }
         setIsBatchScanning(false);
       }
       return;

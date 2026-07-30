@@ -78,6 +78,7 @@ export interface BatchScanControlHandle {
   start: (total: number) => void;
   update: (current: number, total: number) => void;
   complete: (total: number) => void;
+  fail: (message: string) => void;
 }
 
 interface BatchScanControlProps {
@@ -89,6 +90,7 @@ interface BatchScanControlProps {
 const BatchScanControlComponent = forwardRef<BatchScanControlHandle, BatchScanControlProps>(
 function BatchScanControl({ disabled, isParallel, onScan }, ref) {
   const [progress, setProgress] = useState<BatchScanProgress | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
   const clearTimerRef = useRef<number | null>(null);
   const isScanning = progress !== null && progress.percent < 100;
 
@@ -102,6 +104,7 @@ function BatchScanControl({ disabled, isParallel, onScan }, ref) {
   useImperativeHandle(ref, () => ({
     start(total) {
       clearCompletionTimer();
+      setFailure(null);
       setProgress({ current: 0, total, percent: 0 });
     },
     update(current, total) {
@@ -118,6 +121,15 @@ function BatchScanControl({ disabled, isParallel, onScan }, ref) {
         setProgress(null);
         clearTimerRef.current = null;
       }, 2500);
+    },
+    fail(message) {
+      setProgress(null);
+      setFailure(message);
+      clearCompletionTimer();
+      clearTimerRef.current = window.setTimeout(() => {
+        setFailure(null);
+        clearTimerRef.current = null;
+      }, 5000);
     },
   }), []);
 
@@ -158,6 +170,14 @@ function BatchScanControl({ disabled, isParallel, onScan }, ref) {
           </div>
         </div>
       )}
+      {failure ? (
+        <div
+          role="alert"
+          className="absolute right-0 top-full z-30 mt-2 w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-loss/40 bg-card-bg p-3.5 text-xs font-semibold text-loss shadow-xl"
+        >
+          {failure}
+        </div>
+      ) : null}
     </div>
   );
 });
