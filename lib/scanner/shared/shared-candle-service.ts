@@ -100,6 +100,13 @@ interface ServiceDeps {
   fetchFn?: (symbol: string, interval: string) => Promise<FetchResult>;
   now?: () => number;
   config?: Partial<ServiceConfig>;
+  /**
+   * Optional per-scope acquisition cadence (seconds), from the Phase 6 governor.
+   * When set, it sizes the acquisition bucket and snapshot TTL per provider scope
+   * so a symbol refreshes at most once per cadence window. When absent (default),
+   * the fixed acquisitionBucketMs is used and behavior is unchanged.
+   */
+  cadenceProvider?: (providerScope: string) => number;
 }
 
 interface StorageKeys {
@@ -137,6 +144,7 @@ export class SharedCandleService {
   private readonly fetchFn: (symbol: string, interval: string) => Promise<FetchResult>;
   private readonly now: () => number;
   private readonly config: ServiceConfig;
+  private cadenceProvider?: (providerScope: string) => number;
 
   // In-process coalescing: concurrent getCandles for the same acquisition key
   // await one shared promise, so only its leader runs the cross-process protocol.
@@ -156,6 +164,31 @@ export class SharedCandleService {
       negativeCacheTtlMs: deps.config?.negativeCacheTtlMs ?? scannerConfig.negativeCacheTtlMs,
       aggregationEnabled: deps.config?.aggregationEnabled ?? scannerConfig.aggregationEnabled,
     };
+    this.cadenceProvider = deps.cadenceProvider;
+  }
+
+  /** Install (or replace) the governor's per-scope cadence provider at runtime. */
+  setCadenceProvider(provider: (providerScope: string) => number): void {
+    this.cadenceProvider = provider;
+  }
+
+  /**
+   * Acquisition bucket length (ms) for a scope. With a governor installed this is
+   * the effective cadence; otherwise the fixed configured bucket. It sizes both
+   * the time bucket (how often a new fetch happens) and the snapshot TTL (how
+   * long a snapshot stays serveable) so they always agree.
+   */
+  private bucketMsFor(providerScope: string): number {
+    if (this.cadenceProvider) {
+      const seconds = this.cadenceProvider(providerScope);
+      if (Number.isFinite(seconds) && seconds > 0) return Math.round(seconds * 1000);
+    }
+    return this.config.acquisitionBucketMs;
+  }
+
+  /** Snapshot TTL (ms) for a scope: never shorter than the cadence window. */
+  private snapshotTtlMsFor(providerScope: string): number {
+    return Math.max(this.config.snapshotTtlMs, this.bucketMsFor(providerScope));
   }
 
   /**
@@ -180,7 +213,7 @@ export class SharedCandleService {
       canonicalSymbol: ctx.canonicalSymbol,
       interval,
       fetchScope: ctx.fetchScope,
-      timeBucket: currentTimeBucket(this.now(), this.config.acquisitionBucketMs),
+      timeBucket: currentTimeBucket(this.now(), this.bucketMsFor(ctx.providerScope)),
     };
   }
 
@@ -258,7 +291,7 @@ export class SharedCandleService {
     const keys = storageKeysFor(acquisitionKey);
 
     // 1. Fresh snapshot already present?
-    const cached = await this.readFreshSnapshot(keys.snapshot);
+    const cached = await this.readFreshSnapshot(keys.snapshot, request.providerScope);
     if (cached) return this.hitResult(cached, acquisitionKey);
 
     // 2. Recent provider failure for this exact key? Fail fast without fetching.
@@ -335,7 +368,7 @@ export class SharedCandleService {
     while (Date.now() < deadline) {
       await sleep(this.jitteredPoll());
 
-      const snapshot = await this.readFreshSnapshot(keys.snapshot);
+      const snapshot = await this.readFreshSnapshot(keys.snapshot, request.providerScope);
       if (snapshot) return this.hitResult(snapshot, acquisitionKey);
 
       const negative = await this.readNegativeCache(keys.error);
@@ -378,7 +411,11 @@ export class SharedCandleService {
       candles: this.boundSnapshot(result.candles),
     };
     try {
-      await this.store.set(storageKey, JSON.stringify(snapshot), this.config.snapshotTtlMs);
+      await this.store.set(
+        storageKey,
+        JSON.stringify(snapshot),
+        this.snapshotTtlMsFor(request.providerScope),
+      );
     } catch {
       // Disposable: worst case the next equivalent request fetches again.
     }
@@ -409,7 +446,10 @@ export class SharedCandleService {
     }
   }
 
-  private async readFreshSnapshot(storageKey: string): Promise<SharedCandleSnapshot | null> {
+  private async readFreshSnapshot(
+    storageKey: string,
+    providerScope: string,
+  ): Promise<SharedCandleSnapshot | null> {
     let raw: string | null;
     try {
       raw = await this.store.get(storageKey);
@@ -430,7 +470,7 @@ export class SharedCandleService {
     // sufficient metadata). Reject anything older than one TTL as a guard.
     const fetchedAtMs = Date.parse(snapshot.fetchedAt);
     if (Number.isNaN(fetchedAtMs)) return null;
-    if (this.now() - fetchedAtMs > this.config.snapshotTtlMs) return null;
+    if (this.now() - fetchedAtMs > this.snapshotTtlMsFor(providerScope)) return null;
 
     return snapshot;
   }

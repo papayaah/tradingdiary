@@ -59,6 +59,20 @@ export const scannerConfig = {
   // as before, so derived candles never change evaluation without an explicit
   // opt-in and parity check.
   aggregationEnabled: (process.env.SCANNER_AGGREGATION ?? 'false').toLowerCase() === 'true',
+
+  // Phase 6 adaptive cadence governor. Defaults OFF: acquisition uses the fixed
+  // acquisitionBucketMs until a deploy sets SCANNER_GOVERNOR=true, at which point
+  // the effective per-scope cadence is derived from the provider budget below and
+  // drives how often a shared snapshot refreshes. Caps are runtime config so a
+  // plan upgrade is a config change, not a redeploy. Per-scope overrides:
+  // SCANNER_PROVIDER_BUDGETS='{"tiingo:server":{"hourlyCap":10000,"dailyCap":100000}}'.
+  governorEnabled: (process.env.SCANNER_GOVERNOR ?? 'false').toLowerCase() === 'true',
+  governorRecomputeMs: Number(process.env.SCANNER_GOVERNOR_RECOMPUTE_MS ?? 120000),
+  governorHysteresisRatio: Number(process.env.SCANNER_GOVERNOR_HYSTERESIS ?? 0.2),
+  budgetHourlyCap: Number(process.env.SCANNER_BUDGET_HOURLY ?? 5000),
+  budgetDailyCap: Number(process.env.SCANNER_BUDGET_DAILY ?? 50000),
+  budgetHeadroom: Number(process.env.SCANNER_BUDGET_HEADROOM ?? 0.8),
+  budgetFloorSeconds: Number(process.env.SCANNER_BUDGET_FLOOR_SECONDS ?? 15),
 } as const;
 
 export const SCAN_QUEUE = 'market-scan';

@@ -351,6 +351,36 @@ describe('SharedCandleService — base-interval aggregation (Phase 4, flag-gated
   });
 });
 
+describe('SharedCandleService — governor cadence sizes the acquisition bucket (Phase 6)', () => {
+  it('collapses fetches within one cadence window and refreshes after it', () => {
+    let clock = 1_700_001_600_000; // aligned to both 60s and 300s boundaries
+    const svc = new SharedCandleService({
+      store: new MemoryCacheStore(() => clock),
+      now: () => clock,
+      config: FAST,
+      cadenceProvider: () => 300, // 5-minute effective cadence
+    });
+
+    const k1 = buildAcquisitionKey(svc.buildRequest('AAPL', '10m', 'equity'));
+    clock += 250_000; // +250s: still inside the 300s window
+    expect(buildAcquisitionKey(svc.buildRequest('AAPL', '10m', 'equity'))).toBe(k1);
+    clock += 100_000; // +350s total: crossed into the next window
+    expect(buildAcquisitionKey(svc.buildRequest('AAPL', '10m', 'equity'))).not.toBe(k1);
+  });
+
+  it('without a cadence provider, the default bucket advances every minute', () => {
+    let clock = 1_700_001_600_000;
+    const svc = new SharedCandleService({
+      store: new MemoryCacheStore(() => clock),
+      now: () => clock,
+      config: { ...FAST, acquisitionBucketMs: 60_000 },
+    });
+    const k1 = buildAcquisitionKey(svc.buildRequest('AAPL', '10m', 'equity'));
+    clock += 250_000; // 4+ minutes later -> a new default bucket
+    expect(buildAcquisitionKey(svc.buildRequest('AAPL', '10m', 'equity'))).not.toBe(k1);
+  });
+});
+
 describe('SharedCandleService.buildRequest — provider-aware canonicalization', () => {
   it('collapses equivalent futures notations to one acquisition key', () => {
     // getActiveProvider is mocked to "Tiingo" (root symbology via the default
