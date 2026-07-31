@@ -71,6 +71,41 @@ describe('detectPattern — threshold behavior', () => {
   });
 });
 
+describe('detectPattern — body staircase overlap', () => {
+  const overlappingGreen: Candle[] = [
+    { time: 1, open: 100, high: 101.1, low: 99.9, close: 101, volume: 1000 },
+    { time: 2, open: 100.5, high: 101.6, low: 100.4, close: 101.5, volume: 1000 },
+    { time: 3, open: 101, high: 102.1, low: 100.9, close: 102, volume: 1000 },
+  ];
+
+  it('preserves the existing detector when overlap is unrestricted', () => {
+    expect(
+      detectPattern(overlappingGreen, 0.5, 3, 'consecutive', 100).matched,
+    ).toBe('bullish');
+  });
+
+  it('rejects overlapping bodies in clean-staircase mode', () => {
+    expect(
+      detectPattern(overlappingGreen, 0.5, 3, 'consecutive', 0).matched,
+    ).toBe('none');
+  });
+
+  it('accepts a clean bearish staircase with no body overlap', () => {
+    expect(
+      detectPattern(redRun(3, 100, 1), 0.5, 3, 'consecutive', 0).matched,
+    ).toBe('bearish');
+  });
+
+  it('allows overlap only up to the configured percentage', () => {
+    expect(
+      detectPattern(overlappingGreen, 0.5, 3, 'consecutive', 49).matched,
+    ).toBe('none');
+    expect(
+      detectPattern(overlappingGreen, 0.5, 3, 'consecutive', 50).matched,
+    ).toBe('bullish');
+  });
+});
+
 describe('detectPattern — qualify-later behavior', () => {
   it('a candle that did not qualify earlier qualifies once it crosses the threshold', () => {
     const firstTwo = greenRun(2, 100, 0.5, 2);

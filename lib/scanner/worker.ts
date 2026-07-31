@@ -78,7 +78,13 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
   const patternId = isPatternId(watch.patternId) ? watch.patternId : DEFAULT_PATTERN_ID;
 
   const matches = hasData
-    ? scanAllPatterns(candles, watch.minMovePercent, REQUIRED_CANDLES, patternId)
+    ? scanAllPatterns(
+        candles,
+        watch.minMovePercent,
+        REQUIRED_CANDLES,
+        patternId,
+        watch.maxBodyOverlapPercent,
+      )
     : [];
   const latest = matches.length ? matches[matches.length - 1] : null;
   const isCurrent = !!latest && !!last && latest.time === last.time;
@@ -167,6 +173,7 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
       symbol: watch.symbol,
       interval: watch.interval,
       patternId,
+      maxBodyOverlapPercent: watch.maxBodyOverlapPercent,
       status,
       lastPrice: last?.close,
       lastCandleTime: last ? new Date(last.time * 1000).toISOString() : null,
@@ -189,6 +196,7 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
           patternId: latest.patternId,
           matchedPattern: latest.message,
           minMovePercent: watch.minMovePercent,
+          maxBodyOverlapPercent: watch.maxBodyOverlapPercent,
           price: last?.close,
           intradayChange: intradayChange?.amount,
           intradayChangePercent: intradayChange?.percent,

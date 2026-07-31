@@ -1,11 +1,19 @@
-import { candleBodyChange, type PatternDefinition } from './types';
+import {
+  candleBodyChange,
+  candleBodyOverlapPercent,
+  type PatternDefinition,
+} from './types';
 
 export const consecutivePattern = {
   id: 'consecutive',
   name: 'Consecutive Move',
   shortDescription: 'Same-color candles whose bodies each meet the minimum size.',
   minimumCandles: ({ requiredCount }) => requiredCount,
-  evaluateAt: (candles, index, { minMovePercent, requiredCount }) => {
+  evaluateAt: (
+    candles,
+    index,
+    { minMovePercent, requiredCount, maxBodyOverlapPercent },
+  ) => {
     const chunk = candles.slice(index - requiredCount + 1, index + 1);
     const allGreen = chunk.every((candle) => candle.close > candle.open);
     const allRed = chunk.every((candle) => candle.close < candle.open);
@@ -19,8 +27,19 @@ export const consecutivePattern = {
     const everyBodyMeetsMinimum = chunk.every(
       (candle) => candleBodyChange(candle) >= minMovePercent,
     );
+    const everyBodyMeetsOverlapLimit = chunk.every(
+      (candle, chunkIndex) =>
+        chunkIndex === 0
+        || candleBodyOverlapPercent(chunk[chunkIndex - 1], candle)
+          <= maxBodyOverlapPercent,
+    );
 
-    if (allGreen && ascending && everyBodyMeetsMinimum) {
+    if (
+      allGreen
+      && ascending
+      && everyBodyMeetsMinimum
+      && everyBodyMeetsOverlapLimit
+    ) {
       return {
         time: last.time,
         type: 'bullish',
@@ -29,7 +48,12 @@ export const consecutivePattern = {
         patternId: 'consecutive',
       };
     }
-    if (allRed && descending && everyBodyMeetsMinimum) {
+    if (
+      allRed
+      && descending
+      && everyBodyMeetsMinimum
+      && everyBodyMeetsOverlapLimit
+    ) {
       return {
         time: last.time,
         type: 'bearish',

@@ -14,15 +14,20 @@ import type { Candle, PatternContext, PatternMatch } from './types';
  * Algorithm version stored alongside every alert. Bump this whenever detector
  * behavior changes in a way that could alter which candles match.
  */
-export const PATTERN_VERSION = 3;
+export const PATTERN_VERSION = 4;
 
 export const PATTERN_PRESETS = PATTERN_DEFINITIONS.map(
   ({ id, name, shortDescription }) => ({ id, name, shortDescription }),
 );
 
-const createContext = (minMovePercent: number, requiredCount: number): PatternContext => ({
+const createContext = (
+  minMovePercent: number,
+  requiredCount: number,
+  maxBodyOverlapPercent: number,
+): PatternContext => ({
   minMovePercent,
   requiredCount: Math.max(2, Math.min(10, requiredCount)),
+  maxBodyOverlapPercent: Math.max(0, Math.min(100, maxBodyOverlapPercent)),
 });
 
 export const scanAllPatterns = (
@@ -30,9 +35,14 @@ export const scanAllPatterns = (
   minMovePercent: number,
   requiredCount: number = 3,
   patternId: PatternId = DEFAULT_PATTERN_ID,
+  maxBodyOverlapPercent: number = 100,
 ): PatternMatch<PatternId>[] => {
   const definition = getPatternDefinition(patternId);
-  const context = createContext(minMovePercent, requiredCount);
+  const context = createContext(
+    minMovePercent,
+    requiredCount,
+    maxBodyOverlapPercent,
+  );
   const minimumCandles = definition.minimumCandles(context);
   const matches: PatternMatch<PatternId>[] = [];
   if (candles.length < minimumCandles) return matches;
@@ -49,9 +59,14 @@ export const detectPattern = (
   minMovePercent: number,
   requiredCount: number = 3,
   patternId: PatternId = DEFAULT_PATTERN_ID,
+  maxBodyOverlapPercent: number = 100,
 ) => {
   const definition = getPatternDefinition(patternId);
-  const context = createContext(minMovePercent, requiredCount);
+  const context = createContext(
+    minMovePercent,
+    requiredCount,
+    maxBodyOverlapPercent,
+  );
   const minimumCandles = definition.minimumCandles(context);
   if (candles.length < minimumCandles) {
     return {
@@ -60,7 +75,13 @@ export const detectPattern = (
     };
   }
 
-  const matches = scanAllPatterns(candles, minMovePercent, context.requiredCount, patternId);
+  const matches = scanAllPatterns(
+    candles,
+    minMovePercent,
+    context.requiredCount,
+    patternId,
+    context.maxBodyOverlapPercent,
+  );
   if (matches.length === 0) {
     return { matched: 'none' as const, message: 'No matching pattern found' };
   }

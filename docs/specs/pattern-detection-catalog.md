@@ -38,15 +38,16 @@ interface PatternDefinition<Id> {
 ```
 
 The engine (`index.ts`) slides `index` across the candle array and calls
-`evaluateAt` at each position. Context is only `{ minMovePercent,
-requiredCount }`. Matches are **single-candle-anchored** — a `PatternMatch`
+`evaluateAt` at each position. Context currently includes
+`{ minMovePercent, requiredCount, maxBodyOverlapPercent }`. Matches are
+**single-candle-anchored** — a `PatternMatch`
 carries one `time`, a `bullish | bearish` type, a `change`, and a `message`.
 
 The five current detectors:
 
 | Detector | id | Structure |
 | --- | --- | --- |
-| Consecutive Move | `consecutive` | N same-colour candles, monotonic closes, total move ≥ threshold |
+| Consecutive Move | `consecutive` | N same-colour candles, every body ≥ threshold, monotonic closes, and optional adjacent-body overlap limit |
 | Momentum Burst | `momentum-burst` | One candle whose body ≫ recent 10-bar average |
 | Range Breakout | `range-breakout` | Close breaks the prior 10-bar high/low |
 | Volume Expansion | `volume-expansion` | Volume ≫ recent 10-bar average |
@@ -70,9 +71,10 @@ cannot currently be returned by a detector or drawn consistently.
 - One global `patternId` is selected for the watchlist. The normalized schema
   stores it on each watch, but the product does not yet support selecting
   multiple detectors or different detectors per symbol.
-- `PatternContext` exposes only `minMovePercent` and `requiredCount`. It does
-  not expose interval, asset class, session boundaries, timezone, volume type,
-  candle-finality, or pattern-specific parameters.
+- `PatternContext` exposes `minMovePercent`, `requiredCount`, and the
+  Consecutive Move `maxBodyOverlapPercent` staircase constraint. It does not
+  expose interval, asset class, session boundaries, timezone, volume type,
+  candle-finality, or a general typed parameter registry.
 - The server worker currently uses a fixed required candle count of three.
   Before expanding Consecutive Move, its 3/4/5-candle UI choice must become
   server-owned configuration so browser and server evaluation cannot disagree.
@@ -531,8 +533,9 @@ standalone unit test passes while the server worker uses different parameters.
 
 ## Suggested implementation sequence
 
-1. **Correctness prerequisite** — persist Consecutive Move’s required count,
-   unify client/server session semantics, and test worker/manual parity.
+1. **Correctness prerequisite** — persist Consecutive Move’s required count
+   and body-overlap limit, unify client/server session semantics, and test
+   worker/manual parity.
 2. **Metadata + typed parameters** — category, supported assets, required
    inputs, defaults, validation, and per-detector versions.
 3. **Candlestick batch** — pin bar, doji, inside/outside bar, morning/evening

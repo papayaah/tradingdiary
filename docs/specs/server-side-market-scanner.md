@@ -60,7 +60,7 @@ This design fixes the architectural source of the current watch-page lag: the pa
 - Replacing provider APIs with an exchange-direct market-data feed.
 - Guaranteeing mobile operating-system notifications while the browser is closed in the first release.
 - Running a scanner inside a serverless request handler.
-- Changing the existing ascending and descending Consecutive Move definition; new detectors are opt-in presets.
+- Changing other existing detector definitions; new detectors remain opt-in presets.
 
 ## User experience
 

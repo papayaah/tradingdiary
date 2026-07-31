@@ -18,6 +18,7 @@ export interface PatternMatch<Id extends string = string> {
 export interface PatternContext {
   minMovePercent: number;
   requiredCount: number;
+  maxBodyOverlapPercent: number;
 }
 
 export interface PatternDefinition<Id extends string = string> {
@@ -34,6 +35,23 @@ export interface PatternDefinition<Id extends string = string> {
 
 export const candleBodyChange = (candle: Candle) =>
   candle.open === 0 ? 0 : Math.abs((candle.close - candle.open) / candle.open) * 100;
+
+export const candleBodyOverlapPercent = (previous: Candle, current: Candle) => {
+  const previousLow = Math.min(previous.open, previous.close);
+  const previousHigh = Math.max(previous.open, previous.close);
+  const currentLow = Math.min(current.open, current.close);
+  const currentHigh = Math.max(current.open, current.close);
+  const overlap = Math.max(
+    0,
+    Math.min(previousHigh, currentHigh) - Math.max(previousLow, currentLow),
+  );
+  const smallerBody = Math.min(
+    previousHigh - previousLow,
+    currentHigh - currentLow,
+  );
+  if (smallerBody <= 0) return 0;
+  return Math.min(100, (overlap / smallerBody) * 100);
+};
 
 export const directionalMatch = <Id extends string>(
   candle: Candle,
