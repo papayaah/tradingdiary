@@ -8,6 +8,7 @@ import React, {
   useState,
 } from 'react';
 import { LayoutGrid, List, Loader2, RefreshCw, Search, X } from 'lucide-react';
+import type { SymbolSearchCategory } from '@/lib/market/symbol-search';
 
 export type WatchlistView = 'compact' | 'table';
 
@@ -190,6 +191,7 @@ export interface TickerInputHandle {
 
 interface TickerInputProps {
   placeholder: string;
+  category: SymbolSearchCategory;
   onSearch: (value: string) => void;
   onAdd: (value: string) => boolean;
 }
@@ -202,7 +204,7 @@ interface SymbolSuggestion {
 }
 
 const TickerInputComponent = forwardRef<TickerInputHandle, TickerInputProps>(
-function TickerInput({ placeholder, onSearch, onAdd }, ref) {
+function TickerInput({ placeholder, category, onSearch, onAdd }, ref) {
   const [value, setValue] = useState('');
   const [suggestions, setSuggestions] = useState<SymbolSuggestion[]>([]);
   const [open, setOpen] = useState(false);
@@ -231,7 +233,8 @@ function TickerInput({ placeholder, onSearch, onAdd }, ref) {
     const timer = window.setTimeout(async () => {
       try {
         const base = process.env.NEXT_PUBLIC_SERVER_URL || '';
-        const res = await fetch(`${base}/api/symbol-search?q=${encodeURIComponent(query)}`, {
+        const params = new URLSearchParams({ q: query, category });
+        const res = await fetch(`${base}/api/symbol-search?${params.toString()}`, {
           signal: controller.signal,
         });
         if (!res.ok) return;
@@ -250,7 +253,7 @@ function TickerInput({ placeholder, onSearch, onAdd }, ref) {
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [value]);
+  }, [category, value]);
 
   // Close the dropdown when clicking outside.
   useEffect(() => {
@@ -339,7 +342,7 @@ function TickerInput({ placeholder, onSearch, onAdd }, ref) {
       </span>
 
       {open && suggestions.length > 0 && (
-        <ul className="absolute left-0 right-0 top-full mt-1 z-40 max-h-72 overflow-y-auto rounded-xl border border-card-border bg-card-bg shadow-xl py-1">
+        <ul className="absolute bottom-full left-0 z-40 mb-2 max-h-72 w-[min(26rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-card-border bg-card-bg py-1 shadow-xl">
           {suggestions.map((s, i) => (
             <li key={`${s.symbol}-${i}`}>
               <button
@@ -347,15 +350,21 @@ function TickerInput({ placeholder, onSearch, onAdd }, ref) {
                 // onMouseDown (not onClick) so it fires before the input blur.
                 onMouseDown={(e) => { e.preventDefault(); selectSuggestion(s.symbol); }}
                 onMouseEnter={() => setHighlight(i)}
-                className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${
+                className={`flex w-full items-start gap-2 px-3 py-2 text-left text-sm transition-colors ${
                   i === highlight ? 'bg-accent/15' : 'hover:bg-muted-bg'
                 }`}
               >
-                <Search size={12} className="shrink-0 text-muted/50" />
-                <span className="font-semibold font-mono text-foreground shrink-0">{s.symbol}</span>
-                {s.name && <span className="text-muted truncate">{s.name}</span>}
-                <span className="ml-auto shrink-0 text-[10px] uppercase tracking-wide text-muted/70">
-                  {[s.type, s.exchange].filter(Boolean).join(' · ')}
+                <Search size={12} className="mt-1 shrink-0 text-muted/50" />
+                <span className="min-w-0 flex-1">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="shrink-0 font-mono font-semibold text-foreground">{s.symbol}</span>
+                    <span className="truncate text-[10px] uppercase tracking-wide text-muted/70">
+                      {[s.type, s.exchange].filter(Boolean).join(' · ')}
+                    </span>
+                  </span>
+                  {s.name ? (
+                    <span className="mt-0.5 block truncate text-xs text-muted">{s.name}</span>
+                  ) : null}
                 </span>
               </button>
             </li>

@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { recordProviderRequest } from '@/lib/metrics/provider-usage';
+import {
+  isSupportedSymbolSearchCandidate,
+  parseSymbolSearchCategory,
+} from '@/lib/market/symbol-search';
 
 // Symbol autocomplete backed by Yahoo's free search endpoint (the same one its
 // own site uses). Server-proxied because the browser cannot call Yahoo directly
@@ -26,6 +30,9 @@ export interface SymbolSearchResult {
 
 export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get('q')?.trim();
+  const category = parseSymbolSearchCategory(
+    request.nextUrl.searchParams.get('category'),
+  );
   if (!q || q.length < 2) {
     return NextResponse.json({ results: [] });
   }
@@ -33,7 +40,7 @@ export async function GET(request: NextRequest) {
   try {
     const url =
       `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}` +
-      `&quotesCount=10&newsCount=0&listsCount=0&enableFuzzyQuery=false`;
+      `&quotesCount=20&newsCount=0&listsCount=0&enableFuzzyQuery=false`;
     void recordProviderRequest('Yahoo Finance', 'owner');
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0' },
@@ -47,12 +54,18 @@ export async function GET(request: NextRequest) {
     const quotes = Array.isArray(data.quotes) ? data.quotes : [];
     const results: SymbolSearchResult[] = quotes
       .filter((quote): quote is YahooQuote & { symbol: string } => typeof quote.symbol === 'string' && quote.symbol.length > 0)
+      .filter((quote) => isSupportedSymbolSearchCandidate({
+        symbol: quote.symbol.toUpperCase(),
+        exchangeCode: (quote.exchange || '').toUpperCase(),
+        type: (quote.quoteType || '').toUpperCase(),
+      }, category))
       .map((quote) => ({
-        symbol: quote.symbol,
+        symbol: quote.symbol.toUpperCase(),
         name: quote.shortname || quote.longname || '',
         exchange: quote.exchDisp || quote.exchange || '',
         type: quote.quoteType || '',
-      }));
+      }))
+      .slice(0, 10);
 
     return NextResponse.json({ results });
   } catch {

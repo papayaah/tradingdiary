@@ -3315,6 +3315,7 @@ export default function MarketWatcher() {
                 )}
                 <TickerInput
                   ref={tickerInputRef}
+                  category={watchlistCategory}
                   placeholder={
                     watchlistCategory === 'futures'
                       ? 'e.g. NQ=F, ES=F, CL=F'
