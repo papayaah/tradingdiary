@@ -29,6 +29,17 @@ export const scannerConfig = {
 
   // Max recent candles persisted per watch state (see spec).
   maxRecentCandles: 60,
+
+  // Shared candle acquisition (Phase 1 of shared-market-data-scanning). The
+  // acquisition bucket length bounds reuse: requests in the same bucket share
+  // one provider fetch. TTL keeps a snapshot serveable slightly past its bucket
+  // (retries, clock skew); it must stay a small multiple of the interval so
+  // stale data is never served. Snapshot candle count is capped so a shared
+  // snapshot cannot grow Redis unboundedly (providers already return a bounded
+  // window; this is defense-in-depth).
+  acquisitionBucketMs: Number(process.env.SCANNER_ACQ_BUCKET_MS ?? 60000),
+  snapshotTtlMs: Number(process.env.SCANNER_SNAPSHOT_TTL_MS ?? 75000),
+  maxSnapshotCandles: Number(process.env.SCANNER_MAX_SNAPSHOT_CANDLES ?? 1500),
 } as const;
 
 export const SCAN_QUEUE = 'market-scan';

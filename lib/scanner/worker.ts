@@ -20,7 +20,8 @@ import {
   scanAllPatterns,
   PATTERN_VERSION,
 } from '@/lib/scanner/patterns';
-import { fetchCandles, boundRecent } from '@/lib/scanner/candles';
+import { boundRecent } from '@/lib/scanner/candles';
+import { getSharedCandleService } from '@/lib/scanner/shared/shared-candle-service';
 import { isSessionActive, type AssetClass, type WatchSession } from '@/lib/scanner/sessions';
 import { SCAN_QUEUE, scannerConfig } from '@/lib/scanner/env';
 import { createConnection, type ScanJob } from '@/lib/scanner/queue';
@@ -49,7 +50,11 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
   let candles;
   let providerName: string;
   try {
-    const res = await fetchCandles(watch.symbol, watch.interval);
+    // Shared acquisition: equivalent watches (any user/device) needing the same
+    // provider/symbol/interval/scope/bucket collapse to one upstream fetch. Only
+    // the fetch is shared — evaluation, state, alerts, events, and push below
+    // remain per-watch and unchanged.
+    const res = await getSharedCandleService().getCandlesForWatch(watch.symbol, watch.interval);
     candles = res.candles;
     providerName = res.provider;
   } catch (err) {
