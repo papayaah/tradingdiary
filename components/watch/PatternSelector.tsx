@@ -6,10 +6,17 @@ import {
   PATTERN_PRESETS,
   type PatternId,
 } from '@/lib/scanner/patterns';
+import { InteractivePatternVisualizer } from './InteractivePatternVisualizer';
 
 interface PatternSelectorProps {
   value: PatternId;
   onChange: (patternId: PatternId) => void;
+  minMovePercent?: number;
+  requiredCount?: number;
+  maxBodyOverlapPercent?: number;
+  onMinMoveChange?: (val: number) => void;
+  onRequiredCountChange?: (val: number) => void;
+  onMaxBodyOverlapChange?: (val: number) => void;
 }
 
 interface PreviewCandle {
@@ -113,8 +120,18 @@ const PatternPreview = React.memo(function PatternPreview({
   );
 });
 
-function PatternSelector({ value, onChange }: PatternSelectorProps) {
+function PatternSelector({
+  value,
+  onChange,
+  minMovePercent,
+  requiredCount,
+  maxBodyOverlapPercent,
+  onMinMoveChange,
+  onRequiredCountChange,
+  onMaxBodyOverlapChange,
+}: PatternSelectorProps) {
   const [isOpen, setIsOpen] = React.useState(false);
+  const [showVisualizer, setShowVisualizer] = React.useState(false);
   const containerRef = React.useRef<HTMLElement>(null);
   const selectedPreset = PATTERN_PRESETS.find((preset) => preset.id === value) ?? PATTERN_PRESETS[0];
 
@@ -141,10 +158,10 @@ function PatternSelector({ value, onChange }: PatternSelectorProps) {
   return (
     <section
       ref={containerRef}
-      className="relative mb-3 rounded-lg border border-card-border/50 bg-muted-bg/20 p-2"
+      className="relative mb-3 rounded-lg border border-card-border/50 bg-muted-bg/20 p-2 space-y-2"
       aria-labelledby="pattern-selector-title"
     >
-      <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center">
+      <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center justify-between">
         <div>
           <div id="pattern-selector-title" className="flex items-center gap-1.5 text-xs font-bold text-foreground">
             <ScanSearch size={14} className="text-accent" />
@@ -153,23 +170,38 @@ function PatternSelector({ value, onChange }: PatternSelectorProps) {
           <p className="mt-0.5 text-[10px] text-muted">Choose one detector for every symbol in this watchlist.</p>
         </div>
 
-        <button
-          type="button"
-          aria-haspopup="listbox"
-          aria-expanded={isOpen}
-          onClick={() => setIsOpen((open) => !open)}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-accent/30 bg-card-bg/70 px-2 py-1.5 text-left transition-colors hover:border-accent/60 sm:ml-auto sm:max-w-[470px]"
-        >
-          <PatternPreview patternId={selectedPreset.id} />
-          <span className="min-w-0 flex-1">
-            <span className="block text-xs font-bold text-foreground">{selectedPreset.name}</span>
-            <span className="mt-0.5 block truncate text-[10px] text-muted">{selectedPreset.shortDescription}</span>
-          </span>
-          <ChevronDown
-            size={15}
-            className={`shrink-0 text-muted transition-transform ${isOpen ? 'rotate-180' : ''}`}
-          />
-        </button>
+        <div className="flex items-center gap-2 sm:ml-auto">
+          <button
+            type="button"
+            onClick={() => setShowVisualizer((prev) => !prev)}
+            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+              showVisualizer
+                ? 'border-accent bg-accent/15 text-accent'
+                : 'border-card-border bg-card-bg/80 text-muted hover:border-accent/40 hover:text-foreground'
+            }`}
+          >
+            <ScanSearch size={13} />
+            <span>{showVisualizer ? 'Hide Visualizer' : 'Visual Guide'}</span>
+          </button>
+
+          <button
+            type="button"
+            aria-haspopup="listbox"
+            aria-expanded={isOpen}
+            onClick={() => setIsOpen((open) => !open)}
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-accent/30 bg-card-bg/70 px-2 py-1.5 text-left transition-colors hover:border-accent/60 sm:max-w-[360px]"
+          >
+            <PatternPreview patternId={selectedPreset.id} />
+            <span className="min-w-0 flex-1">
+              <span className="block text-xs font-bold text-foreground">{selectedPreset.name}</span>
+              <span className="mt-0.5 block truncate text-[10px] text-muted">{selectedPreset.shortDescription}</span>
+            </span>
+            <ChevronDown
+              size={15}
+              className={`shrink-0 text-muted transition-transform ${isOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+        </div>
       </div>
 
       {isOpen ? (
@@ -214,6 +246,21 @@ function PatternSelector({ value, onChange }: PatternSelectorProps) {
               );
             })}
           </div>
+        </div>
+      ) : null}
+
+      {/* Embedded Visual Pattern Visualizer */}
+      {showVisualizer ? (
+        <div className="pt-2">
+          <InteractivePatternVisualizer
+            patternId={value}
+            minMovePercent={minMovePercent}
+            requiredCount={requiredCount}
+            maxBodyOverlapPercent={maxBodyOverlapPercent}
+            onMinMoveChange={onMinMoveChange}
+            onRequiredCountChange={onRequiredCountChange}
+            onMaxBodyOverlapChange={onMaxBodyOverlapChange}
+          />
         </div>
       ) : null}
     </section>

@@ -51,11 +51,15 @@ import CompactWatchlist, {
   type CompactWatchlistEntry,
 } from './CompactWatchlist';
 import { authClient } from '@/lib/auth-client';
-import { useServerWatchStream } from '@/hooks/useServerWatchStream';
+import {
+  useServerWatchStream,
+  type WatchStateUpdatePayload,
+} from '@/hooks/useServerWatchStream';
 import {
   calculateEquityIntradayChange,
   type IntradayChange,
 } from '@/lib/market/intraday-change';
+import { buildScannerSyncWatchlist } from '@/lib/watch/sync-settings';
 
 interface WatchItem {
   symbol: string;
@@ -94,6 +98,25 @@ interface PendingAlert {
   intradayChange?: number | null;
   intradayChangePercent?: number | null;
   candles?: Candle[];
+}
+
+interface ServerSnapshotAlert {
+  id: string;
+  watchId: string;
+  createdAt?: string | null;
+  symbol: string;
+  interval: string;
+  direction?: string;
+  message?: string | null;
+  patternId?: string | null;
+  price?: number | null;
+  intradayChange?: number | null;
+  intradayChangePercent?: number | null;
+}
+
+interface ServerSnapshotState {
+  watchId: string;
+  recentCandles?: Candle[] | null;
 }
 
 const ALERT_HISTORY_TTL_MS = 10 * 60 * 1000;
@@ -136,6 +159,33 @@ const pruneAlertHistory = (logs: AlertLog[], now = Date.now()) =>
   logs
     .filter((log) => Number.isFinite(log.createdAt) && now - log.createdAt < ALERT_HISTORY_TTL_MS)
     .slice(0, MAX_ALERT_HISTORY_ITEMS);
+
+const mapSnapshotAlerts = (snapshot: {
+  alerts?: ServerSnapshotAlert[];
+  states?: ServerSnapshotState[];
+}): AlertLog[] => {
+  const candlesByWatchId = new Map(
+    (snapshot.states ?? []).map((state) => [
+      state.watchId,
+      Array.isArray(state.recentCandles) ? state.recentCandles : [],
+    ]),
+  );
+
+  return pruneAlertHistory(
+    (snapshot.alerts ?? []).map((alert) => ({
+      id: alert.id,
+      createdAt: alert.createdAt ? new Date(alert.createdAt).getTime() : Date.now(),
+      symbol: alert.symbol,
+      interval: alert.interval,
+      type: alert.direction === 'bearish' ? 'bearish' : 'bullish',
+      details: alert.message || `${alert.patternId || 'Pattern'} on ${alert.symbol} (${alert.interval})`,
+      price: alert.price ?? 0,
+      intradayChange: alert.intradayChange,
+      intradayChangePercent: alert.intradayChangePercent,
+      candles: candlesByWatchId.get(alert.watchId) ?? [],
+    })),
+  );
+};
 
 const getPersistedWatchlist = (items: WatchItem[]): WatchItem[] =>
   items.map((item) => ({
@@ -186,8 +236,15 @@ async function setLiveCache(symbol: string, interval: string, candles: Candle[],
 export default function MarketWatcher() {
   // Watchlist & Config State
   const [watchlist, setWatchlist] = useState<WatchItem[]>([]);
+  const watchlistRef = useRef(watchlist);
+  watchlistRef.current = watchlist;
   const tickerInputRef = useRef<TickerInputHandle>(null);
   const batchScanControlRef = useRef<BatchScanControlHandle>(null);
+  const globalMinMoveSyncTimerRef = useRef<number | null>(null);
+  const pendingServerStateUpdatesRef = useRef(
+    new Map<string, WatchStateUpdatePayload>(),
+  );
+  const serverStateFlushTimerRef = useRef<number | null>(null);
   const [newInterval, setNewInterval] = useState('10m');
   const [newMinMove, setNewMinMove] = useState(0.25); // min move percentage (e.g. 0.25% cumulative)
 
@@ -251,6 +308,11 @@ export default function MarketWatcher() {
     const saved = localStorage.getItem('watcher-consecutive-candles');
     return saved !== null ? parseInt(saved, 10) : 3;
   });
+  const [maxBodyOverlapPercent, setMaxBodyOverlapPercent] = useState<number>(() => {
+    if (typeof window === 'undefined') return 100;
+    const saved = Number(localStorage.getItem('watcher-max-body-overlap-percent'));
+    return Number.isFinite(saved) ? Math.max(0, Math.min(100, saved)) : 100;
+  });
   const [selectedPatternId, setSelectedPatternId] = useState<PatternId>(() => {
     if (typeof window === 'undefined') return 'consecutive';
     const saved = localStorage.getItem('watcher-selected-pattern');
@@ -294,36 +356,96 @@ export default function MarketWatcher() {
       .catch(() => {});
   }, []);
 
+  const flushServerStateUpdates = React.useCallback(() => {
+    serverStateFlushTimerRef.current = null;
+    if (pendingServerStateUpdatesRef.current.size === 0) return;
+
+    const updates = pendingServerStateUpdatesRef.current;
+    pendingServerStateUpdatesRef.current = new Map();
+
+    React.startTransition(() => {
+      setWatchlist((current) => {
+        let changed = false;
+        const next = current.map((item) => {
+          const data = updates.get(
+            `${item.symbol.toUpperCase()}\u0000${item.interval}`,
+          );
+          if (!data) return item;
+
+          const mappedStatus: WatchItem['status'] =
+            data.status === 'bullish' || data.status === 'bearish'
+              ? data.status
+              : data.status === 'no-data' || data.status === 'error'
+                ? data.status
+                : 'none';
+          changed = true;
+          return {
+            ...item,
+            status: mappedStatus,
+            lastPrice: data.lastPrice ?? item.lastPrice,
+            lastChecked: data.lastScannedAt
+              ? new Date(data.lastScannedAt).toLocaleTimeString()
+              : new Date().toLocaleTimeString(),
+            candles:
+              data.recentCandles && data.recentCandles.length > 0
+                ? data.recentCandles
+                : item.candles,
+            lastError: data.lastError ?? item.lastError,
+          };
+        });
+        return changed ? next : current;
+      });
+    });
+  }, []);
+
+  const scheduleServerStateFlush = React.useCallback((delay = 50) => {
+    if (
+      serverStateFlushTimerRef.current !== null
+      || pendingServerStateUpdatesRef.current.size === 0
+    ) {
+      return;
+    }
+    serverStateFlushTimerRef.current = window.setTimeout(
+      flushServerStateUpdates,
+      delay,
+    );
+  }, [flushServerStateUpdates]);
+
+  const queueServerStateUpdate = React.useCallback((
+    data: WatchStateUpdatePayload,
+  ) => {
+    if (!data?.symbol) return;
+    pendingServerStateUpdatesRef.current.set(
+      `${data.symbol.toUpperCase()}\u0000${data.interval}`,
+      data,
+    );
+
+    // Let hidden tabs accumulate only the latest state per symbol. The
+    // visibility handler flushes one consolidated update after Chrome paints.
+    if (document.visibilityState === 'visible') {
+      scheduleServerStateFlush();
+    }
+  }, [scheduleServerStateFlush]);
+
+  useEffect(() => {
+    const flushAfterTabPaint = () => {
+      if (document.visibilityState === 'visible') {
+        window.requestAnimationFrame(() => scheduleServerStateFlush(0));
+      }
+    };
+    document.addEventListener('visibilitychange', flushAfterTabPaint);
+    return () => {
+      document.removeEventListener('visibilitychange', flushAfterTabPaint);
+    };
+  }, [scheduleServerStateFlush]);
+
   // Server-side Live SSE Stream Integration
   const { connected: isSseConnected } = useServerWatchStream({
     // Hold the connection until the snapshot cursor is known so we resume from
     // it instead of replaying history.
     enabled: isAuthenticated && snapshotCursor !== null,
     initialCursor: snapshotCursor ?? 0,
-    onStateUpdate: (data) => {
-      if (!data?.symbol) return;
-      setWatchlist((prev) =>
-        prev.map((item) => {
-          if (item.symbol.toUpperCase() === data.symbol.toUpperCase() && item.interval === data.interval) {
-            const mappedStatus =
-              data.status === 'bullish' || data.status === 'bearish'
-                ? data.status
-                : data.status === 'no-data' || data.status === 'error'
-                ? data.status
-                : 'none';
-            return {
-              ...item,
-              status: mappedStatus,
-              lastPrice: data.lastPrice ?? item.lastPrice,
-              lastChecked: data.lastScannedAt ? new Date(data.lastScannedAt).toLocaleTimeString() : new Date().toLocaleTimeString(),
-              candles: data.recentCandles && data.recentCandles.length > 0 ? data.recentCandles : item.candles,
-              lastError: data.lastError ?? item.lastError,
-            };
-          }
-          return item;
-        })
-      );
-    },
+    onStateUpdate: queueServerStateUpdate,
     onAlert: (data) => {
       if (!data?.symbol) return;
       const type: 'bullish' | 'bearish' = data.direction === 'bearish' ? 'bearish' : 'bullish';
@@ -378,20 +500,8 @@ export default function MarketWatcher() {
           setSnapshotCursor(0);
           return;
         }
-        if (Array.isArray(snapshot.alerts) && snapshot.alerts.length > 0) {
-          const mappedAlerts: AlertLog[] = snapshot.alerts.map((a: any) => ({
-            id: a.id,
-            createdAt: a.createdAt ? new Date(a.createdAt).getTime() : Date.now(),
-            symbol: a.symbol,
-            interval: a.interval,
-            type: a.direction === 'bearish' ? 'bearish' : 'bullish',
-            details: a.message || `${a.patternId || 'Pattern'} on ${a.symbol} (${a.interval})`,
-            price: a.price || 0,
-            intradayChange: a.intradayChange,
-            intradayChangePercent: a.intradayChangePercent,
-            candles: [],
-          }));
-          setAlertLogs(mappedAlerts);
+        if (Array.isArray(snapshot.alerts)) {
+          setAlertLogs(mapSnapshotAlerts(snapshot));
         }
         // Capture the cursor last so the stream connects resuming from here.
         setSnapshotCursor(typeof snapshot.cursor === 'number' ? snapshot.cursor : 0);
@@ -449,24 +559,80 @@ export default function MarketWatcher() {
     patternId: PatternId = selectedPatternId,
     session = activeWindow,
     frequencyMinutes = scanIntervalMinutes,
+    minMoveOverride: number | null = overrideGlobalMinMove ? newMinMove : null,
+    bodyOverlapOverride = maxBodyOverlapPercent,
   ) => {
-    const cleanList = items.map((item) => ({
-      symbol: item.symbol,
-      interval: item.interval,
-      minMovePercent: item.minMovePercent,
-    }));
+    const cleanList = buildScannerSyncWatchlist(items, minMoveOverride);
     return fetch('/api/watch/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         watchlist: cleanList,
         patternId,
+        maxBodyOverlapPercent: bodyOverlapOverride,
         session,
         scanFrequencySeconds: Math.round(frequencyMinutes * 60),
         disabledAssetClasses: disabledCategoriesRef.current.map((c) => CATEGORY_TO_ASSET_CLASS[c]),
       }),
     });
-  }, [activeWindow, scanIntervalMinutes, selectedPatternId]);
+  }, [
+    activeWindow,
+    newMinMove,
+    maxBodyOverlapPercent,
+    overrideGlobalMinMove,
+    scanIntervalMinutes,
+    selectedPatternId,
+  ]);
+
+  const handleMaxBodyOverlapChange = React.useCallback((value: number) => {
+    const normalized = Math.max(0, Math.min(100, value));
+    setMaxBodyOverlapPercent(normalized);
+    localStorage.setItem(
+      'watcher-max-body-overlap-percent',
+      String(normalized),
+    );
+    void syncScannerSettings(
+      watchlistRef.current,
+      selectedPatternId,
+      activeWindow,
+      scanIntervalMinutes,
+      overrideGlobalMinMove ? newMinMove : null,
+      normalized,
+    ).catch(() => {});
+  }, [
+    activeWindow,
+    newMinMove,
+    overrideGlobalMinMove,
+    scanIntervalMinutes,
+    selectedPatternId,
+    syncScannerSettings,
+  ]);
+
+  const handleNewMinMoveChange = React.useCallback((value: number) => {
+    setNewMinMove(value);
+    localStorage.setItem('watcher-new-min-move', String(value));
+    if (!overrideGlobalMinMove) return;
+
+    if (globalMinMoveSyncTimerRef.current !== null) {
+      window.clearTimeout(globalMinMoveSyncTimerRef.current);
+    }
+    globalMinMoveSyncTimerRef.current = window.setTimeout(() => {
+      void syncScannerSettings(
+        watchlistRef.current,
+        selectedPatternId,
+        activeWindow,
+        scanIntervalMinutes,
+        value,
+      ).catch(() => {});
+      globalMinMoveSyncTimerRef.current = null;
+    }, 300);
+  }, [
+    activeWindow,
+    overrideGlobalMinMove,
+    scanIntervalMinutes,
+    selectedPatternId,
+    syncScannerSettings,
+  ]);
 
   // Toggle a whole category's background scanning/alerts. Updates the ref first
   // so the immediate sync sends the new value.
@@ -494,10 +660,16 @@ export default function MarketWatcher() {
         item.minMovePercent,
         requiredCandleCount,
         patternId,
+        maxBodyOverlapPercent,
       );
       return { ...item, status: matched };
     }));
-  }, [requiredCandleCount, syncScannerSettings, watchlist]);
+  }, [
+    maxBodyOverlapPercent,
+    requiredCandleCount,
+    syncScannerSettings,
+    watchlist,
+  ]);
 
   const [cloudSyncNotice, setCloudSyncNotice] = useState<string | null>(null);
 
@@ -635,6 +807,14 @@ export default function MarketWatcher() {
         if (isPatternId(data?.patternId)) {
           setSelectedPatternId(data.patternId);
           localStorage.setItem('watcher-selected-pattern', data.patternId);
+        }
+        if (typeof data?.maxBodyOverlapPercent === 'number') {
+          const overlap = Math.max(0, Math.min(100, data.maxBodyOverlapPercent));
+          setMaxBodyOverlapPercent(overlap);
+          localStorage.setItem(
+            'watcher-max-body-overlap-percent',
+            String(overlap),
+          );
         }
         if (data?.session === 'rth' || data?.session === 'pre' || data?.session === 'ext' || data?.session === 'all') {
           setActiveWindow(data.session);
@@ -785,6 +965,13 @@ export default function MarketWatcher() {
     if (alertPersistTimerRef.current !== null) {
       window.clearTimeout(alertPersistTimerRef.current);
     }
+    if (globalMinMoveSyncTimerRef.current !== null) {
+      window.clearTimeout(globalMinMoveSyncTimerRef.current);
+    }
+    if (serverStateFlushTimerRef.current !== null) {
+      window.clearTimeout(serverStateFlushTimerRef.current);
+    }
+    pendingServerStateUpdatesRef.current.clear();
   }, []);
 
   // Save tester configuration changes to localStorage
@@ -1265,6 +1452,7 @@ export default function MarketWatcher() {
         targetMinMove,
         requiredCandleCount,
         selectedPatternId,
+        maxBodyOverlapPercent,
       );
       const status = scanCandles.length === 0 ? 'no-data' as const : matched;
       const dailyMove = isFuturesOrCrypto
@@ -1325,9 +1513,6 @@ export default function MarketWatcher() {
   const nextScanIndexRef = useRef(nextScanIndex);
   nextScanIndexRef.current = nextScanIndex;
 
-  const watchlistRef = useRef(watchlist);
-  watchlistRef.current = watchlist;
-
   const spacingSecondsRef = useRef(spacingSeconds);
   spacingSecondsRef.current = spacingSeconds;
 
@@ -1386,12 +1571,14 @@ export default function MarketWatcher() {
             targetMinMove,
             requiredCandleCount,
             selectedPatternId,
+            maxBodyOverlapPercent,
           );
           const allMatches = scanAllPatterns(
             scanned.candles,
             targetMinMove,
             requiredCandleCount,
             selectedPatternId,
+            maxBodyOverlapPercent,
           );
           setTestResult({
             success: true,
@@ -1451,6 +1638,9 @@ export default function MarketWatcher() {
         };
       }),
     );
+    if (Array.isArray(snapshot.alerts)) {
+      setAlertLogs(mapSnapshotAlerts(snapshot));
+    }
   }, []);
 
   const handleScanAll = async () => {
@@ -1636,6 +1826,26 @@ export default function MarketWatcher() {
       }
     };
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        onTick();
+      }
+    };
+
+    // Authenticated pages receive scanner state over SSE. They do not need the
+    // legacy one-second worker plus a second one-second main-thread timer.
+    if (isAuthenticated) {
+      timerRef.current = setInterval(onTick, 30_000);
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      return () => {
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      };
+    }
+
     // Create an inline Web Worker that runs on a separate background thread
     // Chrome does NOT throttle interval timers inside Web Workers when tab is in background!
     let worker: Worker | null = null;
@@ -1673,12 +1883,6 @@ export default function MarketWatcher() {
     // Backup main thread timer
     timerRef.current = setInterval(onTick, 1000);
 
-    // Instant catch-up scan when switching back to tab
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        onTick();
-      }
-    };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
@@ -1694,7 +1898,12 @@ export default function MarketWatcher() {
       }
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [categoryItems.length, isScannerPaused, watchlistCategory]);
+  }, [
+    categoryItems.length,
+    isAuthenticated,
+    isScannerPaused,
+    watchlistCategory,
+  ]);
 
 
 
@@ -1804,6 +2013,7 @@ export default function MarketWatcher() {
             val,
             requiredCandleCount,
             selectedPatternId,
+            maxBodyOverlapPercent,
           );
           updated[index].status = matched;
         }
@@ -1840,12 +2050,14 @@ export default function MarketWatcher() {
           item.minMovePercent,
           requiredCandleCount,
           selectedPatternId,
+          maxBodyOverlapPercent,
         );
         const { matched, message } = detectPattern(
           currentDayCandles,
           item.minMovePercent,
           requiredCandleCount,
           selectedPatternId,
+          maxBodyOverlapPercent,
         );
 
         setTestResult({
@@ -1878,12 +2090,14 @@ export default function MarketWatcher() {
               item.minMovePercent,
               requiredCandleCount,
               selectedPatternId,
+              maxBodyOverlapPercent,
             );
             const { matched, message, time } = detectPattern(
               sessionCandles,
               item.minMovePercent,
               requiredCandleCount,
               selectedPatternId,
+              maxBodyOverlapPercent,
             );
             const status = sessionCandles.length === 0 ? 'no-data' as const : matched;
             const dailyMove = isFuturesOrCrypto
@@ -2079,12 +2293,14 @@ export default function MarketWatcher() {
         testMinMove,
         requiredCandleCount,
         selectedPatternId,
+        maxBodyOverlapPercent,
       );
       const allMatches = scanAllPatterns(
         candles,
         testMinMove,
         requiredCandleCount,
         selectedPatternId,
+        maxBodyOverlapPercent,
       );
 
       setTestResult({
@@ -2195,11 +2411,19 @@ export default function MarketWatcher() {
       return {
         key,
         index: originalIndex,
-        item,
+        item: overrideGlobalMinMove
+          ? { ...item, minMovePercent: newMinMove }
+          : item,
         miniCandles: watchlistViewByKey.get(key) ?? [],
       };
     }),
-    [sortedWatchlist, watchlistIndexByKey, watchlistViewByKey],
+    [
+      newMinMove,
+      overrideGlobalMinMove,
+      sortedWatchlist,
+      watchlistIndexByKey,
+      watchlistViewByKey,
+    ],
   );
 
   const testerCandles = React.useMemo(
@@ -2210,14 +2434,39 @@ export default function MarketWatcher() {
 
   // Price analysis & pattern scanning computed dynamically on the filtered candles
   const currentPattern = React.useMemo(
-    () => detectPattern(testerCandles, testMinMove, requiredCandleCount, selectedPatternId),
+    () => detectPattern(
+      testerCandles,
+      testMinMove,
+      requiredCandleCount,
+      selectedPatternId,
+      maxBodyOverlapPercent,
+    ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [testerCandles, testMinMove, testInterval, requiredCandleCount, selectedPatternId],
+    [
+      testerCandles,
+      testMinMove,
+      testInterval,
+      requiredCandleCount,
+      selectedPatternId,
+      maxBodyOverlapPercent,
+    ],
   );
   const { matched: currentPatternMatched, message: currentPatternMessage } = currentPattern;
   const currentMatches = React.useMemo(
-    () => scanAllPatterns(testerCandles, testMinMove, requiredCandleCount, selectedPatternId),
-    [testerCandles, testMinMove, requiredCandleCount, selectedPatternId],
+    () => scanAllPatterns(
+      testerCandles,
+      testMinMove,
+      requiredCandleCount,
+      selectedPatternId,
+      maxBodyOverlapPercent,
+    ),
+    [
+      testerCandles,
+      testMinMove,
+      requiredCandleCount,
+      selectedPatternId,
+      maxBodyOverlapPercent,
+    ],
   );
 
   const getDisplayedCandles = () => {
@@ -3036,7 +3285,19 @@ export default function MarketWatcher() {
                 ) : null}
               </div>
 
-              <PatternSelector value={selectedPatternId} onChange={handlePatternChange} />
+              <PatternSelector
+                value={selectedPatternId}
+                onChange={handlePatternChange}
+                minMovePercent={newMinMove}
+                requiredCount={requiredCandleCount}
+                maxBodyOverlapPercent={maxBodyOverlapPercent}
+                onMinMoveChange={handleNewMinMoveChange}
+                onRequiredCountChange={(val) => {
+                  setRequiredCandleCount(val);
+                  localStorage.setItem('watcher-consecutive-candles', String(val));
+                }}
+                onMaxBodyOverlapChange={handleMaxBodyOverlapChange}
+              />
 
               {/* WATCHLIST FORM */}
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 mb-6 bg-muted-bg/30 p-4 rounded-xl border border-card-border">
@@ -3097,8 +3358,16 @@ export default function MarketWatcher() {
                         type="checkbox"
                         checked={overrideGlobalMinMove}
                         onChange={(e) => {
-                          setOverrideGlobalMinMove(e.target.checked);
-                          localStorage.setItem('watcher-override-global-min-move', String(e.target.checked));
+                          const checked = e.target.checked;
+                          setOverrideGlobalMinMove(checked);
+                          localStorage.setItem('watcher-override-global-min-move', String(checked));
+                          void syncScannerSettings(
+                            watchlist,
+                            selectedPatternId,
+                            activeWindow,
+                            scanIntervalMinutes,
+                            checked ? newMinMove : null,
+                          ).catch(() => {});
                         }}
                         className="rounded border-card-border text-accent focus:ring-accent h-3.5 w-3.5 cursor-pointer"
                       />
@@ -3113,8 +3382,7 @@ export default function MarketWatcher() {
                         value={newMinMove}
                         onChange={(e) => {
                           const val = parseFloat(e.target.value) || 0.05;
-                          setNewMinMove(val);
-                          localStorage.setItem('watcher-new-min-move', String(val));
+                          handleNewMinMoveChange(val);
                         }}
                         className="w-12 bg-transparent text-right outline-none"
                       />
@@ -3129,8 +3397,7 @@ export default function MarketWatcher() {
                     value={newMinMove}
                     onChange={(e) => {
                       const val = parseFloat(e.target.value) || 0.05;
-                      setNewMinMove(val);
-                      localStorage.setItem('watcher-new-min-move', String(val));
+                      handleNewMinMoveChange(val);
                     }}
                     className="w-full h-1.5 bg-muted-bg rounded-lg appearance-none cursor-pointer accent-accent mt-1"
                   />
@@ -3300,7 +3567,11 @@ export default function MarketWatcher() {
                         return (
                           <React.Fragment key={`${item.symbol}-${item.interval}-${idx}`}>
                             <WatchlistRow
-                              item={item}
+                              item={
+                                overrideGlobalMinMove
+                                  ? { ...item, minMovePercent: newMinMove }
+                                  : item
+                              }
                               index={idx}
                               miniCandles={miniCandles}
                               onToggle={stableToggleRow}
