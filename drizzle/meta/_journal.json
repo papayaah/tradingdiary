@@ -36,6 +36,13 @@
       "when": 1785430669799,
       "tag": "0004_add_provider_stats_and_body_overlap",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785475622343,
+      "tag": "0005_aromatic_scarlet_spider",
+      "breakpoints": true
     }
   ]
 }

@@ -75,9 +75,9 @@ cannot currently be returned by a detector or drawn consistently.
   Consecutive Move `maxBodyOverlapPercent` staircase constraint. It does not
   expose interval, asset class, session boundaries, timezone, volume type,
   candle-finality, or a general typed parameter registry.
-- The server worker currently uses a fixed required candle count of three.
-  Before expanding Consecutive Move, its 3/4/5-candle UI choice must become
-  server-owned configuration so browser and server evaluation cannot disagree.
+- Consecutive Move's global 3/4/5-candle choice is persisted in
+  `user_watchlists` and materialized onto each `server_watch`, keeping browser
+  and server evaluation aligned.
 - Matches identify one completion candle. There is no formation range,
   confidence/quality metric, supporting measurements, or drawing anchors.
 - The engine can technically calculate indicators inside `evaluateAt`, but

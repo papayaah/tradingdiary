@@ -131,7 +131,6 @@ function PatternSelector({
   onMaxBodyOverlapChange,
 }: PatternSelectorProps) {
   const [isOpen, setIsOpen] = React.useState(false);
-  const [showVisualizer, setShowVisualizer] = React.useState(false);
   const containerRef = React.useRef<HTMLElement>(null);
   const selectedPreset = PATTERN_PRESETS.find((preset) => preset.id === value) ?? PATTERN_PRESETS[0];
 
@@ -171,19 +170,6 @@ function PatternSelector({
         </div>
 
         <div className="flex items-center gap-2 sm:ml-auto">
-          <button
-            type="button"
-            onClick={() => setShowVisualizer((prev) => !prev)}
-            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-              showVisualizer
-                ? 'border-accent bg-accent/15 text-accent'
-                : 'border-card-border bg-card-bg/80 text-muted hover:border-accent/40 hover:text-foreground'
-            }`}
-          >
-            <ScanSearch size={13} />
-            <span>{showVisualizer ? 'Hide Visualizer' : 'Visual Guide'}</span>
-          </button>
-
           <button
             type="button"
             aria-haspopup="listbox"
@@ -249,20 +235,17 @@ function PatternSelector({
         </div>
       ) : null}
 
-      {/* Embedded Visual Pattern Visualizer */}
-      {showVisualizer ? (
-        <div className="pt-2">
-          <InteractivePatternVisualizer
-            patternId={value}
-            minMovePercent={minMovePercent}
-            requiredCount={requiredCount}
-            maxBodyOverlapPercent={maxBodyOverlapPercent}
-            onMinMoveChange={onMinMoveChange}
-            onRequiredCountChange={onRequiredCountChange}
-            onMaxBodyOverlapChange={onMaxBodyOverlapChange}
-          />
-        </div>
-      ) : null}
+      <div className="pt-2">
+        <InteractivePatternVisualizer
+          patternId={value}
+          minMovePercent={minMovePercent}
+          requiredCount={requiredCount}
+          maxBodyOverlapPercent={maxBodyOverlapPercent}
+          onMinMoveChange={onMinMoveChange}
+          onRequiredCountChange={onRequiredCountChange}
+          onMaxBodyOverlapChange={onMaxBodyOverlapChange}
+        />
+      </div>
     </section>
   );
 }

@@ -26,8 +26,6 @@ import { SCAN_QUEUE, scannerConfig } from '@/lib/scanner/env';
 import { createConnection, type ScanJob } from '@/lib/scanner/queue';
 import { calculateEquityIntradayChange } from '@/lib/market/intraday-change';
 
-const REQUIRED_CANDLES = 3;
-
 export interface ScanOutcome {
   status: 'idle' | 'normal' | 'bullish' | 'bearish' | 'no-data' | 'error';
   alerted: boolean;
@@ -81,7 +79,7 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
     ? scanAllPatterns(
         candles,
         watch.minMovePercent,
-        REQUIRED_CANDLES,
+        watch.requiredCandleCount,
         patternId,
         watch.maxBodyOverlapPercent,
       )
@@ -196,6 +194,7 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
           patternId: latest.patternId,
           matchedPattern: latest.message,
           minMovePercent: watch.minMovePercent,
+          requiredCandleCount: watch.requiredCandleCount,
           maxBodyOverlapPercent: watch.maxBodyOverlapPercent,
           price: last?.close,
           intradayChange: intradayChange?.amount,

@@ -16,7 +16,6 @@ const VALID_SESSIONS = new Set<WatchSession>(['rth', 'pre', 'ext', 'all']);
 interface SyncedWatch {
   symbol: string;
   interval: string;
-  minMovePercent: number;
 }
 
 const assetClassFor = (symbol: string): AssetClass => {
@@ -33,13 +32,7 @@ const cleanWatchlist = (rawWatchlist: unknown[]): SyncedWatch[] => {
     const symbol = String(candidate.symbol ?? '').trim().toUpperCase();
     const interval = String(candidate.interval ?? '5m').trim();
     if (!symbol || !interval) continue;
-    const rawMinMove = typeof candidate.minMovePercent === 'number'
-      ? candidate.minMovePercent
-      : 0.1;
-    const minMovePercent = Number.isFinite(rawMinMove)
-      ? Math.max(0, rawMinMove)
-      : 0.1;
-    unique.set(`${symbol}\u0000${interval}`, { symbol, interval, minMovePercent });
+    unique.set(`${symbol}\u0000${interval}`, { symbol, interval });
   }
   return [...unique.values()];
 };
@@ -66,6 +59,16 @@ const parseScanFrequency = (value: unknown): number => {
 const parseMaxBodyOverlapPercent = (value: unknown): number => {
   if (typeof value !== 'number' || !Number.isFinite(value)) return 100;
   return Math.max(0, Math.min(100, value));
+};
+
+const parseMinMovePercent = (value: unknown): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0.25;
+  return Math.max(0.05, Math.min(3, value));
+};
+
+const parseRequiredCandleCount = (value: unknown): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 3;
+  return Math.max(2, Math.min(10, Math.round(value)));
 };
 
 // Asset classes the user has switched off. Watches in these classes are synced
@@ -125,6 +128,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         watchlist: null,
         patternId: DEFAULT_PATTERN_ID,
+        minMovePercent: 0.25,
+        requiredCandleCount: 3,
         disabledAssetClasses,
         authenticated: true,
       });
@@ -134,6 +139,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       watchlist: record.watchlist,
       patternId: parsePatternId(record.patternId),
+      minMovePercent: parseMinMovePercent(record.minMovePercent),
+      requiredCandleCount: parseRequiredCandleCount(record.requiredCandleCount),
       maxBodyOverlapPercent: parseMaxBodyOverlapPercent(record.maxBodyOverlapPercent),
       session: parseSession(record.session),
       scanFrequencySeconds: record.scanFrequencySeconds,
@@ -160,6 +167,10 @@ export async function POST(request: NextRequest) {
 
     const watchlist = cleanWatchlist(body.watchlist);
     const patternId = parsePatternId(body.patternId);
+    const minMovePercent = parseMinMovePercent(body.minMovePercent);
+    const requiredCandleCount = parseRequiredCandleCount(
+      body.requiredCandleCount,
+    );
     const maxBodyOverlapPercent = parseMaxBodyOverlapPercent(
       body.maxBodyOverlapPercent,
     );
@@ -182,6 +193,8 @@ export async function POST(request: NextRequest) {
           .set({
             watchlist,
             patternId,
+            minMovePercent,
+            requiredCandleCount,
             maxBodyOverlapPercent,
             session: watchSession,
             scanFrequencySeconds,
@@ -193,6 +206,8 @@ export async function POST(request: NextRequest) {
           userId,
           watchlist,
           patternId,
+          minMovePercent,
+          requiredCandleCount,
           maxBodyOverlapPercent,
           session: watchSession,
           scanFrequencySeconds,
@@ -226,7 +241,8 @@ export async function POST(request: NextRequest) {
             assetClass,
             interval: watch.interval,
             patternId,
-            minMovePercent: watch.minMovePercent,
+            minMovePercent,
+            requiredCandleCount,
             maxBodyOverlapPercent,
             session: watchSession,
             enabled,
@@ -239,7 +255,8 @@ export async function POST(request: NextRequest) {
             set: {
               assetClass,
               patternId,
-              minMovePercent: watch.minMovePercent,
+              minMovePercent,
+              requiredCandleCount,
               maxBodyOverlapPercent,
               session: watchSession,
               enabled,
@@ -254,6 +271,8 @@ export async function POST(request: NextRequest) {
       success: true,
       count: watchlist.length,
       patternId,
+      minMovePercent,
+      requiredCandleCount,
       maxBodyOverlapPercent,
     });
   } catch (error) {

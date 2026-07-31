@@ -168,10 +168,10 @@ export function InteractivePatternVisualizer({
           </div>
           <div>
             <h4 className="text-sm font-bold text-foreground flex items-center gap-2">
-              Visual Pattern Simulator: <span className="text-accent capitalize">{patternId.replace('-', ' ')}</span>
+              Pattern settings & visual guide: <span className="text-accent capitalize">{patternId.replace('-', ' ')}</span>
             </h4>
             <p className="text-[11px] text-muted">
-              Move the slider to watch candle bodies grow/shrink to match your size threshold.
+              These settings apply globally to every symbol in the watchlist.
             </p>
           </div>
         </div>
@@ -223,7 +223,7 @@ export function InteractivePatternVisualizer({
           <div className="flex items-center justify-between text-xs">
             <label htmlFor="min-move-slider" className="font-medium text-muted flex items-center gap-1">
               <Sliders size={12} className="text-accent" />
-              Min Move per Candle:
+              Minimum Body per Candle:
             </label>
             <span className="font-mono font-bold text-accent text-sm">{localMinMove.toFixed(2)}%</span>
           </div>
@@ -231,7 +231,7 @@ export function InteractivePatternVisualizer({
             id="min-move-slider"
             type="range"
             min="0.05"
-            max="1.50"
+            max="3.00"
             step="0.05"
             value={localMinMove}
             onChange={(e) => handleMinMoveUpdate(parseFloat(e.target.value))}
@@ -240,7 +240,7 @@ export function InteractivePatternVisualizer({
           <div className="flex justify-between text-[9px] text-muted font-mono">
             <span>0.05% (Small/Squatty)</span>
             <span>0.25% (Standard)</span>
-            <span>1.50% (Large Explosion)</span>
+            <span>3.00% (Very Large)</span>
           </div>
         </div>
 

@@ -18,7 +18,10 @@ Because pattern matching now runs on the **server**, every setting that affects 
    - The key the user typed into Settings never reached the scanner at all.
 2. **Pattern selection did not reliably reach the server.** The watch page showed "Momentum Burst" selected while `server_watch.pattern_id` (and the saved settings blob) remained `consecutive`. The server therefore kept scanning with the old detector, so the newly selected pattern produced no alerts.
 3. **Session defaults to pre-market only.** `parseSession` in [app/api/watch/sync/route.ts](../../app/api/watch/sync/route.ts) defaults to `'pre'` (04:00–09:30 ET). Watches created without an explicit session are scanned **only during pre-market** and skipped for the rest of the day — so stocks silently stop alerting after 09:30 ET.
-4. **The "Apply Global (Override All)" min-move control is client-only.** Toggling it and moving the slider updates local state/localStorage but never syncs; the server keeps each watch's stored threshold. A control labeled "override all" changes nothing on the server.
+4. **Resolved: minimum candle size is now one global scanner setting.** The
+   duplicate override and per-symbol controls were removed. The always-visible
+   pattern settings guide writes the account-level value to `user_watchlists`
+   and materializes it onto every `server_watch`.
 5. **Runtime/deploy config traps** (operational, already hit in production):
    - `NEXT_PUBLIC_VAPID_PUBLIC_KEY` is inlined at **build time** — adding it to `.env` and restarting does nothing; the web image must be rebuilt.
    - The scanner container must be **recreated** to pick up new env (VAPID, provider keys); a running container keeps its old environment.
@@ -59,7 +62,10 @@ Ordered by impact. Items 1–3 are the ones that caused the observed confusion.
 
 ### 2. Guarantee every scan-affecting setting syncs
 
-- Pattern, session, scan frequency, per-symbol threshold, **global min-move override**, and enabled categories must all be included in the sync payload and written to `server_watch` on change (debounced), through a single code path so none is forgotten.
+- Pattern, session, scan frequency, global minimum candle size, required candle
+  count, and enabled categories must all be included in the sync payload and
+  written to `server_watch` on change (debounced), through a single code path
+  so none is forgotten.
 - The `GET /api/watch/state` snapshot should return the **server-authoritative** values so the UI hydrates from the server rather than from stale localStorage — this prevents the "UI shows X, server has Y" divergence seen with pattern selection.
 - **Acceptance:** changing any of these in the UI is observable in `server_watch` within one debounce interval and takes effect on the next scan; a hard refresh shows the server's values, not stale local ones.
 

@@ -14,7 +14,6 @@ import type { Candle } from './watchAnalysis';
 interface CompactWatchItem {
   symbol: string;
   interval: string;
-  minMovePercent: number;
   lastChecked?: string;
   status?: 'bullish' | 'bearish' | 'none' | 'no-data' | 'error';
   lastError?: string;
@@ -81,8 +80,6 @@ const CompactCard = React.memo(function CompactCard({
           </div>
           <div className="mt-1 text-[10px] text-muted">
             {latestPrice === undefined ? 'No current price' : `$${latestPrice.toFixed(2)}`}
-            <span className="mx-1.5 text-muted/30">·</span>
-            Body ≥ {item.minMovePercent}%
           </div>
         </div>
 

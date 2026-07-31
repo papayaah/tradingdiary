@@ -4,7 +4,6 @@ import React, { useState } from 'react';
 import {
   AlertTriangle,
   Clock,
-  Edit,
   RefreshCw,
   Trash2,
   TrendingDown,
@@ -15,7 +14,6 @@ import type { Candle } from './watchAnalysis';
 interface WatchlistRowItem {
   symbol: string;
   interval: string;
-  minMovePercent: number;
   lastChecked?: string;
   status?: 'bullish' | 'bearish' | 'none' | 'no-data' | 'error';
   lastError?: string;
@@ -26,7 +24,6 @@ interface WatchlistRowProps {
   index: number;
   miniCandles: Candle[];
   onToggle: (index: number) => void;
-  onSaveMinMove: (index: number, value: number) => void;
   onRemove: (symbol: string, interval: string) => void;
   onRefresh: (symbol: string, interval: string) => Promise<void> | void;
 }
@@ -36,11 +33,9 @@ function WatchlistRow({
   index,
   miniCandles,
   onToggle,
-  onSaveMinMove,
   onRemove,
   onRefresh,
 }: WatchlistRowProps) {
-  const [editingValue, setEditingValue] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const latestPrice = miniCandles.at(-1)?.close;
 
@@ -51,15 +46,6 @@ function WatchlistRow({
       await onRefresh(item.symbol, item.interval);
     } finally {
       setIsRefreshing(false);
-    }
-  };
-
-  const saveMinMove = () => {
-    if (editingValue === null) return;
-    const value = Number(editingValue);
-    setEditingValue(null);
-    if (Number.isFinite(value) && value >= 0) {
-      onSaveMinMove(index, value);
     }
   };
 
@@ -92,66 +78,6 @@ function WatchlistRow({
         title="Click to expand inline session chart"
       >
         {item.interval}
-      </td>
-      <td className="py-4 px-4 text-xs text-muted">
-        {editingValue !== null ? (
-          <div className="relative z-20 flex flex-col gap-2 bg-card-bg border border-card-border shadow-xl rounded-xl p-3 min-w-[200px] animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between text-[11px] font-semibold text-muted">
-              <span>Minimum Candle Body</span>
-              <span className="font-mono text-accent font-bold">{editingValue}%</span>
-            </div>
-            <input
-              type="range"
-              min="0.05"
-              max="3.00"
-              step="0.05"
-              value={editingValue}
-              onChange={(e) => setEditingValue(e.target.value)}
-              className="w-full h-2 bg-muted-bg rounded-lg appearance-none cursor-pointer accent-accent"
-            />
-            <div className="flex items-center gap-1 justify-between mt-1">
-              {[0.10, 0.25, 0.50, 1.00].map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  onClick={() => {
-                    setEditingValue(String(preset));
-                    onSaveMinMove(index, preset);
-                    setEditingValue(null);
-                  }}
-                  className="px-1.5 py-0.5 rounded bg-muted-bg hover:bg-accent hover:text-white text-[10px] font-mono text-muted transition-colors"
-                >
-                  {preset}%
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-1.5 mt-1">
-              <button
-                type="button"
-                onClick={saveMinMove}
-                className="flex-1 bg-accent text-white py-1 rounded text-xs font-semibold hover:bg-accent/80 transition-colors"
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditingValue(null)}
-                className="px-2 bg-muted-bg text-muted py-1 rounded text-xs hover:text-foreground transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div
-            onClick={() => setEditingValue(String(item.minMovePercent))}
-            className="cursor-pointer hover:bg-muted-bg/50 px-2 py-1 -mx-2 rounded border border-transparent hover:border-card-border/40 text-xs text-foreground font-semibold inline-flex items-center gap-1.5 transition-all"
-            title="Click to edit minimum candle body"
-          >
-            <span>{item.minMovePercent}%</span>
-            <Edit size={10} className="text-muted/40 opacity-0 group-hover:opacity-100 transition-opacity" />
-          </div>
-        )}
       </td>
       <td
         onClick={() => onToggle(index)}
