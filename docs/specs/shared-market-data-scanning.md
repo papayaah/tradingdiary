@@ -18,15 +18,18 @@ prerequisites remain outstanding. See "Implementation status" below.
 | Phase 5 — scheduler grouping | ⏭️ skipped | "only if needed"; no measured queue pressure |
 | Phase 6 — adaptive cadence governor | ⚙️ built, OFF | enable with `SCANNER_GOVERNOR=true`; caps via `SCANNER_PROVIDER_BUDGETS` |
 | Prerequisite 1 — server-authoritative provider config | ❌ not done | scanner still uses server env keys; per-user credentials never reach it |
-| Prerequisite 2 — browser is a pure viewer (no fetching) | ❌ not done | open tabs still fetch market data independently — an uncounted second consumer |
+| Prerequisite 2 — authenticated browser is a pure viewer | ✅ done (signed-in) | `MarketWatcher.tsx` skips per-symbol fetching when authenticated (`if (isAuthenticatedRef.current) return`) and renders from `/api/watch/state` + `/api/watch/events` SSE. Only signed-OUT sessions still fetch client-side (no server watches to share). |
 | Provider-scoped distributed rate limiter | ❌ not done | still the single global BullMQ worker limiter |
 | Observability counters (hit rate, sharing ratio) | ❌ not done | snapshots written; metrics not yet emitted |
 
-Because the two prerequisites are outstanding, the "fetch scales with unique
-symbols, never users" invariant currently holds only for the **server scanner**,
-not for authenticated browsers (each open tab still fetches independently), and
-all sharing happens under a single server-credential scope rather than per-user
-entitlement scopes.
+For **signed-in** users the end-to-end invariant holds: the browser is a viewer
+(snapshot + SSE, no per-symbol fetching), and the server scanner fetches each
+unique symbol once and shares it across all users. What remains for full
+per-user entitlement sharing is Prerequisite 1 — until then all sharing happens
+under a single server-credential scope rather than per-user scopes. Signed-out
+(anonymous) sessions still fetch client-side by design, since they have no
+persistent server-side watches to share. The detailed single-symbol chart view
+is a separate client fetch path not covered by this scanning spec.
 
 ## Related specification
 
