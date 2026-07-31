@@ -63,6 +63,11 @@ const parseScanFrequency = (value: unknown): number => {
   return Math.max(60, Math.min(86_400, Math.round(value)));
 };
 
+const parseMaxBodyOverlapPercent = (value: unknown): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 100;
+  return Math.max(0, Math.min(100, value));
+};
+
 // Asset classes the user has switched off. Watches in these classes are synced
 // as enabled=false, so the scheduler and worker skip them entirely (no scans,
 // no alerts, no push) while keeping the rows so they can be re-enabled later.
@@ -129,6 +134,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       watchlist: record.watchlist,
       patternId: parsePatternId(record.patternId),
+      maxBodyOverlapPercent: parseMaxBodyOverlapPercent(record.maxBodyOverlapPercent),
       session: parseSession(record.session),
       scanFrequencySeconds: record.scanFrequencySeconds,
       disabledAssetClasses,
@@ -154,6 +160,9 @@ export async function POST(request: NextRequest) {
 
     const watchlist = cleanWatchlist(body.watchlist);
     const patternId = parsePatternId(body.patternId);
+    const maxBodyOverlapPercent = parseMaxBodyOverlapPercent(
+      body.maxBodyOverlapPercent,
+    );
     const watchSession = parseSession(body.session);
     const scanFrequencySeconds = parseScanFrequency(body.scanFrequencySeconds);
     const disabledAssetClasses = parseDisabledAssetClasses(body.disabledAssetClasses);
@@ -173,6 +182,7 @@ export async function POST(request: NextRequest) {
           .set({
             watchlist,
             patternId,
+            maxBodyOverlapPercent,
             session: watchSession,
             scanFrequencySeconds,
             updatedAt: nowIso,
@@ -183,6 +193,7 @@ export async function POST(request: NextRequest) {
           userId,
           watchlist,
           patternId,
+          maxBodyOverlapPercent,
           session: watchSession,
           scanFrequencySeconds,
           updatedAt: nowIso,
@@ -216,6 +227,7 @@ export async function POST(request: NextRequest) {
             interval: watch.interval,
             patternId,
             minMovePercent: watch.minMovePercent,
+            maxBodyOverlapPercent,
             session: watchSession,
             enabled,
             scanFrequencySeconds,
@@ -228,6 +240,7 @@ export async function POST(request: NextRequest) {
               assetClass,
               patternId,
               minMovePercent: watch.minMovePercent,
+              maxBodyOverlapPercent,
               session: watchSession,
               enabled,
               scanFrequencySeconds,
@@ -241,6 +254,7 @@ export async function POST(request: NextRequest) {
       success: true,
       count: watchlist.length,
       patternId,
+      maxBodyOverlapPercent,
     });
   } catch (error) {
     console.error('Failed to sync watchlist to DB:', error);

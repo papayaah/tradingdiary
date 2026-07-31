@@ -11,6 +11,7 @@ import {
   scannerHeartbeat,
   watchEvent,
 } from '@/lib/db/server/schema';
+import { scannerTimestampToUtcIso } from '@/lib/watch/timestamps';
 
 const HEARTBEAT_STALE_MS = 60_000;
 const RECENT_ALERTS_LIMIT = 50;
@@ -53,7 +54,12 @@ export async function buildSnapshot(userId: string): Promise<WatchSnapshot> {
   const workers = await db.select().from(scannerHeartbeat);
   const now = Date.now();
   const online = workers.some(
-    (w) => w.status === 'ok' && now - Date.parse(w.lastBeatAt) < HEARTBEAT_STALE_MS,
+    (worker) => {
+      const lastBeatAt = scannerTimestampToUtcIso(worker.lastBeatAt);
+      return worker.status === 'ok'
+        && typeof lastBeatAt === 'string'
+        && now - Date.parse(lastBeatAt) < HEARTBEAT_STALE_MS;
+    },
   );
 
   const [{ cursor }] = await db
@@ -61,7 +67,35 @@ export async function buildSnapshot(userId: string): Promise<WatchSnapshot> {
     .from(watchEvent)
     .where(eq(watchEvent.userId, userId));
 
-  return { watches, states, alerts, scanner: { online, workers }, cursor: Number(cursor) };
+  const normalizedWatches = watches.map((watch) => ({
+    ...watch,
+    nextScanAt: scannerTimestampToUtcIso(watch.nextScanAt),
+    createdAt: scannerTimestampToUtcIso(watch.createdAt),
+    updatedAt: scannerTimestampToUtcIso(watch.updatedAt),
+  }));
+  const normalizedStates = states.map((state) => ({
+    ...state,
+    lastCandleTime: scannerTimestampToUtcIso(state.lastCandleTime),
+    lastScannedAt: scannerTimestampToUtcIso(state.lastScannedAt),
+    updatedAt: scannerTimestampToUtcIso(state.updatedAt),
+  }));
+  const normalizedAlerts = alerts.map((alert) => ({
+    ...alert,
+    candleTime: scannerTimestampToUtcIso(alert.candleTime),
+    createdAt: scannerTimestampToUtcIso(alert.createdAt),
+  }));
+  const normalizedWorkers = workers.map((worker) => ({
+    ...worker,
+    lastBeatAt: scannerTimestampToUtcIso(worker.lastBeatAt),
+  }));
+
+  return {
+    watches: normalizedWatches,
+    states: normalizedStates,
+    alerts: normalizedAlerts,
+    scanner: { online, workers: normalizedWorkers },
+    cursor: Number(cursor),
+  };
 }
 
 /** True if this user has any events after the given cursor (cheap existence check). */

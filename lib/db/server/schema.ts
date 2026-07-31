@@ -81,6 +81,7 @@ export const userWatchlists = pgTable("user_watchlists", {
     userId: text("user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
     watchlist: jsonb("watchlist").notNull(),
     patternId: text("pattern_id").notNull().default('consecutive'),
+    maxBodyOverlapPercent: doublePrecision("max_body_overlap_percent").notNull().default(100),
     session: text("session").notNull().default('pre'),
     scanFrequencySeconds: integer("scan_frequency_seconds").notNull().default(600),
     updatedAt: timestamp("updated_at", { mode: 'string' }).defaultNow(),
@@ -103,6 +104,7 @@ export const serverWatch = pgTable("server_watch", {
     interval: text("interval").notNull(),
     patternId: text("pattern_id").notNull().default('consecutive'),
     minMovePercent: doublePrecision("min_move_percent").notNull(),
+    maxBodyOverlapPercent: doublePrecision("max_body_overlap_percent").notNull().default(100),
     session: text("session").notNull(), // 'rth' | 'pre' | 'ext' | 'all'
     enabled: boolean("enabled").notNull().default(true),
     providerCredentialId: uuid("provider_credential_id"), // FK added when a credentials table exists

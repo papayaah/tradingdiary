@@ -29,6 +29,13 @@
       "when": 1785256240592,
       "tag": "0003_skinny_warstar",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785430669799,
+      "tag": "0004_polite_vulture",
+      "breakpoints": true
     }
   ]
 }
