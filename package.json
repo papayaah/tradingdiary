@@ -26,6 +26,7 @@
     "db:schema:push": "drizzle-kit push",
     "db:schema:pull": "drizzle-kit pull",
     "db:pull": "bash scripts/db-pull.sh",
+    "db:seed": "tsx scripts/seed-watches.ts",
     "scanner": "tsx lib/scanner/main.ts"
   },
   "dependencies": {

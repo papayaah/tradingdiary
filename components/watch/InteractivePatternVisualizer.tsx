@@ -11,7 +11,7 @@ import {
   HelpCircle,
   Sparkles,
 } from 'lucide-react';
-import type { PatternId } from '@/lib/scanner/patterns';
+import { getPatternDefinition, type PatternId } from '@/lib/scanner/patterns';
 
 interface InteractivePatternVisualizerProps {
   patternId: PatternId;
@@ -69,7 +69,9 @@ export function InteractivePatternVisualizer({
     onMaxBodyOverlapChange?.(val);
   };
 
-  const streak = patternId === 'consecutive' ? localStreak : 3;
+  const isConsecutive = patternId === 'consecutive';
+  const patternDefinition = getPatternDefinition(patternId);
+  const streak = isConsecutive ? localStreak : 3;
   const targetThreshold = localMinMove;
   const isBullish = direction === 'bullish';
 
@@ -135,9 +137,10 @@ export function InteractivePatternVisualizer({
   let previousBodyHeight = 0;
   const candleGeometry = simulatedCandles.map((candle, index) => {
     const height = getPixelHeight(candle.bodyMove);
+    const effectiveMaxOverlap = isConsecutive ? localMaxOverlap : 100;
     const overlapPixels = index === 0
       ? 0
-      : Math.min(previousBodyHeight, height) * (localMaxOverlap / 100);
+      : Math.min(previousBodyHeight, height) * (effectiveMaxOverlap / 100);
     const openY = previousCloseY === null
       ? isBullish ? 190 : 50
       : previousCloseY + (isBullish ? overlapPixels : -overlapPixels);
@@ -168,7 +171,7 @@ export function InteractivePatternVisualizer({
           </div>
           <div>
             <h4 className="text-sm font-bold text-foreground flex items-center gap-2">
-              Pattern settings & visual guide: <span className="text-accent capitalize">{patternId.replace('-', ' ')}</span>
+              Pattern settings & visual guide: <span className="text-accent">{patternDefinition.name}</span>
             </h4>
             <p className="text-[11px] text-muted">
               These settings apply globally to every symbol in the watchlist.
@@ -217,9 +220,9 @@ export function InteractivePatternVisualizer({
       </div>
 
       {/* Interactive Controls Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-muted-bg/40 p-3 rounded-lg border border-card-border/60">
+      <div className="flex flex-wrap items-start gap-3 rounded-lg border border-card-border/60 bg-muted-bg/40 p-3">
         {/* Threshold Slider */}
-        <div className="space-y-1">
+        <div className="min-w-0 basis-[220px] grow space-y-1">
           <div className="flex items-center justify-between text-xs">
             <label htmlFor="min-move-slider" className="font-medium text-muted flex items-center gap-1">
               <Sliders size={12} className="text-accent" />
@@ -245,8 +248,8 @@ export function InteractivePatternVisualizer({
         </div>
 
         {/* Streak Selector (for consecutive) */}
-        {patternId === 'consecutive' ? (
-          <div className="space-y-1">
+        {isConsecutive ? (
+          <div className="min-w-0 basis-[220px] grow space-y-1">
             <span className="block text-xs font-medium text-muted">Required Streak Count:</span>
             <div className="flex items-center gap-1.5">
               {[3, 4, 5].map((cnt) => (
@@ -267,8 +270,8 @@ export function InteractivePatternVisualizer({
           </div>
         ) : null}
 
-        {patternId === 'consecutive' ? (
-          <div className="space-y-1">
+        {isConsecutive ? (
+          <div className="min-w-0 basis-[220px] grow space-y-1">
             <span className="block text-xs font-medium text-muted">
               Body Staircase:
             </span>
@@ -309,13 +312,13 @@ export function InteractivePatternVisualizer({
         ) : null}
 
         {/* Scenario Test Switcher */}
-        <div className="space-y-1 sm:col-span-2 lg:col-span-1">
+        <div className="min-w-0 basis-[320px] grow space-y-1">
           <span className="block text-xs font-medium text-muted">Test Scenario:</span>
-          <div className="grid grid-cols-3 gap-1">
+          <div className="grid grid-cols-1 gap-1 sm:grid-cols-3">
             <button
               type="button"
               onClick={() => setSimScenario('valid')}
-              className={`px-2 py-1 rounded border text-[10px] font-semibold text-center transition-colors ${
+              className={`min-h-10 min-w-0 rounded border px-2 py-1.5 text-center text-[10px] font-semibold leading-tight transition-colors ${
                 simScenario === 'valid'
                   ? 'border-profit bg-profit/15 text-profit'
                   : 'border-card-border bg-card-bg text-muted hover:text-foreground'
@@ -326,7 +329,7 @@ export function InteractivePatternVisualizer({
             <button
               type="button"
               onClick={() => setSimScenario('fail-size')}
-              className={`px-2 py-1 rounded border text-[10px] font-semibold text-center transition-colors ${
+              className={`min-h-10 min-w-0 rounded border px-2 py-1.5 text-center text-[10px] font-semibold leading-tight transition-colors ${
                 simScenario === 'fail-size'
                   ? 'border-loss bg-loss/15 text-loss'
                   : 'border-card-border bg-card-bg text-muted hover:text-foreground'
@@ -337,37 +340,48 @@ export function InteractivePatternVisualizer({
             <button
               type="button"
               onClick={() => setSimScenario('fail-direction')}
-              className={`px-2 py-1 rounded border text-[10px] font-semibold text-center transition-colors ${
+              className={`min-h-10 min-w-0 rounded border px-2 py-1.5 text-center text-[10px] font-semibold leading-tight transition-colors ${
                 simScenario === 'fail-direction'
                   ? 'border-loss bg-loss/15 text-loss'
                   : 'border-card-border bg-card-bg text-muted hover:text-foreground'
               }`}
             >
-              Broken Streak
+              {isConsecutive ? 'Broken Streak' : 'Wrong Direction'}
             </button>
           </div>
         </div>
+
+        {!isConsecutive ? (
+          <div className="flex basis-full items-start gap-2 rounded-lg border border-card-border bg-card-bg/70 px-3 py-2 text-[10px] text-muted">
+            <Info size={13} className="mt-0.5 shrink-0 text-accent" />
+            <span>
+              Required Streak Count and Body Staircase are specific to Consecutive Move.
+              Select that pattern above to configure them.
+            </span>
+          </div>
+        ) : null}
       </div>
 
       {/* Dynamic Candlestick Diagram SVG */}
-      <div className="relative rounded-lg border border-card-border/80 bg-background/80 p-4">
-        {/* Status Badge */}
-        <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold border">
+      <div className="rounded-lg border border-card-border/80 bg-background/80 p-4">
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-[220px] flex-1 text-[11px] font-medium leading-relaxed text-muted">
+            {isConsecutive
+              ? `Trigger Preview (${simulatedCandles.length} Bars) — ${localMaxOverlap === 0 ? 'clean staircase' : `≤${localMaxOverlap}% body overlap`}, closes progress ${isBullish ? 'higher' : 'lower'}`
+              : `${patternDefinition.name} base-candle preview — ${patternDefinition.shortDescription}`}
+          </div>
+
           {allPass ? (
-            <span className="flex items-center gap-1 text-profit border-profit/30 bg-profit/10 px-2 py-0.5 rounded-full">
+            <span className="inline-flex max-w-full shrink-0 items-center justify-center gap-1 rounded-full border border-profit/30 bg-profit/10 px-3 py-1 text-center text-xs font-bold text-profit">
               <CheckCircle2 size={13} />
-              PATTERN DETECTED ({totalMove >= 0 ? '+' : ''}{totalMove.toFixed(2)}%)
+              {isConsecutive ? 'PATTERN DETECTED' : 'BASE CANDLE VALID'} ({totalMove >= 0 ? '+' : ''}{totalMove.toFixed(2)}%)
             </span>
           ) : (
-            <span className="flex items-center gap-1 text-loss border-loss/30 bg-loss/10 px-2 py-0.5 rounded-full">
+            <span className="inline-flex max-w-full shrink-0 items-center justify-center gap-1 rounded-full border border-loss/30 bg-loss/10 px-3 py-1 text-center text-xs font-bold text-loss">
               <XCircle size={13} />
-              IGNORED (Threshold Not Met)
+              {isConsecutive ? 'IGNORED' : 'BASE CANDLE INVALID'} (Threshold Not Met)
             </span>
           )}
-        </div>
-
-        <div className="text-[11px] font-medium text-muted mb-1">
-          Trigger Preview ({simulatedCandles.length} Bars) — {localMaxOverlap === 0 ? 'clean staircase' : `≤${localMaxOverlap}% body overlap`}, closes progress {isBullish ? 'higher' : 'lower'}
         </div>
 
         {/* SVG Visualization */}
@@ -488,7 +502,8 @@ export function InteractivePatternVisualizer({
             Step-by-Step Detector Evaluation Rules:
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+          {isConsecutive ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
             <div className={`p-2 rounded-md border ${
               simScenario !== 'fail-direction'
                 ? 'border-profit/30 bg-profit/5 text-profit'
@@ -538,7 +553,34 @@ export function InteractivePatternVisualizer({
                   : `Adjacent bodies may overlap by no more than ${localMaxOverlap}%.`}
               </p>
             </div>
-          </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className={`rounded-md border p-2 ${
+                simScenario !== 'fail-size'
+                  ? 'border-profit/30 bg-profit/5 text-profit'
+                  : 'border-loss/30 bg-loss/5 text-loss'
+              }`}>
+                <div className="flex items-center gap-1 font-bold">
+                  {simScenario !== 'fail-size' ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
+                  1. Body Size Threshold
+                </div>
+                <p className="mt-0.5 text-[10px] text-muted">
+                  The directional candle body must be at least {localMinMove.toFixed(2)}%.
+                </p>
+              </div>
+
+              <div className="rounded-md border border-profit/30 bg-profit/5 p-2 text-profit">
+                <div className="flex items-center gap-1 font-bold">
+                  <CheckCircle2 size={13} />
+                  2. {patternDefinition.name} Condition
+                </div>
+                <p className="mt-0.5 text-[10px] text-muted">
+                  {patternDefinition.shortDescription}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       ) : null}
     </div>

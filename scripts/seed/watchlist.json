@@ -1,0 +1,596 @@
+[
+  {
+    "symbol": "BTC-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "ETH-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "SOL-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "AA",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "AAPL",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "ADP",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "AFRM",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "AMZN",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "APP",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "ARM",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "AXP",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "BABA",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "BAC",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "BIDU",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "BILI",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "BMY",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "BTU",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "CCL",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "CENX",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "CHTR",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "CLF",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "CLSK",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "CMG",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "COIN",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "CRWV",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "DECK",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "DELL",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "DIS",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "DOCU",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "DUOL",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "ENPH",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "FCX",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "FDX",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "FIG",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "FSLR",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "GLD",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "GOOGL",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "GS",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "HOOD",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "IBKR",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "IBM",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "INTC",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "JNJ",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "JPM",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "KORU",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.15
+  },
+  {
+    "symbol": "LMND",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "LRCX",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "MA",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "MARA",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "META",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "MMM",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "MNDY",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "MSFT",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "MSTR",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "MU",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "NCLH",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "NEM",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "NFLX",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "NOW",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "NVDA",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "NVTS",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "ORCL",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "OXY",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "PG",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "PM",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "PYPL",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "QCOM",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "QQQ",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.2
+  },
+  {
+    "symbol": "RBLX",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "RDDT",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 1
+  },
+  {
+    "symbol": "ROKU",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "SHOP",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "SKHY",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.15
+  },
+  {
+    "symbol": "SLV",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "SNDK",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "SOFI",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "SOXL",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "SPCX",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "STX",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "TDOC",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.55
+  },
+  {
+    "symbol": "TGT",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "TSLA",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "TTD",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "U",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "UAL",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "UPST",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "USO",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "VLO",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "VZ",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "WMT",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "XOM",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "XYZ",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "ZM",
+    "assetClass": "equity",
+    "interval": "10m",
+    "minMovePercent": 0.25
+  },
+  {
+    "symbol": "CL=F",
+    "assetClass": "futures",
+    "interval": "10m",
+    "minMovePercent": 0.05
+  },
+  {
+    "symbol": "ES=F",
+    "assetClass": "futures",
+    "interval": "10m",
+    "minMovePercent": 0.05
+  },
+  {
+    "symbol": "GC=F",
+    "assetClass": "futures",
+    "interval": "10m",
+    "minMovePercent": 0.05
+  },
+  {
+    "symbol": "NQ=F",
+    "assetClass": "futures",
+    "interval": "10m",
+    "minMovePercent": 0.05
+  },
+  {
+    "symbol": "SI=F",
+    "assetClass": "futures",
+    "interval": "10m",
+    "minMovePercent": 0.05
+  },
+  {
+    "symbol": "YM=F",
+    "assetClass": "futures",
+    "interval": "10m",
+    "minMovePercent": 0.05
+  }
+]

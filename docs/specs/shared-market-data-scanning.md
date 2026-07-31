@@ -311,6 +311,54 @@ User B: 200 symbols incl. AAPL 10m, Consecutive Move, 0.25%, evaluate every 10m
 
 The invariant to hold: **upstream requests scale with unique eligible acquisition keys, never with user count** — and the browser contributes zero (see Prerequisites).
 
+## Adaptive acquisition cadence (budget governor)
+
+The rule above ("refresh at the fastest cadence any user requests") answers *demand* but not *affordability*. As the aggregate symbol count grows, a fixed fast cadence will eventually exceed the provider's rate cap. Rather than impose a hard per-symbol limit, the acquisition layer **derives its cadence from the remaining budget**: spend as fast as safely possible when symbols are few, and automatically back off as they grow, so the provider cap is never crossed and cadence degrades smoothly instead of failing.
+
+### The control loop
+
+Per provider scope, on a periodic recompute (not per-scan), set the effective acquisition cadence to:
+
+```text
+usable_hourly = hourly_cap × headroom        # e.g. 10,000 × 0.8 = 8,000
+usable_daily  = daily_cap  × headroom        # e.g. 100,000 × 0.8 = 80,000
+
+cadence_seconds = max(
+  PROVIDER_FLOOR,                             # hard safety floor (e.g. 15s)
+  fastest_cadence_any_user_requested,         # never fetch faster than demanded
+  ceil(N × 3600        / usable_hourly),      # stay under the hourly cap
+  ceil(N × window_secs / usable_daily)        # stay under the daily cap
+)
+```
+
+- **`N`** is the count of **unique enabled, in-session acquisition keys** for that provider scope — the same set that drives shared fetches (see Sessions below). Disabled and out-of-session watches never contribute to `N`.
+- **`window_secs`** is the length of the currently active session window for that scope (e.g. ~12h for a pre+RTH equity session, 24h for crypto). A longer active window forces a slower per-fetch cadence to keep the *daily total* under cap.
+- **`headroom`** reserves margin (e.g. 20%) for retries, bursts, and clock skew so the theoretical rate never rides the exact ceiling.
+- The `max(...)` means whichever constraint binds wins: with few symbols the user-requested cadence dominates (budget is slack); as `N` grows the budget terms dominate and every watch in the scope slows uniformly.
+
+The caps (`hourly_cap`, `daily_cap`) are **runtime configuration per provider scope**, not build-time constants — upgrading a provider plan is a config change that the governor picks up on its next recompute, with no redeploy. Because the formula takes the `max` over both the hourly and daily terms, the *tighter* limit always paces the system: raising only the daily total while the per-hour rate is unchanged leaves cadence bound by the hourly rate. Both numbers from a plan must be configured together for an upgrade to translate into a faster cadence. The governor scales in both directions — a plan upgrade tightens cadence toward the user-requested/floor limit; a downgrade or a provider-imposed reduction lengthens it — all without code change.
+
+### Behavior across scale
+
+With `headroom = 0.8`, a 10,000/hr + 100,000/day cap, and a 12h active window:
+
+| Unique keys `N` | Hourly floor | Daily floor | Effective cadence |
+|---|---|---|---|
+| 50 | 23s | 27s | ~27s (or the user's ask, if slower) |
+| 200 | 90s | 108s | ~1.8 min |
+| 500 | 3.75 min | 4.5 min | ~4.5 min |
+| 1000 | 7.5 min | 9 min | ~9 min |
+
+The system spends near real-time for a small deployment and auto-throttles as it grows, with no operator intervention and no hard symbol ceiling.
+
+### Robustness requirements
+
+- **Measured feedback, not just the formula.** The governor must also read *actual* consumption from `provider_request_stats` for the current bucket and tighten cadence if real usage drifts toward the cap. The formula is the target; the meter is the guardrail (retries, negative-cache misses, and derived-interval refreshes all consume real calls the formula does not model).
+- **Hysteresis.** Recompute on a coarse interval (e.g. every few minutes) and require a threshold change before adjusting, so cadence does not oscillate when `N` sits on a boundary.
+- **Per-provider scope.** Each provider has its own cap, its own `N`, and its own governor; throttling Tiingo must not affect Polygon.
+- **Fairness.** When the budget binds, the slowdown applies uniformly across the scope's keys; no single user's fast request can starve the shared budget for everyone else.
+- **Observability.** Emit the current effective cadence, `N`, and headroom utilization as metrics so the throttle is legible in the admin provider-stats view.
+
 ## Sessions and market calendars
 
 Session eligibility remains per watch. A watch outside its configured session is deferred without triggering an acquisition solely for that watch.
@@ -515,6 +563,14 @@ If exact sharing and aggregation later require durable provider capability or ca
 - Consider acquisition-group jobs only if queue volume or database reads become a measured bottleneck.
 - Do not combine user evaluation transactions or notifications.
 
+### Phase 6 — Adaptive cadence governor
+
+- Compute the effective acquisition cadence per provider scope from the budget formula (see "Adaptive acquisition cadence").
+- Drive `N` from the set of unique enabled, in-session acquisition keys the shared layer already tracks.
+- Feed measured usage from `provider_request_stats` back into the governor and tighten when real usage drifts toward the cap.
+- Apply hysteresis on a coarse recompute interval; emit effective cadence, `N`, and headroom utilization as metrics.
+- Depends on Phase 1 (shared acquisition keys) so cadence governs unique keys, not raw watches.
+
 ## Acceptance criteria
 
 ### Exact sharing
@@ -541,6 +597,13 @@ If exact sharing and aggregation later require durable provider capability or ca
 - Fast watches receive evaluations at their configured cadence.
 - Slow watches do not create additional provider calls when a sufficiently fresh shared snapshot exists.
 - PostgreSQL `nextScanAt` remains authoritative.
+
+### Adaptive cadence
+
+- With a small symbol count, effective cadence equals the fastest user-requested cadence (budget is slack).
+- As the unique-key count grows, effective cadence lengthens automatically and aggregate upstream usage stays under the configured provider cap (minus headroom).
+- The governor never crosses the cap even when measured usage (retries, misses) exceeds the theoretical formula.
+- No hard per-symbol ceiling is imposed; the cap alone paces the system.
 
 ### Concurrency and failure
 

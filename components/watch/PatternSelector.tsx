@@ -157,7 +157,7 @@ function PatternSelector({
   return (
     <section
       ref={containerRef}
-      className="relative mb-3 rounded-lg border border-card-border/50 bg-muted-bg/20 p-2 space-y-2"
+      className="mb-3 space-y-2 rounded-lg border border-card-border/50 bg-muted-bg/20 p-2"
       aria-labelledby="pattern-selector-title"
     >
       <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center justify-between">
@@ -174,6 +174,7 @@ function PatternSelector({
             type="button"
             aria-haspopup="listbox"
             aria-expanded={isOpen}
+            aria-controls="pattern-selector-options"
             onClick={() => setIsOpen((open) => !open)}
             className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-accent/30 bg-card-bg/70 px-2 py-1.5 text-left transition-colors hover:border-accent/60 sm:max-w-[360px]"
           >
@@ -192,7 +193,8 @@ function PatternSelector({
 
       {isOpen ? (
         <div
-          className="absolute left-1 right-1 top-full z-50 mt-1 max-h-[430px] overflow-y-auto rounded-lg border border-accent/30 bg-card-bg p-1.5 shadow-2xl"
+          id="pattern-selector-options"
+          className="max-h-[430px] overflow-y-auto rounded-xl border border-accent/30 bg-card-bg p-2"
           role="listbox"
           aria-label="Pattern to watch"
         >
