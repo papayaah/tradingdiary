@@ -22,13 +22,13 @@ vi.mock('@/lib/chart/providers', async (importOriginal) => {
   return {
     ...actual, // keep real isFuturesSymbol / futuresRoot for canonicalization
     getActiveProvider: () => ({
-      name: 'FakeProv',
+      name: 'Tiingo',
       fetchRecentCandles: async (symbol: string, interval: string) => {
-        recordSpy('FakeProv', 'owner');
+        recordSpy('Tiingo', 'owner');
         return providerFetch(symbol, interval);
       },
       fetchCandles: async () => {
-        recordSpy('FakeProv', 'owner');
+        recordSpy('Tiingo', 'owner');
         return providerFetch();
       },
     }),
@@ -50,10 +50,29 @@ const SAMPLE = [
 
 const T = 1_700_001_500_000; // fixed freshness clock (ms)
 
-// Small single-flight timings keep waiter tests fast.
-const FAST = { lockPollMs: 5, lockWaitMs: 1000, lockTtlMs: 1000, negativeCacheTtlMs: 1000 };
+// Small single-flight timings keep waiter tests fast; aggregation off by default
+// (matches production) so tests opt in explicitly.
+const FAST = {
+  lockPollMs: 5,
+  lockWaitMs: 1000,
+  lockTtlMs: 1000,
+  negativeCacheTtlMs: 1000,
+  aggregationEnabled: false,
+};
 
-const okFetch = () => vi.fn(async (): Promise<FetchResult> => ({ candles: SAMPLE, provider: 'FakeProv' }));
+// Ascending, minute-aligned 1m candles for aggregation tests.
+const T0_1M = 1_700_000_400; // a 10m boundary
+const oneMinCandles = (count: number) =>
+  Array.from({ length: count }, (_, i) => ({
+    time: T0_1M + i * 60,
+    open: 100 + i,
+    high: 100 + i + 0.5,
+    low: 100 + i - 0.5,
+    close: 100 + i + 0.2,
+    volume: 10 + i,
+  }));
+
+const okFetch = () => vi.fn(async (): Promise<FetchResult> => ({ candles: SAMPLE, provider: 'Tiingo' }));
 
 const request = (over: Partial<MarketDataRequest> = {}): MarketDataRequest => ({
   providerScope: 'fakeprov:server',
@@ -81,7 +100,7 @@ describe('SharedCandleService — request coalescing (in-process)', () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
     for (const r of results) {
       expect(r.candles).toHaveLength(SAMPLE.length);
-      expect(r.provider).toBe('FakeProv');
+      expect(r.provider).toBe('Tiingo');
     }
   });
 
@@ -107,7 +126,7 @@ describe('SharedCandleService — distributed single-flight (cross-process)', ()
     const store = new MemoryCacheStore(() => T);
     const fetchFn = vi.fn(async (): Promise<FetchResult> => {
       await new Promise((r) => setTimeout(r, 15)); // keep the owner busy so the peer waits
-      return { candles: SAMPLE, provider: 'FakeProv' };
+      return { candles: SAMPLE, provider: 'Tiingo' };
     });
     const workerA = new SharedCandleService({ store, fetchFn, now: () => T, config: FAST });
     const workerB = new SharedCandleService({ store, fetchFn, now: () => T, config: FAST });
@@ -244,9 +263,97 @@ describe('SharedCandleService — negative caching of provider failures', () => 
   });
 });
 
+describe('SharedCandleService — base-interval aggregation (Phase 4, flag-gated)', () => {
+  it('fetches 1m once and derives the requested interval when enabled', async () => {
+    const store = new MemoryCacheStore(() => T);
+    const base = oneMinCandles(30);
+    const fetchFn = vi.fn(async (_s: string, _i: string): Promise<FetchResult> => ({
+      candles: base,
+      provider: 'Tiingo',
+    }));
+    const svc = new SharedCandleService({
+      store,
+      fetchFn,
+      now: () => T,
+      config: { ...FAST, aggregationEnabled: true },
+    });
+
+    const res = await svc.getCandlesForWatch('AAPL', '10m', 'equity');
+
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(fetchFn.mock.calls[0][1]).toBe('1m'); // fetched the base, not 10m
+    expect(res.candles.length).toBe(3); // 30 x 1m -> 3 x 10m
+    expect(res.candles.length).toBeLessThan(base.length);
+  });
+
+  it('shares one 1m fetch across a 1m watch and a 10m watch', async () => {
+    const store = new MemoryCacheStore(() => T);
+    const base = oneMinCandles(30);
+    const fetchFn = vi.fn(async (_s: string, _i: string): Promise<FetchResult> => ({
+      candles: base,
+      provider: 'Tiingo',
+    }));
+    const svc = new SharedCandleService({
+      store,
+      fetchFn,
+      now: () => T,
+      config: { ...FAST, aggregationEnabled: true },
+    });
+
+    const [oneM, tenM] = await Promise.all([
+      svc.getCandlesForWatch('AAPL', '1m', 'equity'),
+      svc.getCandlesForWatch('AAPL', '10m', 'equity'),
+    ]);
+
+    expect(fetchFn).toHaveBeenCalledTimes(1); // both served from the one 1m fetch
+    expect(oneM.candles.length).toBe(30); // 1m watch gets raw base
+    expect(tenM.candles.length).toBe(3); // 10m watch gets derived
+  });
+
+  it('with the flag OFF, 1m and 10m are two separate native fetches', async () => {
+    const store = new MemoryCacheStore(() => T);
+    const fetchFn = vi.fn(async (_s: string, _i: string): Promise<FetchResult> => ({
+      candles: oneMinCandles(30),
+      provider: 'Tiingo',
+    }));
+    const svc = new SharedCandleService({ store, fetchFn, now: () => T, config: FAST });
+
+    await Promise.all([
+      svc.getCandlesForWatch('AAPL', '1m', 'equity'),
+      svc.getCandlesForWatch('AAPL', '10m', 'equity'),
+    ]);
+
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    const intervals = fetchFn.mock.calls.map((c) => c[1]).sort();
+    expect(intervals).toEqual(['10m', '1m']);
+  });
+
+  it('falls back to a native fetch when base bars are inconsistent', async () => {
+    const store = new MemoryCacheStore(() => T);
+    const bad = [...oneMinCandles(3)].reverse(); // out of order -> aggregation fails
+    const fetchFn = vi.fn(async (_s: string, interval: string): Promise<FetchResult> => ({
+      candles: interval === '1m' ? bad : oneMinCandles(30),
+      provider: 'Tiingo',
+    }));
+    const svc = new SharedCandleService({
+      store,
+      fetchFn,
+      now: () => T,
+      config: { ...FAST, aggregationEnabled: true },
+    });
+
+    const res = await svc.getCandlesForWatch('AAPL', '10m', 'equity');
+
+    // Tried the 1m base, then fell back to a native 10m fetch.
+    const intervals = fetchFn.mock.calls.map((c) => c[1]);
+    expect(intervals).toEqual(['1m', '10m']);
+    expect(res.candles.length).toBe(30); // native series returned as-is
+  });
+});
+
 describe('SharedCandleService.buildRequest — provider-aware canonicalization', () => {
   it('collapses equivalent futures notations to one acquisition key', () => {
-    // getActiveProvider is mocked to "FakeProv" (root symbology via the default
+    // getActiveProvider is mocked to "Tiingo" (root symbology via the default
     // capability), so every notation reduces to the product root -> one key.
     const svc = new SharedCandleService({ store: new MemoryCacheStore(() => T), now: () => T, config: FAST });
     const keys = ['MNQU6', '/MNQ', 'MNQ=F', 'MNQ.C.0'].map((s) =>

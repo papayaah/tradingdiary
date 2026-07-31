@@ -51,6 +51,14 @@ export const scannerConfig = {
   lockWaitMs: Number(process.env.SCANNER_LOCK_WAIT_MS ?? 16000),
   lockPollMs: Number(process.env.SCANNER_LOCK_POLL_MS ?? 150),
   negativeCacheTtlMs: Number(process.env.SCANNER_NEG_CACHE_TTL_MS ?? 10000),
+
+  // Phase 4 base-interval aggregation. When enabled, higher intervals are
+  // derived from a single shared 1m fetch (only for providers the capability
+  // registry marks aggregatableFrom1m). Defaults OFF: until a deploy sets
+  // SCANNER_AGGREGATION=true the scanner fetches each interval natively, exactly
+  // as before, so derived candles never change evaluation without an explicit
+  // opt-in and parity check.
+  aggregationEnabled: (process.env.SCANNER_AGGREGATION ?? 'false').toLowerCase() === 'true',
 } as const;
 
 export const SCAN_QUEUE = 'market-scan';

@@ -38,8 +38,9 @@ import {
   type MarketDataRequest,
 } from './acquisition-key';
 import { resolveProviderIdentity } from './provider-scope';
-import { getProviderCapability } from './provider-capabilities';
+import { getProviderCapability, type ProviderCapability } from './provider-capabilities';
 import { buildFetchScope, canonicalizeSymbol, classifyAssetClass } from './canonical-symbol';
+import { aggregateCandles, parseIntervalMinutes, BASE_INTERVAL } from './aggregate';
 import { getSharedCacheStore, type CacheStore } from './cache-store';
 
 /** Bounded, disposable snapshot persisted in Redis (see spec). */
@@ -83,6 +84,15 @@ interface ServiceConfig {
   lockWaitMs: number;
   lockPollMs: number;
   negativeCacheTtlMs: number;
+  aggregationEnabled: boolean;
+}
+
+/** Shared acquisition context for a watch's symbol (provider-resolved once). */
+interface RequestContext {
+  providerScope: string;
+  canonicalSymbol: string;
+  fetchScope: string;
+  capability: ProviderCapability;
 }
 
 interface ServiceDeps {
@@ -144,34 +154,82 @@ export class SharedCandleService {
       lockWaitMs: deps.config?.lockWaitMs ?? scannerConfig.lockWaitMs,
       lockPollMs: deps.config?.lockPollMs ?? scannerConfig.lockPollMs,
       negativeCacheTtlMs: deps.config?.negativeCacheTtlMs ?? scannerConfig.negativeCacheTtlMs,
+      aggregationEnabled: deps.config?.aggregationEnabled ?? scannerConfig.aggregationEnabled,
     };
   }
 
   /**
-   * Build the canonical request for a watch's symbol/interval at the current
-   * bucket. Provider selection, capability lookup, and symbol normalization are
-   * all provider-aware (Phase 3). `assetClass` should come from the watch;
-   * without it, it is inferred from the symbol.
+   * Resolve the provider-aware acquisition context for a symbol (Phase 3):
+   * provider scope, canonical symbol, fetch scope, and capabilities. No upstream
+   * request is triggered.
+   */
+  private resolveContext(symbol: string, assetClass: AssetClass): RequestContext {
+    const { providerName, providerScope } = resolveProviderIdentity(symbol);
+    const capability = getProviderCapability(providerName, assetClass);
+    return {
+      providerScope,
+      canonicalSymbol: canonicalizeSymbol(symbol, assetClass, capability),
+      fetchScope: buildFetchScope(capability),
+      capability,
+    };
+  }
+
+  private requestFor(ctx: RequestContext, interval: string): MarketDataRequest {
+    return {
+      providerScope: ctx.providerScope,
+      canonicalSymbol: ctx.canonicalSymbol,
+      interval,
+      fetchScope: ctx.fetchScope,
+      timeBucket: currentTimeBucket(this.now(), this.config.acquisitionBucketMs),
+    };
+  }
+
+  /**
+   * Build the canonical (native) request for a watch's symbol/interval at the
+   * current bucket. `assetClass` should come from the watch; without it, it is
+   * inferred from the symbol.
    */
   buildRequest(
     symbol: string,
     interval: string,
     assetClass: AssetClass = classifyAssetClass(symbol),
   ): MarketDataRequest {
-    const { providerName, providerScope } = resolveProviderIdentity(symbol);
-    const capability = getProviderCapability(providerName, assetClass);
-    return {
-      providerScope,
-      canonicalSymbol: canonicalizeSymbol(symbol, assetClass, capability),
-      interval,
-      fetchScope: buildFetchScope(capability),
-      timeBucket: currentTimeBucket(this.now(), this.config.acquisitionBucketMs),
-    };
+    return this.requestFor(this.resolveContext(symbol, assetClass), interval);
   }
 
-  /** Acquire candles for a watch's symbol/interval. Convenience wrapper over getCandles. */
-  getCandlesForWatch(symbol: string, interval: string, assetClass?: AssetClass): Promise<AcquireResult> {
-    return this.getCandles(this.buildRequest(symbol, interval, assetClass));
+  /**
+   * Acquire candles for a watch's symbol/interval.
+   *
+   * When aggregation is enabled and the provider supports it, a single shared 1m
+   * snapshot is fetched and the requested interval is DERIVED from it — so every
+   * higher interval of a symbol collapses onto one upstream 1m request. If the
+   * base bars are inconsistent, it falls back to a native fetch of the requested
+   * interval. With aggregation off (the default), it fetches natively as before.
+   */
+  async getCandlesForWatch(
+    symbol: string,
+    interval: string,
+    assetClass: AssetClass = classifyAssetClass(symbol),
+  ): Promise<AcquireResult> {
+    const ctx = this.resolveContext(symbol, assetClass);
+    const minutes = parseIntervalMinutes(interval);
+    const canAggregate =
+      this.config.aggregationEnabled &&
+      ctx.capability.aggregatableFrom1m &&
+      minutes !== null &&
+      minutes > 1;
+
+    if (canAggregate) {
+      const base = await this.getCandles(this.requestFor(ctx, BASE_INTERVAL));
+      const derived = aggregateCandles(base.candles, interval);
+      if (derived.ok && derived.candles.length > 0) {
+        // Reuse the base snapshot's provenance; only the candle array is derived.
+        return { ...base, candles: derived.candles };
+      }
+      // Inconsistent/insufficient base bars: fall back to a native fetch.
+    }
+
+    return this.getCandles(this.requestFor(ctx, interval));
   }
 
   /**
