@@ -2,9 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildAcquisitionKey,
   parseAcquisitionKey,
-  canonicalSymbol,
   currentTimeBucket,
-  defaultFetchScope,
   ACQUISITION_KEY_PREFIX,
   type MarketDataRequest,
 } from './acquisition-key';
@@ -60,23 +58,10 @@ describe('buildAcquisitionKey / parseAcquisitionKey', () => {
   });
 });
 
-describe('canonicalSymbol', () => {
-  it('collapses case and whitespace variants', () => {
-    expect(canonicalSymbol(' aapl ')).toBe('AAPL');
-    expect(canonicalSymbol('AaPl')).toBe('AAPL');
-  });
-});
-
 describe('currentTimeBucket', () => {
   it('advances once per bucket window', () => {
     expect(currentTimeBucket(60_000, 60_000)).toBe(1);
     expect(currentTimeBucket(119_999, 60_000)).toBe(1);
     expect(currentTimeBucket(120_000, 60_000)).toBe(2);
-  });
-});
-
-describe('defaultFetchScope', () => {
-  it('is a stable, non-empty constant for Phase 1', () => {
-    expect(defaultFetchScope()).toBe('recent:ext');
   });
 });

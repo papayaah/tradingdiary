@@ -54,7 +54,11 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
     // provider/symbol/interval/scope/bucket collapse to one upstream fetch. Only
     // the fetch is shared — evaluation, state, alerts, events, and push below
     // remain per-watch and unchanged.
-    const res = await getSharedCandleService().getCandlesForWatch(watch.symbol, watch.interval);
+    const res = await getSharedCandleService().getCandlesForWatch(
+      watch.symbol,
+      watch.interval,
+      watch.assetClass as AssetClass,
+    );
     candles = res.candles;
     providerName = res.provider;
   } catch (err) {

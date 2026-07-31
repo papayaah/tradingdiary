@@ -31,14 +31,15 @@ import type { Candle } from '@/lib/scanner/patterns';
 import { fetchCandles as defaultFetchCandles, type FetchResult } from '@/lib/scanner/candles';
 import { scannerConfig } from '@/lib/scanner/env';
 import type { CandleSnapshot } from '@/lib/scanner/candles';
+import type { AssetClass } from '@/lib/scanner/sessions';
 import {
   buildAcquisitionKey,
   currentTimeBucket,
-  defaultFetchScope,
-  canonicalSymbol as toCanonicalSymbol,
   type MarketDataRequest,
 } from './acquisition-key';
-import { resolveProviderScope } from './provider-scope';
+import { resolveProviderIdentity } from './provider-scope';
+import { getProviderCapability } from './provider-capabilities';
+import { buildFetchScope, canonicalizeSymbol, classifyAssetClass } from './canonical-symbol';
 import { getSharedCacheStore, type CacheStore } from './cache-store';
 
 /** Bounded, disposable snapshot persisted in Redis (see spec). */
@@ -146,20 +147,31 @@ export class SharedCandleService {
     };
   }
 
-  /** Build the canonical request for a watch's symbol/interval at the current bucket. */
-  buildRequest(symbol: string, interval: string): MarketDataRequest {
+  /**
+   * Build the canonical request for a watch's symbol/interval at the current
+   * bucket. Provider selection, capability lookup, and symbol normalization are
+   * all provider-aware (Phase 3). `assetClass` should come from the watch;
+   * without it, it is inferred from the symbol.
+   */
+  buildRequest(
+    symbol: string,
+    interval: string,
+    assetClass: AssetClass = classifyAssetClass(symbol),
+  ): MarketDataRequest {
+    const { providerName, providerScope } = resolveProviderIdentity(symbol);
+    const capability = getProviderCapability(providerName, assetClass);
     return {
-      providerScope: resolveProviderScope(symbol),
-      canonicalSymbol: toCanonicalSymbol(symbol),
+      providerScope,
+      canonicalSymbol: canonicalizeSymbol(symbol, assetClass, capability),
       interval,
-      fetchScope: defaultFetchScope(),
+      fetchScope: buildFetchScope(capability),
       timeBucket: currentTimeBucket(this.now(), this.config.acquisitionBucketMs),
     };
   }
 
   /** Acquire candles for a watch's symbol/interval. Convenience wrapper over getCandles. */
-  getCandlesForWatch(symbol: string, interval: string): Promise<AcquireResult> {
-    return this.getCandles(this.buildRequest(symbol, interval));
+  getCandlesForWatch(symbol: string, interval: string, assetClass?: AssetClass): Promise<AcquireResult> {
+    return this.getCandles(this.buildRequest(symbol, interval, assetClass));
   }
 
   /**

@@ -17,19 +17,23 @@ vi.mock('@/lib/metrics/provider-usage', () => ({
   recordProviderRequest: recordSpy,
 }));
 
-vi.mock('@/lib/chart/providers', () => ({
-  getActiveProvider: () => ({
-    name: 'FakeProv',
-    fetchRecentCandles: async (symbol: string, interval: string) => {
-      recordSpy('FakeProv', 'owner');
-      return providerFetch(symbol, interval);
-    },
-    fetchCandles: async () => {
-      recordSpy('FakeProv', 'owner');
-      return providerFetch();
-    },
-  }),
-}));
+vi.mock('@/lib/chart/providers', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/chart/providers')>();
+  return {
+    ...actual, // keep real isFuturesSymbol / futuresRoot for canonicalization
+    getActiveProvider: () => ({
+      name: 'FakeProv',
+      fetchRecentCandles: async (symbol: string, interval: string) => {
+        recordSpy('FakeProv', 'owner');
+        return providerFetch(symbol, interval);
+      },
+      fetchCandles: async () => {
+        recordSpy('FakeProv', 'owner');
+        return providerFetch();
+      },
+    }),
+  };
+});
 
 import {
   SharedCandleService,
@@ -237,6 +241,25 @@ describe('SharedCandleService — negative caching of provider failures', () => 
     // Worker B sees the negative cache and does not call the provider again.
     await expect(workerB.getCandles(request())).rejects.toBeInstanceOf(NegativeCacheError);
     expect(failing).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('SharedCandleService.buildRequest — provider-aware canonicalization', () => {
+  it('collapses equivalent futures notations to one acquisition key', () => {
+    // getActiveProvider is mocked to "FakeProv" (root symbology via the default
+    // capability), so every notation reduces to the product root -> one key.
+    const svc = new SharedCandleService({ store: new MemoryCacheStore(() => T), now: () => T, config: FAST });
+    const keys = ['MNQU6', '/MNQ', 'MNQ=F', 'MNQ.C.0'].map((s) =>
+      buildAcquisitionKey(svc.buildRequest(s, '10m', 'futures')),
+    );
+    expect(new Set(keys).size).toBe(1);
+  });
+
+  it('keeps different intervals on distinct keys', () => {
+    const svc = new SharedCandleService({ store: new MemoryCacheStore(() => T), now: () => T, config: FAST });
+    const a = buildAcquisitionKey(svc.buildRequest('AAPL', '1m', 'equity'));
+    const b = buildAcquisitionKey(svc.buildRequest('AAPL', '10m', 'equity'));
+    expect(a).not.toBe(b);
   });
 });
 

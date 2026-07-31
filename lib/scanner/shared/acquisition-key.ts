@@ -69,30 +69,9 @@ export function parseAcquisitionKey(key: string): MarketDataRequest {
   };
 }
 
-/**
- * Normalize a symbol into its canonical form for keying.
- *
- * Phase 1 only collapses case/whitespace variants (e.g. "aapl" and "AAPL"),
- * which is enough to dedupe the common overlap. Full provider-aware
- * normalization — mapping futures notations (MNQU6, /MNQ, MNQ=F) and crypto
- * separators (BTCUSD vs BTC-USD) to a single provider request — is Phase 3
- * (provider capability registry) and intentionally not attempted here.
- */
-export function canonicalSymbol(symbol: string): string {
-  return symbol.trim().toUpperCase();
-}
-
-/**
- * The fetch scope encodes provider request details that materially change the
- * returned candles. Every current scanner fetch uses `fetchRecentCandles`, which
- * requests a recent multi-day window with extended hours on, so Phase 1 uses one
- * constant scope. Later phases widen this to the *union* of participating
- * detectors' data requirements (volume presence, maximum lookback) so a shared
- * snapshot always satisfies the hungriest watch sharing it.
- */
-export function defaultFetchScope(): string {
-  return 'recent:ext';
-}
+// Symbol normalization (provider-aware) and fetch-scope derivation live in
+// canonical-symbol.ts; provider scope in provider-scope.ts. This module stays a
+// pure key codec so it is trivially testable.
 
 /**
  * The acquisition time bucket: a monotonically increasing integer that changes

@@ -24,12 +24,24 @@ function slugifyProvider(name: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
+export interface ProviderIdentity {
+  /** ChartProvider.name of the provider that will serve this symbol. */
+  providerName: string;
+  /** Credential/entitlement scope for the cache key, e.g. "polygon-io:server". */
+  providerScope: string;
+}
+
 /**
- * Provider scope for a symbol under the current server configuration, e.g.
- * "polygon-io:server" or "yahoo-finance:server". Contains only the public
- * provider identity — never a raw API key, token, or secret.
+ * Resolve both the provider name (for capability lookup) and its scope (for the
+ * cache key) in one call, without triggering an upstream request. Contains only
+ * the public provider identity — never a raw API key, token, or secret.
  */
-export function resolveProviderScope(symbol: string): string {
+export function resolveProviderIdentity(symbol: string): ProviderIdentity {
   const provider = getActiveProvider(symbol);
-  return `${slugifyProvider(provider.name)}:server`;
+  return { providerName: provider.name, providerScope: `${slugifyProvider(provider.name)}:server` };
+}
+
+/** Provider scope only (convenience over {@link resolveProviderIdentity}). */
+export function resolveProviderScope(symbol: string): string {
+  return resolveProviderIdentity(symbol).providerScope;
 }
