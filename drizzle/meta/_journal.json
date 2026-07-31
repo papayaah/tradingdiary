@@ -13,28 +13,28 @@
       "idx": 1,
       "version": "7",
       "when": 1784995567014,
-      "tag": "0001_superb_kang",
+      "tag": "0001_add_server_scanner",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
       "when": 1785046446537,
-      "tag": "0002_burly_bloodstrike",
+      "tag": "0002_add_patterns_and_push_notifications",
       "breakpoints": true
     },
     {
       "idx": 3,
       "version": "7",
       "when": 1785256240592,
-      "tag": "0003_skinny_warstar",
+      "tag": "0003_add_alert_intraday_changes",
       "breakpoints": true
     },
     {
       "idx": 4,
       "version": "7",
       "when": 1785430669799,
-      "tag": "0004_polite_vulture",
+      "tag": "0004_add_provider_stats_and_body_overlap",
       "breakpoints": true
     }
   ]
