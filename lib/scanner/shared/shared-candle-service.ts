@@ -1,26 +1,32 @@
-// SharedCandleService — Phase 1 of shared-market-data-scanning.
+// SharedCandleService — Phases 1 & 2 of shared-market-data-scanning.
 //
 // Wraps the provider layer so that N watches (across any number of users or
 // devices) needing the same (providerScope, symbol, interval, fetchScope,
 // timeBucket) cause AT MOST ONE upstream provider call per acquisition bucket.
-// It owns cache lookup/TTL, request coalescing, sanitized bounded snapshots, and
-// acquisition metrics. It does NOT own pattern detection, watch state, alerts,
-// SSE, or push — those stay per-watch in the evaluator (worker.ts).
+// It owns cache lookup/TTL, request coalescing, distributed single-flight,
+// negative caching, sanitized bounded snapshots, and acquisition metrics. It does
+// NOT own pattern detection, watch state, alerts, SSE, or push — those stay
+// per-watch in the evaluator (worker.ts).
 //
 // Provider-usage accounting is preserved by construction: the only upstream call
 // path is `fetchCandles`, which routes through `getActiveProvider`/`trackProvider`
-// and records exactly one `provider_request_stats` request per invocation. A
-// cache hit and a coalesced waiter never call `fetchCandles`, so they record
-// zero requests; a miss calls it once, so it records exactly one.
+// and records exactly one `provider_request_stats` request per invocation. Cache
+// hits, coalesced waiters, single-flight waiters, and negative-cache hits never
+// call `fetchCandles`, so they record zero requests; a miss calls it once.
 //
-// Scope note: this phase deliberately excludes the Phase 2 distributed
-// single-flight lock and negative caching. Concurrent equivalent misses within a
-// single worker process are collapsed here by in-process promise coalescing —
-// cross-process collapse (the Redis lock) is Phase 2. On a provider error the
-// service does not cache anything; it rethrows so the worker records error state
-// and BullMQ retries (which re-enters acquisition through this cache).
+// Concurrency collapse happens at two levels:
+//   - In-process: concurrent getCandles for one key await a single shared promise
+//     (Phase 1), so a worker attempts the lock/fetch once per key.
+//   - Cross-process: a token-owned Redis lock (Phase 2) elects one owner across
+//     worker processes; the rest wait for the snapshot with jittered backoff, and
+//     take over only if the owner's lock expires (crash recovery).
+//
+// On a provider error the owner writes a short negative-cache record and rethrows;
+// affected watches then get an error/retry outcome WITHOUT each re-hitting the
+// provider. Snapshots and negative-cache records are per acquisition key, so one
+// key's failure never poisons another scope/symbol/interval.
 
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { Candle } from '@/lib/scanner/patterns';
 import { fetchCandles as defaultFetchCandles, type FetchResult } from '@/lib/scanner/candles';
 import { scannerConfig } from '@/lib/scanner/env';
@@ -52,10 +58,30 @@ export interface AcquireResult {
   acquisitionKey: string;
 }
 
+/** Error thrown when a fresh negative-cache record is present for the key. */
+export class NegativeCacheError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NegativeCacheError';
+  }
+}
+
+/** Error thrown when a waiter never obtained a snapshot within the wait budget. */
+export class SingleFlightTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SingleFlightTimeoutError';
+  }
+}
+
 interface ServiceConfig {
   acquisitionBucketMs: number;
   snapshotTtlMs: number;
   maxSnapshotCandles: number;
+  lockTtlMs: number;
+  lockWaitMs: number;
+  lockPollMs: number;
+  negativeCacheTtlMs: number;
 }
 
 interface ServiceDeps {
@@ -65,10 +91,22 @@ interface ServiceDeps {
   config?: Partial<ServiceConfig>;
 }
 
-/** Fixed-length, credential-free Redis key derived from the acquisition key. */
-function snapshotStorageKey(acquisitionKey: string): string {
+interface StorageKeys {
+  snapshot: string;
+  lock: string;
+  error: string;
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Fixed-length, credential-free Redis keys derived from the acquisition key. */
+export function storageKeysFor(acquisitionKey: string): StorageKeys {
   const hash = createHash('sha256').update(acquisitionKey).digest('hex').slice(0, 32);
-  return `market-data:snapshot:${hash}`;
+  return {
+    snapshot: `market-data:snapshot:${hash}`,
+    lock: `market-data:lock:${hash}`,
+    error: `market-data:error:${hash}`,
+  };
 }
 
 /** A CandleSnapshot (volume optional) → a full Candle (volume required). */
@@ -90,9 +128,7 @@ export class SharedCandleService {
   private readonly config: ServiceConfig;
 
   // In-process coalescing: concurrent getCandles for the same acquisition key
-  // await one shared promise, so only its leader performs the fetch. This is the
-  // Phase 1 mechanism that keeps five concurrent equivalent requests down to one
-  // upstream call within a worker. (Cross-process single-flight is Phase 2.)
+  // await one shared promise, so only its leader runs the cross-process protocol.
   private readonly inflight = new Map<string, Promise<AcquireResult>>();
 
   constructor(deps: ServiceDeps = {}) {
@@ -103,6 +139,10 @@ export class SharedCandleService {
       acquisitionBucketMs: deps.config?.acquisitionBucketMs ?? scannerConfig.acquisitionBucketMs,
       snapshotTtlMs: deps.config?.snapshotTtlMs ?? scannerConfig.snapshotTtlMs,
       maxSnapshotCandles: deps.config?.maxSnapshotCandles ?? scannerConfig.maxSnapshotCandles,
+      lockTtlMs: deps.config?.lockTtlMs ?? scannerConfig.lockTtlMs,
+      lockWaitMs: deps.config?.lockWaitMs ?? scannerConfig.lockWaitMs,
+      lockPollMs: deps.config?.lockPollMs ?? scannerConfig.lockPollMs,
+      negativeCacheTtlMs: deps.config?.negativeCacheTtlMs ?? scannerConfig.negativeCacheTtlMs,
     };
   }
 
@@ -117,20 +157,17 @@ export class SharedCandleService {
     };
   }
 
-  /**
-   * Acquire candles for a watch's symbol/interval, shared across equivalent
-   * requests. Convenience wrapper over {@link getCandles} for the worker.
-   */
+  /** Acquire candles for a watch's symbol/interval. Convenience wrapper over getCandles. */
   getCandlesForWatch(symbol: string, interval: string): Promise<AcquireResult> {
     return this.getCandles(this.buildRequest(symbol, interval));
   }
 
   /**
    * Return candles for a canonical request. Serves a fresh cached snapshot
-   * without calling the provider; otherwise fetches once, caches a sanitized
-   * bounded snapshot, and returns it. Concurrent equivalent calls coalesce onto
-   * one fetch. Provider errors are propagated (not cached) after the single
-   * upstream request has been recorded.
+   * without calling the provider; otherwise elects one owner (across processes)
+   * to fetch once, caches a sanitized bounded snapshot, and shares it. Concurrent
+   * equivalent calls coalesce. Provider errors are negative-cached briefly and
+   * rethrown (never cached as data).
    */
   getCandles(request: MarketDataRequest): Promise<AcquireResult> {
     const acquisitionKey = buildAcquisitionKey(request);
@@ -148,21 +185,120 @@ export class SharedCandleService {
   }
 
   private async acquire(request: MarketDataRequest, acquisitionKey: string): Promise<AcquireResult> {
-    const storageKey = snapshotStorageKey(acquisitionKey);
+    const keys = storageKeysFor(acquisitionKey);
 
-    const cached = await this.readFreshSnapshot(storageKey);
-    if (cached) {
-      return {
-        candles: cached.candles.map(toCandle),
-        provider: cached.provider,
-        cacheHit: true,
-        acquisitionKey,
-      };
+    // 1. Fresh snapshot already present?
+    const cached = await this.readFreshSnapshot(keys.snapshot);
+    if (cached) return this.hitResult(cached, acquisitionKey);
+
+    // 2. Recent provider failure for this exact key? Fail fast without fetching.
+    const negative = await this.readNegativeCache(keys.error);
+    if (negative) throw new NegativeCacheError(negative);
+
+    // 3. Distributed single-flight: try to become the owner.
+    const token = randomUUID();
+    let acquired: boolean;
+    try {
+      acquired = await this.store.acquireLock(keys.lock, token, this.config.lockTtlMs);
+    } catch {
+      // Redis lock unavailable: degrade to a direct fetch (still bounded by the
+      // worker rate limiter). Snapshots are disposable; correctness is preserved.
+      return this.fetchAndStore(request, keys, acquisitionKey, null);
     }
 
-    // Cache miss: exactly one upstream request (records one provider request).
-    const result = await this.fetchFn(request.canonicalSymbol, request.interval);
+    if (acquired) return this.fetchAndStore(request, keys, acquisitionKey, { key: keys.lock, token });
 
+    // 4. Someone else owns the lock: wait for their snapshot, or take over if the
+    //    owner crashed (lock expired).
+    return this.waitForOwner(request, keys, acquisitionKey);
+  }
+
+  /**
+   * Owner (or degraded-direct) path: perform the single upstream fetch, cache the
+   * snapshot on success, negative-cache on failure, and always release the lock.
+   */
+  private async fetchAndStore(
+    request: MarketDataRequest,
+    keys: StorageKeys,
+    acquisitionKey: string,
+    lock: { key: string; token: string } | null,
+  ): Promise<AcquireResult> {
+    try {
+      // The one upstream request (records exactly one provider request).
+      const result = await this.fetchFn(request.canonicalSymbol, request.interval);
+      await this.writeSnapshot(keys.snapshot, request, result);
+      return {
+        candles: result.candles,
+        provider: result.provider,
+        cacheHit: false,
+        acquisitionKey,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'provider fetch failed';
+      await this.writeNegativeCache(keys.error, message);
+      throw err;
+    } finally {
+      if (lock) {
+        try {
+          await this.store.releaseLock(lock.key, lock.token);
+        } catch {
+          // Best-effort: the lock's TTL will expire it anyway.
+        }
+      }
+    }
+  }
+
+  /**
+   * Waiter path: poll for the owner's snapshot with jittered backoff. Returns the
+   * snapshot as a cache hit as soon as it appears; surfaces the owner's failure
+   * via the negative cache; takes over as owner if the lock expires (crash);
+   * throws if the wait budget is exhausted (BullMQ then retries the job).
+   */
+  private async waitForOwner(
+    request: MarketDataRequest,
+    keys: StorageKeys,
+    acquisitionKey: string,
+  ): Promise<AcquireResult> {
+    // Wall-clock budget (real timers), independent of the injected freshness clock.
+    const deadline = Date.now() + this.config.lockWaitMs;
+
+    while (Date.now() < deadline) {
+      await sleep(this.jitteredPoll());
+
+      const snapshot = await this.readFreshSnapshot(keys.snapshot);
+      if (snapshot) return this.hitResult(snapshot, acquisitionKey);
+
+      const negative = await this.readNegativeCache(keys.error);
+      if (negative) throw new NegativeCacheError(negative);
+
+      // No snapshot and no error record yet: the owner may have crashed. Try to
+      // take the (now possibly expired) lock and become the owner ourselves.
+      const token = randomUUID();
+      let took = false;
+      try {
+        took = await this.store.acquireLock(keys.lock, token, this.config.lockTtlMs);
+      } catch {
+        took = false;
+      }
+      if (took) return this.fetchAndStore(request, keys, acquisitionKey, { key: keys.lock, token });
+    }
+
+    throw new SingleFlightTimeoutError(
+      `timed out waiting for a shared snapshot after ${this.config.lockWaitMs}ms`,
+    );
+  }
+
+  private jitteredPoll(): number {
+    const base = this.config.lockPollMs;
+    // Full jitter in [base/2, 1.5*base) to spread waiter wakeups.
+    return Math.floor(base / 2 + Math.random() * base);
+  }
+
+  private async writeSnapshot(
+    storageKey: string,
+    request: MarketDataRequest,
+    result: FetchResult,
+  ): Promise<void> {
     const snapshot: SharedCandleSnapshot = {
       provider: result.provider,
       canonicalSymbol: request.canonicalSymbol,
@@ -171,21 +307,36 @@ export class SharedCandleService {
       sourceTimeBucket: request.timeBucket,
       candles: this.boundSnapshot(result.candles),
     };
-
-    // Best-effort write: a Redis write failure must not fail the scan — worst
-    // case the next equivalent request fetches again.
     try {
       await this.store.set(storageKey, JSON.stringify(snapshot), this.config.snapshotTtlMs);
     } catch {
-      // Snapshots are disposable; swallow and serve the freshly fetched data.
+      // Disposable: worst case the next equivalent request fetches again.
     }
+  }
 
-    return {
-      candles: result.candles,
-      provider: result.provider,
-      cacheHit: false,
-      acquisitionKey,
-    };
+  private async writeNegativeCache(errorKey: string, message: string): Promise<void> {
+    const record = JSON.stringify({ message, at: new Date(this.now()).toISOString() });
+    try {
+      await this.store.set(errorKey, record, this.config.negativeCacheTtlMs);
+    } catch {
+      // Best-effort; absence just means the next request retries the provider.
+    }
+  }
+
+  private async readNegativeCache(errorKey: string): Promise<string | null> {
+    let raw: string | null;
+    try {
+      raw = await this.store.get(errorKey);
+    } catch {
+      return null;
+    }
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as { message?: string };
+      return `provider recently failed for this request: ${parsed.message ?? 'unknown error'}`;
+    } catch {
+      return 'provider recently failed for this request';
+    }
   }
 
   private async readFreshSnapshot(storageKey: string): Promise<SharedCandleSnapshot | null> {
@@ -206,13 +357,21 @@ export class SharedCandleService {
     if (!Array.isArray(snapshot.candles)) return null;
 
     // fetchedAt is authoritative for freshness (Redis TTL alone is not
-    // sufficient metadata). Reject anything older than one TTL as a guard even
-    // if Redis returned it.
+    // sufficient metadata). Reject anything older than one TTL as a guard.
     const fetchedAtMs = Date.parse(snapshot.fetchedAt);
     if (Number.isNaN(fetchedAtMs)) return null;
     if (this.now() - fetchedAtMs > this.config.snapshotTtlMs) return null;
 
     return snapshot;
+  }
+
+  private hitResult(snapshot: SharedCandleSnapshot, acquisitionKey: string): AcquireResult {
+    return {
+      candles: snapshot.candles.map(toCandle),
+      provider: snapshot.provider,
+      cacheHit: true,
+      acquisitionKey,
+    };
   }
 
   /** Cap snapshot length so a cached record stays bounded (see spec). */

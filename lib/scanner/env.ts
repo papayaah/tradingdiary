@@ -40,6 +40,17 @@ export const scannerConfig = {
   acquisitionBucketMs: Number(process.env.SCANNER_ACQ_BUCKET_MS ?? 60000),
   snapshotTtlMs: Number(process.env.SCANNER_SNAPSHOT_TTL_MS ?? 75000),
   maxSnapshotCandles: Number(process.env.SCANNER_MAX_SNAPSHOT_CANDLES ?? 1500),
+
+  // Phase 2 distributed single-flight (cross-process). The lock TTL must outlive
+  // a normal provider fetch (fetchTimeoutMs) plus a small recovery margin, so a
+  // slow-but-alive owner is never preempted; if the owner crashes the lock
+  // expires and a waiter takes over. Waiters poll for the snapshot with jittered
+  // backoff up to lockWaitMs. A short negative-cache TTL prevents a provider
+  // failure from fanning out into one upstream retry per affected watch.
+  lockTtlMs: Number(process.env.SCANNER_LOCK_TTL_MS ?? 20000),
+  lockWaitMs: Number(process.env.SCANNER_LOCK_WAIT_MS ?? 16000),
+  lockPollMs: Number(process.env.SCANNER_LOCK_POLL_MS ?? 150),
+  negativeCacheTtlMs: Number(process.env.SCANNER_NEG_CACHE_TTL_MS ?? 10000),
 } as const;
 
 export const SCAN_QUEUE = 'market-scan';
