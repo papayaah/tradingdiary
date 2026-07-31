@@ -2,7 +2,31 @@
 
 ## Status
 
-Proposed.
+**Partially implemented (server-side).** Phases 1–4 and 6 are built and tested on
+`main`; Phase 5 is intentionally skipped. The scale features (Phase 4 aggregation,
+Phase 6 governor) are complete but gated OFF by default behind flags. Both hard
+prerequisites remain outstanding. See "Implementation status" below.
+
+### Implementation status
+
+| Item | State | Notes |
+|---|---|---|
+| Phase 1 — exact-request shared cache | ✅ live | `lib/scanner/shared/`; worker fetch routed through `SharedCandleService` |
+| Phase 2 — distributed single-flight + negative cache | ✅ live | token-owned Redis locks, jittered waiters, per-key negative cache |
+| Phase 3 — provider capability registry + symbol normalization | ✅ live | provider-aware canonical symbols; capability registry |
+| Phase 4 — base-interval aggregation | ⚙️ built, OFF | enable with `SCANNER_AGGREGATION=true` |
+| Phase 5 — scheduler grouping | ⏭️ skipped | "only if needed"; no measured queue pressure |
+| Phase 6 — adaptive cadence governor | ⚙️ built, OFF | enable with `SCANNER_GOVERNOR=true`; caps via `SCANNER_PROVIDER_BUDGETS` |
+| Prerequisite 1 — server-authoritative provider config | ❌ not done | scanner still uses server env keys; per-user credentials never reach it |
+| Prerequisite 2 — browser is a pure viewer (no fetching) | ❌ not done | open tabs still fetch market data independently — an uncounted second consumer |
+| Provider-scoped distributed rate limiter | ❌ not done | still the single global BullMQ worker limiter |
+| Observability counters (hit rate, sharing ratio) | ❌ not done | snapshots written; metrics not yet emitted |
+
+Because the two prerequisites are outstanding, the "fetch scales with unique
+symbols, never users" invariant currently holds only for the **server scanner**,
+not for authenticated browsers (each open tab still fetches independently), and
+all sharing happens under a single server-credential scope rather than per-user
+entitlement scopes.
 
 ## Related specification
 
@@ -532,44 +556,44 @@ If exact sharing and aggregation later require durable provider capability or ca
 - Measure evaluations and provider errors.
 - Add a load test with multiple users watching identical symbols.
 
-### Phase 1 — Exact-request cache
+### Phase 1 — Exact-request cache ✅ implemented
 
-- Extract provider fetching behind `SharedCandleService`.
-- Create and test canonical acquisition keys.
-- Cache sanitized bounded snapshots in Redis.
-- Keep the existing per-watch queue and evaluation transaction.
+- Extract provider fetching behind `SharedCandleService`. **Done** (`lib/scanner/shared/shared-candle-service.ts`).
+- Create and test canonical acquisition keys. **Done** (`acquisition-key.ts`).
+- Cache sanitized bounded snapshots in Redis. **Done** (`cache-store.ts`, snapshot TTL + candle cap).
+- Keep the existing per-watch queue and evaluation transaction. **Done** — only the fetch is shared; evaluation/state/alerts/events/push unchanged.
 
-### Phase 2 — Distributed single-flight
+### Phase 2 — Distributed single-flight ✅ implemented
 
-- Add token-owned Redis locks and bounded jitter.
-- Add short negative caching.
-- Verify concurrent equivalent jobs produce one upstream call.
+- Add token-owned Redis locks and bounded jitter. **Done** (`cache-store.ts` SET-NX + compare-and-delete Lua; jittered waiter loop).
+- Add short negative caching. **Done** (`market-data:error:<hash>`, per-key).
+- Verify concurrent equivalent jobs produce one upstream call. **Done** (in-process coalescing + cross-process lock; tests cover both).
 
-### Phase 3 — Provider capability registry
+### Phase 3 — Provider capability registry ✅ implemented
 
-- Define which native intervals, lookbacks, sessions, and aggregation paths are safe per provider and asset class.
-- Partition cache keys by entitlement scope.
-- Add symbol normalization fixtures for equities, futures, and crypto.
+- Define which native intervals, lookbacks, sessions, and aggregation paths are safe per provider and asset class. **Done** (`provider-capabilities.ts`).
+- Partition cache keys by entitlement scope. **Partial** — keys carry a `providerScope`, but only a single `:server` scope exists until Prerequisite 1 lands.
+- Add symbol normalization fixtures for equities, futures, and crypto. **Done** (`canonical-symbol.ts` + tests).
 
-### Phase 4 — Base-interval aggregation
+### Phase 4 — Base-interval aggregation ⚙️ implemented, flag-gated OFF
 
-- Implement pure aggregation functions with exchange-aligned buckets.
-- Preserve in-progress candle identity and completed-candle status.
-- Compare derived output against native provider candles in shadow metrics.
-- Enable per provider and asset class only after parity meets an agreed threshold.
+- Implement pure aggregation functions with exchange-aligned buckets. **Done** (`aggregate.ts`).
+- Preserve in-progress candle identity and completed-candle status. **Done** (latest partial bucket kept with stable start time).
+- Compare derived output against native provider candles in shadow metrics. **Not done** — rollout chose a simpler flag-off gate instead of a shadow-compare harness.
+- Enable per provider and asset class only after parity meets an agreed threshold. **Gated** behind `SCANNER_AGGREGATION` (default off) + registry `aggregatableFrom1m`. Note: the shared 1m snapshot is bounded by `maxSnapshotCandles` (~25h) — raise before enabling in production if intraday-change prior-day lookback matters.
 
-### Phase 5 — Scheduler grouping, if needed
+### Phase 5 — Scheduler grouping, if needed ⏭️ skipped
 
-- Consider acquisition-group jobs only if queue volume or database reads become a measured bottleneck.
+- Consider acquisition-group jobs only if queue volume or database reads become a measured bottleneck. **Skipped** — no measured bottleneck; per-watch jobs already dedupe through Redis.
 - Do not combine user evaluation transactions or notifications.
 
-### Phase 6 — Adaptive cadence governor
+### Phase 6 — Adaptive cadence governor ⚙️ implemented, flag-gated OFF
 
-- Compute the effective acquisition cadence per provider scope from the budget formula (see "Adaptive acquisition cadence").
-- Drive `N` from the set of unique enabled, in-session acquisition keys the shared layer already tracks.
-- Feed measured usage from `provider_request_stats` back into the governor and tighten when real usage drifts toward the cap.
-- Apply hysteresis on a coarse recompute interval; emit effective cadence, `N`, and headroom utilization as metrics.
-- Depends on Phase 1 (shared acquisition keys) so cadence governs unique keys, not raw watches.
+- Compute the effective acquisition cadence per provider scope from the budget formula. **Done** (`governor.ts` `computeCadenceSeconds`).
+- Drive `N` from the set of unique enabled, in-session acquisition keys. **Done** (`acquisition-inventory.ts`).
+- Feed measured usage from `provider_request_stats` back into the governor and tighten when real usage drifts toward the cap. **Done** (`measuredCadenceSeconds`), at daily granularity (the stats table's resolution); hourly-resolution feedback would need a schema change.
+- Apply hysteresis on a coarse recompute interval; emit effective cadence, `N` as metrics. **Done** (`CadenceGovernor` hysteresis; recompute loop logs cadence + `N`). Headroom-utilization metric not yet emitted.
+- Gated behind `SCANNER_GOVERNOR` (default off). When off, acquisition uses the fixed bucket. Caps are runtime config (`SCANNER_BUDGET_*`, per-scope `SCANNER_PROVIDER_BUDGETS`).
 
 ## Acceptance criteria
 
