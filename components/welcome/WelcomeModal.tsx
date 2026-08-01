@@ -62,27 +62,27 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-3 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
       onClick={(e) => {
         if (e.target === e.currentTarget) handleClose();
       }}
       role="dialog"
       aria-modal="true"
     >
-      <div className="relative w-[96vw] max-w-6xl 2xl:max-w-7xl bg-card-bg border border-card-border rounded-2xl shadow-2xl overflow-hidden max-h-[95vh] flex flex-col transition-all">
+      <div className="relative w-full sm:w-[96vw] max-w-6xl 2xl:max-w-7xl bg-card-bg border border-card-border sm:rounded-2xl shadow-2xl overflow-hidden max-h-[96vh] flex flex-col transition-all">
         {/* Sleek Floating Close Button */}
         <button
           onClick={handleClose}
-          className="absolute top-4 right-4 z-30 p-2.5 text-white bg-black/60 hover:bg-black/80 rounded-full backdrop-blur-md transition-all shadow-lg border border-white/10"
+          className="absolute top-4 right-4 z-30 p-2.5 text-white bg-black/70 hover:bg-black/90 rounded-full backdrop-blur-md transition-all shadow-xl border border-white/20"
           aria-label="Close modal"
         >
           <X size={18} />
         </button>
 
-        {/* Modal Scrollable Body — Zero Header, Minimal Padding, Maximum Video Focus */}
-        <div className="p-2 sm:p-3 space-y-3 overflow-y-auto">
-          {/* Main Video Showcase Section */}
-          <div className="relative aspect-video w-full rounded-xl border border-card-border overflow-hidden bg-black group shadow-inner">
+        {/* Modal Scrollable Body — Completely Zero Padding / Margin (100% Full-Bleed Video Focus) */}
+        <div className="p-0 m-0 space-y-0 overflow-y-auto flex-1">
+          {/* Main Video Showcase Section — Flush Edge to Edge */}
+          <div className="relative aspect-video w-full overflow-hidden bg-black group shadow-inner border-b border-card-border">
             {isPlaying ? (
               <div className="relative w-full h-full bg-black flex items-center justify-center">
                 {isMp4 ? (
@@ -103,7 +103,7 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
                 )}
                 <button
                   onClick={() => setIsPlaying(false)}
-                  className="absolute top-3 right-3 px-3 py-1.5 rounded-lg bg-black/70 text-white text-xs font-semibold backdrop-blur-sm hover:bg-black/90 transition-colors z-20"
+                  className="absolute top-4 left-4 px-3.5 py-1.5 rounded-lg bg-black/70 text-white text-xs font-semibold backdrop-blur-md hover:bg-black/90 transition-colors z-20 border border-white/10"
                 >
                   Close Video
                 </button>
@@ -123,7 +123,7 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
                     <span className="absolute -inset-1 rounded-full bg-accent/40 animate-ping pointer-events-none" />
                   </button>
 
-                  <span className="text-xs font-bold text-foreground/80 tracking-wide bg-background/60 backdrop-blur-md px-3 py-1 rounded-full border border-card-border">
+                  <span className="text-xs font-bold text-foreground/90 tracking-wide bg-background/70 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-card-border shadow-sm">
                     Click to Play 30s Master Demo
                   </span>
                 </div>
@@ -131,10 +131,10 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
             )}
           </div>
 
-          {/* Key Value Proposition Grid — 4 Full-Bleed Vertical Shorts */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+          {/* Key Value Proposition Grid — 4 Full-Bleed Vertical Shorts (Flush Dividers, Zero Outer Padding) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-0 border-b border-card-border">
             {/* 1. Visual Analytics Short */}
-            <div className="relative rounded-xl border border-card-border hover:border-accent/40 transition-all overflow-hidden group min-h-[180px] flex flex-col justify-between bg-card-bg">
+            <div className="relative overflow-hidden group min-h-[180px] flex flex-col justify-between bg-card-bg border-b sm:border-b-0 sm:border-r border-card-border">
               <video
                 key={`analytics-${isDarkMode}`}
                 src={`/analytics-promo${themeSuffix}.mp4`}
@@ -147,7 +147,7 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
             </div>
 
             {/* 2. Market Pattern Watch Short */}
-            <div className="relative rounded-xl border border-card-border hover:border-accent/40 transition-all overflow-hidden group min-h-[180px] flex flex-col justify-between bg-card-bg">
+            <div className="relative overflow-hidden group min-h-[180px] flex flex-col justify-between bg-card-bg border-b sm:border-b-0 lg:border-r border-card-border">
               <video
                 key={`pattern-${isDarkMode}`}
                 src={`/pattern-promo${themeSuffix}.mp4`}
@@ -160,7 +160,7 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
             </div>
 
             {/* 3. Bar-by-Bar Replay Short */}
-            <div className="relative rounded-xl border border-card-border hover:border-accent/40 transition-all overflow-hidden group min-h-[180px] flex flex-col justify-between bg-card-bg">
+            <div className="relative overflow-hidden group min-h-[180px] flex flex-col justify-between bg-card-bg border-b sm:border-b-0 sm:border-r border-card-border">
               <video
                 key={`replay-${isDarkMode}`}
                 src={`/replay-promo${themeSuffix}.mp4`}
@@ -173,7 +173,7 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
             </div>
 
             {/* 4. Multi-Broker Import Short */}
-            <div className="relative rounded-xl border border-card-border hover:border-accent/40 transition-all overflow-hidden group min-h-[180px] flex flex-col justify-between bg-card-bg">
+            <div className="relative overflow-hidden group min-h-[180px] flex flex-col justify-between bg-card-bg">
               <video
                 key={`import-${isDarkMode}`}
                 src={`/import-promo${themeSuffix}.mp4`}
@@ -188,7 +188,7 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
         </div>
 
         {/* Footer Actions */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-card-border bg-muted-bg/30">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-6 py-3.5 border-t border-card-border bg-muted-bg/30">
           <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-muted hover:text-foreground transition-colors">
             <input
               type="checkbox"
