@@ -1,0 +1,1 @@
+ALTER TABLE "user_watchlists" ALTER COLUMN "scan_frequency_seconds" SET DEFAULT 15;

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getActiveProvider, YahooProvider } from '@/lib/chart/providers';
 import { recordProviderRequest } from '@/lib/metrics/provider-usage';
+import { newYorkTradingDate } from '@/lib/scanner/candles';
 
 const newYorkDate = (timestampMs: number) =>
   new Date(timestampMs).toLocaleDateString('en-US', {
@@ -42,22 +43,29 @@ export async function GET(request: NextRequest) {
       polygonKey,
       tiingoKey,
     });
-    let candles = await provider.fetchRecentCandles(symbol, interval);
+    const isFutures = symbol.toUpperCase().endsWith('=F')
+      || symbol.toUpperCase().includes('.C.0')
+      || symbol.startsWith('/');
+    const isCrypto = symbol.toUpperCase().endsWith('-USD');
+    const tradingDate = newYorkTradingDate();
+    let candles = isFutures || isCrypto
+      ? await provider.fetchRecentCandles(symbol, interval)
+      : await provider.fetchCandles(symbol, tradingDate, interval);
     let providerName = provider.name;
 
     // Some entry-level equity feeds return intraday bars only through the
     // previous session. During pre-market that looks like a valid, but stale,
     // response. Yahoo's chart feed includes current extended-hours bars, so use
     // it when the configured equity provider has no candles for today's NY date.
-    const isFutures = symbol.toUpperCase().endsWith('=F')
-      || symbol.toUpperCase().includes('.C.0')
-      || symbol.startsWith('/');
-    const isCrypto = symbol.toUpperCase().endsWith('-USD');
     if (!isFutures && !isCrypto && provider.name !== 'Yahoo Finance' && !hasCurrentNewYorkCandles(candles)) {
       const fallback = new YahooProvider();
       // Constructed directly, so it bypasses the factory's tracking wrapper.
       void recordProviderRequest(fallback.name, 'owner');
-      const fallbackCandles = await fallback.fetchRecentCandles(symbol, interval);
+      const fallbackCandles = await fallback.fetchCandles(
+        symbol,
+        tradingDate,
+        interval,
+      );
       if (hasCurrentNewYorkCandles(fallbackCandles)) {
         candles = fallbackCandles;
         providerName = `${fallback.name} (live fallback from ${provider.name})`;

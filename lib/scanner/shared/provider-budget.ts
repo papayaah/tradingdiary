@@ -14,6 +14,8 @@ function defaultBudget(): ProviderBudget {
   return {
     hourlyCap: scannerConfig.budgetHourlyCap,
     dailyCap: scannerConfig.budgetDailyCap,
+    monthlyBandwidthBytes: scannerConfig.budgetMonthlyBandwidthBytes,
+    estimatedBytesPerBar: scannerConfig.estimatedResponseBytesPerBar,
     headroom: scannerConfig.budgetHeadroom,
     floorSeconds: scannerConfig.budgetFloorSeconds,
   };

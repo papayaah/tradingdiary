@@ -16,6 +16,8 @@
 export interface ProviderBudget {
   hourlyCap: number;
   dailyCap: number;
+  monthlyBandwidthBytes: number;
+  estimatedBytesPerBar: number;
   headroom: number; // 0..1 margin reserved for retries/bursts/skew
   floorSeconds: number; // hard safety floor; never fetch faster than this
 }
@@ -23,6 +25,7 @@ export interface ProviderBudget {
 export interface CadenceInputs {
   uniqueKeys: number; // N: unique enabled, in-session acquisition keys in the scope
   windowSeconds: number; // active session window length for the scope
+  monthlyBarSeconds: number; // sum(bars/response * active seconds/day * active days/month)
   fastestRequestedSeconds: number; // min scanFrequency among the scope's watches
   budget: ProviderBudget;
 }
@@ -36,6 +39,7 @@ export interface CadenceInputs {
 export function computeCadenceSeconds({
   uniqueKeys: N,
   windowSeconds,
+  monthlyBarSeconds,
   fastestRequestedSeconds,
   budget,
 }: CadenceInputs): number {
@@ -46,8 +50,21 @@ export function computeCadenceSeconds({
   const usableDaily = Math.max(1, budget.dailyCap * budget.headroom);
   const hourlyTerm = Math.ceil((N * 3600) / usableHourly);
   const dailyTerm = Math.ceil((N * windowSeconds) / usableDaily);
+  const usableMonthlyBytes = Math.max(
+    1,
+    budget.monthlyBandwidthBytes * budget.headroom,
+  );
+  const bandwidthTerm = Math.ceil(
+    (monthlyBarSeconds * budget.estimatedBytesPerBar) / usableMonthlyBytes,
+  );
 
-  return Math.max(budget.floorSeconds, fastestRequestedSeconds, hourlyTerm, dailyTerm);
+  return Math.max(
+    budget.floorSeconds,
+    fastestRequestedSeconds,
+    hourlyTerm,
+    dailyTerm,
+    bandwidthTerm,
+  );
 }
 
 /**
@@ -83,9 +100,9 @@ export interface GovernorDecision {
 }
 
 /**
- * Holds the current effective cadence per provider scope and applies hysteresis
- * so a coarse recompute does not oscillate when N sits on a boundary. `set`
- * returns whether the stored cadence actually changed (for metric logging).
+ * Holds the current effective cadence per provider scope. Safety slowdowns apply
+ * immediately; speed-ups use hysteresis so a coarse recompute does not oscillate
+ * when N sits on a boundary. `set` reports whether the stored cadence changed.
  */
 export class CadenceGovernor {
   private readonly cadence = new Map<string, number>();
@@ -106,6 +123,12 @@ export class CadenceGovernor {
   set(scope: string, seconds: number): boolean {
     const current = this.cadence.get(scope);
     if (current !== undefined && current > 0) {
+      // A larger cadence is a safety-required slowdown: apply it immediately so
+      // hysteresis can never consume the configured provider headroom.
+      if (seconds > current) {
+        this.cadence.set(scope, seconds);
+        return true;
+      }
       const relativeChange = Math.abs(seconds - current) / current;
       if (relativeChange < this.opts.hysteresisRatio) return false;
     }

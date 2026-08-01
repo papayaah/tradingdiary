@@ -60,17 +60,22 @@ export const scannerConfig = {
   // opt-in and parity check.
   aggregationEnabled: (process.env.SCANNER_AGGREGATION ?? 'false').toLowerCase() === 'true',
 
-  // Phase 6 adaptive cadence governor. Defaults OFF: acquisition uses the fixed
-  // acquisitionBucketMs until a deploy sets SCANNER_GOVERNOR=true, at which point
-  // the effective per-scope cadence is derived from the provider budget below and
-  // drives how often a shared snapshot refreshes. Caps are runtime config so a
-  // plan upgrade is a config change, not a redeploy. Per-scope overrides:
+  // Phase 6 adaptive cadence governor. Enabled by default: the effective
+  // per-scope cadence is derived from hourly requests, daily requests, and an
+  // estimated monthly payload budget. Caps are runtime config so a plan upgrade
+  // is a config change, not a redeploy. Per-scope overrides:
   // SCANNER_PROVIDER_BUDGETS='{"tiingo:server":{"hourlyCap":10000,"dailyCap":100000}}'.
-  governorEnabled: (process.env.SCANNER_GOVERNOR ?? 'false').toLowerCase() === 'true',
-  governorRecomputeMs: Number(process.env.SCANNER_GOVERNOR_RECOMPUTE_MS ?? 120000),
+  governorEnabled: (process.env.SCANNER_GOVERNOR ?? 'true').toLowerCase() === 'true',
+  governorRecomputeMs: Number(process.env.SCANNER_GOVERNOR_RECOMPUTE_MS ?? 30000),
   governorHysteresisRatio: Number(process.env.SCANNER_GOVERNOR_HYSTERESIS ?? 0.2),
-  budgetHourlyCap: Number(process.env.SCANNER_BUDGET_HOURLY ?? 5000),
-  budgetDailyCap: Number(process.env.SCANNER_BUDGET_DAILY ?? 50000),
+  budgetHourlyCap: Number(process.env.SCANNER_BUDGET_HOURLY ?? 10000),
+  budgetDailyCap: Number(process.env.SCANNER_BUDGET_DAILY ?? 100000),
+  budgetMonthlyBandwidthBytes: Number(
+    process.env.SCANNER_BUDGET_MONTHLY_BYTES ?? 40_000_000_000,
+  ),
+  estimatedResponseBytesPerBar: Number(
+    process.env.SCANNER_ESTIMATED_BYTES_PER_BAR ?? 110,
+  ),
   budgetHeadroom: Number(process.env.SCANNER_BUDGET_HEADROOM ?? 0.8),
   budgetFloorSeconds: Number(process.env.SCANNER_BUDGET_FLOOR_SECONDS ?? 15),
 } as const;

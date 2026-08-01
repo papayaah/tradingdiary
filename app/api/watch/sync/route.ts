@@ -10,7 +10,8 @@ import {
 } from '@/lib/scanner/patterns';
 import type { AssetClass, WatchSession } from '@/lib/scanner/sessions';
 
-const DEFAULT_SCAN_FREQUENCY_SECONDS = 600;
+const MIN_SCAN_FREQUENCY_SECONDS = 15;
+const DEFAULT_SCAN_FREQUENCY_SECONDS = MIN_SCAN_FREQUENCY_SECONDS;
 const VALID_SESSIONS = new Set<WatchSession>(['rth', 'pre', 'ext', 'all']);
 
 interface SyncedWatch {
@@ -53,7 +54,10 @@ const parseScanFrequency = (value: unknown): number => {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return DEFAULT_SCAN_FREQUENCY_SECONDS;
   }
-  return Math.max(60, Math.min(86_400, Math.round(value)));
+  return Math.max(
+    MIN_SCAN_FREQUENCY_SECONDS,
+    Math.min(86_400, Math.round(value)),
+  );
 };
 
 const parseMaxBodyOverlapPercent = (value: unknown): number => {

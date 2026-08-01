@@ -279,7 +279,9 @@ export default function MarketWatcher() {
     message: string;
   } | null>(null);
   const [isSoundEnabled, setIsSoundEnabled] = useState(true);
-  const [scanIntervalMinutes, setScanIntervalMinutes] = useState(10); // Polling interval
+  // Ask the server for the fastest supported cadence. Its shared governor may
+  // slow acquisition for the whole provider pool as demand grows.
+  const [scanIntervalMinutes, setScanIntervalMinutes] = useState(0.25);
   const [isBackgroundScanning, setIsBackgroundScanning] = useState(false);
   const [isBatchScanning, setIsBatchScanning] = useState(false);
   const [alertLogs, setAlertLogs] = useState<AlertLog[]>([]);
@@ -883,7 +885,7 @@ export default function MarketWatcher() {
           setActiveWindow(data.session);
           localStorage.setItem('watcher-active-window', data.session);
         }
-        if (typeof data?.scanFrequencySeconds === 'number' && data.scanFrequencySeconds >= 60) {
+        if (typeof data?.scanFrequencySeconds === 'number' && data.scanFrequencySeconds >= 15) {
           const minutes = data.scanFrequencySeconds / 60;
           setScanIntervalMinutes(minutes);
           localStorage.setItem('watcher-scan-interval', String(minutes));
@@ -3539,7 +3541,7 @@ export default function MarketWatcher() {
                         onChange={(e) => handleIntervalChange(parseFloat(e.target.value))}
                         className="bg-card-bg border border-card-border rounded px-2 py-1 text-foreground font-medium"
                       >
-                        <option value={0.25}>15 Seconds (Real-time)</option>
+                        <option value={0.25}>Adaptive (up to every 15 seconds)</option>
                         <option value={0.5}>30 Seconds (Ultra Fast)</option>
                         <option value={1}>1 Minute (Fast Test)</option>
                         <option value={5}>5 Minutes</option>
@@ -3626,7 +3628,7 @@ export default function MarketWatcher() {
                         <option value="rth">Regular hours (9:30–16:00 ET)</option>
                         <option value="pre">Pre-market + Regular (4:00–16:00 ET)</option>
                         <option value="ext">Extended: Pre + Regular + After (4:00–20:00 ET)</option>
-                        <option value="all">24 Hours / All Hours (Full Session)</option>
+                        <option value="all">All available hours (equities 4:00–20:00 ET)</option>
                       </select>
                       <span className="text-muted/70">Mon–Fri</span>
                     </div>

@@ -54,6 +54,7 @@ export async function recomputeGovernor(
     const formula = computeCadenceSeconds({
       uniqueKeys: inv.uniqueKeys,
       windowSeconds: inv.windowSeconds,
+      monthlyBarSeconds: inv.monthlyBarSeconds,
       fastestRequestedSeconds: inv.fastestRequestedSeconds,
       budget,
     });

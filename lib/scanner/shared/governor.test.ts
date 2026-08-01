@@ -7,7 +7,14 @@ import {
 } from './governor';
 
 // Spec reference budget: 10k/hr, 100k/day, 20% headroom, 15s floor, 12h window.
-const BUDGET: ProviderBudget = { hourlyCap: 10_000, dailyCap: 100_000, headroom: 0.8, floorSeconds: 15 };
+const BUDGET: ProviderBudget = {
+  hourlyCap: 10_000,
+  dailyCap: 100_000,
+  monthlyBandwidthBytes: 40_000_000_000,
+  estimatedBytesPerBar: 110,
+  headroom: 0.8,
+  floorSeconds: 15,
+};
 const WINDOW_12H = 12 * 3600;
 
 describe('computeCadenceSeconds — budget formula (spec table)', () => {
@@ -16,6 +23,7 @@ describe('computeCadenceSeconds — budget formula (spec table)', () => {
     computeCadenceSeconds({
       uniqueKeys: N,
       windowSeconds: WINDOW_12H,
+      monthlyBarSeconds: 0,
       fastestRequestedSeconds: 1,
       budget: BUDGET,
     });
@@ -33,6 +41,7 @@ describe('computeCadenceSeconds — budget formula (spec table)', () => {
       computeCadenceSeconds({
         uniqueKeys: 10,
         windowSeconds: WINDOW_12H,
+        monthlyBarSeconds: 0,
         fastestRequestedSeconds: 600,
         budget: BUDGET,
       }),
@@ -41,14 +50,56 @@ describe('computeCadenceSeconds — budget formula (spec table)', () => {
 
   it('never returns below the floor', () => {
     expect(
-      computeCadenceSeconds({ uniqueKeys: 1, windowSeconds: WINDOW_12H, fastestRequestedSeconds: 1, budget: BUDGET }),
+      computeCadenceSeconds({ uniqueKeys: 1, windowSeconds: WINDOW_12H, monthlyBarSeconds: 0, fastestRequestedSeconds: 1, budget: BUDGET }),
     ).toBe(15);
   });
 
   it('returns the floor/ask when there are no keys', () => {
     expect(
-      computeCadenceSeconds({ uniqueKeys: 0, windowSeconds: WINDOW_12H, fastestRequestedSeconds: 5, budget: BUDGET }),
+      computeCadenceSeconds({ uniqueKeys: 0, windowSeconds: WINDOW_12H, monthlyBarSeconds: 0, fastestRequestedSeconds: 5, budget: BUDGET }),
     ).toBe(15);
+  });
+});
+
+describe('computeCadenceSeconds — monthly bandwidth budget', () => {
+  it('slows acquisition when estimated response bandwidth binds', () => {
+    const monthlyBarSeconds = 300 * 96 * (16 * 3600) * 22;
+    const cadence = computeCadenceSeconds({
+      uniqueKeys: 300,
+      windowSeconds: 16 * 3600,
+      monthlyBarSeconds,
+      fastestRequestedSeconds: 15,
+      budget: BUDGET,
+    });
+    expect(cadence).toBe(216); // daily requests bind; bandwidth estimate is lower.
+  });
+
+  it('honors a tighter configured bandwidth budget', () => {
+    const cadence = computeCadenceSeconds({
+      uniqueKeys: 1,
+      windowSeconds: 3600,
+      monthlyBarSeconds: 1_000_000_000,
+      fastestRequestedSeconds: 1,
+      budget: { ...BUDGET, monthlyBandwidthBytes: 1_000_000 },
+    });
+    expect(cadence).toBe(137_500);
+  });
+});
+
+describe('computeCadenceSeconds — adaptive Tiingo intraday scale', () => {
+  const adaptive = (symbols: number) => computeCadenceSeconds({
+    uniqueKeys: symbols,
+    windowSeconds: 16 * 3600,
+    monthlyBarSeconds: symbols * 96 * (16 * 3600) * 22,
+    fastestRequestedSeconds: 15,
+    budget: BUDGET,
+  });
+
+  it('refreshes small pools quickly and slows larger pools under 80% of quota', () => {
+    expect(adaptive(10)).toBe(15);
+    expect(adaptive(100)).toBe(72);
+    expect(adaptive(300)).toBe(216);
+    expect(adaptive(1000)).toBe(720);
   });
 });
 
@@ -73,18 +124,21 @@ describe('measuredCadenceSeconds — guardrail from real usage', () => {
 });
 
 describe('CadenceGovernor — hysteresis', () => {
-  it('adopts the first value, ignores small changes, adopts large ones', () => {
+  it('applies every slowdown but uses hysteresis for speed-ups', () => {
     const g = new CadenceGovernor({ hysteresisRatio: 0.2, defaultCadenceSeconds: 60 });
     expect(g.getCadenceSeconds('tiingo:server')).toBe(60); // default before first compute
 
     expect(g.set('tiingo:server', 100)).toBe(true);
     expect(g.getCadenceSeconds('tiingo:server')).toBe(100);
 
-    expect(g.set('tiingo:server', 110)).toBe(false); // +10% < 20% hysteresis
-    expect(g.getCadenceSeconds('tiingo:server')).toBe(100);
+    expect(g.set('tiingo:server', 110)).toBe(true); // safety slowdown is immediate
+    expect(g.getCadenceSeconds('tiingo:server')).toBe(110);
 
-    expect(g.set('tiingo:server', 130)).toBe(true); // +30% >= hysteresis
-    expect(g.getCadenceSeconds('tiingo:server')).toBe(130);
+    expect(g.set('tiingo:server', 100)).toBe(false); // 9% speed-up is held
+    expect(g.getCadenceSeconds('tiingo:server')).toBe(110);
+
+    expect(g.set('tiingo:server', 80)).toBe(true); // 27% speed-up is adopted
+    expect(g.getCadenceSeconds('tiingo:server')).toBe(80);
   });
 
   it('tracks scopes independently', () => {

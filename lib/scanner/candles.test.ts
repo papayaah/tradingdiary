@@ -1,5 +1,24 @@
-import { describe, it, expect } from 'vitest';
-import { sanitizeCandles, boundRecent } from './candles';
+import { describe, it, expect, vi } from 'vitest';
+
+const providerSpies = vi.hoisted(() => ({
+  fetchCandles: vi.fn(async () => []),
+  fetchRecentCandles: vi.fn(async () => []),
+}));
+
+vi.mock('@/lib/chart/providers', () => ({
+  getActiveProvider: () => ({
+    name: 'Tiingo',
+    fetchCandles: providerSpies.fetchCandles,
+    fetchRecentCandles: providerSpies.fetchRecentCandles,
+  }),
+}));
+import {
+  boundRecent,
+  fetchCandles,
+  filterCandlesForSession,
+  newYorkTradingDate,
+  sanitizeCandles,
+} from './candles';
 import type { Candle } from './patterns';
 
 const c = (time: number, close = 100): Partial<Candle> => ({
@@ -38,5 +57,45 @@ describe('boundRecent', () => {
   it('returns everything when fewer than 60', () => {
     const few = sanitizeCandles([c(1), c(2), c(3)]);
     expect(boundRecent(few)).toHaveLength(3);
+  });
+});
+
+describe('intraday equity boundaries', () => {
+  it('formats the trading date in New York rather than UTC', () => {
+    expect(newYorkTradingDate(new Date('2026-08-01T02:00:00Z'))).toBe('20260731');
+  });
+
+  it('uses an exact NY date for equities and a rolling window for continuous assets', async () => {
+    providerSpies.fetchCandles.mockClear();
+    providerSpies.fetchRecentCandles.mockClear();
+
+    await fetchCandles('AAPL', '10m', 'equity');
+    expect(providerSpies.fetchCandles).toHaveBeenCalledWith(
+      'AAPL',
+      newYorkTradingDate(),
+      '10m',
+    );
+    expect(providerSpies.fetchRecentCandles).not.toHaveBeenCalled();
+
+    await fetchCandles('NQ=F', '10m', 'futures');
+    expect(providerSpies.fetchRecentCandles).toHaveBeenCalledWith('NQ=F', '10m');
+  });
+
+  it('filters equity candles to the selected ET session', () => {
+    const at = (iso: string) => c(new Date(iso).getTime() / 1000) as Candle;
+    const candles = sanitizeCandles([
+      at('2026-07-30T12:00:00Z'), // 08:00 ET
+      at('2026-07-30T13:30:00Z'), // 09:30 ET
+      at('2026-07-30T19:59:00Z'), // 15:59 ET
+      at('2026-07-30T20:00:00Z'), // 16:00 ET
+      at('2026-07-30T23:59:00Z'), // 19:59 ET
+      at('2026-07-31T00:00:00Z'), // 20:00 ET
+    ]);
+
+    expect(filterCandlesForSession(candles, 'rth', 'equity')).toHaveLength(2);
+    expect(filterCandlesForSession(candles, 'pre', 'equity')).toHaveLength(3);
+    expect(filterCandlesForSession(candles, 'ext', 'equity')).toHaveLength(5);
+    expect(filterCandlesForSession(candles, 'all', 'equity')).toHaveLength(5);
+    expect(filterCandlesForSession(candles, 'rth', 'futures')).toHaveLength(6);
   });
 });

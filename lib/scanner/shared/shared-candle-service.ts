@@ -97,7 +97,7 @@ interface RequestContext {
 
 interface ServiceDeps {
   store?: CacheStore;
-  fetchFn?: (symbol: string, interval: string) => Promise<FetchResult>;
+  fetchFn?: (symbol: string, interval: string, assetClass?: AssetClass) => Promise<FetchResult>;
   now?: () => number;
   config?: Partial<ServiceConfig>;
   /**
@@ -141,7 +141,7 @@ function toCandle(c: CandleSnapshot): Candle {
 
 export class SharedCandleService {
   private readonly store: CacheStore;
-  private readonly fetchFn: (symbol: string, interval: string) => Promise<FetchResult>;
+  private readonly fetchFn: (symbol: string, interval: string, assetClass?: AssetClass) => Promise<FetchResult>;
   private readonly now: () => number;
   private readonly config: ServiceConfig;
   private cadenceProvider?: (providerScope: string) => number;
@@ -253,7 +253,7 @@ export class SharedCandleService {
       minutes > 1;
 
     if (canAggregate) {
-      const base = await this.getCandles(this.requestFor(ctx, BASE_INTERVAL));
+      const base = await this.getCandles(this.requestFor(ctx, BASE_INTERVAL), assetClass);
       const derived = aggregateCandles(base.candles, interval);
       if (derived.ok && derived.candles.length > 0) {
         // Reuse the base snapshot's provenance; only the candle array is derived.
@@ -262,7 +262,7 @@ export class SharedCandleService {
       // Inconsistent/insufficient base bars: fall back to a native fetch.
     }
 
-    return this.getCandles(this.requestFor(ctx, interval));
+    return this.getCandles(this.requestFor(ctx, interval), assetClass);
   }
 
   /**
@@ -272,7 +272,7 @@ export class SharedCandleService {
    * equivalent calls coalesce. Provider errors are negative-cached briefly and
    * rethrown (never cached as data).
    */
-  getCandles(request: MarketDataRequest): Promise<AcquireResult> {
+  getCandles(request: MarketDataRequest, assetClass: AssetClass = 'equity'): Promise<AcquireResult> {
     const acquisitionKey = buildAcquisitionKey(request);
 
     // Synchronous check-then-set (no await between) makes coalescing race-free
@@ -280,14 +280,18 @@ export class SharedCandleService {
     const existing = this.inflight.get(acquisitionKey);
     if (existing) return existing;
 
-    const promise = this.acquire(request, acquisitionKey);
+    const promise = this.acquire(request, acquisitionKey, assetClass);
     this.inflight.set(acquisitionKey, promise);
     return promise.finally(() => {
       this.inflight.delete(acquisitionKey);
     });
   }
 
-  private async acquire(request: MarketDataRequest, acquisitionKey: string): Promise<AcquireResult> {
+  private async acquire(
+    request: MarketDataRequest,
+    acquisitionKey: string,
+    assetClass: AssetClass,
+  ): Promise<AcquireResult> {
     const keys = storageKeysFor(acquisitionKey);
 
     // 1. Fresh snapshot already present?
@@ -306,14 +310,14 @@ export class SharedCandleService {
     } catch {
       // Redis lock unavailable: degrade to a direct fetch (still bounded by the
       // worker rate limiter). Snapshots are disposable; correctness is preserved.
-      return this.fetchAndStore(request, keys, acquisitionKey, null);
+      return this.fetchAndStore(request, keys, acquisitionKey, assetClass, null);
     }
 
-    if (acquired) return this.fetchAndStore(request, keys, acquisitionKey, { key: keys.lock, token });
+    if (acquired) return this.fetchAndStore(request, keys, acquisitionKey, assetClass, { key: keys.lock, token });
 
     // 4. Someone else owns the lock: wait for their snapshot, or take over if the
     //    owner crashed (lock expired).
-    return this.waitForOwner(request, keys, acquisitionKey);
+    return this.waitForOwner(request, keys, acquisitionKey, assetClass);
   }
 
   /**
@@ -324,11 +328,12 @@ export class SharedCandleService {
     request: MarketDataRequest,
     keys: StorageKeys,
     acquisitionKey: string,
+    assetClass: AssetClass,
     lock: { key: string; token: string } | null,
   ): Promise<AcquireResult> {
     try {
       // The one upstream request (records exactly one provider request).
-      const result = await this.fetchFn(request.canonicalSymbol, request.interval);
+      const result = await this.fetchFn(request.canonicalSymbol, request.interval, assetClass);
       await this.writeSnapshot(keys.snapshot, request, result);
       return {
         candles: result.candles,
@@ -361,6 +366,7 @@ export class SharedCandleService {
     request: MarketDataRequest,
     keys: StorageKeys,
     acquisitionKey: string,
+    assetClass: AssetClass,
   ): Promise<AcquireResult> {
     // Wall-clock budget (real timers), independent of the injected freshness clock.
     const deadline = Date.now() + this.config.lockWaitMs;
@@ -383,7 +389,7 @@ export class SharedCandleService {
       } catch {
         took = false;
       }
-      if (took) return this.fetchAndStore(request, keys, acquisitionKey, { key: keys.lock, token });
+      if (took) return this.fetchAndStore(request, keys, acquisitionKey, assetClass, { key: keys.lock, token });
     }
 
     throw new SingleFlightTimeoutError(

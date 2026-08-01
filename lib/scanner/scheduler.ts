@@ -22,8 +22,21 @@ export interface TickResult {
   deferred: number; // out-of-session, advanced without a provider request
 }
 
+type ScheduledWatch = typeof serverWatch.$inferSelect;
+
+/** User cadence is a ceiling on frequency; the provider governor may slow it. */
+export function effectiveScanFrequencySeconds(
+  requestedSeconds: number,
+  governedSeconds = 0,
+): number {
+  return Math.max(requestedSeconds, governedSeconds);
+}
+
 /** Run one scheduling pass. Returns counts for observability. */
-export async function scheduleDueWatches(now: Date = new Date()): Promise<TickResult> {
+export async function scheduleDueWatches(
+  now: Date = new Date(),
+  governedCadenceSeconds?: (watch: ScheduledWatch) => number,
+): Promise<TickResult> {
   const nowIso = now.toISOString();
   const dueWatches = await db
     .select()
@@ -57,10 +70,18 @@ export async function scheduleDueWatches(now: Date = new Date()): Promise<TickRe
       deferred += 1; // no provider request; just re-evaluated next tick
     }
 
+    // Adaptive mode may slow a watch below its requested ceiling so scheduling
+    // and shared-cache refresh use the same provider-safe cadence.
+    const governedCadence = governedCadenceSeconds?.(w) ?? 0;
+    const effectiveFrequencySeconds = effectiveScanFrequencySeconds(
+      w.scanFrequencySeconds,
+      governedCadence,
+    );
+
     // Advance the canonical schedule regardless of eligibility.
     await db
       .update(serverWatch)
-      .set({ nextScanAt: advance(w.nextScanAt, w.scanFrequencySeconds), updatedAt: nowIso })
+      .set({ nextScanAt: advance(w.nextScanAt, effectiveFrequencySeconds), updatedAt: nowIso })
       .where(eq(serverWatch.id, w.id));
   }
 

@@ -20,7 +20,7 @@ import {
   scanAllPatterns,
   PATTERN_VERSION,
 } from '@/lib/scanner/patterns';
-import { boundRecent } from '@/lib/scanner/candles';
+import { boundRecent, filterCandlesForSession } from '@/lib/scanner/candles';
 import { getSharedCandleService } from '@/lib/scanner/shared/shared-candle-service';
 import { isSessionActive, type AssetClass, type WatchSession } from '@/lib/scanner/sessions';
 import { SCAN_QUEUE, scannerConfig } from '@/lib/scanner/env';
@@ -59,7 +59,11 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
       watch.interval,
       watch.assetClass as AssetClass,
     );
-    candles = res.candles;
+    candles = filterCandlesForSession(
+      res.candles,
+      watch.session as WatchSession,
+      watch.assetClass as AssetClass,
+    );
     providerName = res.provider;
   } catch (err) {
     const message = err instanceof Error ? err.message : 'fetch failed';

@@ -85,7 +85,7 @@ export const userWatchlists = pgTable("user_watchlists", {
     requiredCandleCount: integer("required_candle_count").notNull().default(3),
     maxBodyOverlapPercent: doublePrecision("max_body_overlap_percent").notNull().default(100),
     session: text("session").notNull().default('pre'),
-    scanFrequencySeconds: integer("scan_frequency_seconds").notNull().default(600),
+    scanFrequencySeconds: integer("scan_frequency_seconds").notNull().default(15),
     updatedAt: timestamp("updated_at", { mode: 'string' }).defaultNow(),
 });
 

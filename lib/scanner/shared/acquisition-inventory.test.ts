@@ -12,6 +12,7 @@ const entry = (over: Partial<AcquisitionEntry> = {}): AcquisitionEntry => ({
   interval: '10m',
   scanFrequencySeconds: 600,
   windowSeconds: 12 * 3600,
+  monthlyBarSeconds: 1_000,
   ...over,
 });
 
@@ -20,7 +21,7 @@ describe('sessionWindowSeconds', () => {
     expect(sessionWindowSeconds('rth', 'equity')).toBe(6.5 * 3600);
     expect(sessionWindowSeconds('pre', 'equity')).toBe(12 * 3600);
     expect(sessionWindowSeconds('ext', 'equity')).toBe(16 * 3600);
-    expect(sessionWindowSeconds('all', 'equity')).toBe(24 * 3600);
+    expect(sessionWindowSeconds('all', 'equity')).toBe(16 * 3600);
     expect(sessionWindowSeconds('rth', 'crypto')).toBe(24 * 3600);
     expect(sessionWindowSeconds('rth', 'futures')).toBe(24 * 3600);
   });
@@ -54,5 +55,14 @@ describe('computeInventory', () => {
     ]);
     expect(inv.map((i) => i.providerScope).sort()).toEqual(['databento:server', 'tiingo:server']);
     expect(inv.every((i) => i.uniqueKeys === 1)).toBe(true);
+  });
+
+  it('counts bandwidth demand once per shared key using the largest scope', () => {
+    const inv = computeInventory([
+      entry({ canonicalSymbol: 'AAPL', monthlyBarSeconds: 1_000 }),
+      entry({ canonicalSymbol: 'AAPL', monthlyBarSeconds: 2_000 }),
+      entry({ canonicalSymbol: 'MSFT', monthlyBarSeconds: 3_000 }),
+    ]);
+    expect(inv[0].monthlyBarSeconds).toBe(5_000);
   });
 });

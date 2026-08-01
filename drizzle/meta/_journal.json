@@ -43,6 +43,13 @@
       "when": 1785475622343,
       "tag": "0005_aromatic_scarlet_spider",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785571244668,
+      "tag": "0006_free_boomerang",
+      "breakpoints": true
     }
   ]
 }

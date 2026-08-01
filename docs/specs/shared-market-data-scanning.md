@@ -2,10 +2,11 @@
 
 ## Status
 
-**Partially implemented (server-side).** Phases 1–4 and 6 are built and tested on
-`main`; Phase 5 is intentionally skipped. The scale features (Phase 4 aggregation,
-Phase 6 governor) are complete but gated OFF by default behind flags. Both hard
-prerequisites remain outstanding. See "Implementation status" below.
+**Partially implemented (server-side).** Phases 1–4 and 6 are built and tested;
+Phase 5 is intentionally skipped. Phase 4 aggregation remains gated OFF. The
+Phase 6 request-and-bandwidth upgrade and current-session equity fetch scope are
+implemented locally and pending production deployment. Server-owned provider
+configuration remains outstanding. See "Implementation status" below.
 
 ### Implementation status
 
@@ -14,9 +15,10 @@ prerequisites remain outstanding. See "Implementation status" below.
 | Phase 1 — exact-request shared cache | ✅ live | `lib/scanner/shared/`; worker fetch routed through `SharedCandleService` |
 | Phase 2 — distributed single-flight + negative cache | ✅ live | token-owned Redis locks, jittered waiters, per-key negative cache |
 | Phase 3 — provider capability registry + symbol normalization | ✅ live | provider-aware canonical symbols; capability registry |
+| Intraday equity fetch scope | 🚀 pending deploy | scanner requests only the current New York trading date and filters per-watch session before evaluation |
 | Phase 4 — base-interval aggregation | ⚙️ built, OFF | enable with `SCANNER_AGGREGATION=true` |
 | Phase 5 — scheduler grouping | ⏭️ skipped | "only if needed"; no measured queue pressure |
-| Phase 6 — adaptive cadence governor | ⚙️ built, OFF | enable with `SCANNER_GOVERNOR=true`; caps via `SCANNER_PROVIDER_BUDGETS` |
+| Phase 6 — adaptive cadence governor | 🚀 pending deploy | hourly, daily, and estimated monthly-bandwidth caps with 20% default reserve |
 | Prerequisite 1 — server-authoritative provider config | ❌ not done | scanner still uses server env keys; per-user credentials never reach it |
 | Prerequisite 2 — authenticated browser is a pure viewer | ✅ done (signed-in) | `MarketWatcher.tsx` skips per-symbol fetching when authenticated (`if (isAuthenticatedRef.current) return`) and renders from `/api/watch/state` + `/api/watch/events` SSE. Only signed-OUT sessions still fetch client-side (no server watches to share). |
 | Provider-scoped distributed rate limiter | ❌ not done | still the single global BullMQ worker limiter |
@@ -306,7 +308,8 @@ Acquisition cadence and user evaluation cadence are separate concepts.
 - Market data is refreshed at the fastest cadence currently required by eligible watches within a provider scope.
 - Each watch is evaluated only when its PostgreSQL `nextScanAt` is due.
 - A slower watch may reuse a snapshot fetched for a faster watch if it is fresh enough.
-- A fast watch must not be delayed merely because most users chose a slower frequency.
+- A fast watch is not delayed merely because most users chose a slower frequency;
+  it may be slowed when the shared provider budget requires it.
 
 Example:
 
@@ -316,9 +319,13 @@ User B: AAPL 10m, evaluate every 10 minutes
 User C: AAPL 10m, evaluate every 5 minutes
 ```
 
-The acquisition layer may refresh `AAPL 1m` every minute. User A evaluates each minute, User C evaluates every five minutes using the latest derived `10m` candle, and User B evaluates every ten minutes.
+When the provider budget is slack, the acquisition layer may refresh `AAPL 1m`
+every minute. User A evaluates each minute, User C evaluates every five minutes
+using the latest derived `10m` candle, and User B evaluates every ten minutes.
 
-PostgreSQL remains the source of truth for each watch's schedule. Redis freshness must not silently change a user's requested evaluation cadence.
+PostgreSQL remains the source of truth for each watch's requested schedule. The
+effective schedule is the slower of that request and the provider governor's
+safe cadence; Redis freshness does not independently change it.
 
 ### Worked example (all dimensions at once)
 
@@ -333,7 +340,7 @@ User B: 200 symbols incl. AAPL 10m, Consecutive Move, 0.25%, evaluate every 10m
 - **Today (no sharing):** ~400 provider fetches per A-cycle-equivalent — one per user-watch — scaling linearly with users. AAPL is fetched by A (1m) and by B (10m) independently, plus every overlapping symbol is fetched twice.
 - **Phase 1 (exact-request sharing):** fetches collapse to the number of unique `(providerScope, symbol, interval, fetchScope, timeBucket)` keys. The 150 overlapping symbols are fetched once *per distinct interval*; A's 1m and B's 10m of AAPL are still two fetches (different intervals), but a second user on AAPL 10m adds zero. Roughly: `unique(equity symbols) × unique(intervals in use)`, not `users × symbols`.
 - **Phase 2 (base-interval aggregation):** AAPL is fetched once at **1m**; B's 10m is **derived**, not fetched. Now overlapping symbols cost **one 1m fetch each** regardless of how many intervals or users consume them.
-- **Frequencies:** the 1m acquisition runs every minute for A; B (every 10m) reuses the freshest derived 10m snapshot and triggers **no** extra upstream call. A is never slowed to B's cadence.
+- **Frequencies:** when budget is slack, the 1m acquisition runs every minute for A; B (every 10m) reuses the freshest derived 10m snapshot and triggers **no** extra upstream call. A is not slowed by B, but both can be paced by the shared provider governor.
 - **Patterns/thresholds:** A's Momentum Burst @0.50% and B's Consecutive Move @0.25% both evaluate against the same candle array; each writes only its own state/alerts/push.
 
 The invariant to hold: **upstream requests scale with unique eligible acquisition keys, never with user count** — and the browser contributes zero (see Prerequisites).
@@ -349,17 +356,24 @@ Per provider scope, on a periodic recompute (not per-scan), set the effective ac
 ```text
 usable_hourly = hourly_cap × headroom        # e.g. 10,000 × 0.8 = 8,000
 usable_daily  = daily_cap  × headroom        # e.g. 100,000 × 0.8 = 80,000
+usable_bytes  = monthly_bytes × headroom     # e.g. 40 GB × 0.8 = 32 GB
 
 cadence_seconds = max(
   PROVIDER_FLOOR,                             # hard safety floor (e.g. 15s)
   fastest_cadence_any_user_requested,         # never fetch faster than demanded
   ceil(N × 3600        / usable_hourly),      # stay under the hourly cap
-  ceil(N × window_secs / usable_daily)        # stay under the daily cap
+  ceil(N × window_secs / usable_daily),       # stay under the daily cap
+  ceil(monthly_bar_seconds × bytes_per_bar
+       / usable_bytes)                        # stay under monthly bandwidth
 )
 ```
 
 - **`N`** is the count of **unique enabled, in-session acquisition keys** for that provider scope — the same set that drives shared fetches (see Sessions below). Disabled and out-of-session watches never contribute to `N`.
 - **`window_secs`** is the length of the currently active session window for that scope (e.g. ~12h for a pre+RTH equity session, 24h for crypto). A longer active window forces a slower per-fetch cadence to keep the *daily total* under cap.
+- **`monthly_bar_seconds`** estimates each distinct response's bars multiplied
+  by active seconds and trading days. It lets the governor account for the fact
+  that repeatedly downloading a full current-day response costs more bandwidth
+  as the session grows.
 - **`headroom`** reserves margin (e.g. 20%) for retries, bursts, and clock skew so the theoretical rate never rides the exact ceiling.
 - The `max(...)` means whichever constraint binds wins: with few symbols the user-requested cadence dominates (budget is slack); as `N` grows the budget terms dominate and every watch in the scope slows uniformly.
 
@@ -381,7 +395,9 @@ The system spends near real-time for a small deployment and auto-throttles as it
 ### Robustness requirements
 
 - **Measured feedback, not just the formula.** The governor must also read *actual* consumption from `provider_request_stats` for the current bucket and tighten cadence if real usage drifts toward the cap. The formula is the target; the meter is the guardrail (retries, negative-cache misses, and derived-interval refreshes all consume real calls the formula does not model).
-- **Hysteresis.** Recompute on a coarse interval (e.g. every few minutes) and require a threshold change before adjusting, so cadence does not oscillate when `N` sits on a boundary.
+- **Hysteresis.** Apply budget-required slowdowns immediately. Require a
+  threshold change only before speeding back up, so cadence does not oscillate
+  when `N` sits on a boundary and hysteresis never consumes reserved headroom.
 - **Per-provider scope.** Each provider has its own cap, its own `N`, and its own governor; throttling Tiingo must not affect Polygon.
 - **Fairness.** When the budget binds, the slowdown applies uniformly across the scope's keys; no single user's fast request can starve the shared budget for everyone else.
 - **Observability.** Emit the current effective cadence, `N`, and headroom utilization as metrics so the throttle is legible in the admin provider-stats view.
@@ -590,13 +606,17 @@ If exact sharing and aggregation later require durable provider capability or ca
 - Consider acquisition-group jobs only if queue volume or database reads become a measured bottleneck. **Skipped** — no measured bottleneck; per-watch jobs already dedupe through Redis.
 - Do not combine user evaluation transactions or notifications.
 
-### Phase 6 — Adaptive cadence governor ⚙️ implemented, flag-gated OFF
+### Phase 6 — Adaptive cadence governor 🚀 enabled in code, pending deployment
 
 - Compute the effective acquisition cadence per provider scope from the budget formula. **Done** (`governor.ts` `computeCadenceSeconds`).
 - Drive `N` from the set of unique enabled, in-session acquisition keys. **Done** (`acquisition-inventory.ts`).
 - Feed measured usage from `provider_request_stats` back into the governor and tighten when real usage drifts toward the cap. **Done** (`measuredCadenceSeconds`), at daily granularity (the stats table's resolution); hourly-resolution feedback would need a schema change.
 - Apply hysteresis on a coarse recompute interval; emit effective cadence, `N` as metrics. **Done** (`CadenceGovernor` hysteresis; recompute loop logs cadence + `N`). Headroom-utilization metric not yet emitted.
-- Gated behind `SCANNER_GOVERNOR` (default off). When off, acquisition uses the fixed bucket. Caps are runtime config (`SCANNER_BUDGET_*`, per-scope `SCANNER_PROVIDER_BUDGETS`).
+- Enabled by default through `SCANNER_GOVERNOR`. The cadence takes the strictest
+  hourly-request, daily-request, and estimated monthly-bandwidth term, all with
+  configurable headroom. When explicitly disabled, acquisition uses the fixed
+  bucket. Caps are runtime config (`SCANNER_BUDGET_*`, per-scope
+  `SCANNER_PROVIDER_BUDGETS`).
 
 ## Acceptance criteria
 
@@ -621,7 +641,8 @@ If exact sharing and aggregation later require durable provider capability or ca
 
 ### Different frequencies
 
-- Fast watches receive evaluations at their configured cadence.
+- Fast watches receive evaluations at their configured cadence while the
+  provider budget is slack, then at the governor's slower safe cadence.
 - Slow watches do not create additional provider calls when a sufficiently fresh shared snapshot exists.
 - PostgreSQL `nextScanAt` remains authoritative.
 
@@ -690,4 +711,3 @@ The primary success measure is upstream requests per unique eligible acquisition
 - Preserve per-watch PostgreSQL scheduling.
 - Preserve current intrabar evaluation behavior during the optimization.
 - Treat Redis snapshots as disposable and PostgreSQL user state as authoritative.
-

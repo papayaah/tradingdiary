@@ -45,7 +45,6 @@ export function isSessionActive(
   assetClass: AssetClass,
   at: Date = new Date(),
 ): boolean {
-  if (session === 'all') return true;
   if (assetClass !== 'equity') return true; // futures/crypto: always-eligible for now
 
   const { weekday, minutes } = etParts(at);
@@ -53,6 +52,10 @@ export function isSessionActive(
   if (!isWeekday) return false;
 
   switch (session) {
+    case 'all':
+      // Equities do not trade 24/7. "All" means the full available intraday
+      // session; continuous asset classes returned above remain always active.
+      return minutes >= PRE_OPEN && minutes < EXT_CLOSE;
     case 'rth':
       return minutes >= RTH_OPEN && minutes < RTH_CLOSE;
     case 'pre':

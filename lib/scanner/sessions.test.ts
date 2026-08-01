@@ -10,8 +10,12 @@ const edtMonday = (etHour: number, etMin = 0) =>
 const estSaturday = (etHour: number) => new Date(Date.UTC(2026, 0, 3, etHour + 5));
 
 describe('isSessionActive — session "all"', () => {
-  it('is always active regardless of time or asset class', () => {
-    expect(isSessionActive('all', 'equity', estSaturday(3))).toBe(true);
+  it('uses the full equity intraday window but keeps continuous assets active', () => {
+    expect(isSessionActive('all', 'equity', estSaturday(11))).toBe(false);
+    expect(isSessionActive('all', 'equity', estMonday(3, 59))).toBe(false);
+    expect(isSessionActive('all', 'equity', estMonday(4))).toBe(true);
+    expect(isSessionActive('all', 'equity', estMonday(19, 59))).toBe(true);
+    expect(isSessionActive('all', 'equity', estMonday(20))).toBe(false);
     expect(isSessionActive('all', 'crypto', estMonday(2))).toBe(true);
   });
 });
