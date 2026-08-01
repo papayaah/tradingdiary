@@ -3,16 +3,10 @@ import { BrandHeader } from '../components/BrandHeader';
 import { DashboardReveal } from '../components/DashboardReveal';
 import { FileDropAnimation } from '../components/FileDropAnimation';
 import { FinderWindow } from '../components/FinderWindow';
-import { videoTheme } from '../theme';
+import { getVideoTheme } from '../theme';
 
-const IMPORT_PARTICLES = Array.from({ length: 20 }, (_, index) => ({
-  angle: (Math.PI * 2 * index) / 20,
-  distance: 180 + (index % 4) * 55,
-  size: 8 + (index % 3) * 5,
-  color: index % 3 === 0 ? videoTheme.profit : index % 3 === 1 ? videoTheme.accentBright : videoTheme.foreground,
-}));
-
-export function ImportPromo() {
+export function ImportPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'dark' }) {
+  const videoTheme = getVideoTheme(themeMode);
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const intro = spring({ frame, fps, config: { damping: 18, stiffness: 130 } });
@@ -34,6 +28,13 @@ export function ImportPromo() {
     extrapolateRight: 'clamp',
   });
 
+  const importParticles = Array.from({ length: 20 }, (_, index) => ({
+    angle: (Math.PI * 2 * index) / 20,
+    distance: 180 + (index % 4) * 55,
+    size: 8 + (index % 3) * 5,
+    color: index % 3 === 0 ? videoTheme.profit : index % 3 === 1 ? videoTheme.accentBright : videoTheme.foreground,
+  }));
+
   return (
     <AbsoluteFill
       style={{
@@ -43,7 +44,7 @@ export function ImportPromo() {
         overflow: 'hidden',
       }}
     >
-      <BrandHeader />
+      <BrandHeader themeMode={themeMode} />
 
       <div
         style={{
@@ -64,62 +65,70 @@ export function ImportPromo() {
       <FileDropAnimation />
       <DashboardReveal />
 
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          background: `radial-gradient(circle at 50% 58%, white, ${videoTheme.accent} 38%, transparent 70%)`,
-          opacity: flash,
-          pointerEvents: 'none',
-        }}
-      />
-      {IMPORT_PARTICLES.map((particle, index) => (
-        <div
-          key={index}
-          style={{
-            position: 'absolute',
-            left: 540 + Math.cos(particle.angle) * particle.distance * burstDistance,
-            top: 1125 + Math.sin(particle.angle) * particle.distance * burstDistance,
-            width: particle.size,
-            height: particle.size * 2.2,
-            borderRadius: particle.size,
-            background: particle.color,
-            opacity: burst,
-            transform: `rotate(${particle.angle + Math.PI / 2}rad)`,
-            boxShadow: `0 0 18px ${particle.color}`,
-          }}
-        />
-      ))}
+      {importParticles.map((particle, index) => {
+        const x = Math.cos(particle.angle) * particle.distance * burstDistance;
+        const y = Math.sin(particle.angle) * particle.distance * burstDistance;
+        return (
+          <div
+            key={index}
+            style={{
+              position: 'absolute',
+              left: `calc(50% + ${x}px)`,
+              top: `calc(47% + ${y}px)`,
+              width: particle.size,
+              height: particle.size,
+              borderRadius: '50%',
+              backgroundColor: particle.color,
+              opacity: burst,
+              pointerEvents: 'none',
+              boxShadow: `0 0 16px ${particle.color}`,
+            }}
+          />
+        );
+      })}
 
       <div
         style={{
           position: 'absolute',
-          left: 110,
-          right: 110,
-          bottom: 105,
+          inset: 0,
+          backgroundColor: '#ffffff',
+          opacity: flash,
+          pointerEvents: 'none',
+        }}
+      />
+
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 120,
+          left: 70,
+          right: 70,
           textAlign: 'center',
           opacity: payoff,
-          transform: `translateY(${interpolate(payoff, [0, 1], [28, 0])}px)`,
+          transform: `translateY(${interpolate(payoff, [0, 1], [24, 0])}px)`,
         }}
       >
-        <div style={{ color: videoTheme.foreground, fontSize: 48, fontWeight: 900 }}>Drop it. Review it. Know your game.</div>
-        <div style={{ color: videoTheme.muted, fontSize: 25, marginTop: 14 }}>From statement to insight—in seconds.</div>
-        <div
-          style={{
-            width: 540,
-            height: 82,
-            margin: '34px auto 0',
-            borderRadius: 26,
-            background: videoTheme.accent,
-            color: videoTheme.foreground,
-            display: 'grid',
-            placeItems: 'center',
-            fontSize: 29,
-            fontWeight: 850,
-          }}
-        >
-          Explore Trading Diary →
+        <div style={{ color: videoTheme.foreground, fontSize: 44, fontWeight: 800 }}>
+          Interactive Brokers flex statements parsed automatically.
         </div>
+        <div style={{ color: videoTheme.muted, fontSize: 28, marginTop: 10 }}>
+          PnL, win rate, duration, and execution tags ready instantly.
+        </div>
+      </div>
+
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 36,
+          width: '100%',
+          textAlign: 'center',
+          color: videoTheme.muted,
+          fontSize: 22,
+          fontWeight: 800,
+          letterSpacing: 2,
+        }}
+      >
+        TRADING DIARY — MULTI-BROKER IMPORT
       </div>
     </AbsoluteFill>
   );

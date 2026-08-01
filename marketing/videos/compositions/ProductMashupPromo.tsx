@@ -2,7 +2,7 @@ import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } fr
 import React from 'react';
 import { BrandHeader } from '../components/BrandHeader';
 import { ComicBadge, ComicStarburst } from '../components/ComicBurst';
-import { videoTheme } from '../theme';
+import { getVideoTheme } from '../theme';
 
 const REPLAY_CANDLES = [
   { open: 150.0, high: 152.5, low: 149.2, close: 152.0, time: '09:30 AM' },
@@ -15,7 +15,8 @@ const REPLAY_CANDLES = [
   { open: 163.0, high: 165.2, low: 162.8, close: 164.8, time: '10:05 AM', action: 'SELL', price: 164.5 },
 ];
 
-export function ProductMashupPromo() {
+export function ProductMashupPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'dark' }) {
+  const videoTheme = getVideoTheme(themeMode);
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
@@ -58,7 +59,7 @@ export function ProductMashupPromo() {
         color: videoTheme.foreground,
       }}
     >
-      <BrandHeader />
+      <BrandHeader themeMode={themeMode} />
 
       {/* Screen Cut Flash Effect */}
       <div

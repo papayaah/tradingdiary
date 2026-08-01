@@ -1,19 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   X,
   Play,
   TrendingUp,
   Sparkles,
-  BarChart3,
-  RotateCcw,
   Upload,
-  Bell,
-  CheckCircle2,
-  Volume2,
-  VolumeX
 } from 'lucide-react';
 import { useWelcome } from './WelcomeContext';
 
@@ -28,6 +22,30 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
   const { isOpen, closeWelcomeModal } = useWelcome();
   const [dontShowAgain, setDontShowAgain] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(true);
+
+  // System & DOM Theme Detection
+  useEffect(() => {
+    const updateTheme = () => {
+      const isDark =
+        document.documentElement.classList.contains('dark') ||
+        window.matchMedia('(prefers-color-scheme: dark)').matches;
+      setIsDarkMode(isDark);
+    };
+
+    updateTheme();
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    mediaQuery.addEventListener('change', updateTheme);
+
+    const observer = new MutationObserver(updateTheme);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+
+    return () => {
+      mediaQuery.removeEventListener('change', updateTheme);
+      observer.disconnect();
+    };
+  }, []);
 
   if (!isOpen) return null;
 
@@ -35,11 +53,18 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
     closeWelcomeModal(dontShowAgain);
   };
 
-  const isMp4 = videoUrl.endsWith('.mp4') || videoUrl.endsWith('.webm');
+  const themeSuffix = isDarkMode ? '' : '-light';
+  const activeDemoVideo = isDarkMode
+    ? videoUrl
+    : videoUrl.includes('-light')
+    ? videoUrl
+    : videoUrl.replace('.mp4', '-light.mp4');
+
+  const isMp4 = activeDemoVideo.endsWith('.mp4') || activeDemoVideo.endsWith('.webm');
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-200"
       onClick={(e) => {
         if (e.target === e.currentTarget) handleClose();
       }}
@@ -47,7 +72,7 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
       aria-modal="true"
       aria-labelledby="welcome-modal-title"
     >
-      <div className="relative w-full max-w-4xl bg-card-bg border border-card-border rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col transition-all">
+      <div className="relative w-[94vw] max-w-6xl 2xl:max-w-7xl bg-card-bg border border-card-border rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col transition-all">
         {/* Header Bar */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-card-border bg-muted-bg/40">
           <div className="flex items-center gap-2.5">
@@ -86,14 +111,14 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
               <div className="relative w-full h-full bg-black flex items-center justify-center">
                 {isMp4 ? (
                   <video
-                    src={videoUrl}
+                    src={activeDemoVideo}
                     controls
                     autoPlay
                     className="w-full h-full object-contain"
                   />
                 ) : (
                   <iframe
-                    src={videoUrl.includes('youtube') ? `${videoUrl}?autoplay=1` : videoUrl}
+                    src={activeDemoVideo.includes('youtube') ? `${activeDemoVideo}?autoplay=1` : activeDemoVideo}
                     title="Trading Diary Overview Video"
                     className="w-full h-full border-0"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -138,12 +163,13 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
             )}
           </div>
 
-          {/* Key Value Proposition Grid — 4 Full-Bleed Vertical Shorts */}
+          {/* Key Value Proposition Grid — 4 Full-Bleed Vertical Shorts (Auto-Theme Adapted) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* 1. Visual Analytics Short */}
-            <div className="relative rounded-xl border border-card-border hover:border-accent/40 transition-all overflow-hidden group min-h-[180px] flex flex-col justify-between bg-black">
+            <div className="relative rounded-xl border border-card-border hover:border-accent/40 transition-all overflow-hidden group min-h-[180px] flex flex-col justify-between bg-card-bg">
               <video
-                src="/analytics-promo.mp4"
+                key={`analytics-${isDarkMode}`}
+                src={`/analytics-promo${themeSuffix}.mp4`}
                 autoPlay
                 loop
                 muted
@@ -153,9 +179,10 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
             </div>
 
             {/* 2. Market Pattern Watch Short */}
-            <div className="relative rounded-xl border border-card-border hover:border-accent/40 transition-all overflow-hidden group min-h-[180px] flex flex-col justify-between bg-black">
+            <div className="relative rounded-xl border border-card-border hover:border-accent/40 transition-all overflow-hidden group min-h-[180px] flex flex-col justify-between bg-card-bg">
               <video
-                src="/pattern-promo.mp4"
+                key={`pattern-${isDarkMode}`}
+                src={`/pattern-promo${themeSuffix}.mp4`}
                 autoPlay
                 loop
                 muted
@@ -165,9 +192,10 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
             </div>
 
             {/* 3. Bar-by-Bar Replay Short */}
-            <div className="relative rounded-xl border border-card-border hover:border-accent/40 transition-all overflow-hidden group min-h-[180px] flex flex-col justify-between bg-black">
+            <div className="relative rounded-xl border border-card-border hover:border-accent/40 transition-all overflow-hidden group min-h-[180px] flex flex-col justify-between bg-card-bg">
               <video
-                src="/replay-promo.mp4"
+                key={`replay-${isDarkMode}`}
+                src={`/replay-promo${themeSuffix}.mp4`}
                 autoPlay
                 loop
                 muted
@@ -177,9 +205,10 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
             </div>
 
             {/* 4. Multi-Broker Import Short */}
-            <div className="relative rounded-xl border border-card-border hover:border-accent/40 transition-all overflow-hidden group min-h-[180px] flex flex-col justify-between bg-black">
+            <div className="relative rounded-xl border border-card-border hover:border-accent/40 transition-all overflow-hidden group min-h-[180px] flex flex-col justify-between bg-card-bg">
               <video
-                src="/import-promo.mp4"
+                key={`import-${isDarkMode}`}
+                src={`/import-promo${themeSuffix}.mp4`}
                 autoPlay
                 loop
                 muted

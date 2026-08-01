@@ -5,9 +5,10 @@ import { BrandOutro } from '../components/BrandOutro';
 import { Captions } from '../components/Captions';
 import { PatternAlert } from '../components/PatternAlert';
 import type { PatternPromoConfig } from '../types';
-import { videoTheme } from '../theme';
+import { getVideoTheme } from '../theme';
 
-export function PatternPromo({ pattern }: { pattern: PatternPromoConfig }) {
+export function PatternPromo({ pattern, themeMode = 'dark' }: { pattern: PatternPromoConfig; themeMode?: 'light' | 'dark' }) {
+  const videoTheme = getVideoTheme(themeMode);
   const frame = useCurrentFrame();
   const directionColor = pattern.direction === 'bullish' ? videoTheme.profit : videoTheme.loss;
   const detectionOpacity = interpolate(frame, [145, 162], [0, 1], {
@@ -27,7 +28,7 @@ export function PatternPromo({ pattern }: { pattern: PatternPromoConfig }) {
         opacity: fadeOut,
       }}
     >
-      <BrandHeader />
+      <BrandHeader themeMode={themeMode} />
       <Captions pattern={pattern} />
 
       <div

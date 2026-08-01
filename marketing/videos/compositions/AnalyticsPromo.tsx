@@ -1,6 +1,6 @@
 import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
 import { BrandHeader } from '../components/BrandHeader';
-import { videoTheme } from '../theme';
+import { getVideoTheme } from '../theme';
 
 const PNL_POINTS = [
   { x: 40, y: 380, val: 0, label: 'Jan 01' },
@@ -14,7 +14,8 @@ const PNL_POINTS = [
   { x: 840, y: 80, val: 18450, label: 'Feb 18' },
 ];
 
-export function AnalyticsPromo() {
+export function AnalyticsPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'dark' }) {
+  const videoTheme = getVideoTheme(themeMode);
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
@@ -74,7 +75,7 @@ export function AnalyticsPromo() {
         overflow: 'hidden',
       }}
     >
-      <BrandHeader />
+      <BrandHeader themeMode={themeMode} />
 
       {/* Header Copy */}
       <div

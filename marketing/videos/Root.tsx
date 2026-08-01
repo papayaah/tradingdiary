@@ -1,4 +1,5 @@
 import { Composition } from 'remotion';
+import React from 'react';
 import { AnalyticsPromo } from './compositions/AnalyticsPromo';
 import { ImportPromo } from './compositions/ImportPromo';
 import { PatternPromo } from './compositions/PatternPromo';
@@ -14,18 +15,31 @@ const HEIGHT = 1920;
 export function VideoRoot() {
   return (
     <>
+      {/* Pattern Promos (Dark & Light) */}
       {patternPromos.map((pattern) => (
-        <Composition
-          key={pattern.id}
-          id={pattern.compositionId}
-          component={PatternPromo}
-          durationInFrames={DURATION_IN_FRAMES}
-          fps={FPS}
-          width={WIDTH}
-          height={HEIGHT}
-          defaultProps={{ pattern }}
-        />
+        <React.Fragment key={pattern.id}>
+          <Composition
+            id={pattern.compositionId}
+            component={PatternPromo}
+            durationInFrames={DURATION_IN_FRAMES}
+            fps={FPS}
+            width={WIDTH}
+            height={HEIGHT}
+            defaultProps={{ pattern, themeMode: 'dark' }}
+          />
+          <Composition
+            id={`${pattern.compositionId}Light`}
+            component={PatternPromo}
+            durationInFrames={DURATION_IN_FRAMES}
+            fps={FPS}
+            width={WIDTH}
+            height={HEIGHT}
+            defaultProps={{ pattern, themeMode: 'light' }}
+          />
+        </React.Fragment>
       ))}
+
+      {/* Import Promo */}
       <Composition
         id="ImportPromo"
         component={ImportPromo}
@@ -33,7 +47,19 @@ export function VideoRoot() {
         fps={FPS}
         width={WIDTH}
         height={HEIGHT}
+        defaultProps={{ themeMode: 'dark' }}
       />
+      <Composition
+        id="ImportPromoLight"
+        component={ImportPromo}
+        durationInFrames={360}
+        fps={FPS}
+        width={WIDTH}
+        height={HEIGHT}
+        defaultProps={{ themeMode: 'light' }}
+      />
+
+      {/* Replay Promo */}
       <Composition
         id="ReplayPromo"
         component={ReplayPromo}
@@ -41,7 +67,19 @@ export function VideoRoot() {
         fps={FPS}
         width={WIDTH}
         height={HEIGHT}
+        defaultProps={{ themeMode: 'dark' }}
       />
+      <Composition
+        id="ReplayPromoLight"
+        component={ReplayPromo}
+        durationInFrames={330}
+        fps={FPS}
+        width={WIDTH}
+        height={HEIGHT}
+        defaultProps={{ themeMode: 'light' }}
+      />
+
+      {/* Analytics Promo */}
       <Composition
         id="AnalyticsPromo"
         component={AnalyticsPromo}
@@ -49,7 +87,19 @@ export function VideoRoot() {
         fps={FPS}
         width={WIDTH}
         height={HEIGHT}
+        defaultProps={{ themeMode: 'dark' }}
       />
+      <Composition
+        id="AnalyticsPromoLight"
+        component={AnalyticsPromo}
+        durationInFrames={330}
+        fps={FPS}
+        width={WIDTH}
+        height={HEIGHT}
+        defaultProps={{ themeMode: 'light' }}
+      />
+
+      {/* Master Mashup Promo */}
       <Composition
         id="ProductMashupPromo"
         component={ProductMashupPromo}
@@ -57,10 +107,17 @@ export function VideoRoot() {
         fps={FPS}
         width={1920}
         height={1080}
+        defaultProps={{ themeMode: 'dark' }}
+      />
+      <Composition
+        id="ProductMashupPromoLight"
+        component={ProductMashupPromo}
+        durationInFrames={900}
+        fps={FPS}
+        width={1920}
+        height={1080}
+        defaultProps={{ themeMode: 'light' }}
       />
     </>
   );
 }
-
-
-

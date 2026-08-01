@@ -1,6 +1,6 @@
 import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
 import { BrandHeader } from '../components/BrandHeader';
-import { videoTheme } from '../theme';
+import { getVideoTheme } from '../theme';
 
 const REPLAY_CANDLES = [
   { open: 150.0, high: 152.5, low: 149.2, close: 152.0, time: '09:30 AM' },
@@ -13,7 +13,8 @@ const REPLAY_CANDLES = [
   { open: 163.0, high: 165.2, low: 162.8, close: 164.8, time: '10:05 AM', action: 'SELL', price: 164.5 },
 ];
 
-export function ReplayPromo() {
+export function ReplayPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'dark' }) {
+  const videoTheme = getVideoTheme(themeMode);
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
@@ -61,7 +62,7 @@ export function ReplayPromo() {
         overflow: 'hidden',
       }}
     >
-      <BrandHeader />
+      <BrandHeader themeMode={themeMode} />
 
       {/* Title Header */}
       <div

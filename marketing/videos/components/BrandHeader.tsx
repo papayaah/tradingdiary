@@ -1,6 +1,8 @@
-import { videoTheme } from '../theme';
+import { getVideoTheme } from '../theme';
 
-export function BrandHeader() {
+export function BrandHeader({ themeMode = 'dark' }: { themeMode?: 'light' | 'dark' }) {
+  const videoTheme = getVideoTheme(themeMode);
+
   return (
     <div
       style={{
