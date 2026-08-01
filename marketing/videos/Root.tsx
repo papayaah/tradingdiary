@@ -2,6 +2,7 @@ import { Composition } from 'remotion';
 import { AnalyticsPromo } from './compositions/AnalyticsPromo';
 import { ImportPromo } from './compositions/ImportPromo';
 import { PatternPromo } from './compositions/PatternPromo';
+import { ProductMashupPromo } from './compositions/ProductMashupPromo';
 import { ReplayPromo } from './compositions/ReplayPromo';
 import { patternPromos } from './patterns';
 
@@ -49,8 +50,17 @@ export function VideoRoot() {
         width={WIDTH}
         height={HEIGHT}
       />
+      <Composition
+        id="ProductMashupPromo"
+        component={ProductMashupPromo}
+        durationInFrames={900}
+        fps={FPS}
+        width={1920}
+        height={1080}
+      />
     </>
   );
 }
+
 
 

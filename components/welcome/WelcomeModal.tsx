@@ -24,11 +24,10 @@ interface WelcomeModalProps {
   title?: string;
 }
 
-export default function WelcomeModal({ videoUrl = '/replay-promo.gif', title }: WelcomeModalProps) {
+export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', title }: WelcomeModalProps) {
   const { isOpen, closeWelcomeModal } = useWelcome();
   const [dontShowAgain, setDontShowAgain] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(true);
 
   if (!isOpen) return null;
 
@@ -36,7 +35,7 @@ export default function WelcomeModal({ videoUrl = '/replay-promo.gif', title }: 
     closeWelcomeModal(dontShowAgain);
   };
 
-  const isGif = videoUrl.endsWith('.gif');
+  const isMp4 = videoUrl.endsWith('.mp4') || videoUrl.endsWith('.webm');
 
   return (
     <div
@@ -82,32 +81,41 @@ export default function WelcomeModal({ videoUrl = '/replay-promo.gif', title }: 
         {/* Modal Scrollable Body */}
         <div className="p-6 space-y-6 overflow-y-auto">
           {/* Video Showcase Section */}
-          <div className="relative aspect-video w-full rounded-xl border border-card-border overflow-hidden bg-background group shadow-inner">
-            {videoUrl && isPlaying ? (
+          <div className="relative aspect-video w-full rounded-xl border border-card-border overflow-hidden bg-black group shadow-inner">
+            {isPlaying ? (
               <div className="relative w-full h-full bg-black flex items-center justify-center">
-                <iframe
-                  src={videoUrl.includes('youtube') ? `${videoUrl}?autoplay=1` : videoUrl}
-                  title="Trading Diary Overview Video"
-                  className="w-full h-full border-0"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
+                {isMp4 ? (
+                  <video
+                    src={videoUrl}
+                    controls
+                    autoPlay
+                    className="w-full h-full object-contain"
+                  />
+                ) : (
+                  <iframe
+                    src={videoUrl.includes('youtube') ? `${videoUrl}?autoplay=1` : videoUrl}
+                    title="Trading Diary Overview Video"
+                    className="w-full h-full border-0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                )}
                 <button
                   onClick={() => setIsPlaying(false)}
-                  className="absolute top-3 right-3 px-3 py-1.5 rounded-lg bg-black/70 text-white text-xs font-semibold backdrop-blur-sm hover:bg-black/90 transition-colors"
+                  className="absolute top-3 right-3 px-3 py-1.5 rounded-lg bg-black/70 text-white text-xs font-semibold backdrop-blur-sm hover:bg-black/90 transition-colors z-20"
                 >
                   Close Video
                 </button>
               </div>
             ) : (
-              <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-accent/10 via-background to-muted-bg/80 p-6 text-center">
+              <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-accent/20 via-background to-muted-bg/80 p-6 text-center">
                 {/* Decorative Background Pattern */}
-                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-accent/20 via-transparent to-transparent pointer-events-none" />
+                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-accent/25 via-transparent to-transparent pointer-events-none" />
 
                 <div className="relative z-10 flex flex-col items-center gap-4">
                   <button
                     onClick={() => setIsPlaying(true)}
-                    className="relative group/btn flex items-center justify-center w-16 h-16 rounded-full bg-accent text-white shadow-xl shadow-accent/40 hover:scale-105 active:scale-95 transition-all duration-200"
+                    className="relative group/btn flex items-center justify-center w-16 h-16 rounded-full bg-accent text-white shadow-xl shadow-accent/50 hover:scale-105 active:scale-95 transition-all duration-200"
                     aria-label="Play Walkthrough Video"
                   >
                     <Play size={26} className="ml-1 fill-white" />
@@ -116,13 +124,13 @@ export default function WelcomeModal({ videoUrl = '/replay-promo.gif', title }: 
 
                   <div>
                     <span className="text-xs font-bold text-accent uppercase tracking-widest block mb-1">
-                      Full Product Overview Video
+                      30-Second Comic Product Promo Video
                     </span>
                     <h3 className="text-base font-bold text-foreground">
                       See How Trading Diary Transforms Your Edge
                     </h3>
                     <p className="text-xs text-muted max-w-md mt-1">
-                      Watch the complete product walkthrough demonstrating analytics, pattern detection, trade replays, and broker imports.
+                      Watch the 30-second high-energy comic promo showing broker imports, visual analytics, trade replays, and pattern scanners.
                     </p>
                   </div>
                 </div>
