@@ -497,6 +497,116 @@ localStorage.setItem('watcher-watchlist', JSON.stringify(
     "symbol": "YM=F",
     "interval": "10m",
     "minMovePercent": 0.05
+  },
+  {
+    "symbol": "XRP-USD",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "DOGE-USD",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "ADA-USD",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "AVAX-USD",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "LINK-USD",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "DOT-USD",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "LTC-USD",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "BCH-USD",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "UNI-USD",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "ATOM-USD",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "XLM-USD",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "ETC-USD",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "NEAR-USD",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "SHIB-USD",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "APT-USD",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "ARB-USD",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "OP-USD",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "FIL-USD",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "ICP-USD",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "HBAR-USD",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "SUI-USD",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "INJ-USD",
+    "interval": "10m",
+    "minMovePercent": 0.5
   }
 ]
 ));

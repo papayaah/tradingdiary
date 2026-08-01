@@ -592,5 +592,137 @@
     "assetClass": "futures",
     "interval": "10m",
     "minMovePercent": 0.05
+  },
+  {
+    "symbol": "XRP-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "DOGE-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "ADA-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "AVAX-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "LINK-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "DOT-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "LTC-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "BCH-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "UNI-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "ATOM-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "XLM-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "ETC-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "NEAR-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "SHIB-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "APT-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "ARB-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "OP-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "FIL-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "ICP-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "HBAR-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "SUI-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
+  },
+  {
+    "symbol": "INJ-USD",
+    "assetClass": "crypto",
+    "interval": "10m",
+    "minMovePercent": 0.5
   }
 ]
