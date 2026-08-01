@@ -5,8 +5,6 @@ import Link from 'next/link';
 import {
   X,
   Play,
-  TrendingUp,
-  Sparkles,
   Upload,
 } from 'lucide-react';
 import { useWelcome } from './WelcomeContext';
@@ -64,48 +62,26 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200"
       onClick={(e) => {
         if (e.target === e.currentTarget) handleClose();
       }}
       role="dialog"
       aria-modal="true"
-      aria-labelledby="welcome-modal-title"
     >
-      <div className="relative w-[94vw] max-w-6xl 2xl:max-w-7xl bg-card-bg border border-card-border rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col transition-all">
-        {/* Header Bar */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-card-border bg-muted-bg/40">
-          <div className="flex items-center gap-2.5">
-            <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-accent text-white shadow-md shadow-accent/20">
-              <TrendingUp size={18} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 id="welcome-modal-title" className="text-lg font-bold text-foreground tracking-tight">
-                  {title || 'Welcome to Trading Diary'}
-                </h2>
-                <span className="inline-flex items-center gap-1 text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/20">
-                  <Sparkles size={11} /> Next-Gen Journal
-                </span>
-              </div>
-              <p className="text-xs text-muted">
-                Elevate your trading with automated analytics, pattern watching, and trade replays.
-              </p>
-            </div>
-          </div>
+      <div className="relative w-[96vw] max-w-6xl 2xl:max-w-7xl bg-card-bg border border-card-border rounded-2xl shadow-2xl overflow-hidden max-h-[95vh] flex flex-col transition-all">
+        {/* Sleek Floating Close Button */}
+        <button
+          onClick={handleClose}
+          className="absolute top-4 right-4 z-30 p-2.5 text-white bg-black/60 hover:bg-black/80 rounded-full backdrop-blur-md transition-all shadow-lg border border-white/10"
+          aria-label="Close modal"
+        >
+          <X size={18} />
+        </button>
 
-          <button
-            onClick={handleClose}
-            className="p-2 text-muted hover:text-foreground rounded-lg hover:bg-muted-bg transition-colors"
-            aria-label="Close modal"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        {/* Modal Scrollable Body */}
-        <div className="p-6 space-y-6 overflow-y-auto">
-          {/* Video Showcase Section */}
+        {/* Modal Scrollable Body — Zero Header, Minimal Padding, Maximum Video Focus */}
+        <div className="p-2 sm:p-3 space-y-3 overflow-y-auto">
+          {/* Main Video Showcase Section */}
           <div className="relative aspect-video w-full rounded-xl border border-card-border overflow-hidden bg-black group shadow-inner">
             {isPlaying ? (
               <div className="relative w-full h-full bg-black flex items-center justify-center">
@@ -133,38 +109,30 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
                 </button>
               </div>
             ) : (
-              <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-accent/20 via-background to-muted-bg/80 p-6 text-center">
+              <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-accent/20 via-background to-muted-bg/80 p-4 text-center">
                 {/* Decorative Background Pattern */}
                 <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-accent/25 via-transparent to-transparent pointer-events-none" />
 
-                <div className="relative z-10 flex flex-col items-center gap-4">
+                <div className="relative z-10 flex flex-col items-center gap-3">
                   <button
                     onClick={() => setIsPlaying(true)}
-                    className="relative group/btn flex items-center justify-center w-16 h-16 rounded-full bg-accent text-white shadow-xl shadow-accent/50 hover:scale-105 active:scale-95 transition-all duration-200"
+                    className="relative group/btn flex items-center justify-center w-20 h-20 rounded-full bg-accent text-white shadow-2xl shadow-accent/50 hover:scale-105 active:scale-95 transition-all duration-200"
                     aria-label="Play Walkthrough Video"
                   >
-                    <Play size={26} className="ml-1 fill-white" />
+                    <Play size={32} className="ml-1 fill-white" />
                     <span className="absolute -inset-1 rounded-full bg-accent/40 animate-ping pointer-events-none" />
                   </button>
 
-                  <div>
-                    <span className="text-xs font-bold text-accent uppercase tracking-widest block mb-1">
-                      30-Second Comic Product Promo Video
-                    </span>
-                    <h3 className="text-base font-bold text-foreground">
-                      See How Trading Diary Transforms Your Edge
-                    </h3>
-                    <p className="text-xs text-muted max-w-md mt-1">
-                      Watch the 30-second high-energy comic promo showing broker imports, visual analytics, trade replays, and pattern scanners.
-                    </p>
-                  </div>
+                  <span className="text-xs font-bold text-foreground/80 tracking-wide bg-background/60 backdrop-blur-md px-3 py-1 rounded-full border border-card-border">
+                    Click to Play 30s Master Demo
+                  </span>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Key Value Proposition Grid — 4 Full-Bleed Vertical Shorts (Auto-Theme Adapted) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Key Value Proposition Grid — 4 Full-Bleed Vertical Shorts */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
             {/* 1. Visual Analytics Short */}
             <div className="relative rounded-xl border border-card-border hover:border-accent/40 transition-all overflow-hidden group min-h-[180px] flex flex-col justify-between bg-card-bg">
               <video
@@ -220,7 +188,7 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
         </div>
 
         {/* Footer Actions */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-6 py-4 border-t border-card-border bg-muted-bg/30">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-card-border bg-muted-bg/30">
           <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-muted hover:text-foreground transition-colors">
             <input
               type="checkbox"
