@@ -36,6 +36,7 @@ Everything below is built, committed, and verified against a live gateway.
 | Local stack | `docker-compose.ibkr.yml` (published ports + VNC for local testing) |
 | Server stack | `docker-compose.ibkr.server.yml` — **decoupled** gateway project, no public API port, VNC loopback-only, daily no-2FA restart |
 | Deploy | app `docker-compose.yml` scanner wired to `ib-gateway:4003` over shared external network `tradingdiary-ibkr-net`; `deploy.sh` ensures the network idempotently and **never touches the gateway** |
+| Shared scanning | Futures integrated into the shared-acquisition layer: `ibkr-cme:server` scope, `IBKR (CME)` capability with chain-safe `=F` canonical, IBKR-shaped budget (300/hr). Dedup/governor/negative-cache apply to futures like everything else |
 | Test harness | `dev-run.ts` accepts an asset-class arg; verified `NQ=F` → IBKR front month → persisted to DB |
 
 **Verified:** MES/MGC/MNQ/NQ/BTC front months resolve on IBKR and return real bars through
