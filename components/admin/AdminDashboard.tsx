@@ -17,7 +17,20 @@ import {
   TrendingUp,
   Gauge,
   CheckCircle2,
+  PieChart as PieIcon,
+  BarChart3,
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
+  BarChart,
+  Bar,
+  CartesianGrid,
+} from 'recharts';
 
 interface OverviewData {
   users: {
@@ -102,6 +115,28 @@ interface ProviderStatRow {
   count: number;
 }
 
+interface ProviderSummaryMap {
+  [scope: string]: {
+    todayCount: number;
+    projectedDaily: number;
+    dailyCap: number;
+    hourlyCap: number;
+    utilizationPct: number;
+  };
+}
+
+interface UserTrendItem {
+  day: string;
+  count: number;
+}
+
+interface AlertAnalyticsData {
+  trend: Array<{ day: string; count: number }>;
+  byDirection: Array<{ direction: string; count: number }>;
+  byPattern: Array<{ patternId: string; count: number }>;
+  topSymbols: Array<{ symbol: string; count: number }>;
+}
+
 export default function AdminDashboard() {
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [queueInfo, setQueueInfo] = useState<QueueData | null>(null);
@@ -109,6 +144,9 @@ export default function AdminDashboard() {
   const [cacheMetrics, setCacheMetrics] = useState<CacheData | null>(null);
   const [governorItems, setGovernorItems] = useState<GovernorItem[]>([]);
   const [providerStats, setProviderStats] = useState<ProviderStatRow[]>([]);
+  const [providerSummary, setProviderSummary] = useState<ProviderSummaryMap>({});
+  const [userTrends, setUserTrends] = useState<UserTrendItem[]>([]);
+  const [alertAnalytics, setAlertAnalytics] = useState<AlertAnalyticsData | null>(null);
   const [allowlistConfigured, setAllowlistConfigured] = useState<boolean>(true);
   const [loading, setLoading] = useState<boolean>(true);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
@@ -117,37 +155,41 @@ export default function AdminDashboard() {
   const fetchAllData = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      const [statusRes, overviewRes, queueRes, watchesRes, providerRes, cacheRes, governorRes] = await Promise.all([
+      const [
+        statusRes,
+        overviewRes,
+        queueRes,
+        watchesRes,
+        providerRes,
+        cacheRes,
+        governorRes,
+        usersRes,
+        alertsRes,
+      ] = await Promise.all([
         fetch('/api/admin/status').then((r) => r.json()).catch(() => null),
         fetch('/api/admin/overview').then((r) => r.json()).catch(() => null),
         fetch('/api/admin/queues').then((r) => r.json()).catch(() => null),
         fetch('/api/admin/watches').then((r) => r.json()).catch(() => null),
-        fetch('/api/admin/provider-stats?days=7').then((r) => r.json()).catch(() => null),
+        fetch('/api/admin/provider-stats?days=30').then((r) => r.json()).catch(() => null),
         fetch('/api/admin/cache').then((r) => r.json()).catch(() => null),
         fetch('/api/admin/governor').then((r) => r.json()).catch(() => null),
+        fetch('/api/admin/users?days=30').then((r) => r.json()).catch(() => null),
+        fetch('/api/admin/alerts?days=30').then((r) => r.json()).catch(() => null),
       ]);
 
-      if (statusRes) {
-        setAllowlistConfigured(Boolean(statusRes.allowlistConfigured));
-      }
-      if (overviewRes?.success) {
-        setOverview(overviewRes);
-      }
-      if (queueRes?.success) {
-        setQueueInfo(queueRes);
-      }
-      if (watchesRes?.success) {
-        setWatchMetrics(watchesRes);
-      }
+      if (statusRes) setAllowlistConfigured(Boolean(statusRes.allowlistConfigured));
+      if (overviewRes?.success) setOverview(overviewRes);
+      if (queueRes?.success) setQueueInfo(queueRes);
+      if (watchesRes?.success) setWatchMetrics(watchesRes);
       if (providerRes?.stats) {
         setProviderStats(providerRes.stats);
+        if (providerRes.summary) setProviderSummary(providerRes.summary);
       }
-      if (cacheRes?.success && cacheRes.cache) {
-        setCacheMetrics(cacheRes.cache);
-      }
-      if (governorRes?.success && governorRes.governor) {
-        setGovernorItems(governorRes.governor);
-      }
+      if (cacheRes?.success && cacheRes.cache) setCacheMetrics(cacheRes.cache);
+      if (governorRes?.success && governorRes.governor) setGovernorItems(governorRes.governor);
+      if (usersRes?.success && usersRes.signups) setUserTrends(usersRes.signups);
+      if (alertsRes?.success) setAlertAnalytics(alertsRes);
+
       setLastUpdated(new Date());
     } finally {
       setLoading(false);
@@ -158,7 +200,6 @@ export default function AdminDashboard() {
   useEffect(() => {
     fetchAllData();
 
-    // Auto refresh every 30 seconds if tab is visible
     const interval = setInterval(() => {
       if (!document.hidden) {
         fetchAllData();
@@ -176,7 +217,8 @@ export default function AdminDashboard() {
       watchMetrics,
       cacheMetrics,
       governorItems,
-      providerStatsSummary: providerStats.slice(0, 10),
+      providerSummary,
+      alertAnalyticsSummary: alertAnalytics?.topSymbols,
     };
 
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -209,7 +251,7 @@ export default function AdminDashboard() {
             Admin Observability Dashboard
           </h1>
           <p className="text-xs text-muted mt-1">
-            Real-time monitoring of scanner workload, governor cadence, cache hit efficiency, and provider costs.
+            Real-time monitoring of scanner workload, governor cadence, cache efficiency, trends, and alert analytics.
           </p>
         </div>
 
@@ -409,7 +451,154 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Row 3: Infrastructure Health (Scanner & Redis Memory) */}
+      {/* Row 3: Phase 3 Trends — User Signups & Provider Headroom Gauges */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Signups Trend Chart */}
+        <div className="bg-card-bg border border-card-border rounded-xl p-5 space-y-4">
+          <div className="flex items-center justify-between border-b border-card-border pb-3">
+            <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <BarChart3 size={16} className="text-accent" />
+              User Registration Trend (30 Days)
+            </h2>
+          </div>
+
+          {userTrends.length > 0 ? (
+            <div className="h-44 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={userTrends}>
+                  <defs>
+                    <linearGradient id="userGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="var(--accent)" stopOpacity={0.0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--card-border)" opacity={0.5} />
+                  <XAxis dataKey="day" stroke="var(--muted)" fontSize={10} tickLine={false} />
+                  <YAxis stroke="var(--muted)" fontSize={10} tickLine={false} allowDecimals={false} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'var(--card-bg)',
+                      borderColor: 'var(--card-border)',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                    }}
+                  />
+                  <Area type="monotone" dataKey="count" stroke="var(--accent)" fillOpacity={1} fill="url(#userGrad)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <p className="text-xs text-muted italic py-12 text-center">No signup trend data recorded in the last 30 days.</p>
+          )}
+        </div>
+
+        {/* Provider Headroom Utilization Gauges */}
+        <div className="bg-card-bg border border-card-border rounded-xl p-5 space-y-4">
+          <div className="flex items-center justify-between border-b border-card-border pb-3">
+            <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Zap size={16} className="text-accent" />
+              Provider Daily Cap Utilization & Projections
+            </h2>
+          </div>
+
+          {Object.keys(providerSummary).length > 0 ? (
+            <div className="space-y-3.5 text-xs">
+              {Object.entries(providerSummary).map(([scope, data]) => (
+                <div key={scope} className="space-y-1.5 bg-muted-bg/40 p-3 rounded-lg border border-card-border/50">
+                  <div className="flex justify-between font-mono">
+                    <span className="font-semibold text-foreground">{scope}</span>
+                    <span className="text-muted">
+                      <strong className="text-foreground">{data.todayCount}</strong> / {data.dailyCap.toLocaleString()} reqs ({data.utilizationPct}%)
+                    </span>
+                  </div>
+
+                  <div className="w-full h-2 bg-muted-bg rounded-full overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-300 ${
+                        data.utilizationPct > 80 ? 'bg-loss' : 'bg-accent'
+                      }`}
+                      style={{ width: `${Math.min(100, data.utilizationPct)}%` }}
+                    />
+                  </div>
+
+                  <div className="flex justify-between text-[11px] text-muted">
+                    <span>Est. End-of-Day: <strong className="text-foreground">{data.projectedDaily.toLocaleString()}</strong></span>
+                    <span>Hourly Cap: {data.hourlyCap.toLocaleString()}/hr</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted italic py-12 text-center">No provider summary metrics available.</p>
+          )}
+        </div>
+      </div>
+
+      {/* Row 4: Alert Analytics & Pattern Distribution */}
+      {alertAnalytics && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Direction Ratio */}
+          <div className="bg-card-bg border border-card-border rounded-xl p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-card-border pb-3">
+              <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <PieIcon size={16} className="text-accent" />
+                Alert Direction Breakdown
+              </h2>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              {alertAnalytics.byDirection.map((d) => (
+                <div key={d.direction} className="flex items-center justify-between p-2.5 bg-muted-bg/50 rounded-lg">
+                  <span className={`capitalize font-semibold ${d.direction === 'bullish' ? 'text-profit' : 'text-loss'}`}>
+                    ● {d.direction}
+                  </span>
+                  <span className="font-bold text-foreground">{d.count} alerts</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Pattern Breakdown */}
+          <div className="bg-card-bg border border-card-border rounded-xl p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-card-border pb-3">
+              <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <Layers size={16} className="text-accent" />
+                Alerts by Detector Pattern
+              </h2>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              {alertAnalytics.byPattern.map((p) => (
+                <div key={p.patternId} className="flex items-center justify-between p-2 bg-muted-bg/50 rounded-lg">
+                  <span className="font-mono text-foreground capitalize">{p.patternId}</span>
+                  <span className="font-semibold text-foreground">{p.count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Top Alerted Symbols */}
+          <div className="bg-card-bg border border-card-border rounded-xl p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-card-border pb-3">
+              <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <Bell size={16} className="text-accent" />
+                Top Alerted Symbols (30d)
+              </h2>
+            </div>
+
+            <div className="space-y-1.5 text-xs">
+              {alertAnalytics.topSymbols.slice(0, 5).map((s) => (
+                <div key={s.symbol} className="flex items-center justify-between p-2 bg-muted-bg/50 rounded-lg">
+                  <span className="font-mono font-semibold text-foreground">{s.symbol}</span>
+                  <span className="text-accent font-bold">{s.count} alerts</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Row 5: Infrastructure Health (Scanner & Redis Memory) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Scanner Status & Queue Depth */}
         <div className="bg-card-bg border border-card-border rounded-xl p-5 space-y-4">
@@ -527,7 +716,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Row 4: Top Watched Symbols & Sharing Efficiency */}
+      {/* Row 6: Top Watched Symbols & Sharing Efficiency */}
       {watchMetrics && watchMetrics.topSymbols.length > 0 && (
         <div className="bg-card-bg border border-card-border rounded-xl p-5 space-y-4">
           <div className="flex items-center justify-between border-b border-card-border pb-3">
@@ -571,41 +760,6 @@ export default function AdminDashboard() {
                         {item.overlapMultiplier}x
                       </span>
                     </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Row 5: Provider Usage */}
-      {providerStats.length > 0 && (
-        <div className="bg-card-bg border border-card-border rounded-xl p-5 space-y-4">
-          <div className="flex items-center justify-between border-b border-card-border pb-3">
-            <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-              <Zap size={16} className="text-accent" />
-              Recent Upstream Provider Request Volume
-            </h2>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-card-border text-muted font-medium">
-                  <th className="py-2.5 px-3">Date</th>
-                  <th className="py-2.5 px-3">Provider</th>
-                  <th className="py-2.5 px-3">Key Owner</th>
-                  <th className="py-2.5 px-3 text-right">Request Count</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-card-border/50">
-                {providerStats.slice(0, 10).map((row, idx) => (
-                  <tr key={`${row.day}-${row.provider}-${row.keyOwner}-${idx}`} className="hover:bg-muted-bg/40">
-                    <td className="py-2.5 px-3 font-mono text-foreground">{row.day}</td>
-                    <td className="py-2.5 px-3 capitalize text-foreground">{row.provider}</td>
-                    <td className="py-2.5 px-3 text-muted">{row.keyOwner}</td>
-                    <td className="py-2.5 px-3 text-right font-semibold text-foreground">{row.count}</td>
                   </tr>
                 ))}
               </tbody>
