@@ -144,9 +144,9 @@ export default function LightweightPatternChart({
       if (activePattern.name === 'Double Bottom (W)' || activePattern.name === 'Double Top (M)') {
         const res = activePattern as DoubleTopBottomResult;
         const lineSeries = chart.addSeries(LineSeries, {
-          color: res.type === 'bullish' ? '#38bdf8' : '#f43f5e',
-          lineWidth: 3,
-          lineStyle: LineStyle.Dashed,
+          color: res.type === 'bullish' ? '#38bdf8' : '#fbbf24',
+          lineWidth: 4,
+          lineStyle: LineStyle.Solid,
         });
 
         // Set line connecting Pivot 1 -> Middle Pivot -> Pivot 2
