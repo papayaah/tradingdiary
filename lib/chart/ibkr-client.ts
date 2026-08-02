@@ -30,6 +30,12 @@ const PACING_WINDOW_MS = 10 * 60 * 1000;
 /** IB "info" codes that are connection-status noise, not real errors. */
 const BENIGN_CODES = new Set([2104, 2106, 2107, 2108, 2158, 2103, 2100, 2119, 2168, 2169]);
 
+// A few roots whose IBKR request `symbol` differs from the common ticker.
+// e.g. CME Bitcoin futures are requested as BRR (trading class BTC), not BTC.
+const IBKR_SYMBOL_ALIAS: Record<string, string> = {
+  BTC: 'BRR', // CME Bitcoin future (symbol=BRR, localSymbol=BTCU6, tradingClass=BTC)
+};
+
 // COMEX/NYMEX/CBOT roots; everything else defaults to CME.
 const EXCHANGE_BY_ROOT: Record<string, string> = {
   GC: 'COMEX', MGC: 'COMEX', SI: 'COMEX', SIL: 'COMEX', HG: 'COMEX',
@@ -193,7 +199,10 @@ class IbkrClient {
       }, REQUEST_TIMEOUT_MS);
       this.detailReqs.set(reqId, { contracts: [], resolve, reject, timer });
       this.ib!.reqContractDetails(reqId, {
-        symbol: root, secType: SecType.FUT, exchange: exchangeForRoot(root), currency: 'USD',
+        symbol: IBKR_SYMBOL_ALIAS[root] ?? root,
+        secType: SecType.FUT,
+        exchange: exchangeForRoot(root),
+        currency: 'USD',
       });
     });
     this.contractCache.set(root, { contract, day: today });
