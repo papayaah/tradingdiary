@@ -2384,9 +2384,11 @@ export default function MarketWatcher() {
     }
     let filtered = testResult.candles;
     if (testCurrentDayOnly) {
-      filtered = filterCurrentDayOnly(filtered);
+      const dayFiltered = filterCurrentDayOnly(filtered);
+      if (dayFiltered.length > 0) filtered = dayFiltered;
     }
-    return filterCandlesBySession(filtered, testSessionFilter);
+    const sessionFiltered = filterCandlesBySession(filtered, testSessionFilter);
+    return sessionFiltered.length > 0 ? sessionFiltered : testResult.candles;
   };
 
   // Candles as shown in the watchlist context (row mini-viz + expanded chart):
@@ -2398,7 +2400,8 @@ export default function MarketWatcher() {
     const targetWin = isFuturesOrCrypto ? 'all' : (activeWindow || 'pre');
 
     if (!isFuturesOrCrypto && targetWin !== 'all') {
-      filtered = filterCurrentDayOnly(filtered);
+      const dayFiltered = filterCurrentDayOnly(filtered);
+      if (dayFiltered.length > 0) filtered = dayFiltered;
     } else {
       // For Futures 24h continuous mode: preserve recent ~24 hours of continuous candles (144 bars for 10m)
       if (filtered.length > 144) {
@@ -2406,8 +2409,8 @@ export default function MarketWatcher() {
       }
     }
 
-    filtered = filterCandlesByWindow(filtered, targetWin);
-    return filtered;
+    const winFiltered = filterCandlesByWindow(filtered, targetWin);
+    return winFiltered.length > 0 ? winFiltered : candles;
   };
 
   const watchlistIndexByKey = React.useMemo(() => {

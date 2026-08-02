@@ -72,6 +72,15 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // If still no candles (e.g. weekend or market closed), fetch recent multi-day candles so charts & pattern testing always work
+    if (candles.length === 0) {
+      candles = await provider.fetchRecentCandles(symbol, interval).catch(() => []);
+      if (candles.length === 0) {
+        const fallback = new YahooProvider();
+        candles = await fallback.fetchRecentCandles(symbol, interval).catch(() => []);
+      }
+    }
+
     return NextResponse.json({
       symbol: symbol.toUpperCase(),
       interval,
