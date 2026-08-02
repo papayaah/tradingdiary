@@ -30,6 +30,7 @@ import {
 import { getChartDB } from '@/lib/chart/cache';
 import AlertHistoryPanel from './AlertHistoryPanel';
 import PatternOverlay from '@/components/chart/PatternOverlay';
+import { detectAllPatterns, DoubleTopBottomResult, CupAndHandleResult } from '@/lib/chart/patterns';
 import {
   BatchScanControl,
   ScanCountdown,
@@ -3007,6 +3008,133 @@ export default function MarketWatcher() {
               </g>
             );
           })}
+
+          {/* Pattern Visual Geometry Plotted Layer (Curves, Lines, Numbered Nodes ① ② ③) */}
+          {autoPatternsEnabled && (() => {
+            const scan = detectAllPatterns(displayedCandles);
+            const pattern = scan.patterns[0];
+            if (!pattern) return null;
+
+            const getCanvasY = (val: number) => {
+              return ((minPrice + priceRange - val) / priceRange) * (260 - paddingTop - paddingBottom) + paddingTop;
+            };
+
+            const breakoutY = getCanvasY(pattern.breakoutPrice);
+            const targetY = getCanvasY(pattern.targetPrice);
+
+            // Double Bottom (W) or Double Top (M)
+            if (pattern.name === 'Double Bottom (W)' || pattern.name === 'Double Top (M)') {
+              const res = pattern as DoubleTopBottomResult;
+              const x1 = getX(res.firstPivot.index);
+              const y1 = getCanvasY(res.firstPivot.price);
+              const x2 = getX(res.middlePivot.index);
+              const y2 = getCanvasY(res.middlePivot.price);
+              const x3 = getX(res.secondPivot.index);
+              const y3 = getCanvasY(res.secondPivot.price);
+
+              const strokeColor = res.type === 'bullish' ? '#38bdf8' : '#f43f5e';
+              const nodeBg = res.type === 'bullish' ? '#0284c7' : '#e11d48';
+
+              return (
+                <g key={pattern.id} className="animate-in fade-in duration-300">
+                  {/* Connecting Pattern Lines forming W or M */}
+                  <polyline
+                    points={`${x1},${y1} ${x2},${y2} ${x3},${y3}`}
+                    fill="none"
+                    stroke={strokeColor}
+                    strokeWidth={2.5}
+                    strokeDasharray="4,2"
+                  />
+
+                  {/* Horizontal Breakout Resistance Line */}
+                  <line
+                    x1={paddingLeft}
+                    y1={breakoutY}
+                    x2={800 - paddingRight}
+                    y2={breakoutY}
+                    stroke="#f59e0b"
+                    strokeWidth={1.5}
+                    strokeDasharray="5,3"
+                  />
+                  <text x={800 - paddingRight - 90} y={breakoutY - 4} fill="#f59e0b" className="text-[9px] font-mono font-bold">
+                    Breakout: ${Number(pattern.breakoutPrice).toFixed(2)}
+                  </text>
+
+                  {/* Horizontal Target Price Line */}
+                  <line
+                    x1={paddingLeft}
+                    y1={targetY}
+                    x2={800 - paddingRight}
+                    y2={targetY}
+                    stroke="#10b981"
+                    strokeWidth={1.5}
+                    strokeDasharray="3,3"
+                  />
+                  <text x={800 - paddingRight - 90} y={targetY - 4} fill="#10b981" className="text-[9px] font-mono font-bold">
+                    Target: ${Number(pattern.targetPrice).toFixed(2)}
+                  </text>
+
+                  {/* Numbered Node Badges ① ② ③ */}
+                  <g>
+                    <circle cx={x1} cy={y1} r={8} fill={nodeBg} stroke="#ffffff" strokeWidth={1.5} />
+                    <text x={x1} y={y1 + 3} fill="#ffffff" className="text-[9px] font-mono font-bold" textAnchor="middle">1</text>
+
+                    <circle cx={x2} cy={y2} r={8} fill={nodeBg} stroke="#ffffff" strokeWidth={1.5} />
+                    <text x={x2} y={y2 + 3} fill="#ffffff" className="text-[9px] font-mono font-bold" textAnchor="middle">2</text>
+
+                    <circle cx={x3} cy={y3} r={8} fill={nodeBg} stroke="#ffffff" strokeWidth={1.5} />
+                    <text x={x3} y={y3 + 3} fill="#ffffff" className="text-[9px] font-mono font-bold" textAnchor="middle">3</text>
+                  </g>
+                </g>
+              );
+            }
+
+            // Cup & Handle
+            if (pattern.name === 'Cup & Handle') {
+              const res = pattern as CupAndHandleResult;
+              const x1 = getX(res.leftRim.index);
+              const y1 = getCanvasY(res.leftRim.price);
+              const xb = getX(res.bottom.index);
+              const yb = getCanvasY(res.bottom.price);
+              const x2 = getX(res.rightRim.index);
+              const y2 = getCanvasY(res.rightRim.price);
+
+              return (
+                <g key={pattern.id} className="animate-in fade-in duration-300">
+                  {/* Quadratic Bezier Cup Arc */}
+                  <path
+                    d={`M ${x1} ${y1} Q ${xb} ${yb * 1.05} ${x2} ${y2}`}
+                    fill="none"
+                    stroke="#38bdf8"
+                    strokeWidth={2.5}
+                  />
+
+                  {/* Horizontal Breakout Resistance Line */}
+                  <line
+                    x1={paddingLeft}
+                    y1={breakoutY}
+                    x2={800 - paddingRight}
+                    y2={breakoutY}
+                    stroke="#f59e0b"
+                    strokeWidth={1.5}
+                    strokeDasharray="5,3"
+                  />
+
+                  {/* Numbered Node Badges ① ② ③ */}
+                  <circle cx={x1} cy={y1} r={8} fill="#0284c7" stroke="#ffffff" strokeWidth={1.5} />
+                  <text x={x1} y={y1 + 3} fill="#ffffff" className="text-[9px] font-mono font-bold" textAnchor="middle">1</text>
+
+                  <circle cx={xb} cy={yb} r={8} fill="#0284c7" stroke="#ffffff" strokeWidth={1.5} />
+                  <text x={xb} y={yb + 3} fill="#ffffff" className="text-[9px] font-mono font-bold" textAnchor="middle">2</text>
+
+                  <circle cx={x2} cy={y2} r={8} fill="#0284c7" stroke="#ffffff" strokeWidth={1.5} />
+                  <text x={x2} y={y2 + 3} fill="#ffffff" className="text-[9px] font-mono font-bold" textAnchor="middle">3</text>
+                </g>
+              );
+            }
+
+            return null;
+          })()}
 
           {/* Hover Crosshair vertical and horizontal lines */}
           {hoveredIndex !== null && (
