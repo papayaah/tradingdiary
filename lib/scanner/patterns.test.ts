@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   detectPattern,
+  DEFAULT_PATTERN_SETTINGS,
+  normalizePatternSettings,
   PATTERN_DEFINITIONS,
   scanAllPatterns,
   PATTERN_VERSION,
@@ -238,6 +240,126 @@ describe('selectable pattern presets', () => {
     expect(detectPattern([...quietCandles, breakout], 1, 3, 'range-breakout').matched).toBe('bullish');
   });
 
+  it('applies a configurable range-breakout lookback', () => {
+    const breakout: Candle = {
+      time: 11,
+      open: 100,
+      high: 102.2,
+      low: 99.9,
+      close: 102,
+      volume: 1200,
+    };
+    const settings = {
+      ...DEFAULT_PATTERN_SETTINGS,
+      rangeBreakout: {
+        ...DEFAULT_PATTERN_SETTINGS.rangeBreakout,
+        lookbackBars: 5,
+      },
+    };
+
+    expect(
+      detectPattern(
+        [...quietCandles.slice(-5), breakout],
+        1,
+        3,
+        'range-breakout',
+        100,
+        settings,
+      ).matched,
+    ).toBe('bullish');
+  });
+
+  it('requires the configured close distance beyond the range', () => {
+    const settings = {
+      ...DEFAULT_PATTERN_SETTINGS,
+      rangeBreakout: {
+        ...DEFAULT_PATTERN_SETTINGS.rangeBreakout,
+        minBreakoutPercent: 0.1,
+      },
+    };
+    const barelyOutside: Candle = {
+      time: 11,
+      open: 99.5,
+      high: 100.25,
+      low: 99.4,
+      close: 100.25,
+      volume: 1200,
+    };
+    const clearlyOutside: Candle = {
+      ...barelyOutside,
+      high: 100.5,
+      close: 100.5,
+    };
+
+    expect(detectPattern(
+      [...quietCandles, barelyOutside],
+      0.5,
+      3,
+      'range-breakout',
+      100,
+      settings,
+    ).matched).toBe('none');
+    expect(detectPattern(
+      [...quietCandles, clearlyOutside],
+      0.5,
+      3,
+      'range-breakout',
+      100,
+      settings,
+    ).matched).toBe('bullish');
+  });
+
+  it('optionally requires relative-volume confirmation for breakouts', () => {
+    const settings = {
+      ...DEFAULT_PATTERN_SETTINGS,
+      rangeBreakout: {
+        ...DEFAULT_PATTERN_SETTINGS.rangeBreakout,
+        volumeConfirmationMultiplier: 1.5,
+      },
+    };
+    const breakout: Candle = {
+      time: 11,
+      open: 100,
+      high: 102.2,
+      low: 99.9,
+      close: 102,
+      volume: 1499,
+    };
+
+    expect(detectPattern(
+      [...quietCandles, breakout],
+      1,
+      3,
+      'range-breakout',
+      100,
+      settings,
+    ).matched).toBe('none');
+    expect(detectPattern(
+      [...quietCandles, { ...breakout, volume: 1500 }],
+      1,
+      3,
+      'range-breakout',
+      100,
+      settings,
+    ).matched).toBe('bullish');
+  });
+
+  it('normalizes unsafe persisted pattern settings', () => {
+    expect(normalizePatternSettings({
+      rangeBreakout: {
+        lookbackBars: 999,
+        minBreakoutPercent: -4,
+        volumeConfirmationMultiplier: 0.2,
+      },
+    })).toEqual({
+      rangeBreakout: {
+        lookbackBars: 100,
+        minBreakoutPercent: 0,
+        volumeConfirmationMultiplier: 1,
+      },
+    });
+  });
+
   it('requires doubled recent volume for volume expansion', () => {
     const expansion: Candle = {
       time: 11,
@@ -248,6 +370,41 @@ describe('selectable pattern presets', () => {
       volume: 2200,
     };
     expect(detectPattern([...quietCandles, expansion], 0.5, 3, 'volume-expansion').matched).toBe('bullish');
+  });
+
+  it('rejects volume expansion when the rolling volume baseline is missing', () => {
+    const missingVolume = quietCandles.map((candle) => ({ ...candle, volume: 0 }));
+    const expansion: Candle = {
+      time: 11,
+      open: 100,
+      high: 101.2,
+      low: 99.9,
+      close: 101,
+      volume: 2200,
+    };
+
+    expect(
+      detectPattern([...missingVolume, expansion], 0.5, 3, 'volume-expansion').matched,
+    ).toBe('none');
+  });
+
+  it('rejects sparse force-filled volume baselines', () => {
+    const sparseVolume = quietCandles.map((candle, index) => ({
+      ...candle,
+      volume: index < 7 ? 1000 : 0,
+    }));
+    const expansion: Candle = {
+      time: 11,
+      open: 100,
+      high: 101.2,
+      low: 99.9,
+      close: 101,
+      volume: 5000,
+    };
+
+    expect(
+      detectPattern([...sparseVolume, expansion], 0.5, 3, 'volume-expansion').matched,
+    ).toBe('none');
   });
 
   it('detects a bullish engulfing reversal', () => {

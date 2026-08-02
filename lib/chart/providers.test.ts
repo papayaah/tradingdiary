@@ -57,4 +57,30 @@ describe('Tiingo crypto provider routing', () => {
 
     expect(provider.name).toBe('Tiingo');
   });
+
+  it('explicitly requests and maps equity intraday volume', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => [{
+        date: '2026-07-31T13:30:00Z',
+        open: 100,
+        high: 101,
+        low: 99.5,
+        close: 100.75,
+        volume: 42_500,
+      }],
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const provider = getActiveProvider('AAPL', {
+      preferredProvider: 'tiingo',
+      tiingoKey: 'test-token',
+    });
+    const candles = await provider.fetchRecentCandles('AAPL', '10m');
+
+    const requestUrl = String(fetchMock.mock.calls[0][0]);
+    expect(requestUrl).toContain('columns=open,high,low,close,volume');
+    expect(candles[0].volume).toBe(42_500);
+  });
 });

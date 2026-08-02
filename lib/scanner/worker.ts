@@ -17,6 +17,7 @@ import {
 import {
   DEFAULT_PATTERN_ID,
   isPatternId,
+  normalizePatternSettings,
   scanAllPatterns,
   PATTERN_VERSION,
 } from '@/lib/scanner/patterns';
@@ -95,6 +96,7 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
         watch.requiredCandleCount,
         patternId,
         watch.maxBodyOverlapPercent,
+        normalizePatternSettings(watch.patternSettings),
       )
     : [];
   const latest = matches.length ? matches[matches.length - 1] : null;

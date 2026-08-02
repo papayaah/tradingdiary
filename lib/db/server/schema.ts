@@ -84,6 +84,7 @@ export const userWatchlists = pgTable("user_watchlists", {
     minMovePercent: doublePrecision("min_move_percent").notNull().default(0.25),
     requiredCandleCount: integer("required_candle_count").notNull().default(3),
     maxBodyOverlapPercent: doublePrecision("max_body_overlap_percent").notNull().default(100),
+    patternSettings: jsonb("pattern_settings").notNull().default({}),
     session: text("session").notNull().default('pre'),
     scanFrequencySeconds: integer("scan_frequency_seconds").notNull().default(15),
     updatedAt: timestamp("updated_at", { mode: 'string' }).defaultNow(),
@@ -108,6 +109,7 @@ export const serverWatch = pgTable("server_watch", {
     minMovePercent: doublePrecision("min_move_percent").notNull(),
     requiredCandleCount: integer("required_candle_count").notNull().default(3),
     maxBodyOverlapPercent: doublePrecision("max_body_overlap_percent").notNull().default(100),
+    patternSettings: jsonb("pattern_settings").notNull().default({}),
     session: text("session").notNull(), // 'rth' | 'pre' | 'ext' | 'all'
     enabled: boolean("enabled").notNull().default(true),
     providerCredentialId: uuid("provider_credential_id"), // FK added when a credentials table exists

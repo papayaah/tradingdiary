@@ -11,7 +11,14 @@ import {
   HelpCircle,
   Sparkles,
 } from 'lucide-react';
-import { getPatternDefinition, type PatternId } from '@/lib/scanner/patterns';
+import {
+  DEFAULT_PATTERN_SETTINGS,
+  getPatternDefinition,
+  type PatternId,
+  type PatternSettings,
+} from '@/lib/scanner/patterns';
+import { DETECTOR_RULE_GUIDANCE } from './pattern-settings/detectorGuidance';
+import { RangeBreakoutControls } from './pattern-settings/RangeBreakoutControls';
 
 interface InteractivePatternVisualizerProps {
   patternId: PatternId;
@@ -21,6 +28,8 @@ interface InteractivePatternVisualizerProps {
   onMinMoveChange?: (val: number) => void;
   onRequiredCountChange?: (val: number) => void;
   onMaxBodyOverlapChange?: (val: number) => void;
+  patternSettings?: PatternSettings;
+  onPatternSettingsChange?: (settings: PatternSettings) => void;
 }
 
 export function InteractivePatternVisualizer({
@@ -31,6 +40,8 @@ export function InteractivePatternVisualizer({
   onMinMoveChange,
   onRequiredCountChange,
   onMaxBodyOverlapChange,
+  patternSettings = DEFAULT_PATTERN_SETTINGS,
+  onPatternSettingsChange,
 }: InteractivePatternVisualizerProps) {
   const [direction, setDirection] = useState<'bullish' | 'bearish'>('bullish');
   const [simScenario, setSimScenario] = useState<'valid' | 'fail-size' | 'fail-direction'>('valid');
@@ -71,9 +82,14 @@ export function InteractivePatternVisualizer({
 
   const isConsecutive = patternId === 'consecutive';
   const patternDefinition = getPatternDefinition(patternId);
+  const ruleGuidance = DETECTOR_RULE_GUIDANCE[patternId];
   const streak = isConsecutive ? localStreak : 3;
   const targetThreshold = localMinMove;
   const isBullish = direction === 'bullish';
+
+  React.useEffect(() => {
+    setSimScenario('valid');
+  }, [patternId]);
 
   // Keep every valid body above the selected threshold while varying the
   // bodies enough to resemble a real sequence instead of cloned bars.
@@ -99,7 +115,7 @@ export function InteractivePatternVisualizer({
     }
 
     const passesSize = bodyMove >= targetThreshold;
-    const passesDirection = candleIsBullish === isBullish;
+    const passesDirection = !isConsecutive || candleIsBullish === isBullish;
 
     return {
       index: i + 1,
@@ -181,6 +197,9 @@ export function InteractivePatternVisualizer({
 
         {/* Direction & Scenario Toggles */}
         <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[9px] font-bold uppercase tracking-wider text-muted">
+            Preview direction
+          </span>
           <div className="flex items-center rounded-lg border border-card-border bg-muted-bg p-0.5 text-xs">
             <button
               type="button"
@@ -226,7 +245,7 @@ export function InteractivePatternVisualizer({
           <div className="flex items-center justify-between text-xs">
             <label htmlFor="min-move-slider" className="font-medium text-muted flex items-center gap-1">
               <Sliders size={12} className="text-accent" />
-              Minimum Body per Candle:
+              {ruleGuidance.minBodyLabel}:
             </label>
             <span className="font-mono font-bold text-accent text-sm">{localMinMove.toFixed(2)}%</span>
           </div>
@@ -245,6 +264,9 @@ export function InteractivePatternVisualizer({
             <span>0.25% (Standard)</span>
             <span>3.00% (Very Large)</span>
           </div>
+          <p className="text-[9px] leading-relaxed text-muted">
+            {ruleGuidance.minBodyExplanation}
+          </p>
         </div>
 
         {/* Streak Selector (for consecutive) */}
@@ -314,7 +336,7 @@ export function InteractivePatternVisualizer({
         {/* Scenario Test Switcher */}
         <div className="min-w-0 basis-[320px] grow space-y-1">
           <span className="block text-xs font-medium text-muted">Test Scenario:</span>
-          <div className="grid grid-cols-1 gap-1 sm:grid-cols-3">
+          <div className={`grid grid-cols-1 gap-1 ${isConsecutive ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
             <button
               type="button"
               onClick={() => setSimScenario('valid')}
@@ -324,7 +346,7 @@ export function InteractivePatternVisualizer({
                   : 'border-card-border bg-card-bg text-muted hover:text-foreground'
               }`}
             >
-              Valid Trigger
+              {isConsecutive ? 'Valid Trigger' : 'Signal Body Passes'}
             </button>
             <button
               type="button"
@@ -337,29 +359,60 @@ export function InteractivePatternVisualizer({
             >
               Body Too Small
             </button>
-            <button
-              type="button"
-              onClick={() => setSimScenario('fail-direction')}
-              className={`min-h-10 min-w-0 rounded border px-2 py-1.5 text-center text-[10px] font-semibold leading-tight transition-colors ${
-                simScenario === 'fail-direction'
-                  ? 'border-loss bg-loss/15 text-loss'
-                  : 'border-card-border bg-card-bg text-muted hover:text-foreground'
-              }`}
-            >
-              {isConsecutive ? 'Broken Streak' : 'Wrong Direction'}
-            </button>
+            {isConsecutive ? (
+              <button
+                type="button"
+                onClick={() => setSimScenario('fail-direction')}
+                className={`min-h-10 min-w-0 rounded border px-2 py-1.5 text-center text-[10px] font-semibold leading-tight transition-colors ${
+                  simScenario === 'fail-direction'
+                    ? 'border-loss bg-loss/15 text-loss'
+                    : 'border-card-border bg-card-bg text-muted hover:text-foreground'
+                }`}
+              >
+                Broken Streak
+              </button>
+            ) : null}
           </div>
         </div>
 
-        {!isConsecutive ? (
-          <div className="flex basis-full items-start gap-2 rounded-lg border border-card-border bg-card-bg/70 px-3 py-2 text-[10px] text-muted">
-            <Info size={13} className="mt-0.5 shrink-0 text-accent" />
-            <span>
-              Required Streak Count and Body Staircase are specific to Consecutive Move.
-              Select that pattern above to configure them.
+        {patternId === 'range-breakout' ? (
+          <RangeBreakoutControls
+            value={patternSettings.rangeBreakout}
+            onChange={(rangeBreakout) => onPatternSettingsChange?.({
+              ...patternSettings,
+              rangeBreakout,
+            })}
+          />
+        ) : null}
+
+        <div className="basis-full rounded-lg border border-card-border bg-card-bg/70 px-3 py-2">
+          <div className="mb-2 flex items-center gap-1.5 text-[10px] font-bold text-foreground">
+            <Info size={13} className="shrink-0 text-accent" />
+            Current detector rules
+          </div>
+          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
+            {ruleGuidance.currentRules.map((rule) => (
+              <div key={rule.label} className="rounded-md border border-card-border/60 bg-muted-bg/40 px-2 py-1.5 text-[9px]">
+                <span className="block font-bold text-foreground">{rule.label}</span>
+                <span className="text-muted">{rule.value}</span>
+              </div>
+            ))}
+          </div>
+          {!isConsecutive ? (
+            <p className="mt-2 text-[9px] leading-relaxed text-muted">
+              The preview below demonstrates the adjustable signal-body threshold only.
+              A real match must also pass every fixed rule listed above.
+            </p>
+          ) : null}
+          <div className="mt-2 border-t border-card-border/60 pt-2">
+            <span className="text-[9px] font-bold text-foreground">
+              Recommended next controls (not active yet):
+            </span>
+            <span className="ml-1 text-[9px] text-muted">
+              {ruleGuidance.recommendedControls.join(' · ')}
             </span>
           </div>
-        ) : null}
+        </div>
       </div>
 
       {/* Dynamic Candlestick Diagram SVG */}

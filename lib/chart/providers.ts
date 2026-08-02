@@ -434,7 +434,12 @@ class TiingoProvider implements ChartProvider {
     ): Promise<OHLCCandle[]> {
         const freq = this.mapInterval(interval);
         const dateParams = `startDate=${startDate}${endDate ? `&endDate=${endDate}` : ''}`;
-        const query = `${dateParams}&resampleFreq=${freq}&afterHours=true&token=${this.apiKey}`;
+        // Tiingo does not include historical intraday volume unless it is
+        // explicitly requested through `columns`. Without this, every mapped
+        // candle receives volume=0 and volume-dependent detectors can never
+        // match even though the feed supports OHLCV.
+        const columns = 'open,high,low,close,volume';
+        const query = `${dateParams}&resampleFreq=${freq}&afterHours=true&columns=${columns}&token=${this.apiKey}`;
         const cleanSymbol = symbol.toUpperCase();
 
         // The consolidated equity feed covers the full 4:00 AM–8:00 PM ET
@@ -642,7 +647,7 @@ export class DatabentoProvider implements ChartProvider {
     }
 
     private mapSymbol(symbol: string): string {
-        let clean = symbol.toUpperCase().trim();
+        const clean = symbol.toUpperCase().trim();
         if (clean.includes('.')) return clean;
         // Reduce IBKR contract codes (MNQU6) and Yahoo tickers (MNQ=F) to the
         // product root before requesting Databento's continuous front month.
@@ -720,7 +725,7 @@ export class DatabentoProvider implements ChartProvider {
                 if (sec && !isNaN(close)) {
                     raw1mCandles.push({ time: sec, open, high, low, close, volume });
                 }
-            } catch (e) {
+            } catch {
                 // skip metadata or non-candle record
             }
         }

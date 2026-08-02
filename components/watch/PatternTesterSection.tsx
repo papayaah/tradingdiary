@@ -1,28 +1,53 @@
 'use client';
 
 import React from 'react';
-import { Search, Play, RefreshCw, Sparkles, Sliders } from 'lucide-react';
+import { Search, Play, RefreshCw, Sparkles } from 'lucide-react';
 import LightweightPatternChart from '@/components/chart/LightweightPatternChart';
-import type { Candle } from './watchAnalysis';
+import {
+  getPatternDefinition,
+  scanAllPatterns,
+  DEFAULT_PATTERN_SETTINGS,
+  type PatternId,
+  type PatternSettings,
+} from '@/lib/scanner/patterns';
+import PatternGuidePanel from './PatternGuidePanel';
+import type { Candle, PatternMatch } from './watchAnalysis';
+
+interface PatternTestResult {
+  success: boolean;
+  patternMatched: 'bullish' | 'bearish' | 'none';
+  message: string;
+  candles: Candle[];
+  provider: string;
+  allMatches: PatternMatch[];
+}
 
 export interface PatternTesterSectionProps {
   testSymbol: string;
   onSymbolChange: (sym: string) => void;
   testInterval: string;
   onIntervalChange: (iv: string) => void;
-  testSessionFilter: string;
-  onSessionFilterChange: (session: string) => void;
+  testSessionFilter: 'all' | 'rth' | 'ext';
+  onSessionFilterChange: (session: 'all' | 'rth' | 'ext') => void;
   testMinMove: number;
   onMinMoveChange: (val: number) => void;
   isTesting: boolean;
   onRunTest: (e: React.FormEvent) => void;
-  testResult: any;
+  testResult: PatternTestResult | null;
   displayedCandles: Candle[];
   testerCandles: Candle[];
   autoPatternsEnabled: boolean;
   onToggleAutoPatterns: () => void;
   testCurrentDayOnly: boolean;
   onToggleCurrentDayOnly: (val: boolean) => void;
+  selectedPatternId?: PatternId;
+  onPatternChange?: (id: PatternId) => void;
+  requiredCount?: number;
+  onRequiredCountChange?: (val: number) => void;
+  maxBodyOverlapPercent?: number;
+  onMaxBodyOverlapChange?: (val: number) => void;
+  patternSettings?: PatternSettings;
+  onPatternSettingsChange?: (settings: PatternSettings) => void;
 }
 
 export function PatternTesterSection({
@@ -43,9 +68,60 @@ export function PatternTesterSection({
   onToggleAutoPatterns,
   testCurrentDayOnly,
   onToggleCurrentDayOnly,
+  selectedPatternId = 'consecutive',
+  onPatternChange,
+  requiredCount = 3,
+  onRequiredCountChange,
+  maxBodyOverlapPercent = 100,
+  onMaxBodyOverlapChange,
+  patternSettings = DEFAULT_PATTERN_SETTINGS,
+  onPatternSettingsChange,
 }: PatternTesterSectionProps) {
+  const chartCandles = testerCandles.length > 0 ? testerCandles : displayedCandles;
+  const detectorMatches = React.useMemo(
+    () => scanAllPatterns(
+      chartCandles,
+      testMinMove,
+      requiredCount,
+      selectedPatternId,
+      maxBodyOverlapPercent,
+      patternSettings,
+    ),
+    [
+      chartCandles,
+      maxBodyOverlapPercent,
+      requiredCount,
+      selectedPatternId,
+      testMinMove,
+      patternSettings,
+    ],
+  );
+  const selectedPatternName = getPatternDefinition(selectedPatternId).name;
+  const volumeBarCount = React.useMemo(
+    () => chartCandles.filter((candle) => Number.isFinite(candle.volume) && candle.volume > 0).length,
+    [chartCandles],
+  );
+  const hasVolumeData = volumeBarCount > 0;
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <div className="space-y-4">
+      {onPatternChange ? (
+        <PatternGuidePanel
+          value={selectedPatternId}
+          onChange={onPatternChange}
+          description="Test the same detector settings used by live Market Watch and backend alerts."
+          minMovePercent={testMinMove}
+          requiredCount={requiredCount}
+          maxBodyOverlapPercent={maxBodyOverlapPercent}
+          onMinMoveChange={onMinMoveChange}
+          onRequiredCountChange={onRequiredCountChange}
+          onMaxBodyOverlapChange={onMaxBodyOverlapChange}
+          patternSettings={patternSettings}
+          onPatternSettingsChange={onPatternSettingsChange}
+        />
+      ) : null}
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
       {/* Left Control Sidebar Form */}
       <div className="lg:col-span-4 space-y-4">
         <div className="bg-card-bg/60 backdrop-blur-md border border-card-border/60 shadow-xl rounded-2xl p-5">
@@ -99,12 +175,14 @@ export function PatternTesterSection({
                 </label>
                 <select
                   value={testSessionFilter}
-                  onChange={(e) => onSessionFilterChange(e.target.value)}
+                  onChange={(e) => onSessionFilterChange(
+                    e.target.value as 'all' | 'rth' | 'ext',
+                  )}
                   className="w-full bg-muted-bg border border-card-border focus:border-accent rounded-xl px-3 py-2 text-xs font-bold text-foreground cursor-pointer outline-none"
                 >
                   <option value="all">All Hours</option>
                   <option value="rth">Regular Trading Hours (RTH)</option>
-                  <option value="pre">Pre-Market Only</option>
+                  <option value="ext">Extended Hours (Pre/Post-Market)</option>
                 </select>
               </div>
             </div>
@@ -141,19 +219,54 @@ export function PatternTesterSection({
       {/* Right Chart Area */}
       <div className="lg:col-span-8 space-y-4">
         {testResult && testResult.success && displayedCandles.length > 0 ? (
-          <LightweightPatternChart
-            symbol={testSymbol}
-            candles={displayedCandles}
-            height={380}
-            autoPatternsEnabled={autoPatternsEnabled}
-            onTogglePatterns={onToggleAutoPatterns}
-            interval={testInterval}
-            onIntervalChange={onIntervalChange}
-            currentDayOnly={testCurrentDayOnly}
-            onToggleCurrentDayOnly={onToggleCurrentDayOnly}
-            providerBadge={testResult.provider}
-            subtitle={`Showing ${displayedCandles.length} candles of ${testerCandles.length} loaded (${testInterval})`}
-          />
+          <>
+            <div
+              className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-[11px] ${
+                selectedPatternId === 'volume-expansion' && !hasVolumeData
+                  ? 'border-amber-500/40 bg-amber-500/10'
+                  : 'border-card-border/60 bg-card-bg/50'
+              }`}
+              role="status"
+              aria-live="polite"
+            >
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="font-semibold text-foreground">
+                  {detectorMatches.length > 0
+                    ? `${detectorMatches.length} ${selectedPatternName} ${detectorMatches.length === 1 ? 'match' : 'matches'}`
+                    : `No ${selectedPatternName} matches`}
+                </span>
+                <span className={hasVolumeData ? 'text-muted' : 'text-amber-300'}>
+                  Volume: {volumeBarCount}/{chartCandles.length} loaded bars
+                </span>
+              </div>
+              <span className="text-muted">
+                {selectedPatternId === 'volume-expansion' && !hasVolumeData
+                  ? 'This feed response has no usable volume, so Volume Expansion cannot run.'
+                  : detectorMatches.length > 0
+                    ? 'Arrows mark the candle that completes each setup.'
+                    : 'Try a lower threshold, another interval, or more history.'}
+              </span>
+            </div>
+            <LightweightPatternChart
+              symbol={testSymbol}
+              candles={chartCandles}
+              height={380}
+              autoPatternsEnabled={autoPatternsEnabled}
+              onTogglePatterns={onToggleAutoPatterns}
+              interval={testInterval}
+              onIntervalChange={onIntervalChange}
+              currentDayOnly={testCurrentDayOnly}
+              onToggleCurrentDayOnly={onToggleCurrentDayOnly}
+              providerBadge={testResult.provider}
+              selectedPatternId={selectedPatternId}
+              minMovePercent={testMinMove}
+              requiredCount={requiredCount}
+              maxBodyOverlapPercent={maxBodyOverlapPercent}
+              patternSettings={patternSettings}
+              scannerPatternMarkersEnabled
+              subtitle={`Showing ${displayedCandles.length} candles of ${testerCandles.length} loaded (${testInterval})`}
+            />
+          </>
         ) : (
           <div className="rounded-2xl border border-dashed border-card-border p-12 text-center text-xs text-muted bg-card-bg/20 flex flex-col items-center justify-center min-h-[380px]">
             <Sparkles size={24} className="text-accent/60 mb-2" />
@@ -165,7 +278,8 @@ export function PatternTesterSection({
         )}
       </div>
     </div>
-  );
+  </div>
+);
 }
 
 export default React.memo(PatternTesterSection);

@@ -1,3 +1,5 @@
+import type { PatternSettings } from './settings';
+
 export interface Candle {
   time: number;
   open: number;
@@ -19,6 +21,7 @@ export interface PatternContext {
   minMovePercent: number;
   requiredCount: number;
   maxBodyOverlapPercent: number;
+  settings: PatternSettings;
 }
 
 export interface PatternDefinition<Id extends string = string> {

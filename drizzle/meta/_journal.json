@@ -50,6 +50,13 @@
       "when": 1785571244668,
       "tag": "0006_free_boomerang",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785695462000,
+      "tag": "0007_add_pattern_settings",
+      "breakpoints": true
     }
   ]
 }

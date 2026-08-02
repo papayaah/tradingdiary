@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { CandleData } from '@/lib/chart/patterns';
+import type { PatternId, PatternSettings } from '@/lib/scanner/patterns';
 import SharedTradingChart from './SharedTradingChart';
 
 interface LightweightPatternChartProps {
@@ -17,6 +18,12 @@ interface LightweightPatternChartProps {
   providerBadge?: string;
   subtitle?: string;
   availableIntervals?: readonly string[];
+  selectedPatternId?: PatternId;
+  minMovePercent?: number;
+  requiredCount?: number;
+  maxBodyOverlapPercent?: number;
+  scannerPatternMarkersEnabled?: boolean;
+  patternSettings?: PatternSettings;
   onLoadMoreHistory?: () => void;
   loadingMore?: boolean;
   hasMore?: boolean;
@@ -35,6 +42,12 @@ export default function LightweightPatternChart({
   providerBadge,
   subtitle,
   availableIntervals,
+  selectedPatternId,
+  minMovePercent,
+  requiredCount,
+  maxBodyOverlapPercent,
+  scannerPatternMarkersEnabled,
+  patternSettings,
   onLoadMoreHistory,
   loadingMore,
   hasMore,
@@ -53,6 +66,12 @@ export default function LightweightPatternChart({
       onToggleCurrentDayOnly={onToggleCurrentDayOnly}
       providerBadge={providerBadge}
       subtitle={subtitle}
+      selectedPatternId={selectedPatternId}
+      minMovePercent={minMovePercent}
+      requiredCount={requiredCount}
+      maxBodyOverlapPercent={maxBodyOverlapPercent}
+      scannerPatternMarkersEnabled={scannerPatternMarkersEnabled}
+      patternSettings={patternSettings}
       onLoadMoreHistory={onLoadMoreHistory}
       loadingMore={loadingMore}
       hasMore={hasMore}

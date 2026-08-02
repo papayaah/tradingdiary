@@ -42,13 +42,17 @@ import {
 } from './WatchControls';
 import {
   detectPattern,
+  DEFAULT_PATTERN_SETTINGS,
   isPatternId,
+  normalizePatternSettings,
   scanAllPatterns,
   type Candle,
   type PatternId,
   type PatternMatch,
+  type PatternSettings,
 } from './watchAnalysis';
 import PatternGuidePanel from './PatternGuidePanel';
+import PatternTesterSection from './PatternTesterSection';
 import WatchlistRow from './WatchlistRow';
 import CompactWatchlist, {
   type CompactWatchlistEntry,
@@ -376,6 +380,16 @@ export default function MarketWatcher() {
     const saved = localStorage.getItem('watcher-selected-pattern');
     return isPatternId(saved) ? saved : 'consecutive';
   });
+  const [patternSettings, setPatternSettings] = useState<PatternSettings>(() => {
+    if (typeof window === 'undefined') return DEFAULT_PATTERN_SETTINGS;
+    try {
+      return normalizePatternSettings(
+        JSON.parse(localStorage.getItem('watcher-pattern-settings') ?? 'null'),
+      );
+    } catch {
+      return DEFAULT_PATTERN_SETTINGS;
+    }
+  });
   // Sorting state for Watchlist table
   const [sortColumn, setSortColumn] = useState<'symbol' | 'interval' | 'status' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -627,6 +641,7 @@ export default function MarketWatcher() {
     minMovePercent = newMinMove,
     requiredCount = requiredCandleCount,
     bodyOverlapOverride = maxBodyOverlapPercent,
+    settingsOverride = patternSettings,
   ) => {
     const cleanList = buildScannerSyncWatchlist(items);
     return fetch('/api/watch/sync', {
@@ -638,6 +653,7 @@ export default function MarketWatcher() {
         minMovePercent,
         requiredCandleCount: requiredCount,
         maxBodyOverlapPercent: bodyOverlapOverride,
+        patternSettings: settingsOverride,
         session,
         scanFrequencySeconds: Math.round(frequencyMinutes * 60),
         disabledAssetClasses: disabledCategoriesRef.current.map((c) => CATEGORY_TO_ASSET_CLASS[c]),
@@ -650,6 +666,7 @@ export default function MarketWatcher() {
     requiredCandleCount,
     scanIntervalMinutes,
     selectedPatternId,
+    patternSettings,
   ]);
 
   const handleGlobalIntervalChange = React.useCallback((interval: string) => {
@@ -704,6 +721,64 @@ export default function MarketWatcher() {
     syncScannerSettings,
   ]);
 
+  const handlePatternSettingsChange = React.useCallback((value: PatternSettings) => {
+    const normalized = normalizePatternSettings(value);
+    setPatternSettings(normalized);
+    localStorage.setItem('watcher-pattern-settings', JSON.stringify(normalized));
+
+    setWatchlist((current) => current.map((item) => {
+      if (!item.candles?.length) return item;
+      const { matched } = detectPattern(
+        item.candles,
+        newMinMove,
+        requiredCandleCount,
+        selectedPatternId,
+        maxBodyOverlapPercent,
+        normalized,
+      );
+      return { ...item, status: matched };
+    }));
+    setTestResult((prev) => {
+      if (!prev || !prev.candles?.length) return prev;
+      const { matched, message } = detectPattern(
+        prev.candles,
+        newMinMove,
+        requiredCandleCount,
+        selectedPatternId,
+        maxBodyOverlapPercent,
+        normalized,
+      );
+      const allMatches = scanAllPatterns(
+        prev.candles,
+        newMinMove,
+        requiredCandleCount,
+        selectedPatternId,
+        maxBodyOverlapPercent,
+        normalized,
+      );
+      return { ...prev, patternMatched: matched, message, allMatches };
+    });
+
+    void syncScannerSettings(
+      watchlistRef.current,
+      selectedPatternId,
+      activeWindow,
+      scanIntervalMinutes,
+      newMinMove,
+      requiredCandleCount,
+      maxBodyOverlapPercent,
+      normalized,
+    ).catch(() => {});
+  }, [
+    activeWindow,
+    maxBodyOverlapPercent,
+    newMinMove,
+    requiredCandleCount,
+    scanIntervalMinutes,
+    selectedPatternId,
+    syncScannerSettings,
+  ]);
+
   const handleNewMinMoveChange = React.useCallback((value: number) => {
     const normalized = Math.max(0.05, Math.min(3, value));
     setNewMinMove(normalized);
@@ -716,10 +791,32 @@ export default function MarketWatcher() {
         requiredCandleCount,
         selectedPatternId,
         maxBodyOverlapPercent,
+        patternSettings,
       );
       return { ...item, status: matched };
     }));
     if (expandedRowIndex !== null) setTestMinMove(normalized);
+
+    setTestResult((prev) => {
+      if (!prev || !prev.candles?.length) return prev;
+      const { matched, message } = detectPattern(
+        prev.candles,
+        normalized,
+        requiredCandleCount,
+        selectedPatternId,
+        maxBodyOverlapPercent,
+        patternSettings,
+      );
+      const allMatches = scanAllPatterns(
+        prev.candles,
+        normalized,
+        requiredCandleCount,
+        selectedPatternId,
+        maxBodyOverlapPercent,
+        patternSettings,
+      );
+      return { ...prev, patternMatched: matched, message, allMatches };
+    });
 
     if (globalMinMoveSyncTimerRef.current !== null) {
       window.clearTimeout(globalMinMoveSyncTimerRef.current);
@@ -742,6 +839,7 @@ export default function MarketWatcher() {
     scanIntervalMinutes,
     selectedPatternId,
     syncScannerSettings,
+    patternSettings,
   ]);
 
   const handleRequiredCandleCountChange = React.useCallback((value: number) => {
@@ -756,9 +854,32 @@ export default function MarketWatcher() {
         normalized,
         selectedPatternId,
         maxBodyOverlapPercent,
+        patternSettings,
       );
       return { ...item, status: matched };
     }));
+
+    setTestResult((prev) => {
+      if (!prev || !prev.candles?.length) return prev;
+      const { matched, message } = detectPattern(
+        prev.candles,
+        newMinMove,
+        normalized,
+        selectedPatternId,
+        maxBodyOverlapPercent,
+        patternSettings,
+      );
+      const allMatches = scanAllPatterns(
+        prev.candles,
+        newMinMove,
+        normalized,
+        selectedPatternId,
+        maxBodyOverlapPercent,
+        patternSettings,
+      );
+      return { ...prev, patternMatched: matched, message, allMatches };
+    });
+
     void syncScannerSettings(
       watchlistRef.current,
       selectedPatternId,
@@ -774,6 +895,7 @@ export default function MarketWatcher() {
     scanIntervalMinutes,
     selectedPatternId,
     syncScannerSettings,
+    patternSettings,
   ]);
 
   // Toggle a whole category's background scanning/alerts. Updates the ref first
@@ -803,15 +925,38 @@ export default function MarketWatcher() {
         requiredCandleCount,
         patternId,
         maxBodyOverlapPercent,
+        patternSettings,
       );
       return { ...item, status: matched };
     }));
+
+    setTestResult((prev) => {
+      if (!prev || !prev.candles?.length) return prev;
+      const { matched, message } = detectPattern(
+        prev.candles,
+        newMinMove,
+        requiredCandleCount,
+        patternId,
+        maxBodyOverlapPercent,
+        patternSettings,
+      );
+      const allMatches = scanAllPatterns(
+        prev.candles,
+        newMinMove,
+        requiredCandleCount,
+        patternId,
+        maxBodyOverlapPercent,
+        patternSettings,
+      );
+      return { ...prev, patternMatched: matched, message, allMatches };
+    });
   }, [
     maxBodyOverlapPercent,
     newMinMove,
     requiredCandleCount,
     syncScannerSettings,
     watchlist,
+    patternSettings,
   ]);
 
   const [cloudSyncNotice, setCloudSyncNotice] = useState<string | null>(null);
@@ -978,6 +1123,11 @@ export default function MarketWatcher() {
             'watcher-max-body-overlap-percent',
             String(overlap),
           );
+        }
+        if (data?.patternSettings) {
+          const settings = normalizePatternSettings(data.patternSettings);
+          setPatternSettings(settings);
+          localStorage.setItem('watcher-pattern-settings', JSON.stringify(settings));
         }
         if (data?.session === 'rth' || data?.session === 'pre' || data?.session === 'ext' || data?.session === 'all') {
           setActiveWindow(data.session);
@@ -1626,6 +1776,7 @@ export default function MarketWatcher() {
         requiredCandleCount,
         selectedPatternId,
         maxBodyOverlapPercent,
+        patternSettings,
       );
       const status = scanCandles.length === 0 ? 'no-data' as const : matched;
       const dailyMove = isFuturesOrCrypto
@@ -1744,6 +1895,7 @@ export default function MarketWatcher() {
             requiredCandleCount,
             selectedPatternId,
             maxBodyOverlapPercent,
+            patternSettings,
           );
           const allMatches = scanAllPatterns(
             scanned.candles,
@@ -1751,6 +1903,7 @@ export default function MarketWatcher() {
             requiredCandleCount,
             selectedPatternId,
             maxBodyOverlapPercent,
+            patternSettings,
           );
           setTestResult({
             success: true,
@@ -2191,6 +2344,7 @@ export default function MarketWatcher() {
           requiredCandleCount,
           selectedPatternId,
           maxBodyOverlapPercent,
+          patternSettings,
         );
         const { matched, message } = detectPattern(
           currentDayCandles,
@@ -2198,6 +2352,7 @@ export default function MarketWatcher() {
           requiredCandleCount,
           selectedPatternId,
           maxBodyOverlapPercent,
+          patternSettings,
         );
 
         setTestResult({
@@ -2231,6 +2386,7 @@ export default function MarketWatcher() {
               requiredCandleCount,
               selectedPatternId,
               maxBodyOverlapPercent,
+              patternSettings,
             );
             const { matched, message, time } = detectPattern(
               sessionCandles,
@@ -2238,6 +2394,7 @@ export default function MarketWatcher() {
               requiredCandleCount,
               selectedPatternId,
               maxBodyOverlapPercent,
+              patternSettings,
             );
             const status = sessionCandles.length === 0 ? 'no-data' as const : matched;
             const dailyMove = isFuturesOrCrypto
@@ -2422,17 +2579,19 @@ export default function MarketWatcher() {
 
       const { matched, message } = detectPattern(
         candles,
-        testMinMove,
+        newMinMove,
         requiredCandleCount,
         selectedPatternId,
         maxBodyOverlapPercent,
+        patternSettings,
       );
       const allMatches = scanAllPatterns(
         candles,
-        testMinMove,
+        newMinMove,
         requiredCandleCount,
         selectedPatternId,
         maxBodyOverlapPercent,
+        patternSettings,
       );
 
       setTestResult({
@@ -2635,40 +2794,48 @@ export default function MarketWatcher() {
     [testResult, activeTab, expandedRowIndex, watchlist, activeWindow, watchlistCategory, testCurrentDayOnly, testSessionFilter],
   );
 
+  // The Pattern Tester previews the same global minimum used by live scans.
+  // Expanded watchlist charts keep their row-specific minimum for inspection.
+  const analysisMinMove = activeTab === 'tester' ? newMinMove : testMinMove;
+
   // Price analysis & pattern scanning computed dynamically on the filtered candles
   const currentPattern = React.useMemo(
     () => detectPattern(
       testerCandles,
-      testMinMove,
+      analysisMinMove,
       requiredCandleCount,
       selectedPatternId,
       maxBodyOverlapPercent,
+      patternSettings,
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       testerCandles,
-      testMinMove,
+      analysisMinMove,
       testInterval,
       requiredCandleCount,
       selectedPatternId,
       maxBodyOverlapPercent,
+      patternSettings,
     ],
   );
   const { matched: currentPatternMatched, message: currentPatternMessage } = currentPattern;
   const currentMatches = React.useMemo(
     () => scanAllPatterns(
       testerCandles,
-      testMinMove,
+      analysisMinMove,
       requiredCandleCount,
       selectedPatternId,
       maxBodyOverlapPercent,
+      patternSettings,
     ),
     [
       testerCandles,
-      testMinMove,
+      analysisMinMove,
       requiredCandleCount,
       selectedPatternId,
       maxBodyOverlapPercent,
+      patternSettings,
     ],
   );
 
@@ -3259,7 +3426,7 @@ export default function MarketWatcher() {
           }`}
         >
           <Search size={14} />
-          Manual Tester & Session Chart
+          Pattern Tester
         </button>
       </div>
 
@@ -3441,6 +3608,8 @@ export default function MarketWatcher() {
                 onMinMoveChange={handleNewMinMoveChange}
                 onRequiredCountChange={handleRequiredCandleCountChange}
                 onMaxBodyOverlapChange={handleMaxBodyOverlapChange}
+                patternSettings={patternSettings}
+                onPatternSettingsChange={handlePatternSettingsChange}
               />
 
               {/* WATCHLIST FORM */}
@@ -3764,219 +3933,39 @@ export default function MarketWatcher() {
         </div>
       )}
 
-      {/* MANUAL PATTERN TESTER VIEW */}
+      {/* PATTERN TESTER VIEW */}
       {activeTab === 'tester' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fadeIn">
-          {/* Left Column: Form and Setups list */}
-          <div className="lg:col-span-4 space-y-6">
-            {/* Tester Form Card */}
-            <div className="bg-card-bg border border-card-border shadow-xl rounded-2xl p-4 sm:p-5">
-              <h2 className="text-xl font-bold text-foreground flex items-center gap-2 mb-2">
-                <Search size={18} className="text-accent" /> Pattern Tester
-              </h2>
-              <p className="text-xs text-muted mb-6">
-                Fetch recent candles for a specific symbol immediately and verify whether it matches the selected pattern.
-              </p>
-
-              <form onSubmit={handleRunTest} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1.5">Stock Symbol</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. AAPL, TSLA, NQ=F"
-                    value={testSymbol}
-                    onChange={(e) => setTestSymbol(e.target.value)}
-                    className="w-full bg-muted-bg border border-card-border focus:border-accent focus:ring-1 focus:ring-accent rounded-xl px-3.5 py-2.5 text-sm text-foreground outline-none transition-all"
-                    required
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1.5">Interval</label>
-                    <select
-                      value={testInterval}
-                      onChange={(e) => setTestInterval(e.target.value)}
-                      className="w-full bg-muted-bg border border-card-border focus:border-accent focus:ring-1 focus:ring-accent rounded-xl px-3.5 py-2.5 text-sm text-foreground cursor-pointer outline-none transition-all"
-                    >
-                      <option value="1m">1m</option>
-                      <option value="2m">2m</option>
-                      <option value="5m">5m</option>
-                      <option value="10m">10m</option>
-                      <option value="15m">15m</option>
-                      <option value="30m">30m</option>
-                      <option value="45m">45m</option>
-                      <option value="1h">1h</option>
-                      <option value="1d">1d</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="block text-xs font-semibold uppercase tracking-wider text-muted">Min Candle Body %</label>
-                      <span className="font-mono text-xs font-bold text-accent">{testMinMove.toFixed(2)}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0.05"
-                      max="3.00"
-                      step="0.05"
-                      value={testMinMove}
-                      onChange={(e) => setTestMinMove(parseFloat(e.target.value) || 0.05)}
-                      className="w-full h-2.5 bg-card-bg border border-card-border rounded-xl appearance-none cursor-pointer accent-accent my-2"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-1.5">Trading Session</label>
-                  <select
-                    value={testSessionFilter}
-                    onChange={(e) => setTestSessionFilter(e.target.value as 'all' | 'rth' | 'ext')}
-                    className="w-full bg-muted-bg border border-card-border focus:border-accent focus:ring-1 focus:ring-accent rounded-xl px-3.5 py-2.5 text-sm text-foreground cursor-pointer outline-none transition-all"
-                  >
-                    <option value="all">All Hours (Pre + RTH + Post)</option>
-                    <option value="rth">Regular Trading Hours (RTH Only)</option>
-                    <option value="ext">Extended Hours Only (Pre/Post-Market)</option>
-                  </select>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isTesting}
-                  className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:from-violet-700 active:to-indigo-700 text-white rounded-xl py-3 text-sm font-semibold transition-all disabled:opacity-50"
-                >
-                  {isTesting ? (
-                    <>
-                      <RefreshCw size={16} className="animate-spin" /> Fetching data...
-                    </>
-                  ) : (
-                    <>
-                      <Play size={16} /> Check Pattern Now
-                    </>
-                  )}
-                </button>
-              </form>
-
-              {/* Status Header for Results */}
-              {testResult && (
-                <div className="mt-6 pt-6 border-t border-card-border space-y-4">
-                  <div className="flex items-center justify-between text-xs text-muted font-medium">
-                    <span>Provider: <span className="text-foreground font-semibold">{testResult.provider}</span></span>
-                    <span>Status: 
-                      {testResult.success ? (
-                        <span className="text-emerald-400 ml-1 font-semibold">Success</span>
-                      ) : (
-                        <span className="text-rose-400 ml-1 font-semibold">Failed</span>
-                      )}
-                    </span>
-                  </div>
-
-                  {testResult.success ? (
-                    (() => {
-                      const autoScan = detectAllPatterns(displayedCandles);
-                      const autoPattern = autoScan.patterns[0];
-                      const hasAutoPattern = currentPatternMatched === 'none' && autoPattern;
-
-                      return (
-                        <div className={`p-4 rounded-xl border flex gap-3 ${
-                          currentPatternMatched === 'bullish'
-                            ? 'bg-emerald-950/20 border-emerald-800/30'
-                            : currentPatternMatched === 'bearish'
-                            ? 'bg-rose-950/20 border-rose-800/30'
-                            : hasAutoPattern
-                            ? 'bg-amber-950/20 border-amber-800/30'
-                            : 'bg-muted-bg border border-card-border'
-                        }`}>
-                          <div className="mt-0.5">
-                            {currentPatternMatched === 'bullish' ? (
-                              <CheckCircle2 className="text-emerald-400" size={18} />
-                            ) : currentPatternMatched === 'bearish' ? (
-                              <CheckCircle2 className="text-rose-400" size={18} />
-                            ) : hasAutoPattern ? (
-                              <Sparkles className="text-amber-400 animate-pulse" size={18} />
-                            ) : (
-                              <XCircle className="text-muted" size={18} />
-                            )}
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
-                              {currentPatternMatched === 'bullish' && (
-                                <>
-                                  <TrendingUp size={14} className="text-emerald-400" />
-                                  <span>BULLISH PATTERN DETECTED</span>
-                                </>
-                              )}
-                              {currentPatternMatched === 'bearish' && (
-                                <>
-                                  <TrendingDown size={14} className="text-rose-400" />
-                                  <span>BEARISH PATTERN DETECTED</span>
-                                </>
-                              )}
-                              {hasAutoPattern && (
-                                <>
-                                  <Sparkles size={14} className="text-amber-400 animate-pulse" />
-                                  <span>{autoPattern.name.toUpperCase()} DETECTED ({autoPattern.confidence}% match)</span>
-                                </>
-                              )}
-                              {currentPatternMatched === 'none' && !hasAutoPattern && <span>NO PATTERN MATCHED</span>}
-                            </div>
-                            <p className="text-muted text-[11px] mt-1 leading-relaxed">
-                              {hasAutoPattern
-                                ? `Found ${autoPattern.name} setup on chart. Breakout: $${Number(autoPattern.breakoutPrice).toFixed(2)} | Target: $${Number(autoPattern.targetPrice).toFixed(2)}`
-                                : currentPatternMessage}
-                            </p>
-                          </div>
-                        </div>
-                      );
-                    })()
-                  ) : (
-                    <div className="p-3 bg-rose-950/10 border border-rose-900/20 text-rose-400 text-xs rounded-xl flex items-center gap-2">
-                      <AlertTriangle size={16} />
-                      <span>{testResult.message}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Recent Candles Breakdown Text List */}
-            {testResult && testResult.success && testResult.candles.length > 0 && (
-              <div className="bg-card-bg border border-card-border shadow-xl rounded-2xl p-6">
-                <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4">
-                  Recent Candles Breakdown
-                </h3>
-                <div className="space-y-1.5 max-h-[250px] overflow-y-auto pr-1">
-                  {testResult.candles.slice(-12).reverse().map((c, i) => {
-                    const isGreen = c.close >= c.open;
-                    return (
-                      <div
-                        key={i}
-                        className="flex items-center justify-between p-2 rounded-lg text-[10px] font-mono border bg-muted-bg/30 border-card-border/40"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className={`w-2 h-2 rounded-full shrink-0 ${isGreen ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                          <span className="text-muted">
-                            {new Date(c.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        </div>
-                        <div className="flex gap-2 text-foreground">
-                          <span>O: <span className="font-semibold">${c.open.toFixed(2)}</span></span>
-                          <span>C: <span className="font-semibold">${c.close.toFixed(2)}</span></span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Right Column: Chart and Breakdown List */}
-          <div className="lg:col-span-8 space-y-6">
-            {renderChartOnly()}
-            {renderSetupsGrid()}
-          </div>
+        <div className="animate-fadeIn">
+          <PatternTesterSection
+            testSymbol={testSymbol}
+            onSymbolChange={setTestSymbol}
+            testInterval={testInterval}
+            onIntervalChange={(iv) => {
+              setTestInterval(iv);
+              void executePatternTest(testSymbol, iv);
+            }}
+            testSessionFilter={testSessionFilter}
+            onSessionFilterChange={setTestSessionFilter}
+            testMinMove={newMinMove}
+            onMinMoveChange={handleNewMinMoveChange}
+            isTesting={isTesting}
+            onRunTest={handleRunTest}
+            testResult={testResult}
+            displayedCandles={displayedCandles}
+            testerCandles={testerCandles}
+            autoPatternsEnabled={autoPatternsEnabled}
+            onToggleAutoPatterns={handleToggleAutoPatterns}
+            testCurrentDayOnly={testCurrentDayOnly}
+            onToggleCurrentDayOnly={setTestCurrentDayOnly}
+            selectedPatternId={selectedPatternId}
+            onPatternChange={handlePatternChange}
+            requiredCount={requiredCandleCount}
+            onRequiredCountChange={handleRequiredCandleCountChange}
+            maxBodyOverlapPercent={maxBodyOverlapPercent}
+            onMaxBodyOverlapChange={handleMaxBodyOverlapChange}
+            patternSettings={patternSettings}
+            onPatternSettingsChange={handlePatternSettingsChange}
+          />
         </div>
       )}
       

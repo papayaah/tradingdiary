@@ -6,6 +6,7 @@ import { serverWatch, userWatchlists } from '@/lib/db/server/schema';
 import {
   DEFAULT_PATTERN_ID,
   isPatternId,
+  normalizePatternSettings,
   type PatternId,
 } from '@/lib/scanner/patterns';
 import type { AssetClass, WatchSession } from '@/lib/scanner/sessions';
@@ -134,6 +135,7 @@ export async function GET(request: NextRequest) {
         patternId: DEFAULT_PATTERN_ID,
         minMovePercent: 0.25,
         requiredCandleCount: 3,
+        patternSettings: normalizePatternSettings(null),
         disabledAssetClasses,
         authenticated: true,
       });
@@ -146,6 +148,7 @@ export async function GET(request: NextRequest) {
       minMovePercent: parseMinMovePercent(record.minMovePercent),
       requiredCandleCount: parseRequiredCandleCount(record.requiredCandleCount),
       maxBodyOverlapPercent: parseMaxBodyOverlapPercent(record.maxBodyOverlapPercent),
+      patternSettings: normalizePatternSettings(record.patternSettings),
       session: parseSession(record.session),
       scanFrequencySeconds: record.scanFrequencySeconds,
       disabledAssetClasses,
@@ -178,6 +181,7 @@ export async function POST(request: NextRequest) {
     const maxBodyOverlapPercent = parseMaxBodyOverlapPercent(
       body.maxBodyOverlapPercent,
     );
+    const patternSettings = normalizePatternSettings(body.patternSettings);
     const watchSession = parseSession(body.session);
     const scanFrequencySeconds = parseScanFrequency(body.scanFrequencySeconds);
     const disabledAssetClasses = parseDisabledAssetClasses(body.disabledAssetClasses);
@@ -200,6 +204,7 @@ export async function POST(request: NextRequest) {
             minMovePercent,
             requiredCandleCount,
             maxBodyOverlapPercent,
+            patternSettings,
             session: watchSession,
             scanFrequencySeconds,
             updatedAt: nowIso,
@@ -213,6 +218,7 @@ export async function POST(request: NextRequest) {
           minMovePercent,
           requiredCandleCount,
           maxBodyOverlapPercent,
+          patternSettings,
           session: watchSession,
           scanFrequencySeconds,
           updatedAt: nowIso,
@@ -248,6 +254,7 @@ export async function POST(request: NextRequest) {
             minMovePercent,
             requiredCandleCount,
             maxBodyOverlapPercent,
+            patternSettings,
             session: watchSession,
             enabled,
             scanFrequencySeconds,
@@ -262,6 +269,7 @@ export async function POST(request: NextRequest) {
               minMovePercent,
               requiredCandleCount,
               maxBodyOverlapPercent,
+              patternSettings,
               session: watchSession,
               enabled,
               scanFrequencySeconds,
@@ -278,6 +286,7 @@ export async function POST(request: NextRequest) {
       minMovePercent,
       requiredCandleCount,
       maxBodyOverlapPercent,
+      patternSettings,
     });
   } catch (error) {
     console.error('Failed to sync watchlist to DB:', error);

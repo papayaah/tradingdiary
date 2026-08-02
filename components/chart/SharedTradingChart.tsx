@@ -24,6 +24,12 @@ import {
   CupAndHandleResult,
   HeadAndShouldersResult,
 } from '@/lib/chart/patterns';
+import {
+  DEFAULT_PATTERN_SETTINGS,
+  scanAllPatterns,
+  type PatternId,
+  type PatternSettings,
+} from '@/lib/scanner/patterns';
 import type { TransactionRecord } from '@/lib/db/schema';
 import { Loader2, Play } from 'lucide-react';
 
@@ -60,10 +66,12 @@ export interface SharedTradingChartProps {
   onToggleCurrentDayOnly?: (val: boolean) => void;
   loading?: boolean;
   error?: string;
-  // Infinite history: fired when the user pans near the left edge. The parent
-  // should fetch the chunk of candles older than what is currently loaded and
-  // prepend it to `candles`. `loadingMore`/`hasMore` drive the edge indicator
-  // and gate further requests.
+  selectedPatternId?: PatternId;
+  minMovePercent?: number;
+  requiredCount?: number;
+  maxBodyOverlapPercent?: number;
+  scannerPatternMarkersEnabled?: boolean;
+  patternSettings?: PatternSettings;
   onLoadMoreHistory?: () => void;
   loadingMore?: boolean;
   hasMore?: boolean;
@@ -138,6 +146,12 @@ export default function SharedTradingChart({
   onToggleCurrentDayOnly,
   loading = false,
   error = '',
+  selectedPatternId = 'consecutive',
+  minMovePercent = 0.25,
+  requiredCount = 3,
+  maxBodyOverlapPercent = 100,
+  scannerPatternMarkersEnabled = false,
+  patternSettings = DEFAULT_PATTERN_SETTINGS,
   onLoadMoreHistory,
   loadingMore = false,
   hasMore = false,
@@ -245,6 +259,35 @@ export default function SharedTradingChart({
         fontFamily: 'var(--font-geist-sans), system-ui, -apple-system, sans-serif',
         fontSize: 11,
       },
+      localization: {
+        timeFormatter: (time: Time) => {
+          if (typeof time === 'number') {
+            const d = new Date(time * 1000);
+            if (isDaily) {
+              return d.toLocaleDateString('en-US', {
+                timeZone: 'America/New_York',
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+              });
+            }
+            const dateStr = d.toLocaleDateString('en-US', {
+              timeZone: 'America/New_York',
+              day: 'numeric',
+              month: 'short',
+              year: '2-digit',
+            });
+            const timeStr = d.toLocaleTimeString('en-US', {
+              timeZone: 'America/New_York',
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false,
+            });
+            return `${dateStr} ${timeStr} ET`;
+          }
+          return String(time);
+        },
+      },
       grid: {
         vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
         horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
@@ -261,6 +304,25 @@ export default function SharedTradingChart({
         borderColor: 'rgba(255, 255, 255, 0.1)',
         timeVisible: !isDaily,
         secondsVisible: false,
+        tickMarkFormatter: (time: Time) => {
+          if (typeof time === 'number') {
+            const d = new Date(time * 1000);
+            if (isDaily) {
+              return d.toLocaleDateString('en-US', {
+                timeZone: 'America/New_York',
+                month: 'short',
+                day: 'numeric',
+              });
+            }
+            return d.toLocaleTimeString('en-US', {
+              timeZone: 'America/New_York',
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false,
+            });
+          }
+          return String(time);
+        },
         // Keep candles readable: cap how tightly they pack so the view holds a
         // sane number of bars and the user scrolls horizontally for the rest,
         // rather than cramming thousands of microscopic candles into one screen.
@@ -498,6 +560,32 @@ export default function SharedTradingChart({
       });
     }
 
+    // 1.5 Scanner detector markers. These are separate from the optional
+    // chart-formation overlays controlled by `autoPatternsEnabled`.
+    if (scannerPatternMarkersEnabled) {
+      const detectorMatches = scanAllPatterns(
+        sortedCandles.map((candle) => ({
+          ...candle,
+          volume: candle.volume ?? 0,
+        })),
+        minMovePercent,
+        requiredCount,
+        selectedPatternId,
+        maxBodyOverlapPercent,
+        patternSettings,
+      );
+
+      detectorMatches.forEach((m) => {
+        const isBull = m.type === 'bullish';
+        markers.push({
+          time: formatCandleTime(m.time),
+          position: isBull ? 'belowBar' : 'aboveBar',
+          color: isBull ? '#10b981' : '#f43f5e',
+          shape: isBull ? 'arrowUp' : 'arrowDown',
+        });
+      });
+    }
+
     // 2. Auto Pattern Overlay Geometry Lines & Breakout / Target Lines
     if (autoPatternsEnabled && activePattern) {
       priceLinesRef.current.push(
@@ -654,13 +742,35 @@ export default function SharedTradingChart({
       }
     }
 
-    const sortedMarkers = markers.sort((a, b) => (String(a.time) > String(b.time) ? 1 : -1));
+    const markerTimeSec = (t: Time): number => {
+      if (typeof t === 'number') return t;
+      if (typeof t === 'string') {
+        const parsed = Date.parse(t);
+        if (!isNaN(parsed)) return parsed / 1000;
+      }
+      return 0;
+    };
+
+    const sortedMarkers = [...markers].sort((a, b) => markerTimeSec(a.time) - markerTimeSec(b.time));
     if (markersRef.current) {
       markersRef.current.setMarkers(sortedMarkers);
     } else {
       markersRef.current = createSeriesMarkers(candleSeries, sortedMarkers);
     }
-  }, [sortedCandles, activePattern, autoPatternsEnabled, transactions, date, formatCandleTime]);
+  }, [
+    sortedCandles,
+    activePattern,
+    autoPatternsEnabled,
+    transactions,
+    date,
+    formatCandleTime,
+    selectedPatternId,
+    minMovePercent,
+    requiredCount,
+    maxBodyOverlapPercent,
+    scannerPatternMarkersEnabled,
+    patternSettings,
+  ]);
 
   return (
     <div className="relative w-full rounded-2xl overflow-hidden border border-card-border bg-[#090d16] shadow-2xl flex flex-col">

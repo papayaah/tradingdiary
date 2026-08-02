@@ -2,18 +2,27 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { ScanSearch, ChevronDown, SlidersHorizontal, Check } from 'lucide-react';
-import { PATTERN_PRESETS, type PatternId } from '@/lib/scanner/patterns';
+import {
+  DEFAULT_PATTERN_SETTINGS,
+  PATTERN_PRESETS,
+  type PatternId,
+  type PatternSettings,
+} from '@/lib/scanner/patterns';
 import { InteractivePatternVisualizer } from './InteractivePatternVisualizer';
+import { DETECTOR_RULE_GUIDANCE } from './pattern-settings/detectorGuidance';
 
 interface PatternGuidePanelProps {
   value: PatternId;
   onChange: (patternId: PatternId) => void;
+  description?: string;
   minMovePercent?: number;
   requiredCount?: number;
   maxBodyOverlapPercent?: number;
   onMinMoveChange?: (val: number) => void;
   onRequiredCountChange?: (val: number) => void;
   onMaxBodyOverlapChange?: (val: number) => void;
+  patternSettings?: PatternSettings;
+  onPatternSettingsChange?: (settings: PatternSettings) => void;
 }
 
 interface PreviewCandle {
@@ -120,17 +129,21 @@ const PatternPreview = React.memo(function PatternPreview({
 export function PatternGuidePanel({
   value,
   onChange,
+  description = 'Choose one detector for every symbol in this watchlist.',
   minMovePercent = 0.25,
   requiredCount = 3,
   maxBodyOverlapPercent = 100,
   onMinMoveChange,
   onRequiredCountChange,
   onMaxBodyOverlapChange,
+  patternSettings = DEFAULT_PATTERN_SETTINGS,
+  onPatternSettingsChange,
 }: PatternGuidePanelProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isGuideExpanded, setIsGuideExpanded] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const selectedPreset = PATTERN_PRESETS.find((preset) => preset.id === value) ?? PATTERN_PRESETS[0];
+  const ruleGuidance = DETECTOR_RULE_GUIDANCE[value];
 
   useEffect(() => {
     if (!isOpen) return;
@@ -165,7 +178,7 @@ export function PatternGuidePanel({
             <ScanSearch size={14} className="text-accent" />
             Pattern
           </div>
-          <p className="mt-0.5 text-[10px] text-muted">Choose one detector for every symbol in this watchlist.</p>
+          <p className="mt-0.5 text-[10px] text-muted">{description}</p>
         </div>
 
         {/* Flushed to Right: Trigger Button + Parameter Pills + Icon Toggle */}
@@ -196,9 +209,18 @@ export function PatternGuidePanel({
             className="hidden lg:flex items-center gap-1.5 text-[10px] font-mono text-muted bg-card-bg border border-card-border/60 px-2.5 py-1.5 rounded-lg hover:border-accent/40 hover:text-foreground transition-all cursor-pointer shadow-sm"
             title="Click to expand Pattern Settings & Visualizer"
           >
-            <span>Min Body: <strong className="text-foreground">{minMovePercent}%</strong></span>
+            <span>{ruleGuidance.minBodySummaryLabel}: <strong className="text-foreground">{minMovePercent}%</strong></span>
             {value === 'consecutive' && (
               <span>• Streak: <strong className="text-foreground">{requiredCount} bars</strong></span>
+            )}
+            {value === 'range-breakout' && (
+              <>
+                <span>• Range: <strong className="text-foreground">{patternSettings.rangeBreakout.lookbackBars} bars</strong></span>
+                <span>• Buffer: <strong className="text-foreground">{patternSettings.rangeBreakout.minBreakoutPercent.toFixed(2)}%</strong></span>
+                {patternSettings.rangeBreakout.volumeConfirmationMultiplier !== null ? (
+                  <span>• Vol: <strong className="text-foreground">{patternSettings.rangeBreakout.volumeConfirmationMultiplier}×</strong></span>
+                ) : null}
+              </>
             )}
           </button>
 
@@ -277,6 +299,8 @@ export function PatternGuidePanel({
             onMinMoveChange={onMinMoveChange}
             onRequiredCountChange={onRequiredCountChange}
             onMaxBodyOverlapChange={onMaxBodyOverlapChange}
+            patternSettings={patternSettings}
+            onPatternSettingsChange={onPatternSettingsChange}
           />
         </div>
       )}

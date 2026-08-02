@@ -2,8 +2,9 @@
 
 ## Status
 
-Draft — planning. The five baseline detectors exist; no catalog-expansion
-detectors or framework changes in this document have started.
+Draft — implementation started. The five baseline detectors exist. Typed,
+server-owned detector settings have started with Range Breakout; broader
+catalog-expansion work remains planned.
 
 ## Summary
 
@@ -39,7 +40,9 @@ interface PatternDefinition<Id> {
 
 The engine (`index.ts`) slides `index` across the candle array and calls
 `evaluateAt` at each position. Context currently includes
-`{ minMovePercent, requiredCount, maxBodyOverlapPercent }`. Matches are
+`{ minMovePercent, requiredCount, maxBodyOverlapPercent, settings }`. The typed
+`settings` object currently owns Range Breakout lookback, close buffer, and
+optional relative-volume confirmation. Matches are
 **single-candle-anchored** — a `PatternMatch`
 carries one `time`, a `bullish | bearish` type, a `change`, and a `message`.
 
@@ -52,6 +55,30 @@ The five current detectors:
 | Range Breakout | `range-breakout` | Close breaks the prior 10-bar high/low |
 | Volume Expansion | `volume-expansion` | Volume ≫ recent 10-bar average |
 | Engulfing Reversal | `engulfing-reversal` | Classic bullish/bearish engulfing candle |
+
+### Current settings audit (August 2026)
+
+The settings panel currently has one common adjustable price filter plus two
+Consecutive Move-only controls. Other detector-specific values are fixed in
+code. The UI must distinguish adjustable values from fixed rules so a preview
+does not imply that it reproduces the complete detector.
+
+| Detector | Adjustable now | Fixed rules now | Recommended additions |
+| --- | --- | --- | --- |
+| Consecutive Move | Minimum body on every candle; streak count; maximum adjacent-body overlap | Same-colour candles; progressively higher/lower closes | Minimum total streak move; maximum opposite-wick ratio |
+| Momentum Burst | Minimum signal-candle body | 10-bar body baseline; signal body ≥ 1.8× average | Configurable lookback and body multiplier; optional ATR-normalized floor |
+| Range Breakout | Minimum breakout-candle body; range lookback; minimum close buffer; optional relative-volume confirmation | Close confirmation beyond prior high/low | One completion per range; optional ATR-normalized buffer |
+| Volume Expansion | Minimum signal-candle body | 10-bar baseline; ≥80% positive-volume coverage; signal volume ≥ 2× average | Configurable lookback/multiplier; same-time-of-session baseline; explicit feed capability |
+| Engulfing Reversal | Minimum reversing-candle body | Two opposite-colour candles; second body fully contains first | Prior-body floor; engulfing ratio; wick/context filters |
+
+`Bullish` and `Bearish` in the visual guide are preview directions, not live
+direction filters. A future real direction filter must be persisted through the
+same server-authoritative configuration path as every other scan setting.
+
+Tiingo historical intraday requests must explicitly include
+`columns=open,high,low,close,volume`; otherwise Tiingo omits volume and the
+normalizer turns it into zero. Zero-volume force-filled/no-trade bars remain
+valid price bars but cannot establish a Volume Expansion baseline.
 
 Detection is entirely **threshold-based over fixed lookback windows** using
 `Math.max`/`Math.min` over slices. There is **no** swing-high/low, pivot,
@@ -432,10 +459,10 @@ Ordered by which pattern families unlock them.
    behavioral change.
 
 2. **Typed detector parameters and server authority** (unlocks: meaningful
-   presets). Add `defaultParams` and `validateParams`; persist validated params
-   with each normalized watch. Move the Consecutive Move 3/4/5-candle count
-   into the same server-owned path first, because the worker currently assumes
-   three candles.
+   presets). **In progress:** Range Breakout settings now use a validated JSON
+   object persisted with both the account configuration and each normalized
+   watch. Continue by moving Consecutive Move's existing fields, then Momentum,
+   Volume Expansion, and Engulfing settings into the same contract.
 
 3. **Evaluation context** (unlocks: session and cross-asset patterns). Provide
    interval, asset class, session id/boundaries, timezone/exchange calendar,
