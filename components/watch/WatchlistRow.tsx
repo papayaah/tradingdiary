@@ -5,11 +5,13 @@ import {
   AlertTriangle,
   Clock,
   RefreshCw,
+  Sparkles,
   Trash2,
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
 import type { Candle } from './watchAnalysis';
+import { detectAllPatterns, CandleData } from '@/lib/chart/patterns';
 
 interface WatchlistRowItem {
   symbol: string;
@@ -38,6 +40,12 @@ function WatchlistRow({
 }: WatchlistRowProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const latestPrice = miniCandles.at(-1)?.close;
+
+  const detectedPattern = React.useMemo(() => {
+    if (!miniCandles || miniCandles.length < 10) return null;
+    const res = detectAllPatterns(miniCandles as CandleData[]);
+    return res.patterns[0];
+  }, [miniCandles]);
 
   const handleRefresh = async () => {
     if (isRefreshing) return;
@@ -115,9 +123,16 @@ function WatchlistRow({
           </span>
         )}
         {item.status === 'none' && (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-muted-bg text-muted border border-card-border">
-            Normal
-          </span>
+          detectedPattern ? (
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+              <Sparkles size={12} className="animate-pulse text-amber-400" />
+              <span>{detectedPattern.name}</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-muted-bg text-muted border border-card-border">
+              Normal
+            </span>
+          )
         )}
         {item.status === 'no-data' && (
           <span

@@ -2864,6 +2864,11 @@ export default function MarketWatcher() {
     }
     return (
       <div className="relative border-b border-card-border/30 bg-slate-900 dark:bg-slate-950 overflow-hidden">
+        <PatternOverlay
+          candles={displayedCandles}
+          enabled={autoPatternsEnabled}
+          onToggleEnabled={() => setAutoPatternsEnabled(!autoPatternsEnabled)}
+        />
         <svg
           width="100%"
           height={260}
