@@ -118,6 +118,19 @@ Grouped by panel. "Source" is where the number comes from today; **new** marks s
 | Negative-cache events, provider errors | **new** | Failure fan-out contained? |
 | Snapshots in Redis, average snapshot age | Redis scan of `market-data:snapshot:*` | Cache footprint & freshness |
 | Aggregation coverage (derived vs. native), when on | **new** | Phase 4 payoff |
+| **Live cached symbols** (symbol, interval, provider, age) | snapshot *values* (key is a hash; value carries `canonicalSymbol`/`interval`/`fetchedAt`) | See exactly what is cached and how fresh, in real time |
+| **In-flight fetches now** (symbol/scope being fetched) | held locks `market-data:lock:*` + BullMQ `active` jobs | See what is hitting the provider this instant |
+
+### 8b. Live connections & delivery (real-time presence)
+
+The evaluation result of every scan is broadcast to connected browsers over SSE (`/api/watch/events`), separate from the Redis candle cache: **candles are cached for sharing; the per-user state/alert is pushed right away** via `watch_event` → `pg_notify` → the events-bridge fan-out. This panel makes that live delivery visible.
+
+| Metric | Source | Why |
+|---|---|---|
+| **Active SSE connections (listeners) now** | `events-bridge` subscriber count (**new**, Redis-backed so it aggregates across web instances) | How many browsers are watching live right now |
+| Listeners by user | same, keyed by user | Presence / concurrent usage |
+| Events broadcast/min (state vs. alert) | `watch_event` insert rate (**new** counter or table rate) | Live delivery volume |
+| Broadcast lag (event insert → SSE flush) | optional timing (**new**) | Is "right away" actually right away? |
 
 ### 8. Alerts & delivery
 
