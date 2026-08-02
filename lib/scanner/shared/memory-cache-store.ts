@@ -45,4 +45,35 @@ export class MemoryCacheStore implements CacheStore {
   async releaseLock(key: string, token: string): Promise<void> {
     if (this.live(key)?.value === token) this.map.delete(key);
   }
+
+  async incr(key: string, ttlMs: number = 7 * 24 * 60 * 60 * 1000): Promise<number> {
+    const existing = this.live(key);
+    const currentVal = existing ? parseInt(existing.value, 10) || 0 : 0;
+    const newVal = currentVal + 1;
+    const expiresAt = existing ? existing.expiresAt : this.now() + ttlMs;
+    this.map.set(key, { value: String(newVal), expiresAt });
+    return newVal;
+  }
+
+  async hset(key: string, fieldValues: Record<string, string>): Promise<void> {
+    const existingStr = (await this.get(key)) ?? '{}';
+    let parsed: Record<string, string> = {};
+    try {
+      parsed = JSON.parse(existingStr);
+    } catch {
+      parsed = {};
+    }
+    Object.assign(parsed, fieldValues);
+    await this.set(key, JSON.stringify(parsed), 7 * 24 * 60 * 60 * 1000);
+  }
+
+  async hgetall(key: string): Promise<Record<string, string>> {
+    const existingStr = await this.get(key);
+    if (!existingStr) return {};
+    try {
+      return JSON.parse(existingStr);
+    } catch {
+      return {};
+    }
+  }
 }

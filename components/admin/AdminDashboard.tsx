@@ -8,7 +8,6 @@ import {
   Activity,
   Bell,
   Cpu,
-  Database,
   RefreshCw,
   Download,
   AlertTriangle,
@@ -16,6 +15,8 @@ import {
   Zap,
   HardDrive,
   TrendingUp,
+  Gauge,
+  CheckCircle2,
 } from 'lucide-react';
 
 interface OverviewData {
@@ -73,6 +74,27 @@ interface WatchData {
   }>;
 }
 
+interface CacheData {
+  hits: number;
+  misses: number;
+  waiters: number;
+  upstream: number;
+  errors: number;
+  hitRatePct: number;
+  snapshotCount: number;
+}
+
+interface GovernorItem {
+  providerScope: string;
+  cadenceSeconds: number;
+  uniqueKeys: number;
+  bindingTerm: string;
+  predictedReqPerHour: number;
+  updatedAt: string | null;
+  dailyCap: number;
+  floorSeconds: number;
+}
+
 interface ProviderStatRow {
   day: string;
   provider: string;
@@ -84,6 +106,8 @@ export default function AdminDashboard() {
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [queueInfo, setQueueInfo] = useState<QueueData | null>(null);
   const [watchMetrics, setWatchMetrics] = useState<WatchData | null>(null);
+  const [cacheMetrics, setCacheMetrics] = useState<CacheData | null>(null);
+  const [governorItems, setGovernorItems] = useState<GovernorItem[]>([]);
   const [providerStats, setProviderStats] = useState<ProviderStatRow[]>([]);
   const [allowlistConfigured, setAllowlistConfigured] = useState<boolean>(true);
   const [loading, setLoading] = useState<boolean>(true);
@@ -93,12 +117,14 @@ export default function AdminDashboard() {
   const fetchAllData = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      const [statusRes, overviewRes, queueRes, watchesRes, providerRes] = await Promise.all([
+      const [statusRes, overviewRes, queueRes, watchesRes, providerRes, cacheRes, governorRes] = await Promise.all([
         fetch('/api/admin/status').then((r) => r.json()).catch(() => null),
         fetch('/api/admin/overview').then((r) => r.json()).catch(() => null),
         fetch('/api/admin/queues').then((r) => r.json()).catch(() => null),
         fetch('/api/admin/watches').then((r) => r.json()).catch(() => null),
         fetch('/api/admin/provider-stats?days=7').then((r) => r.json()).catch(() => null),
+        fetch('/api/admin/cache').then((r) => r.json()).catch(() => null),
+        fetch('/api/admin/governor').then((r) => r.json()).catch(() => null),
       ]);
 
       if (statusRes) {
@@ -115,6 +141,12 @@ export default function AdminDashboard() {
       }
       if (providerRes?.stats) {
         setProviderStats(providerRes.stats);
+      }
+      if (cacheRes?.success && cacheRes.cache) {
+        setCacheMetrics(cacheRes.cache);
+      }
+      if (governorRes?.success && governorRes.governor) {
+        setGovernorItems(governorRes.governor);
       }
       setLastUpdated(new Date());
     } finally {
@@ -142,6 +174,8 @@ export default function AdminDashboard() {
       overview,
       queueInfo,
       watchMetrics,
+      cacheMetrics,
+      governorItems,
       providerStatsSummary: providerStats.slice(0, 10),
     };
 
@@ -175,7 +209,7 @@ export default function AdminDashboard() {
             Admin Observability Dashboard
           </h1>
           <p className="text-xs text-muted mt-1">
-            Real-time monitoring of scanner workload, user engagement, Redis memory, and shared-cache metrics.
+            Real-time monitoring of scanner workload, governor cadence, cache hit efficiency, and provider costs.
           </p>
         </div>
 
@@ -277,7 +311,105 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Row 2: Infrastructure Health (Scanner & Redis Memory) */}
+      {/* Row 2: Phase 2 Metrics — Governor Cadence & Shared-Cache Efficiency */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Panel A: Cache Efficiency */}
+        <div className="bg-card-bg border border-card-border rounded-xl p-5 space-y-4">
+          <div className="flex items-center justify-between border-b border-card-border pb-3">
+            <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <CheckCircle2 size={16} className="text-profit" />
+              Shared-Cache Performance
+            </h2>
+            {cacheMetrics && (
+              <span className="text-xs font-semibold text-profit">
+                {cacheMetrics.hitRatePct}% Hit Rate
+              </span>
+            )}
+          </div>
+
+          {cacheMetrics ? (
+            <div className="space-y-4 text-xs">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-muted-bg p-3 rounded-lg border border-card-border">
+                  <span className="text-muted block mb-1">Cache Hits</span>
+                  <span className="text-base font-bold text-profit">{cacheMetrics.hits}</span>
+                </div>
+
+                <div className="bg-muted-bg p-3 rounded-lg border border-card-border">
+                  <span className="text-muted block mb-1">Single-Flight Waiters</span>
+                  <span className="text-base font-bold text-accent">{cacheMetrics.waiters}</span>
+                </div>
+
+                <div className="bg-muted-bg p-3 rounded-lg border border-card-border">
+                  <span className="text-muted block mb-1">Active Snapshots</span>
+                  <span className="text-base font-bold text-foreground">{cacheMetrics.snapshotCount}</span>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between text-xs text-muted mb-1">
+                  <span>Cache Efficiency Ratio</span>
+                  <span className="font-semibold text-foreground">{cacheMetrics.hitRatePct}%</span>
+                </div>
+                <div className="w-full h-2 bg-muted-bg rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-profit transition-all duration-300"
+                    style={{ width: `${cacheMetrics.hitRatePct}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-between text-muted text-[11px] pt-1">
+                <span>Upstream Fetches: <strong className="text-foreground">{cacheMetrics.upstream}</strong></span>
+                <span>Errors: <strong className="text-loss">{cacheMetrics.errors}</strong></span>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-muted italic">Waiting for cache emission counters...</p>
+          )}
+        </div>
+
+        {/* Panel B: Governor Cadence */}
+        <div className="bg-card-bg border border-card-border rounded-xl p-5 space-y-4">
+          <div className="flex items-center justify-between border-b border-card-border pb-3">
+            <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Gauge size={16} className="text-accent" />
+              Adaptive Governor Cadence
+            </h2>
+          </div>
+
+          {governorItems.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-card-border text-muted font-medium">
+                    <th className="py-2 px-2">Provider Scope</th>
+                    <th className="py-2 px-2">Keys (N)</th>
+                    <th className="py-2 px-2">Cadence</th>
+                    <th className="py-2 px-2">Constraint</th>
+                    <th className="py-2 px-2 text-right">Predicted Req/hr</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-card-border/50">
+                  {governorItems.map((gov) => (
+                    <tr key={gov.providerScope} className="hover:bg-muted-bg/40">
+                      <td className="py-2 px-2 font-mono text-foreground">{gov.providerScope}</td>
+                      <td className="py-2 px-2 text-foreground font-medium">{gov.uniqueKeys}</td>
+                      <td className="py-2 px-2 text-accent font-semibold">{gov.cadenceSeconds}s</td>
+                      <td className="py-2 px-2 capitalize text-muted">{gov.bindingTerm}</td>
+                      <td className="py-2 px-2 text-right font-semibold text-foreground">{gov.predictedReqPerHour}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-xs text-muted italic">No active governor scopes reported.</p>
+          )}
+        </div>
+      </div>
+
+      {/* Row 3: Infrastructure Health (Scanner & Redis Memory) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Scanner Status & Queue Depth */}
         <div className="bg-card-bg border border-card-border rounded-xl p-5 space-y-4">
@@ -395,7 +527,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Row 3: Top Watched Symbols & Sharing Efficiency */}
+      {/* Row 4: Top Watched Symbols & Sharing Efficiency */}
       {watchMetrics && watchMetrics.topSymbols.length > 0 && (
         <div className="bg-card-bg border border-card-border rounded-xl p-5 space-y-4">
           <div className="flex items-center justify-between border-b border-card-border pb-3">
@@ -447,7 +579,7 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Row 4: Provider Usage */}
+      {/* Row 5: Provider Usage */}
       {providerStats.length > 0 && (
         <div className="bg-card-bg border border-card-border rounded-xl p-5 space-y-4">
           <div className="flex items-center justify-between border-b border-card-border pb-3">

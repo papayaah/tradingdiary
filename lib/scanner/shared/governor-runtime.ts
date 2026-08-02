@@ -37,6 +37,8 @@ export interface GovernorRecomputeResult {
   changed: boolean;
 }
 
+import { getSharedCacheStore } from './cache-store';
+
 /**
  * One recompute pass: for every provider scope with enabled, in-session watches,
  * set the effective cadence to max(formula target, measured guardrail) and apply
@@ -49,7 +51,10 @@ export async function recomputeGovernor(
   const inventory = await loadScopeInventory(now);
   const usage = await usedTodayByProvider(now);
 
-  return inventory.map((inv) => {
+  const results: GovernorRecomputeResult[] = [];
+  const store = getSharedCacheStore();
+
+  for (const inv of inventory) {
     const budget = getProviderBudget(inv.providerScope);
     const formula = computeCadenceSeconds({
       uniqueKeys: inv.uniqueKeys,
@@ -67,6 +72,27 @@ export async function recomputeGovernor(
     });
     const cadenceSeconds = Math.max(formula, measured);
     const changed = governor.set(inv.providerScope, cadenceSeconds);
-    return { providerScope: inv.providerScope, cadenceSeconds, uniqueKeys: inv.uniqueKeys, changed };
-  });
+
+    const bindingTerm = formula >= measured ? 'formula' : 'measured';
+    const predictedReqPerHour = cadenceSeconds > 0 ? Math.round((inv.uniqueKeys * 3600) / cadenceSeconds) : 0;
+
+    if (typeof store.hset === 'function') {
+      try {
+        await store.hset(`metrics:governor:${inv.providerScope}`, {
+          providerScope: inv.providerScope,
+          cadenceSeconds: String(cadenceSeconds),
+          uniqueKeys: String(inv.uniqueKeys),
+          bindingTerm,
+          predictedReqPerHour: String(predictedReqPerHour),
+          updatedAt: now.toISOString(),
+        });
+      } catch {
+        // Fire-and-forget
+      }
+    }
+
+    results.push({ providerScope: inv.providerScope, cadenceSeconds, uniqueKeys: inv.uniqueKeys, changed });
+  }
+
+  return results;
 }

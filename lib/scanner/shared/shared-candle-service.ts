@@ -287,6 +287,19 @@ export class SharedCandleService {
     });
   }
 
+  private emitMetric(metric: 'hits' | 'misses' | 'waiters' | 'upstream' | 'errors'): void {
+    try {
+      const d = new Date(this.now());
+      const YYYYMMDDHH = d.toISOString().slice(0, 13).replace(/[-T]/g, '');
+      const key = `metrics:cache:${YYYYMMDDHH}:${metric}`;
+      if (typeof this.store.incr === 'function') {
+        this.store.incr(key, 7 * 24 * 60 * 60 * 1000).catch(() => {});
+      }
+    } catch {
+      // Fire-and-forget
+    }
+  }
+
   private async acquire(
     request: MarketDataRequest,
     acquisitionKey: string,
@@ -296,11 +309,17 @@ export class SharedCandleService {
 
     // 1. Fresh snapshot already present?
     const cached = await this.readFreshSnapshot(keys.snapshot, request.providerScope);
-    if (cached) return this.hitResult(cached, acquisitionKey);
+    if (cached) {
+      this.emitMetric('hits');
+      return this.hitResult(cached, acquisitionKey);
+    }
 
     // 2. Recent provider failure for this exact key? Fail fast without fetching.
     const negative = await this.readNegativeCache(keys.error);
-    if (negative) throw new NegativeCacheError(negative);
+    if (negative) {
+      this.emitMetric('errors');
+      throw new NegativeCacheError(negative);
+    }
 
     // 3. Distributed single-flight: try to become the owner.
     const token = randomUUID();
@@ -317,6 +336,7 @@ export class SharedCandleService {
 
     // 4. Someone else owns the lock: wait for their snapshot, or take over if the
     //    owner crashed (lock expired).
+    this.emitMetric('waiters');
     return this.waitForOwner(request, keys, acquisitionKey, assetClass);
   }
 
@@ -333,6 +353,8 @@ export class SharedCandleService {
   ): Promise<AcquireResult> {
     try {
       // The one upstream request (records exactly one provider request).
+      this.emitMetric('upstream');
+      this.emitMetric('misses');
       const result = await this.fetchFn(request.canonicalSymbol, request.interval, assetClass);
       await this.writeSnapshot(keys.snapshot, request, result);
       return {
@@ -342,6 +364,7 @@ export class SharedCandleService {
         acquisitionKey,
       };
     } catch (err) {
+      this.emitMetric('errors');
       const message = err instanceof Error ? err.message : 'provider fetch failed';
       await this.writeNegativeCache(keys.error, message);
       throw err;

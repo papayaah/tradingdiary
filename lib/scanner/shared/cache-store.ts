@@ -25,6 +25,12 @@ export interface CacheStore {
    * so one worker can never release another worker's lock. No-op otherwise.
    */
   releaseLock(key: string, token: string): Promise<void>;
+  /** Increment a numeric counter key with an optional TTL in milliseconds. */
+  incr(key: string, ttlMs?: number): Promise<number>;
+  /** Store field-value pairs in a hash. */
+  hset(key: string, fieldValues: Record<string, string>): Promise<void>;
+  /** Retrieve all fields and values from a hash. */
+  hgetall(key: string): Promise<Record<string, string>>;
 }
 
 // Compare-and-delete: only remove the lock if we still own it. Runs atomically
@@ -55,6 +61,22 @@ export class RedisCacheStore implements CacheStore {
 
   async releaseLock(key: string, token: string): Promise<void> {
     await this.redis.eval(RELEASE_LOCK_LUA, 1, key, token);
+  }
+
+  async incr(key: string, ttlMs?: number): Promise<number> {
+    const val = await this.redis.incr(key);
+    if (val === 1 && ttlMs && ttlMs > 0) {
+      await this.redis.pexpire(key, Math.floor(ttlMs)).catch(() => {});
+    }
+    return val;
+  }
+
+  async hset(key: string, fieldValues: Record<string, string>): Promise<void> {
+    await this.redis.hset(key, fieldValues);
+  }
+
+  async hgetall(key: string): Promise<Record<string, string>> {
+    return this.redis.hgetall(key);
   }
 }
 
