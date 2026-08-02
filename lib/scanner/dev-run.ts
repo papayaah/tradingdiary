@@ -14,6 +14,9 @@ import { getScanQueue } from '@/lib/scanner/queue';
 
 const SYMBOL = process.argv[2] || 'AAPL';
 const INTERVAL = process.argv[3] || '5m';
+// Third arg lets us exercise the futures/crypto routing (e.g. IBKR for futures),
+// not just equities. Defaults to equity to preserve existing invocations.
+const ASSET_CLASS = (process.argv[4] as 'equity' | 'futures' | 'crypto') || 'equity';
 
 async function main() {
   // Seed a user + one enabled, always-on watch that is already due.
@@ -25,7 +28,7 @@ async function main() {
     .values({
       userId: 'dev-user',
       symbol: SYMBOL,
-      assetClass: 'equity',
+      assetClass: ASSET_CLASS,
       interval: INTERVAL,
       patternId: 'consecutive',
       minMovePercent: 0.1,
