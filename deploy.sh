@@ -87,6 +87,7 @@ run "rsync -az --delete \
   --exclude '.DS_Store' \
   --exclude '.env' \
   --exclude '.env.local' \
+  --exclude '.env.ibkr' \
   \"$ROOT_DIR/\" \"$REMOTE_HOST:$REMOTE_BASE/\""
 
 # 4. Ensure the shared IBKR network exists (idempotent). The gateway runs as a
