@@ -89,11 +89,31 @@ services:
       POLYGON_API_KEY: ${POLYGON_API_KEY:-}
       DATABENTO_API_KEY: ${DATABENTO_API_KEY:-}
       TIINGO_API_KEY: ${TIINGO_API_KEY:-}
+      # IBKR Gateway (CME futures) — reached over the shared external network, not
+      # a host port. 4003 is the container-internal socat bridge for the LIVE API
+      # (4001 is the gateway's own loopback bind; 4003 is what other containers use).
+      # The gateway runs as a SEPARATE compose project (docker-compose.ibkr.server.yml)
+      # so app deploys never restart it. Unset these to disable IBKR routing.
+      IBKR_GATEWAY_HOST: ${IBKR_GATEWAY_HOST:-ib-gateway}
+      IBKR_GATEWAY_PORT: ${IBKR_GATEWAY_PORT:-4003}
       # Web Push: the scanner is the process that actually sends push, so it needs
       # both keys at runtime (read from process.env by lib/scanner/push.ts).
       NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:support@tradingdiary.app}
+    networks:
+      # default: reach postgres/redis. ibkr-net: reach the gateway project.
+      - default
+      - ibkr-net
+
+networks:
+  # Shared with the IBKR gateway's separate compose project. Created once on the
+  # server: `docker network create tradingdiary-ibkr-net`. external:true means
+  # compose attaches to it but never creates/removes it, so the gateway's
+  # lifecycle stays fully decoupled from app deploys.
+  ibkr-net:
+    external: true
+    name: tradingdiary-ibkr-net
 
 volumes:
   pgdata:

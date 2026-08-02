@@ -1,0 +1,59 @@
+# IBKR Gateway — SERVER deployment (separate lifecycle from the app).
+#
+# This runs as its OWN compose project so `deploy.sh` (which only touches
+# docker-compose.yml) can never recreate or restart it. You start it ONCE and it
+# keeps its authenticated session across every app deploy. IBKR still forces a
+# re-login ~weekly (Sunday) — that is the only recurring 2FA.
+#
+# ── one-time setup on the server ────────────────────────────────────────────
+#   docker network create tradingdiary-ibkr-net           # shared with the app
+#   cd /srv/tradingdiary
+#   # put IBKR_API_USER / IBKR_API_PASSWORD / VNC_PASSWORD in /srv/tradingdiary/.env
+#   docker compose -p tradingdiary-ibkr -f docker-compose.ibkr.server.yml up -d
+#   # then complete 2FA once (SSH-tunnel VNC — see below), and leave it running.
+#
+# ── deploys after that ──────────────────────────────────────────────────────
+#   ./deploy.sh   # touches only the app project; the gateway is untouched.
+#
+# ── security posture ────────────────────────────────────────────────────────
+#   * NO host port for the API. The gateway is reachable ONLY on the internal
+#     tradingdiary-ibkr-net network (by the scanner). It is never on the internet.
+#   * VNC is bound to 127.0.0.1 only — reach it via SSH tunnel for the occasional
+#     login, never publicly:  ssh -L 5900:127.0.0.1:5900 user@server
+#   * READ_ONLY_API=yes — the API cannot place/modify orders.
+#   * Use a MARKET-DATA-ONLY IBKR user here (deny trading + account access in
+#     Client Portal). Then even a compromised box cannot read balances or trade.
+services:
+  ib-gateway:
+    image: ghcr.io/gnzsnz/ib-gateway:stable
+    container_name: tradingdiary-ibkr
+    restart: unless-stopped
+    environment:
+      TWS_USERID: ${IBKR_API_USER}
+      TWS_PASSWORD: ${IBKR_API_PASSWORD}
+      TRADING_MODE: "live"
+      READ_ONLY_API: "yes"
+      VNC_SERVER_PASSWORD: ${VNC_PASSWORD}
+      # Daily soft restart reuses the session — NO 2FA. Keeps the gateway healthy
+      # without a weekly-only uptime. Pick an off-hours time in the server TZ.
+      AUTO_RESTART_TIME: "02:00 AM"
+      # Retry the login after a 2FA timeout instead of giving up.
+      TWOFA_TIMEOUT_ACTION: "restart"
+      RELOGIN_AFTER_2FA_TIMEOUT: "yes"
+    ports:
+      # VNC only, loopback only. Access via SSH tunnel; never expose publicly.
+      - "127.0.0.1:5900:5900"
+    volumes:
+      - ibkr_settings:/home/ibgateway/Jts
+    networks:
+      ibkr-net:
+        aliases:
+          - ib-gateway
+
+networks:
+  ibkr-net:
+    external: true
+    name: tradingdiary-ibkr-net
+
+volumes:
+  ibkr_settings:

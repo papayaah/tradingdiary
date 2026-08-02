@@ -89,7 +89,15 @@ run "rsync -az --delete \
   --exclude '.env.local' \
   \"$ROOT_DIR/\" \"$REMOTE_HOST:$REMOTE_BASE/\""
 
-# 4. Starting containers
+# 4. Ensure the shared IBKR network exists (idempotent). The gateway runs as a
+#    separate compose project on this network; the app only attaches to it, so
+#    app deploys never start/stop/restart the gateway container.
+echo "Ensuring shared IBKR network exists..."
+run "ssh_cmd \"docker network create tradingdiary-ibkr-net 2>/dev/null || true\""
+
+# 5. Starting containers. This only touches the app project (docker-compose.yml)
+#    — the IBKR gateway project (docker-compose.ibkr.server.yml) is untouched, so
+#    its authenticated session survives every deploy.
 echo "Starting containers on server (docker compose up -d --build)..."
 run "ssh_cmd \"cd '$REMOTE_BASE' && docker compose up -d --build\""
 
