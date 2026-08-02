@@ -3979,41 +3979,63 @@ export default function MarketWatcher() {
                   </div>
 
                   {testResult.success ? (
-                    <div className={`p-4 rounded-xl border flex gap-3 ${
-                      currentPatternMatched === 'bullish'
-                        ? 'bg-emerald-950/20 border-emerald-800/30'
-                        : currentPatternMatched === 'bearish'
-                        ? 'bg-rose-950/20 border-rose-800/30'
-                        : 'bg-muted-bg border border-card-border'
-                    }`}>
-                      <div className="mt-0.5">
-                        {currentPatternMatched === 'bullish' ? (
-                          <CheckCircle2 className="text-emerald-400" size={18} />
-                        ) : currentPatternMatched === 'bearish' ? (
-                          <CheckCircle2 className="text-rose-400" size={18} />
-                        ) : (
-                          <XCircle className="text-muted" size={18} />
-                        )}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
-                          {currentPatternMatched === 'bullish' && (
-                            <>
-                              <TrendingUp size={14} className="text-emerald-400" />
-                              <span>BULLISH PATTERN DETECTED</span>
-                            </>
-                          )}
-                          {currentPatternMatched === 'bearish' && (
-                            <>
-                              <TrendingDown size={14} className="text-rose-400" />
-                              <span>BEARISH PATTERN DETECTED</span>
-                            </>
-                          )}
-                          {currentPatternMatched === 'none' && <span>NO PATTERN MATCHED</span>}
+                    (() => {
+                      const autoScan = detectAllPatterns(displayedCandles);
+                      const autoPattern = autoScan.patterns[0];
+                      const hasAutoPattern = currentPatternMatched === 'none' && autoPattern;
+
+                      return (
+                        <div className={`p-4 rounded-xl border flex gap-3 ${
+                          currentPatternMatched === 'bullish'
+                            ? 'bg-emerald-950/20 border-emerald-800/30'
+                            : currentPatternMatched === 'bearish'
+                            ? 'bg-rose-950/20 border-rose-800/30'
+                            : hasAutoPattern
+                            ? 'bg-amber-950/20 border-amber-800/30'
+                            : 'bg-muted-bg border border-card-border'
+                        }`}>
+                          <div className="mt-0.5">
+                            {currentPatternMatched === 'bullish' ? (
+                              <CheckCircle2 className="text-emerald-400" size={18} />
+                            ) : currentPatternMatched === 'bearish' ? (
+                              <CheckCircle2 className="text-rose-400" size={18} />
+                            ) : hasAutoPattern ? (
+                              <Sparkles className="text-amber-400 animate-pulse" size={18} />
+                            ) : (
+                              <XCircle className="text-muted" size={18} />
+                            )}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                              {currentPatternMatched === 'bullish' && (
+                                <>
+                                  <TrendingUp size={14} className="text-emerald-400" />
+                                  <span>BULLISH PATTERN DETECTED</span>
+                                </>
+                              )}
+                              {currentPatternMatched === 'bearish' && (
+                                <>
+                                  <TrendingDown size={14} className="text-rose-400" />
+                                  <span>BEARISH PATTERN DETECTED</span>
+                                </>
+                              )}
+                              {hasAutoPattern && (
+                                <>
+                                  <Sparkles size={14} className="text-amber-400 animate-pulse" />
+                                  <span>{autoPattern.name.toUpperCase()} DETECTED ({autoPattern.confidence}% match)</span>
+                                </>
+                              )}
+                              {currentPatternMatched === 'none' && !hasAutoPattern && <span>NO PATTERN MATCHED</span>}
+                            </div>
+                            <p className="text-muted text-[11px] mt-1 leading-relaxed">
+                              {hasAutoPattern
+                                ? `Found ${autoPattern.name} setup on chart. Breakout: $${Number(autoPattern.breakoutPrice).toFixed(2)} | Target: $${Number(autoPattern.targetPrice).toFixed(2)}`
+                                : currentPatternMessage}
+                            </p>
+                          </div>
                         </div>
-                        <p className="text-muted text-[11px] mt-1 leading-relaxed">{currentPatternMessage}</p>
-                      </div>
-                    </div>
+                      );
+                    })()
                   ) : (
                     <div className="p-3 bg-rose-950/10 border border-rose-900/20 text-rose-400 text-xs rounded-xl flex items-center gap-2">
                       <AlertTriangle size={16} />
