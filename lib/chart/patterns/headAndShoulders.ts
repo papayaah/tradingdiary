@@ -9,6 +9,8 @@ export interface HeadAndShouldersResult {
   leftShoulder: PivotPoint;
   head: PivotPoint;
   rightShoulder: PivotPoint;
+  trough1: PivotPoint;
+  trough2: PivotPoint;
   necklinePrice: number;
   breakoutPrice: number;
   targetPrice: number;
@@ -16,6 +18,22 @@ export interface HeadAndShouldersResult {
   confidence: number;
 }
 
+// Head must clear the taller shoulder by at least this much — filters trivial
+// adjacent bumps that aren't a real head.
+const HEAD_PROMINENCE = 0.03;
+// Shoulders must sit at similar prices.
+const SHOULDER_PRICE_TOL = 0.08;
+// Head must be roughly time-centered between the shoulders (min/max span ratio).
+const TIME_SYMMETRY_MIN = 0.4;
+
+/**
+ * Detect Head & Shoulders (and inverse) without requiring the three peaks to be
+ * *adjacent* pivots. A broad/rounded top has many minor pivots between the real
+ * shoulders and head, so the classic "consecutive triple" approach misses it.
+ * Instead, for every (left, head, right) triple we require the head to be the
+ * most extreme pivot *between* the shoulders, prominent enough, and roughly
+ * symmetric in both price and time — then keep the best, non-overlapping ones.
+ */
 export function detectHeadAndShoulders(candles: CandleData[]): HeadAndShouldersResult[] {
   if (candles.length < 12) return [];
 
@@ -23,101 +41,148 @@ export function detectHeadAndShoulders(candles: CandleData[]): HeadAndShouldersR
   const highPivots = pivots.filter((p) => p.type === 'high');
   const lowPivots = pivots.filter((p) => p.type === 'low');
 
+  const bearish = scanTriples(candles, highPivots, 'bearish');
+  const bullish = scanTriples(candles, lowPivots, 'bullish');
+
+  // Best first, then drop overlapping duplicates within each orientation.
+  const ranked = [...bearish, ...bullish].sort((a, b) => b.confidence - a.confidence);
+  const kept: HeadAndShouldersResult[] = [];
+  for (const cand of ranked) {
+    const overlaps = kept.some(
+      (k) =>
+        k.type === cand.type &&
+        cand.startIndex <= k.endIndex &&
+        cand.endIndex >= k.startIndex,
+    );
+    if (!overlaps) kept.push(cand);
+  }
+  return kept.slice(0, 3);
+}
+
+function scanTriples(
+  candles: CandleData[],
+  shoulders: PivotPoint[],
+  orientation: 'bearish' | 'bullish',
+): HeadAndShouldersResult[] {
   const results: HeadAndShouldersResult[] = [];
+  const isTop = orientation === 'bearish';
 
-  // 1. Regular Head & Shoulders (Bearish)
-  for (let i = 0; i < highPivots.length - 2; i++) {
-    const leftShoulder = highPivots[i];
-    const head = highPivots[i + 1];
-    const rightShoulder = highPivots[i + 2];
+  for (let i = 0; i < shoulders.length - 2; i++) {
+    for (let j = i + 1; j < shoulders.length - 1; j++) {
+      for (let k = j + 1; k < shoulders.length; k++) {
+        const leftShoulder = shoulders[i];
+        const head = shoulders[j];
+        const rightShoulder = shoulders[k];
 
-    // Head must be strictly higher than both shoulders
-    if (head.price <= leftShoulder.price * 1.01 || head.price <= rightShoulder.price * 1.01) continue;
+        // Head is the most extreme pivot strictly between the two shoulders —
+        // this is what lets us skip the minor bumps in a broad top/bottom.
+        let headIsExtreme = true;
+        for (let m = i; m <= k; m++) {
+          if (m === j) continue;
+          if (isTop && shoulders[m].price >= head.price) { headIsExtreme = false; break; }
+          if (!isTop && shoulders[m].price <= head.price) { headIsExtreme = false; break; }
+        }
+        if (!headIsExtreme) continue;
 
-    // Shoulders must be at similar prices (within 6%)
-    const shoulderDiffPercent = Math.abs(leftShoulder.price - rightShoulder.price) / leftShoulder.price;
-    if (shoulderDiffPercent > 0.06) continue;
+        // Head prominence over the *taller* (top) / *lower* (bottom) shoulder.
+        const tallerShoulder = isTop
+          ? Math.max(leftShoulder.price, rightShoulder.price)
+          : Math.min(leftShoulder.price, rightShoulder.price);
+        const prominence = isTop
+          ? (head.price - tallerShoulder) / head.price
+          : (tallerShoulder - head.price) / tallerShoulder;
+        if (prominence < HEAD_PROMINENCE) continue;
 
-    // Find lowest candle between left shoulder and head, and between head and right shoulder
-    const range1 = candles.slice(leftShoulder.index, head.index + 1);
-    const range2 = candles.slice(head.index, rightShoulder.index + 1);
-    if (range1.length < 2 || range2.length < 2) continue;
+        // Shoulders at similar prices.
+        const shoulderDiffPercent =
+          Math.abs(leftShoulder.price - rightShoulder.price) / leftShoulder.price;
+        if (shoulderDiffPercent > SHOULDER_PRICE_TOL) continue;
 
-    const min1 = Math.min(...range1.map((c) => c.low));
-    const min2 = Math.min(...range2.map((c) => c.low));
+        // Head roughly centered in time between the shoulders.
+        const leftSpan = head.index - leftShoulder.index;
+        const rightSpan = rightShoulder.index - head.index;
+        if (leftSpan <= 0 || rightSpan <= 0) continue;
+        const timeSymmetry = Math.min(leftSpan, rightSpan) / Math.max(leftSpan, rightSpan);
+        if (timeSymmetry < TIME_SYMMETRY_MIN) continue;
 
-    const necklinePrice = Number(((min1 + min2) / 2).toFixed(2));
-    const headHeight = head.price - necklinePrice;
-    if (headHeight <= 0) continue;
+        // Neckline from the two inner reversals (troughs for a top, peaks for a
+        // bottom) between shoulder→head and head→shoulder.
+        const inner1 = isTop
+          ? lowestLow(candles, leftShoulder.index, head.index)
+          : highestHigh(candles, leftShoulder.index, head.index);
+        const inner2 = isTop
+          ? lowestLow(candles, head.index, rightShoulder.index)
+          : highestHigh(candles, head.index, rightShoulder.index);
+        if (!inner1 || !inner2) continue;
 
-    const targetPrice = Number((necklinePrice - headHeight).toFixed(2));
-    const stopLossPrice = Number((head.price * 1.01).toFixed(2));
+        const necklinePrice = Number(((inner1.price + inner2.price) / 2).toFixed(2));
 
-    const confidence = Math.round(Math.max(60, 95 - shoulderDiffPercent * 500));
+        // Shoulders must actually stand above (top) / below (bottom) the neckline.
+        if (isTop && (leftShoulder.price <= necklinePrice || rightShoulder.price <= necklinePrice)) continue;
+        if (!isTop && (leftShoulder.price >= necklinePrice || rightShoulder.price >= necklinePrice)) continue;
 
-    results.push({
-      id: `hs-${leftShoulder.index}-${rightShoulder.index}`,
-      name: 'Head & Shoulders',
-      type: 'bearish',
-      startIndex: leftShoulder.index,
-      endIndex: rightShoulder.index,
-      leftShoulder,
-      head,
-      rightShoulder,
-      necklinePrice,
-      breakoutPrice: necklinePrice,
-      targetPrice,
-      stopLossPrice,
-      confidence,
-    });
+        const headSize = isTop ? head.price - necklinePrice : necklinePrice - head.price;
+        if (headSize <= 0) continue;
+
+        const targetPrice = Number(
+          (isTop ? necklinePrice - headSize : necklinePrice + headSize).toFixed(2),
+        );
+        const stopLossPrice = Number(
+          (isTop ? head.price * 1.01 : head.price * 0.99).toFixed(2),
+        );
+
+        // Confidence blends price symmetry, head prominence and time symmetry.
+        const symScore = 1 - shoulderDiffPercent / SHOULDER_PRICE_TOL; // 0..1
+        const confidence = Math.round(
+          Math.max(60, Math.min(97, 70 + symScore * 10 + Math.min(prominence, 0.2) * 70 + timeSymmetry * 6)),
+        );
+
+        results.push({
+          id: `${isTop ? 'hs' : 'ihs'}-${leftShoulder.index}-${rightShoulder.index}`,
+          name: isTop ? 'Head & Shoulders' : 'Inverse Head & Shoulders',
+          type: orientation,
+          startIndex: leftShoulder.index,
+          endIndex: rightShoulder.index,
+          leftShoulder,
+          head,
+          rightShoulder,
+          trough1: inner1,
+          trough2: inner2,
+          necklinePrice,
+          breakoutPrice: necklinePrice,
+          targetPrice,
+          stopLossPrice,
+          confidence,
+        });
+      }
+    }
   }
 
-  // 2. Inverse Head & Shoulders (Bullish)
-  for (let i = 0; i < lowPivots.length - 2; i++) {
-    const leftShoulder = lowPivots[i];
-    const head = lowPivots[i + 1];
-    const rightShoulder = lowPivots[i + 2];
+  return results;
+}
 
-    // Head must be strictly lower than both shoulders
-    if (head.price >= leftShoulder.price * 0.99 || head.price >= rightShoulder.price * 0.99) continue;
-
-    // Shoulders must be at similar prices (within 6%)
-    const shoulderDiffPercent = Math.abs(leftShoulder.price - rightShoulder.price) / leftShoulder.price;
-    if (shoulderDiffPercent > 0.06) continue;
-
-    // Find highest candle between left shoulder and head, and between head and right shoulder
-    const range1 = candles.slice(leftShoulder.index, head.index + 1);
-    const range2 = candles.slice(head.index, rightShoulder.index + 1);
-    if (range1.length < 2 || range2.length < 2) continue;
-
-    const max1 = Math.max(...range1.map((c) => c.high));
-    const max2 = Math.max(...range2.map((c) => c.high));
-
-    const necklinePrice = Number(((max1 + max2) / 2).toFixed(2));
-    const headDepth = necklinePrice - head.price;
-    if (headDepth <= 0) continue;
-
-    const targetPrice = Number((necklinePrice + headDepth).toFixed(2));
-    const stopLossPrice = Number((head.price * 0.99).toFixed(2));
-
-    const confidence = Math.round(Math.max(60, 95 - shoulderDiffPercent * 500));
-
-    results.push({
-      id: `ihs-${leftShoulder.index}-${rightShoulder.index}`,
-      name: 'Inverse Head & Shoulders',
-      type: 'bullish',
-      startIndex: leftShoulder.index,
-      endIndex: rightShoulder.index,
-      leftShoulder,
-      head,
-      rightShoulder,
-      necklinePrice,
-      breakoutPrice: necklinePrice,
-      targetPrice,
-      stopLossPrice,
-      confidence,
-    });
+function lowestLow(candles: CandleData[], from: number, to: number): PivotPoint | null {
+  if (to <= from) return null;
+  let best = candles[from];
+  let bestIndex = from;
+  for (let i = from; i <= to; i++) {
+    if (candles[i].low < best.low) {
+      best = candles[i];
+      bestIndex = i;
+    }
   }
+  return { index: bestIndex, price: best.low, time: best.time, type: 'low' };
+}
 
-  return results.slice(-3);
+function highestHigh(candles: CandleData[], from: number, to: number): PivotPoint | null {
+  if (to <= from) return null;
+  let best = candles[from];
+  let bestIndex = from;
+  for (let i = from; i <= to; i++) {
+    if (candles[i].high > best.high) {
+      best = candles[i];
+      bestIndex = i;
+    }
+  }
+  return { index: bestIndex, price: best.high, time: best.time, type: 'high' };
 }
