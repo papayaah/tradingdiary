@@ -59,13 +59,11 @@ export const DETECTOR_RULE_GUIDANCE: Record<PatternId, DetectorRuleGuidance> = {
     minBodyLabel: 'Minimum Signal Body',
     minBodyExplanation: 'The high-volume candle must also make this minimum directional price move.',
     currentRules: [
-      { label: 'Volume baseline', value: 'Previous 10 candles' },
-      { label: 'Coverage', value: 'At least 8 of 10 bars need positive volume' },
-      { label: 'Expansion', value: 'Signal volume must be at least 2× average' },
+      { label: 'Volume baseline', value: 'Configurable prior-bar average' },
+      { label: 'Coverage', value: 'Configurable positive-volume requirement' },
+      { label: 'Expansion', value: 'Configurable relative-volume multiplier' },
     ],
     recommendedControls: [
-      'Volume lookback length',
-      'Relative-volume multiplier',
       'Same-time-of-session volume baseline',
       'Provider/feed volume capability indicator',
     ],

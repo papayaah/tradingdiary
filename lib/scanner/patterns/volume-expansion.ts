@@ -7,18 +7,21 @@ import {
 export const volumeExpansionPattern = {
   id: 'volume-expansion',
   name: 'Volume Expansion',
-  shortDescription: 'A directional move on at least 2× recent average volume.',
-  minimumCandles: () => 11,
-  evaluateAt: (candles, index, { minMovePercent }) => {
+  shortDescription: 'A directional move on configurable relative volume.',
+  minimumCandles: ({ settings }) => settings.volumeExpansion.lookbackBars + 1,
+  evaluateAt: (candles, index, { minMovePercent, settings }) => {
     const candle = candles[index];
-    const prior = candles.slice(index - 10, index);
+    const {
+      lookbackBars,
+      volumeMultiplier,
+      minCoveragePercent,
+    } = settings.volumeExpansion;
+    const prior = candles.slice(index - lookbackBars, index);
     const populatedVolumes = prior
       .map((item) => item.volume)
       .filter((volume) => Number.isFinite(volume) && volume > 0);
-    // A rolling baseline dominated by missing/force-filled zero-volume bars is
-    // not trustworthy. Require at least 80% coverage, then average only actual
-    // traded-volume observations.
-    if (populatedVolumes.length < Math.ceil(prior.length * 0.8)) return null;
+    const requiredVolumeBars = Math.ceil(prior.length * (minCoveragePercent / 100));
+    if (populatedVolumes.length < requiredVolumeBars) return null;
     const averageVolume = populatedVolumes.reduce((sum, volume) => sum + volume, 0)
       / populatedVolumes.length;
     const change = candleBodyChange(candle);
@@ -26,15 +29,15 @@ export const volumeExpansionPattern = {
       change < minMovePercent
       || !Number.isFinite(candle.volume)
       || candle.volume <= 0
-      || candle.volume < averageVolume * 2
+      || candle.volume < averageVolume * volumeMultiplier
     ) return null;
 
     return directionalMatch(
       candle,
       change,
       'volume-expansion',
-      `Bullish Volume Expansion (+${change.toFixed(2)}%, 2× volume)`,
-      `Bearish Volume Expansion (-${change.toFixed(2)}%, 2× volume)`,
+      `Bullish Volume Expansion (+${change.toFixed(2)}%, ${volumeMultiplier}× volume over ${lookbackBars} bars)`,
+      `Bearish Volume Expansion (-${change.toFixed(2)}%, ${volumeMultiplier}× volume over ${lookbackBars} bars)`,
     );
   },
 } satisfies PatternDefinition<'volume-expansion'>;

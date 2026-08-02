@@ -42,7 +42,8 @@ The engine (`index.ts`) slides `index` across the candle array and calls
 `evaluateAt` at each position. Context currently includes
 `{ minMovePercent, requiredCount, maxBodyOverlapPercent, settings }`. The typed
 `settings` object currently owns Range Breakout lookback, close buffer, and
-optional relative-volume confirmation. Matches are
+optional relative-volume confirmation, plus Volume Expansion lookback,
+relative-volume multiplier, and minimum baseline coverage. Matches are
 **single-candle-anchored** — a `PatternMatch`
 carries one `time`, a `bullish | bearish` type, a `change`, and a `message`.
 
@@ -53,22 +54,22 @@ The five current detectors:
 | Consecutive Move | `consecutive` | N same-colour candles, every body ≥ threshold, monotonic closes, and optional adjacent-body overlap limit |
 | Momentum Burst | `momentum-burst` | One candle whose body ≫ recent 10-bar average |
 | Range Breakout | `range-breakout` | Close breaks the prior 10-bar high/low |
-| Volume Expansion | `volume-expansion` | Volume ≫ recent 10-bar average |
+| Volume Expansion | `volume-expansion` | Volume ≫ configurable recent-bar average |
 | Engulfing Reversal | `engulfing-reversal` | Classic bullish/bearish engulfing candle |
 
 ### Current settings audit (August 2026)
 
-The settings panel currently has one common adjustable price filter plus two
-Consecutive Move-only controls. Other detector-specific values are fixed in
-code. The UI must distinguish adjustable values from fixed rules so a preview
-does not imply that it reproduces the complete detector.
+The settings panel has one common adjustable price filter, two Consecutive
+Move-only controls, and typed detector-specific controls for Range Breakout and
+Volume Expansion. The UI distinguishes adjustable values from fixed rules so a
+preview does not imply that it reproduces the complete detector.
 
 | Detector | Adjustable now | Fixed rules now | Recommended additions |
 | --- | --- | --- | --- |
 | Consecutive Move | Minimum body on every candle; streak count; maximum adjacent-body overlap | Same-colour candles; progressively higher/lower closes | Minimum total streak move; maximum opposite-wick ratio |
 | Momentum Burst | Minimum signal-candle body | 10-bar body baseline; signal body ≥ 1.8× average | Configurable lookback and body multiplier; optional ATR-normalized floor |
 | Range Breakout | Minimum breakout-candle body; range lookback; minimum close buffer; optional relative-volume confirmation | Close confirmation beyond prior high/low | One completion per range; optional ATR-normalized buffer |
-| Volume Expansion | Minimum signal-candle body | 10-bar baseline; ≥80% positive-volume coverage; signal volume ≥ 2× average | Configurable lookback/multiplier; same-time-of-session baseline; explicit feed capability |
+| Volume Expansion | Minimum signal-candle body; volume lookback; relative-volume multiplier; positive-volume coverage | Average of populated baseline bars | Same-time-of-session baseline; explicit feed capability |
 | Engulfing Reversal | Minimum reversing-candle body | Two opposite-colour candles; second body fully contains first | Prior-body floor; engulfing ratio; wick/context filters |
 
 `Bullish` and `Bearish` in the visual guide are preview directions, not live

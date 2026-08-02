@@ -351,11 +351,21 @@ describe('selectable pattern presets', () => {
         minBreakoutPercent: -4,
         volumeConfirmationMultiplier: 0.2,
       },
+      volumeExpansion: {
+        lookbackBars: 2,
+        volumeMultiplier: 99,
+        minCoveragePercent: 12,
+      },
     })).toEqual({
       rangeBreakout: {
         lookbackBars: 100,
         minBreakoutPercent: 0,
         volumeConfirmationMultiplier: 1,
+      },
+      volumeExpansion: {
+        lookbackBars: 5,
+        volumeMultiplier: 5,
+        minCoveragePercent: 60,
       },
     });
   });
@@ -370,6 +380,80 @@ describe('selectable pattern presets', () => {
       volume: 2200,
     };
     expect(detectPattern([...quietCandles, expansion], 0.5, 3, 'volume-expansion').matched).toBe('bullish');
+  });
+
+  it('applies a configurable volume-expansion lookback and multiplier', () => {
+    const settings = {
+      ...DEFAULT_PATTERN_SETTINGS,
+      volumeExpansion: {
+        ...DEFAULT_PATTERN_SETTINGS.volumeExpansion,
+        lookbackBars: 5,
+        volumeMultiplier: 1.5,
+      },
+    };
+    const expansion: Candle = {
+      time: 11,
+      open: 100,
+      high: 101.2,
+      low: 99.9,
+      close: 101,
+      volume: 1600,
+    };
+    const strictSettings = {
+      ...settings,
+      volumeExpansion: {
+        ...settings.volumeExpansion,
+        volumeMultiplier: 2,
+      },
+    };
+
+    expect(detectPattern(
+      [...quietCandles.slice(-5), expansion],
+      0.5,
+      3,
+      'volume-expansion',
+      100,
+      strictSettings,
+    ).matched).toBe('none');
+    expect(detectPattern(
+      [...quietCandles.slice(-5), expansion],
+      0.5,
+      3,
+      'volume-expansion',
+      100,
+      settings,
+    ).matched).toBe('bullish');
+  });
+
+  it('uses the configured minimum positive-volume coverage', () => {
+    const sparseVolume = quietCandles.map((candle, index) => ({
+      ...candle,
+      volume: index < 6 ? 1000 : 0,
+    }));
+    const settings = {
+      ...DEFAULT_PATTERN_SETTINGS,
+      volumeExpansion: {
+        ...DEFAULT_PATTERN_SETTINGS.volumeExpansion,
+        minCoveragePercent: 60,
+      },
+    };
+    const expansion: Candle = {
+      time: 11,
+      open: 100,
+      high: 101.2,
+      low: 99.9,
+      close: 101,
+      volume: 2200,
+    };
+
+    expect(detectPattern(
+      [...sparseVolume, expansion],
+      0.5,
+      3,
+      'volume-expansion',
+      100,
+      settings,
+    ).matched).toBe('bullish');
   });
 
   it('rejects volume expansion when the rolling volume baseline is missing', () => {

@@ -222,6 +222,13 @@ export function PatternGuidePanel({
                 ) : null}
               </>
             )}
+            {value === 'volume-expansion' && (
+              <>
+                <span>• Baseline: <strong className="text-foreground">{patternSettings.volumeExpansion.lookbackBars} bars</strong></span>
+                <span>• Volume: <strong className="text-foreground">{patternSettings.volumeExpansion.volumeMultiplier.toFixed(1)}×</strong></span>
+                <span>• Coverage: <strong className="text-foreground">{patternSettings.volumeExpansion.minCoveragePercent}%</strong></span>
+              </>
+            )}
           </button>
 
           {/* Minimal Icon Toggle */}

@@ -19,6 +19,7 @@ import {
 } from '@/lib/scanner/patterns';
 import { DETECTOR_RULE_GUIDANCE } from './pattern-settings/detectorGuidance';
 import { RangeBreakoutControls } from './pattern-settings/RangeBreakoutControls';
+import { VolumeExpansionControls } from './pattern-settings/VolumeExpansionControls';
 
 interface InteractivePatternVisualizerProps {
   patternId: PatternId;
@@ -381,6 +382,16 @@ export function InteractivePatternVisualizer({
             onChange={(rangeBreakout) => onPatternSettingsChange?.({
               ...patternSettings,
               rangeBreakout,
+            })}
+          />
+        ) : null}
+
+        {patternId === 'volume-expansion' ? (
+          <VolumeExpansionControls
+            value={patternSettings.volumeExpansion}
+            onChange={(volumeExpansion) => onPatternSettingsChange?.({
+              ...patternSettings,
+              volumeExpansion,
             })}
           />
         ) : null}
