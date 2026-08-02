@@ -15,7 +15,6 @@ import {
   TrendingUp,
   TrendingDown,
   Clock,
-  History,
   Search,
   Sliders,
   ChartCandlestick,
@@ -49,7 +48,7 @@ import {
   type PatternId,
   type PatternMatch,
 } from './watchAnalysis';
-import PatternSelector from './PatternSelector';
+import PatternGuidePanel from './PatternGuidePanel';
 import WatchlistRow from './WatchlistRow';
 import CompactWatchlist, {
   type CompactWatchlistEntry,
@@ -203,17 +202,40 @@ const persistWatchlist = (items: WatchItem[]) => {
   localStorage.setItem('watcher-watchlist', JSON.stringify(getPersistedWatchlist(items)));
 };
 
-// How many days of history the manual tester fetches, scaled by interval so
-// higher timeframes cover more calendar time (deep panning) while low ones stay
-// a lighter payload. Mirrors the panning depth of a TradingView-style chart.
+// Per-fetch chunk size (also the initial window). Sized per interval so each
+// pull is a meaningful step (few round-trips to reach the cap) without an
+// enormous single payload. More history streams in as the user pans to the edge.
 const historyLookbackDays = (interval: string): number => {
   const iv = interval.toLowerCase();
-  if (iv === '1d' || iv === 'd') return 400;
-  if (iv === '1h') return 60;
-  if (iv === '45m' || iv === '30m') return 30;
-  if (iv === '15m' || iv === '10m') return 10;
-  return 5; // 1m, 2m, 5m
+  if (iv === '1d' || iv === 'd') return 730;
+  if (iv === '1h') return 90;
+  if (iv === '45m') return 60;
+  if (iv === '30m') return 45;
+  if (iv === '15m') return 30;
+  if (iv === '10m') return 15;
+  if (iv === '5m') return 7;
+  return 2; // 1m / 2m
 };
+
+// Hard cap on total history per interval (deep — months to years). Once the
+// loaded range spans this many days we stop paging; the user then scrolls
+// within the loaded window. The view stays readable regardless (minBarSpacing),
+// so depth here only affects how far back you can pan, not on-screen density.
+const historyMaxLookbackDays = (interval: string): number => {
+  const iv = interval.toLowerCase();
+  if (iv === '1d' || iv === 'd') return 3650; // ~10 years of daily bars
+  if (iv === '1h') return 730; // ~2 years
+  if (iv === '45m') return 365; // ~1 year
+  if (iv === '30m') return 270; // ~9 months
+  if (iv === '15m') return 180; // ~6 months
+  if (iv === '10m') return 90; // ~3 months (past June)
+  if (iv === '5m') return 30; // ~1 month
+  return 7; // 1m / 2m — ~1 week
+};
+
+// Absolute safety ceiling on candle count regardless of interval, so a
+// misbehaving feed can never balloon the chart beyond what's usable.
+const HISTORY_MAX_CANDLES = 20000;
 
 // Client-side cache using existing 'tradingdiary-charts' IndexedDB ohlc store
 async function getLiveCache(symbol: string, interval: string) {
@@ -277,6 +299,22 @@ export default function MarketWatcher() {
     provider: string;
     allMatches: PatternMatch[];
   } | null>(null);
+
+  // Infinite history for the manual tester chart: fetch older chunks as the user
+  // pans left. Refs mirror the state so the async loader avoids stale closures.
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [hasMoreHistory, setHasMoreHistory] = useState(true);
+  const isLoadingHistoryRef = useRef(false);
+  const hasMoreHistoryRef = useRef(true);
+  // Latest tester values for the async history loader (avoids stale closures).
+  const testResultRef = useRef<typeof testResult>(null);
+  const testSymbolRef = useRef('');
+  const testIntervalRef = useRef('');
+  useEffect(() => {
+    testResultRef.current = testResult;
+    testSymbolRef.current = testSymbol;
+    testIntervalRef.current = testInterval;
+  });
 
   const [selectedSetupTime, setSelectedSetupTime] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'watchlist' | 'tester'>(() => {
@@ -2304,6 +2342,11 @@ export default function MarketWatcher() {
     setTestResult(null);
     setSelectedSetupTime(null);
     setChartOffset(0);
+    // New symbol/interval → reset infinite-history paging.
+    hasMoreHistoryRef.current = true;
+    setHasMoreHistory(true);
+    isLoadingHistoryRef.current = false;
+    setIsLoadingHistory(false);
 
     try {
       let candles: Candle[] = [];
@@ -2366,6 +2409,72 @@ export default function MarketWatcher() {
     e.preventDefault();
     await executePatternTest(testSymbol, testInterval);
   };
+
+  // Infinite history: fetch the chunk of candles immediately older than what is
+  // already loaded and prepend it. Fired by the chart when the user pans near
+  // the left edge. Guards prevent overlapping fetches and paging past the start.
+  const loadOlderHistory = React.useCallback(async () => {
+    if (isLoadingHistoryRef.current || !hasMoreHistoryRef.current) return;
+    const current = testResultRef.current;
+    if (!current || !current.success || current.candles.length === 0) return;
+
+    const symbol = testSymbolRef.current.trim().toUpperCase();
+    const interval = testIntervalRef.current;
+    if (!symbol) return;
+
+    const oldest = current.candles.reduce(
+      (min, c) => Math.min(min, c.time),
+      Number.POSITIVE_INFINITY,
+    );
+    const newest = current.candles.reduce((max, c) => Math.max(max, c.time), 0);
+    if (!Number.isFinite(oldest)) return;
+
+    // Hard cap: stop once the loaded range spans the per-interval limit (a small
+    // buffer absorbs weekend/holiday gaps), or the candle ceiling is hit. Beyond
+    // this the user scrolls horizontally within what's already loaded.
+    const capDays = historyMaxLookbackDays(interval);
+    const spanDays = (newest - oldest) / 86400;
+    if (spanDays >= capDays - 1 || current.candles.length >= HISTORY_MAX_CANDLES) {
+      hasMoreHistoryRef.current = false;
+      setHasMoreHistory(false);
+      return;
+    }
+
+    isLoadingHistoryRef.current = true;
+    setIsLoadingHistory(true);
+    try {
+      const days = historyLookbackDays(interval);
+      const res = await fetch(
+        `/api/watch?symbol=${encodeURIComponent(symbol)}&interval=${interval}&days=${days}&before=${oldest}`,
+      );
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const data = await res.json();
+      const fetched: Candle[] = data.candles || [];
+      // Only keep bars strictly older than what we have (avoid overlap dupes).
+      const older = fetched.filter((c) => c.time < oldest);
+
+      if (older.length === 0) {
+        hasMoreHistoryRef.current = false;
+        setHasMoreHistory(false);
+      } else {
+        const newOldest = older.reduce((min, c) => Math.min(min, c.time), oldest);
+        const newCount = current.candles.length + older.length;
+        // Reached the cap with this chunk → no further paging.
+        if ((newest - newOldest) / 86400 >= capDays - 1 || newCount >= HISTORY_MAX_CANDLES) {
+          hasMoreHistoryRef.current = false;
+          setHasMoreHistory(false);
+        }
+        setTestResult((prev) =>
+          prev ? { ...prev, candles: [...older, ...prev.candles] } : prev,
+        );
+      }
+    } catch {
+      // Leave hasMore untrue so the user can pan again to retry.
+    } finally {
+      isLoadingHistoryRef.current = false;
+      setIsLoadingHistory(false);
+    }
+  }, []);
 
   // Keep only the current New York market date. Never substitute the previous
   // session: doing so makes stale candles look like live pre-market data.
@@ -2600,13 +2709,21 @@ export default function MarketWatcher() {
 
   const renderChartOnly = () => {
     if (!testResult || !testResult.success || testResult.candles.length === 0) return null;
-    if (displayedCandles.length === 0) {
+    if (testerCandles.length === 0) {
       return (
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-8 text-center text-sm text-amber-300">
           No candles are available for today&apos;s selected Eastern Time session.
         </div>
       );
     }
+    // Older bars can only surface when the view isn't pinned to the current day.
+    // Long intervals (1h/1d) ignore the current-day filter, so they always allow
+    // panning back; short intervals require "Current Day Only" to be unchecked.
+    const testerHistoryPanningEnabled =
+      testInterval === '1h' ||
+      testInterval === '1d' ||
+      testInterval === 'D' ||
+      !testCurrentDayOnly;
     return (
       <div className="space-y-4">
         {/* Title Bar */}
@@ -2617,7 +2734,7 @@ export default function MarketWatcher() {
               {testSymbol.toUpperCase()} Intraday Candlestick Chart
             </h3>
             <p className="text-[10px] text-muted">
-              Showing {displayedCandles.length} candles of {testResult.candles.length} loaded ({testInterval})
+              {testerCandles.length} candles loaded ({testInterval}) · zoom out or drag left for more history
             </p>
           </div>
           
@@ -2654,7 +2771,7 @@ export default function MarketWatcher() {
 
         <LightweightPatternChart
           symbol={testSymbol}
-          candles={displayedCandles}
+          candles={testerCandles}
           height={380}
           autoPatternsEnabled={autoPatternsEnabled}
           onTogglePatterns={() => setAutoPatternsEnabled(!autoPatternsEnabled)}
@@ -2666,32 +2783,11 @@ export default function MarketWatcher() {
           currentDayOnly={testCurrentDayOnly}
           onToggleCurrentDayOnly={(val) => setTestCurrentDayOnly(val)}
           providerBadge={testResult?.provider || 'Tiingo'}
-          subtitle={`Showing ${displayedCandles.length} candles of ${testResult?.candles?.length || 0} loaded (${testInterval})`}
+          subtitle={`${testerCandles.length} candles loaded (${testInterval}) · zoom out for more`}
+          onLoadMoreHistory={testerHistoryPanningEnabled ? loadOlderHistory : undefined}
+          loadingMore={isLoadingHistory}
+          hasMore={testerHistoryPanningEnabled && hasMoreHistory}
         />
-
-        {/* Slider for chart pagination if there are > 80 candles */}
-        {testerCandles.length > 80 && testInterval !== '1d' && testInterval !== '1h' && testInterval !== 'D' && (
-          <div className="flex items-center gap-4 bg-muted-bg/50 border border-card-border p-3 rounded-xl shrink-0">
-            <div className="flex items-center gap-1.5 text-xs text-muted font-semibold">
-              <History size={14} className="text-accent" />
-              <span>Scroll History:</span>
-            </div>
-            
-            <input
-              type="range"
-              min="0"
-              max={testerCandles.length - 80}
-              value={chartOffset}
-              onChange={(e) => setChartOffset(parseInt(e.target.value))}
-              className="flex-1 accent-violet-500 cursor-pointer h-1.5 bg-card-border rounded-lg appearance-none"
-              style={{ direction: 'rtl' }}
-            />
-            
-            <div className="font-mono text-[10px] bg-slate-900 border border-card-border px-2 py-0.5 rounded text-foreground">
-              {chartOffset === 0 ? 'LATEST' : `${chartOffset} candles back`}
-            </div>
-          </div>
-        )}
       </div>
     );
   };
@@ -3282,7 +3378,7 @@ export default function MarketWatcher() {
 
               </div>
 
-              <PatternSelector
+              <PatternGuidePanel
                 value={selectedPatternId}
                 onChange={handlePatternChange}
                 minMovePercent={newMinMove}
@@ -3430,6 +3526,19 @@ export default function MarketWatcher() {
                       >
                         Errors ({categoryItems.filter(w => w.status === 'error').length})
                       </button>
+
+                      <button
+                        onClick={() => setAutoPatternsEnabled(!autoPatternsEnabled)}
+                        className={`px-2.5 py-1 rounded-md transition-all font-semibold flex items-center gap-1.5 border ml-1 ${
+                          autoPatternsEnabled
+                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                            : 'bg-card-bg border-card-border text-muted hover:text-foreground'
+                        }`}
+                        title="Toggle Auto Patterns on Live Watchlist Charts"
+                      >
+                        <Sparkles size={12} className={autoPatternsEnabled ? 'text-amber-400 animate-pulse' : ''} />
+                        <span>Auto Patterns</span>
+                      </button>
                     </div>
                   </div>
 
@@ -3546,25 +3655,6 @@ export default function MarketWatcher() {
                         <option value={30}>30 Minutes</option>
                       </select>
                     </div>
-
-                    {selectedPatternId === 'consecutive' ? (
-                      <div className="flex items-center gap-2">
-                        <span>Required Consecutive Candles:</span>
-                        <select
-                          value={requiredCandleCount}
-                          onChange={(e) => {
-                            const val = parseInt(e.target.value, 10);
-                            setRequiredCandleCount(val);
-                            localStorage.setItem('watcher-consecutive-candles', String(val));
-                          }}
-                          className="bg-card-bg border border-card-border rounded px-2 py-1 text-foreground font-semibold cursor-pointer"
-                        >
-                          <option value={3}>3 Candles (Default)</option>
-                          <option value={4}>4 Candles (Stronger Trend)</option>
-                          <option value={5}>5 Candles (Ultra Streak)</option>
-                        </select>
-                      </div>
-                    ) : null}
                   </div>
 
                   {watchlistCategory === 'futures' ? (
