@@ -1,277 +1,174 @@
-# Hybrid Market Scanner Provider Setup (Real-Time Futures + Bulk Stocks/Crypto)
+# Hybrid Market Scanner Provider Setup (IBKR Futures + Bulk Stocks/Crypto)
 
 ## Overview
 
-This specification outlines the technical setup for real-time **Futures scanning**
-(`ES`, `NQ`, `YM`, `CL`, `GC`, and micros) alongside bulk **Stocks & Crypto scanning**
-(300+ symbols) in TradingDiary.
+Real-time (or recent) **futures scanning** (`ES`, `NQ`, `YM`, `RTY`, `CL`, `GC`, `SI`,
+`ZB`, `BTC`, and micros) alongside bulk **stocks & crypto scanning**, routed through one
+provider factory. Futures go to a headless **IB Gateway**; everything else stays on
+Tiingo / Polygon / Yahoo. A fallback chain keeps futures scanning alive when the gateway
+is down.
 
 ### Provider decision (IBKR over Databento)
 
-We already ship `DatabentoProvider` (GLBX.MDP3 CME) and it works, but real-time CME
-via Databento runs ~**$200/mo**. Interactive Brokers offers the same CME real-time
-data through the **CME Non-Professional bundle (~$1.25/mo)** on a funded account.
+Databento (GLBX.MDP3 CME) works but real-time CME runs ~**$200/mo**. IBKR delivers the
+same CME data via the **CME Non-Professional bundle (~$1.25/mo)** on a funded account.
+The trade: IBKR is far cheaper but costs us a **stateful, session-bound gateway** (weekly
+2FA re-auth, contract qualification, a socket). We accept that and keep **Databento →
+Yahoo as automatic fallbacks** so a gateway outage degrades instead of breaking scans.
 
-The trade we are accepting: IBKR is ~150x cheaper in dollars but costs us a
-**stateful, session-bound sidecar** (daily re-auth, weekly restart, binary socket,
-contract qualification). Databento is a stateless HTTPS call. For a low-symbol-count
-futures scan the dollar delta dominates, so we route futures through IBKR **and keep
-Databento/Yahoo as automatic fallbacks** so a gateway outage degrades instead of
-breaking the scan.
-
-### Key Objectives
-1. **Real-time futures for ~$1.25/mo** via IBKR, without hitting IBKR's
-   60-requests/10-min historical pacing limit.
-2. **Bulk stocks & crypto unchanged** — Tiingo / Polygon / Yahoo via the existing
-   provider factory.
-3. **Headless deployment** integrated into our existing `docker-compose.yml` /
-   `deploy.sh` on the Ubuntu host.
+**Key finding:** IBKR **historical** bars need **no** real-time market-data subscription,
+so the MVP works today for free. The paid bundle is only needed for true live/streaming
+freshness (Phase 2).
 
 ---
 
-## 0. As-built status (MVP implemented)
+## 0. As-built status (MVP implemented & verified)
 
-The MVP is built and verified against a live gateway. What was proven:
+Everything below is built, committed, and verified against a live gateway.
 
-- **Historical bars need NO real-time market-data subscription.** We pulled 552 real
-  5-min bars for MES/MGC/MNQ front months on a closed-market Sunday, through the actual
-  `getActiveProvider()` factory. So the free path works today; the ~$1.25/mo CME bundle
-  is only needed for *live/streaming* freshness (Phase 2).
-- **Two-phase design.** For a small futures set (5–10 roots) on a ≥1-min cadence,
-  **historical polling stays under IBKR's 60/10-min pacing limit**, so the MVP needs no
-  streaming sidecar — it fits the scanner's existing `fetchRecentCandles()` pull model.
-  Streaming (Section 1) becomes necessary only for sub-minute freshness or many symbols.
+| Area | Implementation |
+|---|---|
+| Socket client | `lib/chart/ibkr-client.ts` — one persistent socket, front-month contract qualification (cached, re-qualified daily → **auto rollover**), `reqHistoricalData`, sliding-window **pacing guard** (`PACING_MAX=50`/10min), symbol-alias map (`BTC`→`BRR`), tuned connect/request timeouts (8s/10s) under the scanner's 15s budget |
+| Provider seam | `IBKRProvider` + `FallbackProvider` in `lib/chart/providers.ts`; futures `auto` = **IBKR → Databento → Yahoo** |
+| Routing | `getActiveProvider(symbol, cfg, assetClass)` — `assetClass:'futures'` routes bare roots too, not just `=F`/contract notations |
+| Source visibility | `effectiveProviderName()` reports the *winning* provider; scanner persists it to `server_watch_state.lastProvider`, `/api/watch` returns it, tiles/rows show an **IBKR/Yahoo badge** |
+| UX | `displaySymbol()` strips `=F` for display (stored symbol stays canonical); clean ticker placeholder |
+| Local stack | `docker-compose.ibkr.yml` (published ports + VNC for local testing) |
+| Server stack | `docker-compose.ibkr.server.yml` — **decoupled** gateway project, no public API port, VNC loopback-only, daily no-2FA restart |
+| Deploy | app `docker-compose.yml` scanner wired to `ib-gateway:4003` over shared external network `tradingdiary-ibkr-net`; `deploy.sh` ensures the network idempotently and **never touches the gateway** |
+| Test harness | `dev-run.ts` accepts an asset-class arg; verified `NQ=F` → IBKR front month → persisted to DB |
 
-Implemented pieces:
-- `lib/chart/ibkr-client.ts` — persistent single-socket client: front-month contract
-  qualification (cached, re-qualified daily for rollover), `reqHistoricalData`, and a
-  sliding-window **pacing guard** (`PACING_MAX=50`/10 min) that throws → factory fallback.
-- `IBKRProvider` + `FallbackProvider` in `lib/chart/providers.ts`; futures `auto` routing
-  now degrades **IBKR → Databento → Yahoo**.
-- `getActiveProvider(symbol, userConfig, assetClass)` — a watch's `assetClass: 'futures'`
-  now routes bare roots (e.g. `MES`) to futures, not just contract-coded notations.
-- `docker-compose.ibkr.yml` + `.env.ibkr` — gateway-only local stack (VNC, read-only API).
+**Verified:** MES/MGC/MNQ/NQ/BTC front months resolve on IBKR and return real bars through
+`getActiveProvider()`; a full scheduler→worker→DB cycle persists IBKR candles with
+`lastProvider = "IBKR (CME)"`; existing tests green.
 
-Open item: confirm real-time entitlement (Client Portal, or re-probe when Globex is open).
+**Open items:** see §7.
 
-## 1. Phase 2 — streaming for scale/real-time
+---
 
-The MVP polls `reqHistoricalData`. That is throttled to ~60 requests / 10 min (6/min), so
-it holds only for a **small** symbol set. To scan many futures, or to get sub-minute
-freshness, switch to **streaming with a local cache** (build this only when the symbol
-count or latency need actually demands it):
+## 1. Architecture (MVP: historical polling)
+
+The scanner's `fetchRecentCandles()` pull model is a good fit: for a small futures set
+(≤~10 roots) on a ≥1-min cadence, polling `reqHistoricalData` stays under IBKR's
+60/10-min pacing limit, so **no streaming sidecar is needed**.
 
 ```
-  ┌──────────────────────┐   TWS socket (4001)   ┌────────────────────────┐
-  │   IB Gateway         │◀─────────────────────▶│  ibkr-feed sidecar     │
-  │   (headless, IBC)    │   reqRealTimeBars      │  (@stoqey/ib)          │
-  └──────────────────────┘   5s bars, streaming   │  aggregates 5s→1m/5m   │
-                                                   └───────────┬────────────┘
-                                                writes bars    │
-                                                               ▼
-                                                   ┌────────────────────────┐
-                                                   │  Redis  bars:{root}:{tf}│
-                                                   └───────────┬────────────┘
-                                                     reads cache│
-                                                               ▼
-  ┌───────────────────────────────────────────────────────────────────────┐
-  │  Scanner worker → IBKRProvider.fetchRecentCandles() reads Redis, never  │
-  │  touches the socket. Falls back to Databento/Yahoo if cache is stale.   │
-  └───────────────────────────────────────────────────────────────────────┘
+  scanner worker ─ getActiveProvider(symbol, _, 'futures')
+        │
+        ▼  FallbackProvider "Futures (auto)"
+   ┌────────────┬──────────────┬────────────┐
+   │ IBKRProvider│ Databento    │ Yahoo      │   (first non-empty wins;
+   │  (gateway)  │ (if key)     │ (always)   │    lastProviderUsed recorded)
+   └─────┬───────┴──────────────┴────────────┘
+         ▼ ibkr-client.ts (persistent socket)
+   IB Gateway (headless, IBC) ── CME/CBOT/COMEX/NYMEX historical bars
 ```
 
-- The **sidecar** holds one persistent socket, subscribes once per contract, and
-  aggregates streaming 5s bars into 1m/5m/etc. buckets in memory, flushing each
-  closed bar to Redis under `bars:{root}:{interval}` (a capped list, newest last).
-- The **scanner** never opens a socket and issues no historical requests, so pacing
-  limits are irrelevant. It reads the cache like any other provider.
-- If the cache is missing or its newest bar is older than a staleness threshold
-  (gateway re-authing, restart window), the provider **throws**, and the existing
-  factory fallback chain serves Databento → Yahoo.
+Contract qualification resolves the **front month** and re-qualifies daily, so rollover is
+automatic (calendar roll at expiry). Streaming for sub-minute freshness / many symbols is
+**Phase 2** (§8).
 
 ---
 
 ## 2. Provider seam (`lib/chart/providers.ts`)
 
-Integrate as a `ChartProvider`, not a new ad-hoc function. This keeps futures routing,
-usage metering (`trackProvider` / `recordProviderRequest`), and fallback all in one
-place — `getActiveProvider()` already branches on `isFuturesSymbol()`.
+- `IBKRProvider.fetchRecentCandles()` delegates to the lazily-imported `ibkr-client.ts`
+  (so `@stoqey/ib` never lands in the web bundle).
+- `FallbackProvider` tries each provider in order, records `lastProviderUsed`, and throws
+  only if all fail. `effectiveProviderName(provider)` returns the real winner.
+- Futures branch of `getActiveProvider()`: `ibkr` when `IBKR_GATEWAY_HOST`/`IBKR_ENABLED`
+  is set (server/scanner context), else Databento, else Yahoo; `auto` builds the fallback
+  chain.
+- `ibkr-client.ts` maps roots → exchange (COMEX/NYMEX/CBOT else CME), intervals → IB bar
+  sizes, and aliases (`BTC`→`BRR`). Add new special symbologies to `IBKR_SYMBOL_ALIAS`.
 
-```typescript
-// New provider: reads the sidecar's Redis cache; never opens a socket.
-export class IBKRProvider implements ChartProvider {
-  name = "IBKR (CME real-time)";
-  constructor(private redis: RedisClient, private maxStaleSec = 90) {}
+---
 
-  async fetchCandles(symbol: string, _date: string, interval: string) {
-    return this.fetchRecentCandles(symbol, interval);
-  }
+## 3. Local development & testing
 
-  async fetchRecentCandles(symbol: string, interval: string): Promise<OHLCCandle[]> {
-    const root = futuresRoot(symbol);                 // MNQU6 -> MNQ (existing helper)
-    const key = `bars:${root}:${interval}`;
-    const rows = await this.redis.lrange(key, -288, -1);
-    const candles = rows.map(parseBar).filter(Boolean) as OHLCCandle[];
-    const newest = candles.at(-1);
-    if (!newest || nowSec() - newest.time > this.maxStaleSec) {
-      throw new Error(`IBKR cache stale for ${root}:${interval}`); // -> factory fallback
-    }
-    return candles;
-  }
-}
+- **Gateway:** `docker-compose -f docker-compose.ibkr.yml --env-file .env.ibkr up` (creds
+  in gitignored `.env.ibkr`; complete 2FA via VNC `localhost:5900` or IBKR Mobile).
+- **Scanner/web against it:** set `IBKR_GATEWAY_HOST=127.0.0.1` / `IBKR_GATEWAY_PORT=4001`
+  in `.env.local`, then `npm run scanner` (and/or `npm run dev`).
+- **One-shot end-to-end:** `IBKR_GATEWAY_HOST=127.0.0.1 npx tsx lib/scanner/dev-run.ts "NQ=F" 10m futures`.
+- Two fetch paths exist: the **web `/api/watch`** (browser tiles) and the **scanner
+  worker**. Both read the same factory; each needs the gateway env in its own process.
+
+---
+
+## 4. Auth lifecycle (2FA)
+
+- **IBC automation** via `ghcr.io/gnzsnz/ib-gateway`.
+- **2FA cadence:** login once; IBC does **daily soft restarts that reuse the session (no
+  2FA)**; IBKR forces a **weekly (Sunday) re-auth** — the only recurring 2FA. App deploys
+  never restart the gateway, so they never trigger 2FA.
+- **Goal:** the weekly re-auth should be a **phone tap** (IBKR Mobile IB Key push), not a
+  VNC session. Requires IBC **device auto-selection** so it doesn't stall on the "IB Key /
+  One-Time Passcode" picker. *(Not yet wired — see §7.)*
+- **Fallback covers the gap:** during any re-auth, futures scans degrade to Yahoo and
+  recover automatically.
+
+---
+
+## 5. Server deployment (decoupled)
+
+The gateway runs as its **own compose project** so `deploy.sh` (app only) never restarts
+it — its authenticated session survives every deploy.
+
+```
+docker-compose.yml             → web, postgres, redis, scanner   (deploy.sh runs this)
+docker-compose.ibkr.server.yml → ib-gateway                      (started ONCE)
+        └── shared external network: tradingdiary-ibkr-net
 ```
 
-Wire it into the futures branch ahead of Databento (around
-`lib/chart/providers.ts:655`):
-
-```typescript
-if (isFutures) {
-  const futuresPref = userConfig?.futuresProvider || 'ibkr';
-  if ((futuresPref === 'ibkr' || futuresPref === 'auto') && redisAvailable()) {
-    try { return trackProvider(new IBKRProvider(redis), 'owner'); } catch {}
-  }
-  const databentoKey = userConfig?.databentoKey || process.env.DATABENTO_API_KEY;
-  if (databentoKey) return trackProvider(new DatabentoProvider(databentoKey), owner(userConfig?.databentoKey));
-  return trackProvider(new YahooProvider(), 'owner');
-}
+**One-time server setup:**
+```bash
+docker network create tradingdiary-ibkr-net
+# add IBKR_API_USER / IBKR_API_PASSWORD / VNC_PASSWORD to /srv/tradingdiary/.env
+docker compose -p tradingdiary-ibkr -f docker-compose.ibkr.server.yml up -d
+# complete 2FA once via SSH-tunnel VNC:  ssh -L 5900:127.0.0.1:5900 root@SERVER → vnc://localhost:5900
 ```
-
-Because `IBKRProvider.fetchRecentCandles` throws on stale/missing cache, the caller in
-`fetchCandles` ([lib/scanner/candles.ts:114](../../lib/scanner/candles.ts#L114)) needs a
-try/next-provider path, OR the factory returns a small composite that tries IBKR then
-Databento then Yahoo. Prefer the composite so `candles.ts` stays provider-agnostic.
+Then `./deploy.sh` as often as needed — the gateway is untouched. Scanner reaches it at
+`ib-gateway:4003` (internal socat bridge for the live API).
 
 ---
 
-## 3. The `ibkr-feed` sidecar
+## 6. Security model
 
-A tiny Node service (own entrypoint, same repo) that:
-
-1. Connects to IB Gateway over the TWS socket (`@stoqey/ib`, host `ib-gateway`, port `4001`).
-2. **Qualifies contracts**: for each configured root, resolves the live front-month
-   contract via `reqContractDetails` (root + `CME`/`NYMEX`/`COMEX` exchange + expiry),
-   and re-qualifies on rollover. Do not pass bare `ES` — IBKR requires a qualified contract.
-3. Subscribes with `reqRealTimeBars` (5s bars) per contract.
-4. Aggregates 5s → the intervals the scanner uses (1m, 5m, 10m …) and writes each
-   **closed** bar to Redis `bars:{root}:{interval}` (LPUSH/RPUSH + LTRIM to cap length).
-5. Publishes a `feed:health` key (last-bar timestamp per root, session state) for the
-   health check.
-
-Config: the set of roots to stream comes from the active watchlist (query the same
-source the scanner uses) so we only subscribe to symbols actually being scanned — IBKR
-market-data lines are limited.
+- **API has no password** — it trusts network reachability. Security = network isolation.
+- Server gateway publishes **no host port** for the API (internal network only); **VNC
+  bound to `127.0.0.1`** (SSH tunnel only). Verify: `nmap -p 4003,5900 SERVER` shows
+  closed.
+- **`READ_ONLY_API=yes`** blocks orders but **not reads** — any code reaching the gateway
+  can read balances/positions on a full-access login.
+- **Mitigation:** log the gateway in as a **market-data-only secondary user** (deny
+  trading + account access in Client Portal). This also avoids evicting your personal TWS
+  session (one active session per username) and isolates the CME subscription. *(User
+  task — not yet created.)*
 
 ---
 
-## 4. Auth lifecycle (the part that actually breaks headless)
+## 7. Acceptance criteria & open items
 
-A live IBKR login does **not** stay up on its own. Plan for all of it:
+**MVP — done:**
+- [x] Futures resolve on IBKR (front month, auto-roll) and return real bars through the factory.
+- [x] Full scanner→worker→DB cycle persists IBKR candles; `lastProvider` shows the real source.
+- [x] Fallback IBKR→Databento→Yahoo; UI shows the source badge.
+- [x] Decoupled gateway compose + shared network; deploys don't restart the gateway.
 
-- **IBC automation**: use an IB Gateway image that bundles IBC (e.g.
-  `ghcr.io/gnzsnz/ib-gateway`) to script the login. *Verify the exact image name/tag
-  before use — the earlier `gnzlabs` reference was wrong.*
-- **2FA**: live accounts typically force IBKR Mobile 2FA, which is fatal headless.
-  Either enable a no-2FA path for the API user where permitted, or accept a manual
-  daily approval. Confirm this **before** building — it can veto the whole approach.
-- **Daily auto-logout + weekly Sunday restart**: schedule a container/gateway restart
-  and let IBC re-login. The scanner must tolerate the gap via fallback.
-- **Secondary user — least privilege (critical).** Create a secondary user
-  (`yourname_api`) and grant it **market data only**; deny trading and account-info
-  access in Client Portal → Users & Access Rights. This matters for three reasons:
-  (1) avoids evicting your manual TWS / mobile session, (2) isolates the ~$1.25/mo CME
-  subscription, and (3) **security** — `READ_ONLY_API=yes` blocks orders but does NOT
-  block reads: any code reaching port 4001 on the primary login can read your account
-  numbers, full positions, and balances. A market-data-only secondary user is refused
-  that data by IBKR itself, so a compromised sidecar leaks nothing. The sidecar must
-  also only ever call `reqContractDetails` / `reqMktData` / `reqRealTimeBars` — never
-  `reqPositions` / `reqAccountSummary`.
-- **Health check**: the scanner (via the provider's staleness throw) already degrades
-  to Databento/Yahoo when `feed:health` goes stale — no separate wiring needed, but
-  alert on prolonged staleness.
+**Still open:**
+- [ ] **Market-open recency** — confirm `reqHistoricalData` returns bars up to *now* (vs ~15-min delayed) without the paid sub. Only testable when Globex is open.
+- [ ] **Market-data-only secondary user** (Client Portal) — security + session-conflict + subscription. Deploy prerequisite.
+- [ ] **IBC device auto-selection** in `docker-compose.ibkr.server.yml` so the weekly re-auth is a phone tap, not VNC.
+- [ ] **Single-fetcher on the server** — have the browser read persisted `server_watch_state` instead of also live-calling `/api/watch` (avoids double-pulling against pacing).
+- [ ] Confirm real futures count/intervals stay under the pacing guard and are in the bar-size map.
 
 ---
 
-## 5. Docker Compose integration
+## 8. Phase 2 — streaming (deferred, only if needed)
 
-```yaml
-services:
-  ib-gateway:
-    image: ghcr.io/gnzsnz/ib-gateway:stable   # verify tag; bundles IBC
-    container_name: ${APP_NAME:-tradingdiary}-ibkr
-    restart: unless-stopped
-    environment:
-      TWS_USERID: ${IBKR_API_USER}
-      TWS_PASSWORD: ${IBKR_API_PASSWORD}
-      TRADING_MODE: "live"
-      READ_ONLY_API: "yes"
-      TWOFA_TIMEOUT_ACTION: "restart"
-    ports:
-      - "127.0.0.1:4001:4001"   # bound to loopback; never expose publicly
-
-  ibkr-feed:
-    build: { context: ., dockerfile: docker/ibkr-feed.Dockerfile }
-    container_name: ${APP_NAME:-tradingdiary}-ibkr-feed
-    restart: unless-stopped
-    depends_on: [ib-gateway, redis]
-    environment:
-      IBKR_GATEWAY_HOST: "ib-gateway"
-      IBKR_GATEWAY_PORT: "4001"
-      REDIS_URL: "redis://redis:6379"
-
-  scanner:
-    environment:
-      REDIS_URL: "redis://redis:6379"           # reads bars cache
-      FUTURES_PROVIDER: "ibkr"                    # default routing
-      DATABENTO_API_KEY: ${DATABENTO_API_KEY:-}  # optional fallback
-```
-
-**Secrets**: `IBKR_API_USER` / `IBKR_API_PASSWORD` are live-account credentials on an
-internet-facing host. Keep them in a restricted-perm `.env` (or Docker secrets), never
-in the repo, and never expose port 4001 beyond loopback.
-
----
-
-## 6. Deployment workflow (`./deploy.sh`)
-
-1. Add `IBKR_API_USER`, `IBKR_API_PASSWORD` (and optional `DATABENTO_API_KEY`) to
-   `/srv/tradingdiary/.env`.
-2. Commit code (`IBKRProvider`, `ibkr-feed`, compose changes) to `main`.
-3. Run `./deploy.sh` → `docker compose up -d --build` starts `ib-gateway`,
-   `ibkr-feed`, `web`, `scanner`, `postgres`, `redis`.
-4. Confirm the acceptance criteria below before calling it done.
-
----
-
-## 7. Acceptance criteria (definition of done)
-
-Container startup is **not** the finish line. This is:
-
-- [ ] `ibkr-feed` authenticates and holds a session for >24h across the daily
-      auto-logout (survives one restart cycle).
-- [ ] `bars:{root}:{interval}` in Redis advances in ~real time (newest bar < 90s old)
-      for every configured futures root during CME hours.
-- [ ] `IBKRProvider.fetchRecentCandles()` returns those bars and they land in
-      `server_watch_state` for a futures watch.
-- [ ] Killing `ib-gateway` makes the scanner fall back to Databento/Yahoo with **no
-      gaps or crashes** in futures scans; recovery is automatic when it returns.
-- [ ] Provider usage metering records IBKR requests (`recordProviderRequest`).
-
----
-
-## Status & Checklist
-
-- [x] Provider comparison & futures feasibility analysis
-- [x] Spec created (`docs/specs/hybrid-futures-provider-setup.md`)
-- [x] Gateway smoke test — headless login, 2FA, read-only API, API handshake, contract
-      qualification, historical bars (`docker-compose.ibkr.yml`)
-- [x] Build `IBKRProvider` (historical MVP) + `FallbackProvider` + `ibkr-client.ts`
-- [x] Route bare-root futures via `assetClass` in `getActiveProvider`
-- [x] Verified real MES/MGC/MNQ bars through the factory; existing tests green
-- [ ] Confirm real-time entitlement (Client Portal) or re-probe when Globex is open
-- [ ] Run the live scanner locally with `IBKR_GATEWAY_HOST` set; confirm futures watches
-      persist IBKR candles to `server_watch_state`
-- [ ] Server: create least-privilege secondary user + CME bundle; add `ib-gateway` to the
-      deploy `docker-compose.yml`; wire scanner env; validate acceptance criteria
-- [ ] Phase 2 (only if needed): streaming `ibkr-feed` sidecar for scale/real-time
+For sub-minute freshness or many symbols, add an `ibkr-feed` sidecar: one socket,
+`reqRealTimeBars` (5s), aggregate → Redis `bars:{root}:{interval}`; `IBKRProvider` reads
+the cache instead of the socket (throws when stale → same fallback). Not required at
+current scale.
 </content>
-</invoke>
