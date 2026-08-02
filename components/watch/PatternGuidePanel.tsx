@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { ScanSearch, ChevronDown, SlidersHorizontal, Check } from 'lucide-react';
 import {
   DEFAULT_PATTERN_SETTINGS,
+  normalizePatternSettings,
   PATTERN_PRESETS,
   type PatternId,
   type PatternSettings,
@@ -144,6 +145,10 @@ export function PatternGuidePanel({
   const containerRef = useRef<HTMLDivElement>(null);
   const selectedPreset = PATTERN_PRESETS.find((preset) => preset.id === value) ?? PATTERN_PRESETS[0];
   const ruleGuidance = DETECTOR_RULE_GUIDANCE[value];
+  const resolvedPatternSettings = React.useMemo(
+    () => normalizePatternSettings(patternSettings),
+    [patternSettings],
+  );
 
   useEffect(() => {
     if (!isOpen) return;
@@ -215,24 +220,32 @@ export function PatternGuidePanel({
             )}
             {value === 'momentum-burst' && (
               <>
-                <span>• Baseline: <strong className="text-foreground">{patternSettings.momentumBurst.lookbackBars} bars</strong></span>
-                <span>• Expansion: <strong className="text-foreground">{patternSettings.momentumBurst.bodyMultiplier.toFixed(1)}×</strong></span>
+                <span>• Baseline: <strong className="text-foreground">{resolvedPatternSettings.momentumBurst.lookbackBars} bars</strong></span>
+                <span>• Expansion: <strong className="text-foreground">{resolvedPatternSettings.momentumBurst.bodyMultiplier.toFixed(1)}×</strong></span>
               </>
             )}
             {value === 'range-breakout' && (
               <>
-                <span>• Range: <strong className="text-foreground">{patternSettings.rangeBreakout.lookbackBars} bars</strong></span>
-                <span>• Buffer: <strong className="text-foreground">{patternSettings.rangeBreakout.minBreakoutPercent.toFixed(2)}%</strong></span>
-                {patternSettings.rangeBreakout.volumeConfirmationMultiplier !== null ? (
-                  <span>• Vol: <strong className="text-foreground">{patternSettings.rangeBreakout.volumeConfirmationMultiplier}×</strong></span>
+                <span>• Range: <strong className="text-foreground">{resolvedPatternSettings.rangeBreakout.lookbackBars} bars</strong></span>
+                <span>• Buffer: <strong className="text-foreground">{resolvedPatternSettings.rangeBreakout.minBreakoutPercent.toFixed(2)}%</strong></span>
+                {resolvedPatternSettings.rangeBreakout.volumeConfirmationMultiplier !== null ? (
+                  <span>• Vol: <strong className="text-foreground">{resolvedPatternSettings.rangeBreakout.volumeConfirmationMultiplier}×</strong></span>
                 ) : null}
               </>
             )}
             {value === 'volume-expansion' && (
               <>
-                <span>• Baseline: <strong className="text-foreground">{patternSettings.volumeExpansion.lookbackBars} bars</strong></span>
-                <span>• Volume: <strong className="text-foreground">{patternSettings.volumeExpansion.volumeMultiplier.toFixed(1)}×</strong></span>
-                <span>• Coverage: <strong className="text-foreground">{patternSettings.volumeExpansion.minCoveragePercent}%</strong></span>
+                <span>• Baseline: <strong className="text-foreground">{resolvedPatternSettings.volumeExpansion.lookbackBars} bars</strong></span>
+                <span>• Volume: <strong className="text-foreground">{resolvedPatternSettings.volumeExpansion.volumeMultiplier.toFixed(1)}×</strong></span>
+                <span>• Coverage: <strong className="text-foreground">{resolvedPatternSettings.volumeExpansion.minCoveragePercent}%</strong></span>
+              </>
+            )}
+            {value === 'engulfing-reversal' && (
+              <>
+                {resolvedPatternSettings.engulfingReversal.minPriorBodyPercent > 0 ? (
+                  <span>• Prior body: <strong className="text-foreground">{resolvedPatternSettings.engulfingReversal.minPriorBodyPercent.toFixed(2)}%</strong></span>
+                ) : null}
+                <span>• Strength: <strong className="text-foreground">{resolvedPatternSettings.engulfingReversal.minBodyRatio.toFixed(1)}×</strong></span>
               </>
             )}
           </button>
@@ -312,7 +325,7 @@ export function PatternGuidePanel({
             onMinMoveChange={onMinMoveChange}
             onRequiredCountChange={onRequiredCountChange}
             onMaxBodyOverlapChange={onMaxBodyOverlapChange}
-            patternSettings={patternSettings}
+            patternSettings={resolvedPatternSettings}
             onPatternSettingsChange={onPatternSettingsChange}
           />
         </div>

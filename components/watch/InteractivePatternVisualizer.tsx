@@ -14,10 +14,12 @@ import {
 import {
   DEFAULT_PATTERN_SETTINGS,
   getPatternDefinition,
+  normalizePatternSettings,
   type PatternId,
   type PatternSettings,
 } from '@/lib/scanner/patterns';
 import { DETECTOR_RULE_GUIDANCE } from './pattern-settings/detectorGuidance';
+import { EngulfingReversalControls } from './pattern-settings/EngulfingReversalControls';
 import { MomentumBurstControls } from './pattern-settings/MomentumBurstControls';
 import { RangeBreakoutControls } from './pattern-settings/RangeBreakoutControls';
 import { VolumeExpansionControls } from './pattern-settings/VolumeExpansionControls';
@@ -53,6 +55,10 @@ export function InteractivePatternVisualizer({
     maxBodyOverlapPercent,
   );
   const [showExplanation, setShowExplanation] = useState<boolean>(true);
+  const resolvedPatternSettings = React.useMemo(
+    () => normalizePatternSettings(patternSettings),
+    [patternSettings],
+  );
 
   // Sync external props if provided
   React.useEffect(() => {
@@ -379,9 +385,9 @@ export function InteractivePatternVisualizer({
 
         {patternId === 'range-breakout' ? (
           <RangeBreakoutControls
-            value={patternSettings.rangeBreakout}
+            value={resolvedPatternSettings.rangeBreakout}
             onChange={(rangeBreakout) => onPatternSettingsChange?.({
-              ...patternSettings,
+              ...resolvedPatternSettings,
               rangeBreakout,
             })}
           />
@@ -389,9 +395,9 @@ export function InteractivePatternVisualizer({
 
         {patternId === 'momentum-burst' ? (
           <MomentumBurstControls
-            value={patternSettings.momentumBurst}
+            value={resolvedPatternSettings.momentumBurst}
             onChange={(momentumBurst) => onPatternSettingsChange?.({
-              ...patternSettings,
+              ...resolvedPatternSettings,
               momentumBurst,
             })}
           />
@@ -399,10 +405,20 @@ export function InteractivePatternVisualizer({
 
         {patternId === 'volume-expansion' ? (
           <VolumeExpansionControls
-            value={patternSettings.volumeExpansion}
+            value={resolvedPatternSettings.volumeExpansion}
             onChange={(volumeExpansion) => onPatternSettingsChange?.({
-              ...patternSettings,
+              ...resolvedPatternSettings,
               volumeExpansion,
+            })}
+          />
+        ) : null}
+
+        {patternId === 'engulfing-reversal' ? (
+          <EngulfingReversalControls
+            value={resolvedPatternSettings.engulfingReversal}
+            onChange={(engulfingReversal) => onPatternSettingsChange?.({
+              ...resolvedPatternSettings,
+              engulfingReversal,
             })}
           />
         ) : null}

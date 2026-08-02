@@ -44,7 +44,8 @@ The engine (`index.ts`) slides `index` across the candle array and calls
 `settings` object currently owns Range Breakout lookback, close buffer, and
 optional relative-volume confirmation, plus Volume Expansion lookback,
 relative-volume multiplier, and minimum baseline coverage, plus Momentum Burst
-body lookback and relative-body multiplier. Matches are
+body lookback and relative-body multiplier, plus Engulfing Reversal prior-body
+floor and engulfing-strength ratio. Matches are
 **single-candle-anchored** — a `PatternMatch`
 carries one `time`, a `bullish | bearish` type, a `change`, and a `message`.
 
@@ -62,8 +63,9 @@ The five current detectors:
 
 The settings panel has one common adjustable price filter, two Consecutive
 Move-only controls, and typed detector-specific controls for Momentum Burst,
-Range Breakout, and Volume Expansion. The UI distinguishes adjustable values from fixed rules so a
-preview does not imply that it reproduces the complete detector.
+Range Breakout, Volume Expansion, and Engulfing Reversal. The UI distinguishes
+adjustable values from fixed rules so a preview does not imply that it
+reproduces the complete detector.
 
 | Detector | Adjustable now | Fixed rules now | Recommended additions |
 | --- | --- | --- | --- |
@@ -71,7 +73,7 @@ preview does not imply that it reproduces the complete detector.
 | Momentum Burst | Minimum signal-candle body; body lookback; relative-body multiplier | Average of prior candle bodies | Optional ATR-normalized floor |
 | Range Breakout | Minimum breakout-candle body; range lookback; minimum close buffer; optional relative-volume confirmation | Close confirmation beyond prior high/low | One completion per range; optional ATR-normalized buffer |
 | Volume Expansion | Minimum signal-candle body; volume lookback; relative-volume multiplier; positive-volume coverage | Average of populated baseline bars | Same-time-of-session baseline; explicit feed capability |
-| Engulfing Reversal | Minimum reversing-candle body | Two opposite-colour candles; second body fully contains first | Prior-body floor; engulfing ratio; wick/context filters |
+| Engulfing Reversal | Minimum reversing-candle body; minimum prior body; engulfing-body ratio | Two opposite-colour candles; second body fully contains first | Wick/rejection and optional trend/context filters |
 
 `Bullish` and `Bearish` in the visual guide are preview directions, not live
 direction filters. A future real direction filter must be persisted through the

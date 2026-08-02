@@ -15,10 +15,16 @@ export interface MomentumBurstSettings {
   bodyMultiplier: number;
 }
 
+export interface EngulfingReversalSettings {
+  minPriorBodyPercent: number;
+  minBodyRatio: number;
+}
+
 export interface PatternSettings {
   rangeBreakout: RangeBreakoutSettings;
   volumeExpansion: VolumeExpansionSettings;
   momentumBurst: MomentumBurstSettings;
+  engulfingReversal: EngulfingReversalSettings;
 }
 
 export const DEFAULT_PATTERN_SETTINGS: PatternSettings = {
@@ -35,6 +41,10 @@ export const DEFAULT_PATTERN_SETTINGS: PatternSettings = {
   momentumBurst: {
     lookbackBars: 10,
     bodyMultiplier: 1.8,
+  },
+  engulfingReversal: {
+    minPriorBodyPercent: 0,
+    minBodyRatio: 1,
   },
 };
 const finiteNumber = (value: unknown): number | null =>
@@ -53,6 +63,9 @@ export const normalizePatternSettings = (input: unknown): PatternSettings => {
   const rawMomentum = root.momentumBurst && typeof root.momentumBurst === 'object'
     ? root.momentumBurst as Record<string, unknown>
     : {};
+  const rawEngulfing = root.engulfingReversal && typeof root.engulfingReversal === 'object'
+    ? root.engulfingReversal as Record<string, unknown>
+    : {};
   const lookback = finiteNumber(rawRange.lookbackBars);
   const breakout = finiteNumber(rawRange.minBreakoutPercent);
   const volumeMultiplier = finiteNumber(rawRange.volumeConfirmationMultiplier);
@@ -61,6 +74,8 @@ export const normalizePatternSettings = (input: unknown): PatternSettings => {
   const minCoveragePercent = finiteNumber(rawVolume.minCoveragePercent);
   const momentumLookback = finiteNumber(rawMomentum.lookbackBars);
   const bodyMultiplier = finiteNumber(rawMomentum.bodyMultiplier);
+  const minPriorBodyPercent = finiteNumber(rawEngulfing.minPriorBodyPercent);
+  const minBodyRatio = finiteNumber(rawEngulfing.minBodyRatio);
 
   return {
     rangeBreakout: {
@@ -92,6 +107,14 @@ export const normalizePatternSettings = (input: unknown): PatternSettings => {
       bodyMultiplier: bodyMultiplier === null
         ? DEFAULT_PATTERN_SETTINGS.momentumBurst.bodyMultiplier
         : Math.max(1.1, Math.min(5, bodyMultiplier)),
+    },
+    engulfingReversal: {
+      minPriorBodyPercent: minPriorBodyPercent === null
+        ? DEFAULT_PATTERN_SETTINGS.engulfingReversal.minPriorBodyPercent
+        : Math.max(0, Math.min(3, minPriorBodyPercent)),
+      minBodyRatio: minBodyRatio === null
+        ? DEFAULT_PATTERN_SETTINGS.engulfingReversal.minBodyRatio
+        : Math.max(1, Math.min(3, minBodyRatio)),
     },
   };
 };

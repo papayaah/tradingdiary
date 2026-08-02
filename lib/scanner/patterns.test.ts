@@ -402,6 +402,10 @@ describe('selectable pattern presets', () => {
         lookbackBars: 1,
         bodyMultiplier: 20,
       },
+      engulfingReversal: {
+        minPriorBodyPercent: -5,
+        minBodyRatio: 20,
+      },
     })).toEqual({
       rangeBreakout: {
         lookbackBars: 100,
@@ -417,7 +421,23 @@ describe('selectable pattern presets', () => {
         lookbackBars: 5,
         bodyMultiplier: 5,
       },
+      engulfingReversal: {
+        minPriorBodyPercent: 0,
+        minBodyRatio: 3,
+      },
     });
+  });
+
+  it('fills detector defaults into older partial settings objects', () => {
+    const normalized = normalizePatternSettings({
+      rangeBreakout: DEFAULT_PATTERN_SETTINGS.rangeBreakout,
+      volumeExpansion: DEFAULT_PATTERN_SETTINGS.volumeExpansion,
+      momentumBurst: DEFAULT_PATTERN_SETTINGS.momentumBurst,
+    });
+
+    expect(normalized.engulfingReversal).toEqual(
+      DEFAULT_PATTERN_SETTINGS.engulfingReversal,
+    );
   });
 
   it('requires doubled recent volume for volume expansion', () => {
@@ -549,5 +569,58 @@ describe('selectable pattern presets', () => {
     const result = detectPattern(candles, 1, 3, 'engulfing-reversal');
     expect(result.matched).toBe('bullish');
     expect(result.message).toMatch(/engulfing reversal/i);
+  });
+
+  it('applies prior-body and engulfing-strength filters', () => {
+    const candles: Candle[] = [
+      { time: 1, open: 101, high: 101.2, low: 99.8, close: 100, volume: 1000 },
+      { time: 2, open: 99.8, high: 101.7, low: 99.6, close: 101.5, volume: 1200 },
+    ];
+    const acceptedSettings = {
+      ...DEFAULT_PATTERN_SETTINGS,
+      engulfingReversal: {
+        minPriorBodyPercent: 0.9,
+        minBodyRatio: 1.5,
+      },
+    };
+    const tinyPriorRejected = {
+      ...acceptedSettings,
+      engulfingReversal: {
+        ...acceptedSettings.engulfingReversal,
+        minPriorBodyPercent: 1,
+      },
+    };
+    const weakRatioRejected = {
+      ...acceptedSettings,
+      engulfingReversal: {
+        ...acceptedSettings.engulfingReversal,
+        minBodyRatio: 1.8,
+      },
+    };
+
+    expect(detectPattern(
+      candles,
+      1,
+      3,
+      'engulfing-reversal',
+      100,
+      acceptedSettings,
+    ).matched).toBe('bullish');
+    expect(detectPattern(
+      candles,
+      1,
+      3,
+      'engulfing-reversal',
+      100,
+      tinyPriorRejected,
+    ).matched).toBe('none');
+    expect(detectPattern(
+      candles,
+      1,
+      3,
+      'engulfing-reversal',
+      100,
+      weakRatioRejected,
+    ).matched).toBe('none');
   });
 });

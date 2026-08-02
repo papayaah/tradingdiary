@@ -74,10 +74,9 @@ export const DETECTOR_RULE_GUIDANCE: Record<PatternId, DetectorRuleGuidance> = {
       { label: 'Window', value: 'Two candles' },
       { label: 'Direction', value: 'Second candle must be the opposite color' },
       { label: 'Engulfing', value: 'Second body must fully contain the first body' },
+      { label: 'Strength', value: 'Configurable prior-body floor and body ratio' },
     ],
     recommendedControls: [
-      'Minimum prior-candle body or range',
-      'Minimum engulfing-body ratio',
       'Optional wick/rejection requirement',
       'Optional trend or support/resistance context',
     ],
