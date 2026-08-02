@@ -10,9 +10,15 @@ export interface VolumeExpansionSettings {
   minCoveragePercent: number;
 }
 
+export interface MomentumBurstSettings {
+  lookbackBars: number;
+  bodyMultiplier: number;
+}
+
 export interface PatternSettings {
   rangeBreakout: RangeBreakoutSettings;
   volumeExpansion: VolumeExpansionSettings;
+  momentumBurst: MomentumBurstSettings;
 }
 
 export const DEFAULT_PATTERN_SETTINGS: PatternSettings = {
@@ -25,6 +31,10 @@ export const DEFAULT_PATTERN_SETTINGS: PatternSettings = {
     lookbackBars: 10,
     volumeMultiplier: 2,
     minCoveragePercent: 80,
+  },
+  momentumBurst: {
+    lookbackBars: 10,
+    bodyMultiplier: 1.8,
   },
 };
 const finiteNumber = (value: unknown): number | null =>
@@ -40,12 +50,17 @@ export const normalizePatternSettings = (input: unknown): PatternSettings => {
   const rawVolume = root.volumeExpansion && typeof root.volumeExpansion === 'object'
     ? root.volumeExpansion as Record<string, unknown>
     : {};
+  const rawMomentum = root.momentumBurst && typeof root.momentumBurst === 'object'
+    ? root.momentumBurst as Record<string, unknown>
+    : {};
   const lookback = finiteNumber(rawRange.lookbackBars);
   const breakout = finiteNumber(rawRange.minBreakoutPercent);
   const volumeMultiplier = finiteNumber(rawRange.volumeConfirmationMultiplier);
   const volumeLookback = finiteNumber(rawVolume.lookbackBars);
   const expansionMultiplier = finiteNumber(rawVolume.volumeMultiplier);
   const minCoveragePercent = finiteNumber(rawVolume.minCoveragePercent);
+  const momentumLookback = finiteNumber(rawMomentum.lookbackBars);
+  const bodyMultiplier = finiteNumber(rawMomentum.bodyMultiplier);
 
   return {
     rangeBreakout: {
@@ -69,6 +84,14 @@ export const normalizePatternSettings = (input: unknown): PatternSettings => {
       minCoveragePercent: minCoveragePercent === null
         ? DEFAULT_PATTERN_SETTINGS.volumeExpansion.minCoveragePercent
         : Math.max(60, Math.min(100, Math.round(minCoveragePercent))),
+    },
+    momentumBurst: {
+      lookbackBars: momentumLookback === null
+        ? DEFAULT_PATTERN_SETTINGS.momentumBurst.lookbackBars
+        : Math.max(5, Math.min(100, Math.round(momentumLookback))),
+      bodyMultiplier: bodyMultiplier === null
+        ? DEFAULT_PATTERN_SETTINGS.momentumBurst.bodyMultiplier
+        : Math.max(1.1, Math.min(5, bodyMultiplier)),
     },
   };
 };

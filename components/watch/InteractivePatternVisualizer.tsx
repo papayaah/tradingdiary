@@ -18,6 +18,7 @@ import {
   type PatternSettings,
 } from '@/lib/scanner/patterns';
 import { DETECTOR_RULE_GUIDANCE } from './pattern-settings/detectorGuidance';
+import { MomentumBurstControls } from './pattern-settings/MomentumBurstControls';
 import { RangeBreakoutControls } from './pattern-settings/RangeBreakoutControls';
 import { VolumeExpansionControls } from './pattern-settings/VolumeExpansionControls';
 
@@ -382,6 +383,16 @@ export function InteractivePatternVisualizer({
             onChange={(rangeBreakout) => onPatternSettingsChange?.({
               ...patternSettings,
               rangeBreakout,
+            })}
+          />
+        ) : null}
+
+        {patternId === 'momentum-burst' ? (
+          <MomentumBurstControls
+            value={patternSettings.momentumBurst}
+            onChange={(momentumBurst) => onPatternSettingsChange?.({
+              ...patternSettings,
+              momentumBurst,
             })}
           />
         ) : null}

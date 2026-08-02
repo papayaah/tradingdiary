@@ -228,6 +228,48 @@ describe('selectable pattern presets', () => {
     expect(result.message).toMatch(/momentum burst/i);
   });
 
+  it('applies a configurable momentum baseline and body multiplier', () => {
+    const burst: Candle = {
+      time: 11,
+      open: 100,
+      high: 100.3,
+      low: 99.9,
+      close: 100.25,
+      volume: 1200,
+    };
+    const settings = {
+      ...DEFAULT_PATTERN_SETTINGS,
+      momentumBurst: {
+        lookbackBars: 5,
+        bodyMultiplier: 2,
+      },
+    };
+    const strictSettings = {
+      ...settings,
+      momentumBurst: {
+        ...settings.momentumBurst,
+        bodyMultiplier: 3,
+      },
+    };
+
+    expect(detectPattern(
+      [...quietCandles.slice(-5), burst],
+      0.2,
+      3,
+      'momentum-burst',
+      100,
+      settings,
+    ).matched).toBe('bullish');
+    expect(detectPattern(
+      [...quietCandles.slice(-5), burst],
+      0.2,
+      3,
+      'momentum-burst',
+      100,
+      strictSettings,
+    ).matched).toBe('none');
+  });
+
   it('detects closes outside the prior 10-candle range', () => {
     const breakout: Candle = {
       time: 11,
@@ -356,6 +398,10 @@ describe('selectable pattern presets', () => {
         volumeMultiplier: 99,
         minCoveragePercent: 12,
       },
+      momentumBurst: {
+        lookbackBars: 1,
+        bodyMultiplier: 20,
+      },
     })).toEqual({
       rangeBreakout: {
         lookbackBars: 100,
@@ -366,6 +412,10 @@ describe('selectable pattern presets', () => {
         lookbackBars: 5,
         volumeMultiplier: 5,
         minCoveragePercent: 60,
+      },
+      momentumBurst: {
+        lookbackBars: 5,
+        bodyMultiplier: 5,
       },
     });
   });

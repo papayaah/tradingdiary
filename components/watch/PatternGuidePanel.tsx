@@ -213,6 +213,12 @@ export function PatternGuidePanel({
             {value === 'consecutive' && (
               <span>• Streak: <strong className="text-foreground">{requiredCount} bars</strong></span>
             )}
+            {value === 'momentum-burst' && (
+              <>
+                <span>• Baseline: <strong className="text-foreground">{patternSettings.momentumBurst.lookbackBars} bars</strong></span>
+                <span>• Expansion: <strong className="text-foreground">{patternSettings.momentumBurst.bodyMultiplier.toFixed(1)}×</strong></span>
+              </>
+            )}
             {value === 'range-breakout' && (
               <>
                 <span>• Range: <strong className="text-foreground">{patternSettings.rangeBreakout.lookbackBars} bars</strong></span>

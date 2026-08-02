@@ -29,13 +29,11 @@ export const DETECTOR_RULE_GUIDANCE: Record<PatternId, DetectorRuleGuidance> = {
     minBodyLabel: 'Minimum Signal Body',
     minBodyExplanation: 'The burst candle must meet this absolute open-to-close percentage.',
     currentRules: [
-      { label: 'Baseline', value: 'Previous 10 candle bodies' },
-      { label: 'Relative size', value: 'Signal body must be at least 1.8× average' },
+      { label: 'Baseline', value: 'Configurable prior-body average' },
+      { label: 'Relative size', value: 'Configurable body-expansion multiplier' },
       { label: 'Direction', value: 'Signal follows the burst candle color' },
     ],
     recommendedControls: [
-      'Baseline lookback length',
-      'Relative-body multiplier',
       'Optional ATR-normalized minimum',
     ],
   },

@@ -19,7 +19,7 @@ import {
  * Algorithm version stored alongside every alert. Bump this whenever detector
  * behavior changes in a way that could alter which candles match.
  */
-export const PATTERN_VERSION = 7;
+export const PATTERN_VERSION = 8;
 
 export const PATTERN_PRESETS = PATTERN_DEFINITIONS.map(
   ({ id, name, shortDescription }) => ({ id, name, shortDescription }),
@@ -123,6 +123,7 @@ export {
   normalizePatternSettings,
 };
 export type {
+  MomentumBurstSettings,
   PatternSettings,
   RangeBreakoutSettings,
   VolumeExpansionSettings,
