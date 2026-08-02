@@ -766,6 +766,13 @@ export class FallbackProvider implements ChartProvider {
 
     constructor(public name: string, private chain: ChartProvider[]) {}
 
+    /** The expected primary source (first in the chain) — used for entitlement
+     *  scope / capability resolution, since the chain's own name ("Futures
+     *  (auto)") isn't a real provider identity. */
+    get primaryName(): string {
+        return this.chain[0]?.name ?? this.name;
+    }
+
     async fetchCandles(symbol: string, date: string, interval: string): Promise<OHLCCandle[]> {
         return this.run((p) => p.fetchCandles(symbol, date, interval));
     }

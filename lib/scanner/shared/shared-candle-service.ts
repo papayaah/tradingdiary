@@ -197,7 +197,7 @@ export class SharedCandleService {
    * request is triggered.
    */
   private resolveContext(symbol: string, assetClass: AssetClass): RequestContext {
-    const { providerName, providerScope } = resolveProviderIdentity(symbol);
+    const { providerName, providerScope } = resolveProviderIdentity(symbol, assetClass);
     const capability = getProviderCapability(providerName, assetClass);
     return {
       providerScope,

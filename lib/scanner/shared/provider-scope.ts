@@ -14,7 +14,8 @@
 // server-authoritative, this is where a non-reversible credential identifier
 // (never the raw key) would be appended to partition the cache.
 
-import { getActiveProvider } from '@/lib/chart/providers';
+import { getActiveProvider, FallbackProvider } from '@/lib/chart/providers';
+import type { AssetClass } from '@/lib/scanner/sessions';
 
 /** Lowercase, punctuation-collapsed provider label safe for a Redis key. */
 function slugifyProvider(name: string): string {
@@ -36,12 +37,16 @@ export interface ProviderIdentity {
  * cache key) in one call, without triggering an upstream request. Contains only
  * the public provider identity — never a raw API key, token, or secret.
  */
-export function resolveProviderIdentity(symbol: string): ProviderIdentity {
-  const provider = getActiveProvider(symbol);
-  return { providerName: provider.name, providerScope: `${slugifyProvider(provider.name)}:server` };
+export function resolveProviderIdentity(symbol: string, assetClass?: AssetClass): ProviderIdentity {
+  const provider = getActiveProvider(symbol, undefined, assetClass);
+  // For the futures fallback chain, identity is the expected primary source
+  // (e.g. "IBKR (CME)"), not the chain wrapper name ("Futures (auto)"), so the
+  // capability registry and budget resolve correctly.
+  const name = provider instanceof FallbackProvider ? provider.primaryName : provider.name;
+  return { providerName: name, providerScope: `${slugifyProvider(name)}:server` };
 }
 
 /** Provider scope only (convenience over {@link resolveProviderIdentity}). */
-export function resolveProviderScope(symbol: string): string {
-  return resolveProviderIdentity(symbol).providerScope;
+export function resolveProviderScope(symbol: string, assetClass?: AssetClass): string {
+  return resolveProviderIdentity(symbol, assetClass).providerScope;
 }

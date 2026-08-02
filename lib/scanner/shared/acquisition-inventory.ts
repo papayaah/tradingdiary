@@ -61,7 +61,7 @@ export function entryForWatch(watch: {
   scanFrequencySeconds: number;
 }): AcquisitionEntry {
   const assetClass = watch.assetClass as AssetClass;
-  const { providerName, providerScope } = resolveProviderIdentity(watch.symbol);
+  const { providerName, providerScope } = resolveProviderIdentity(watch.symbol, assetClass);
   const capability = getProviderCapability(providerName, assetClass);
   const windowSeconds = sessionWindowSeconds(watch.session as WatchSession, assetClass);
   const intervalMinutes = parseIntervalMinutes(watch.interval) ?? 1;

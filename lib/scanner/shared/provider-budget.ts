@@ -21,6 +21,15 @@ function defaultBudget(): ProviderBudget {
   };
 }
 
+// Built-in per-scope defaults for providers whose limits differ sharply from the
+// env defaults (which model Tiingo). Env SCANNER_PROVIDER_BUDGETS still wins.
+const BUILTIN_OVERRIDES: Record<string, Partial<ProviderBudget>> = {
+  // IBKR historical pacing is ~60 requests / 10 min. Cap the futures scope near
+  // the client-side pacing guard so the governor slows cadence before IBKR paces
+  // us (which would force a Yahoo fallback). IBKR isn't bandwidth-metered.
+  'ibkr-cme:server': { hourlyCap: 300, dailyCap: 7200 },
+};
+
 let overrides: Record<string, Partial<ProviderBudget>> | null = null;
 
 function loadOverrides(): Record<string, Partial<ProviderBudget>> {
@@ -40,5 +49,5 @@ function loadOverrides(): Record<string, Partial<ProviderBudget>> {
 
 /** Budget for a provider scope: global defaults merged with any per-scope override. */
 export function getProviderBudget(scope: string): ProviderBudget {
-  return { ...defaultBudget(), ...loadOverrides()[scope] };
+  return { ...defaultBudget(), ...BUILTIN_OVERRIDES[scope], ...loadOverrides()[scope] };
 }

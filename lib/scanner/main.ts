@@ -9,6 +9,7 @@ import { createScanWorker, writeHeartbeat } from '@/lib/scanner/worker';
 import { getSharedCandleService } from '@/lib/scanner/shared/shared-candle-service';
 import { createGovernor, recomputeGovernor } from '@/lib/scanner/shared/governor-runtime';
 import { resolveProviderScope } from '@/lib/scanner/shared/provider-scope';
+import type { AssetClass } from '@/lib/scanner/sessions';
 
 async function main() {
   console.log(
@@ -63,8 +64,8 @@ async function main() {
   }
 
   const governedCadenceForWatch = governor
-    ? (watch: { symbol: string }) =>
-        governor.getCadenceSeconds(resolveProviderScope(watch.symbol))
+    ? (watch: { symbol: string; assetClass?: string }) =>
+        governor.getCadenceSeconds(resolveProviderScope(watch.symbol, watch.assetClass as AssetClass | undefined))
     : undefined;
 
   const worker = createScanWorker();

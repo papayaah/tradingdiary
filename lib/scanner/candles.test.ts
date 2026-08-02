@@ -11,6 +11,7 @@ vi.mock('@/lib/chart/providers', () => ({
     fetchCandles: providerSpies.fetchCandles,
     fetchRecentCandles: providerSpies.fetchRecentCandles,
   }),
+  effectiveProviderName: (p: { name: string }) => p.name,
 }));
 import {
   boundRecent,

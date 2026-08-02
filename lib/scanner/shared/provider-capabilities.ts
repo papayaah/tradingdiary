@@ -87,6 +87,18 @@ const REGISTRY: Record<string, Omit<ProviderCapability, 'provider'>> = {
     futuresSymbology: 'databento',
     cryptoConcatenated: false,
   },
+  'IBKR (CME)': {
+    // The futures fetch is a fallback chain (IBKR -> Databento -> Yahoo), so the
+    // canonical symbol must be a form EVERY chain member understands. The =F
+    // ("yahoo") form is chain-safe: IBKR/Databento reduce it to the root, and
+    // Yahoo needs it as-is. A bare root would break Yahoo's fallback. IBKR pulls
+    // each interval directly via reqHistoricalData, so no 1m aggregation.
+    returnsVolume: true,
+    nativeIntervals: [],
+    aggregatableFrom1m: false,
+    futuresSymbology: 'yahoo',
+    cryptoConcatenated: false,
+  },
 };
 
 /**
