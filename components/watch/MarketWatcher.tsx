@@ -3682,58 +3682,7 @@ export default function MarketWatcher() {
                       <Bitcoin size={14} />
                       <span>Crypto Scanner Mode: 24/7 Continuous Monitoring</span>
                     </div>
-                  ) : (
-                    <div className="flex flex-wrap items-center gap-3">
-                      <label className="flex items-center gap-2 cursor-pointer select-none hover:text-foreground transition-colors" title="Scans 5 stocks concurrently per batch for fast scanning on paid API keys">
-                        <input
-                          type="checkbox"
-                          checked={parallelScanEnabled}
-                          onChange={(e) => {
-                            setParallelScanEnabled(e.target.checked);
-                            localStorage.setItem('watcher-parallel-scan', String(e.target.checked));
-                          }}
-                          className="rounded border-card-border text-accent focus:ring-accent h-3.5 w-3.5 cursor-pointer"
-                        />
-                        <span className="flex items-center gap-1.5">
-                          <Zap size={13} />
-                          Parallel Batch Scan (Fast 5x Mode)
-                        </span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer select-none hover:text-foreground transition-colors">
-                        <input
-                          type="checkbox"
-                          checked={autoPauseEnabled}
-                          onChange={(e) => {
-                            setAutoPauseEnabled(e.target.checked);
-                            localStorage.setItem('watcher-auto-pause', String(e.target.checked));
-                          }}
-                          className="rounded border-card-border text-accent focus:ring-accent h-3.5 w-3.5 cursor-pointer"
-                        />
-                        <span>Auto-pause outside</span>
-                      </label>
-                      <select
-                        value={activeWindow}
-                        disabled={!autoPauseEnabled}
-                        onChange={(e) => {
-                          const session = e.target.value as 'rth' | 'pre' | 'ext' | 'all';
-                          setActiveWindow(session);
-                          localStorage.setItem('watcher-active-window', session);
-                          void syncScannerSettings(
-                            watchlist,
-                            selectedPatternId,
-                            session,
-                          ).catch(() => {});
-                        }}
-                        className="bg-card-bg border border-card-border rounded px-2 py-1 text-foreground font-medium disabled:opacity-50 cursor-pointer"
-                      >
-                        <option value="rth">Regular hours (9:30–16:00 ET)</option>
-                        <option value="pre">Pre-market + Regular (4:00–16:00 ET)</option>
-                        <option value="ext">Extended: Pre + Regular + After (4:00–20:00 ET)</option>
-                        <option value="all">All available hours (equities 4:00–20:00 ET)</option>
-                      </select>
-                      <span className="text-muted/70">Mon–Fri</span>
-                    </div>
-                  )}
+                  ) : null}
                 </div>
 
                 {/* Sound & Notification Test Bar */}
