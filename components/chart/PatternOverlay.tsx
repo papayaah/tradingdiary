@@ -54,15 +54,15 @@ export default function PatternOverlay({
       <div className="flex items-center gap-3 text-[11px] font-mono">
         <div>
           <span className="text-muted">Breakout: </span>
-          <span className="font-bold text-foreground">${activePattern.breakoutPrice}</span>
+          <span className="font-bold text-foreground">${Number(activePattern.breakoutPrice).toFixed(2)}</span>
         </div>
         <div>
           <span className="text-muted">Target: </span>
-          <span className="font-bold text-emerald-400">${activePattern.targetPrice}</span>
+          <span className="font-bold text-emerald-400">${Number(activePattern.targetPrice).toFixed(2)}</span>
         </div>
         <div>
           <span className="text-muted">Stop: </span>
-          <span className="font-bold text-rose-400">${activePattern.stopLossPrice}</span>
+          <span className="font-bold text-rose-400">${Number(activePattern.stopLossPrice).toFixed(2)}</span>
         </div>
         <div className="text-muted text-[10px] bg-muted-bg px-1.5 py-0.5 rounded font-sans">
           {activePattern.confidence}% match

@@ -39,7 +39,7 @@ export function detectDoubleTopBottom(candles: CandleData[]): DoubleTopBottomRes
     const peak = highPivots.find((p) => p.index > p1.index && p.index < p2.index);
     if (!peak) continue;
 
-    const breakoutPrice = peak.price;
+    const breakoutPrice = Number(peak.price.toFixed(2));
     const depth = breakoutPrice - Math.min(p1.price, p2.price);
     const targetPrice = Number((breakoutPrice + depth).toFixed(2));
     const stopLossPrice = Number((Math.min(p1.price, p2.price) * 0.99).toFixed(2));
@@ -76,7 +76,7 @@ export function detectDoubleTopBottom(candles: CandleData[]): DoubleTopBottomRes
     const trough = lowPivots.find((p) => p.index > p1.index && p.index < p2.index);
     if (!trough) continue;
 
-    const breakoutPrice = trough.price;
+    const breakoutPrice = Number(trough.price.toFixed(2));
     const height = Math.max(p1.price, p2.price) - breakoutPrice;
     const targetPrice = Number((breakoutPrice - height).toFixed(2));
     const stopLossPrice = Number((Math.max(p1.price, p2.price) * 1.01).toFixed(2));
