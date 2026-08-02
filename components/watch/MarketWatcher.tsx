@@ -24,10 +24,12 @@ import {
   Zap,
   ArrowUpDown,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  Sparkles
 } from 'lucide-react';
 import { getChartDB } from '@/lib/chart/cache';
 import AlertHistoryPanel from './AlertHistoryPanel';
+import PatternOverlay from '@/components/chart/PatternOverlay';
 import {
   BatchScanControl,
   ScanCountdown,
@@ -508,6 +510,7 @@ export default function MarketWatcher() {
 
   // Search, Category, and Filtering state for Watchlist table
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [autoPatternsEnabled, setAutoPatternsEnabled] = useState<boolean>(true);
   const [filterMode, setFilterMode] = useState<'all' | 'alerts' | 'errors'>('all');
   const [watchlistCategory, setWatchlistCategory] = useState<WatchlistCategory>('stocks');
   // Asset classes the user has switched off. Synced to the server so the scanner
@@ -2606,6 +2609,19 @@ export default function MarketWatcher() {
               <span>Current Day Only</span>
             </label>
 
+            <button
+              onClick={() => setAutoPatternsEnabled(!autoPatternsEnabled)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border ${
+                autoPatternsEnabled
+                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                  : 'bg-muted-bg text-muted border-card-border hover:text-foreground'
+              }`}
+              title="Toggle Automated Chart Pattern Recognition & Overlays"
+            >
+              <Sparkles size={13} className={autoPatternsEnabled ? 'text-amber-400 animate-pulse' : ''} />
+              <span>Auto Patterns</span>
+            </button>
+
             <div className="text-[10px] font-mono text-muted bg-muted-bg border border-card-border px-2 py-0.5 rounded">
               {testResult.provider}
             </div>
@@ -2630,6 +2646,11 @@ export default function MarketWatcher() {
 
         {/* SVG Chart Canvas */}
         <div className="relative border border-card-border rounded-xl bg-slate-900 dark:bg-slate-950 overflow-hidden">
+          <PatternOverlay
+            candles={displayedCandles}
+            enabled={autoPatternsEnabled}
+            onToggleEnabled={() => setAutoPatternsEnabled(!autoPatternsEnabled)}
+          />
           <svg
             width="100%"
             height={300}
