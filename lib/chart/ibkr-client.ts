@@ -16,8 +16,13 @@ const HOST = process.env.IBKR_GATEWAY_HOST || '127.0.0.1';
 const PORT = Number(process.env.IBKR_GATEWAY_PORT || 4001);
 const CLIENT_ID = Number(process.env.IBKR_CLIENT_ID || 7);
 
-const CONNECT_TIMEOUT_MS = 10_000;
-const REQUEST_TIMEOUT_MS = 20_000;
+// A down gateway fails instantly (connection refused), so this timeout only
+// guards rare hangs. Kept under the scanner's per-fetch budget
+// (SCANNER_FETCH_TIMEOUT_MS, default 15s) so the FallbackProvider still reaches
+// Databento/Yahoo within the same tick, but high enough for a cold first connect
+// (the persistent singleton pays this once at startup, not per scan).
+const CONNECT_TIMEOUT_MS = 8_000;
+const REQUEST_TIMEOUT_MS = 10_000;
 // Stay well under IBKR's 60/10min. Reject locally before IBKR paces us.
 const PACING_MAX = 50;
 const PACING_WINDOW_MS = 10 * 60 * 1000;
