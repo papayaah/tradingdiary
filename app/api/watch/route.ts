@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getActiveProvider, YahooProvider } from '@/lib/chart/providers';
+import { getActiveProvider, YahooProvider, effectiveProviderName } from '@/lib/chart/providers';
 import { recordProviderRequest } from '@/lib/metrics/provider-usage';
 import { newYorkTradingDate } from '@/lib/scanner/candles';
 
@@ -47,11 +47,60 @@ export async function GET(request: NextRequest) {
       || symbol.toUpperCase().includes('.C.0')
       || symbol.startsWith('/');
     const isCrypto = symbol.toUpperCase().endsWith('-USD');
+
+    // Deep-history request (manual pattern tester): fetch `days` of candles so
+    // the chart can be panned back like TradingView, instead of a single day.
+    // Uses the configured (paid) provider's range fetch; Yahoo is only touched
+    // as a last resort when the provider yields nothing.
+    const daysParam = searchParams.get('days');
+    if (daysParam) {
+      const days = Math.max(1, Math.min(1000, parseInt(daysParam, 10) || 1));
+      // `before` (epoch seconds) pages further back: fetch the chunk immediately
+      // older than what the client already has loaded.
+      const beforeParam = searchParams.get('before');
+      const endTimeMs = beforeParam ? (parseInt(beforeParam, 10) || 0) * 1000 : undefined;
+
+      let historyCandles = provider.fetchRangeCandles
+        ? await provider.fetchRangeCandles(symbol, interval, days, endTimeMs).catch(() => [])
+        : await provider.fetchRecentCandles(symbol, interval).catch(() => []);
+      let historyProvider = effectiveProviderName(provider);
+
+      // Fallbacks only make sense for the initial ("now") window. When paging
+      // older history, "recent"/Yahoo would return current-era bars instead of
+      // the requested older range, so an empty result correctly means "no more".
+      if (historyCandles.length === 0 && !endTimeMs) {
+        historyCandles = await provider.fetchRecentCandles(symbol, interval).catch(() => []);
+        if (historyCandles.length === 0) {
+          const fallback = new YahooProvider();
+          void recordProviderRequest(fallback.name, 'owner');
+          historyCandles = await fallback.fetchRecentCandles(symbol, interval).catch(() => []);
+          if (historyCandles.length > 0) {
+            historyProvider = `${fallback.name} (fallback from ${provider.name})`;
+          }
+        }
+      }
+
+      return NextResponse.json({
+        symbol: symbol.toUpperCase(),
+        interval,
+        provider: historyProvider,
+        candles: historyCandles,
+      }, {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+        },
+      });
+    }
+
     const tradingDate = newYorkTradingDate();
     let candles = isFutures || isCrypto
       ? await provider.fetchRecentCandles(symbol, interval)
       : await provider.fetchCandles(symbol, tradingDate, interval);
-    let providerName = provider.name;
+    // Report the provider that actually served the bars (IBKR vs Yahoo), not the
+    // futures fallback chain's own name.
+    let providerName = effectiveProviderName(provider);
 
     // Some entry-level equity feeds return intraday bars only through the
     // previous session. During pre-market that looks like a valid, but stale,
@@ -75,9 +124,11 @@ export async function GET(request: NextRequest) {
     // If still no candles (e.g. weekend or market closed), fetch recent multi-day candles so charts & pattern testing always work
     if (candles.length === 0) {
       candles = await provider.fetchRecentCandles(symbol, interval).catch(() => []);
+      providerName = effectiveProviderName(provider);
       if (candles.length === 0) {
         const fallback = new YahooProvider();
         candles = await fallback.fetchRecentCandles(symbol, interval).catch(() => []);
+        if (candles.length > 0) providerName = fallback.name;
       }
     }
 

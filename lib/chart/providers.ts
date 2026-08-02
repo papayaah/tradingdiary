@@ -19,6 +19,15 @@ function trackProvider(provider: ChartProvider, keyOwner: KeyOwner): ChartProvid
             void recordProviderRequest(provider.name, keyOwner);
             return provider.fetchRecentCandles(symbol, interval);
         },
+        // Optional deep-history fetch (used by the manual pattern tester). Only
+        // forwarded when the underlying provider actually implements it, so the
+        // /api/watch route can feature-detect it and fall back otherwise.
+        fetchRangeCandles: provider.fetchRangeCandles
+            ? (symbol: string, interval: string, days: number, endTimeMs?: number) => {
+                  void recordProviderRequest(provider.name, keyOwner);
+                  return provider.fetchRangeCandles!(symbol, interval, days, endTimeMs);
+              }
+            : undefined,
     };
 }
 
@@ -41,6 +50,14 @@ interface IntradayPriceRecord {
     volume?: number | string;
 }
 
+interface DailyPriceRecord extends IntradayPriceRecord {
+    adjOpen?: number | string;
+    adjHigh?: number | string;
+    adjLow?: number | string;
+    adjClose?: number | string;
+    adjVolume?: number | string;
+}
+
 interface TiingoCryptoPriceResponse {
     ticker?: string;
     baseCurrency?: string;
@@ -52,6 +69,15 @@ export interface ChartProvider {
     name: string;
     fetchCandles(symbol: string, date: string, interval: string): Promise<OHLCCandle[]>;
     fetchRecentCandles(symbol: string, interval: string): Promise<OHLCCandle[]>;
+    /**
+     * Fetch a `days`-wide window of history for deep panning (manual tester).
+     * Optional: providers that don't implement it fall back to fetchRecentCandles.
+     * For daily intervals ('1d'/'D') implementations should return true daily bars.
+     * `endTimeMs` (epoch ms) bounds the END of the window — used to page further
+     * back as the user scrolls (fetch the chunk immediately older than what's
+     * already loaded). When omitted the window ends at "now".
+     */
+    fetchRangeCandles?(symbol: string, interval: string, days: number, endTimeMs?: number): Promise<OHLCCandle[]>;
 }
 
 // IBKR/TWS-style futures symbols: ROOT + month code + 1-2 digit year.
@@ -128,6 +154,53 @@ class PolygonProvider implements ChartProvider {
         const multiplier = parseInt(interval.replace(/[ms]/g, '')) || 1;
         const timescale = isSecond ? 'second' : 'minute';
         
+        const url = `https://api.polygon.io/v2/aggs/ticker/${symbol.toUpperCase()}/range/${multiplier}/${timescale}/${formattedStart}/${formattedEnd}?adjusted=true&sort=asc&limit=50000&extended_hours=true&apiKey=${apiKey}`;
+
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Polygon API error: ${res.status}`);
+
+        const data = await res.json();
+        if (!data.results) return [];
+
+        return data.results.map((r: PolygonAggregate) => ({
+            time: Math.floor(r.t / 1000), // ms -> sec
+            open: r.o,
+            high: r.h,
+            low: r.l,
+            close: r.c,
+            volume: r.v,
+        }));
+    }
+
+    async fetchRangeCandles(symbol: string, interval: string, days: number, endTimeMs?: number): Promise<OHLCCandle[]> {
+        const apiKey = process.env.POLYGON_API_KEY;
+        if (!apiKey) throw new Error("Missing POLYGON_API_KEY");
+
+        const end = endTimeMs ? new Date(endTimeMs) : new Date();
+        const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
+        const formatDate = (d: Date) => d.toISOString().split('T')[0];
+        const formattedStart = formatDate(start);
+        const formattedEnd = formatDate(end);
+
+        // Map the app interval to Polygon's multiplier/timescale. The intraday
+        // fetchers only handle minutes/seconds; here we also resolve hours and days.
+        const iv = interval.toLowerCase();
+        let multiplier: number;
+        let timescale: 'second' | 'minute' | 'hour' | 'day';
+        if (iv === '1d' || iv === 'd') {
+            multiplier = 1;
+            timescale = 'day';
+        } else if (iv.endsWith('h')) {
+            multiplier = parseInt(iv) || 1;
+            timescale = 'hour';
+        } else if (iv.endsWith('s')) {
+            multiplier = parseInt(iv.replace(/[ms]/g, '')) || 1;
+            timescale = 'second';
+        } else {
+            multiplier = parseInt(iv.replace(/[ms]/g, '')) || 1;
+            timescale = 'minute';
+        }
+
         const url = `https://api.polygon.io/v2/aggs/ticker/${symbol.toUpperCase()}/range/${multiplier}/${timescale}/${formattedStart}/${formattedEnd}?adjusted=true&sort=asc&limit=50000&extended_hours=true&apiKey=${apiKey}`;
 
         const res = await fetch(url);
@@ -405,6 +478,39 @@ class TiingoProvider implements ChartProvider {
         // Omitting endDate asks Tiingo for all data through the current moment.
         return this.fetchIntraday(symbol, formattedStart, interval);
     }
+
+    // True daily bars from Tiingo's EOD endpoint (split/dividend adjusted).
+    private async fetchDaily(symbol: string, startDate: string, endDate?: string): Promise<OHLCCandle[]> {
+        const cleanSymbol = symbol.toUpperCase();
+        const dateParams = `startDate=${startDate}${endDate ? `&endDate=${endDate}` : ''}`;
+        const url = `https://api.tiingo.com/tiingo/daily/${cleanSymbol}/prices?${dateParams}&resampleFreq=daily&token=${this.apiKey}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Tiingo daily API error: ${res.status}`);
+
+        const data = await res.json();
+        if (!Array.isArray(data)) return [];
+        return data.map((r: DailyPriceRecord) => ({
+            time: Math.floor(new Date(r.date || '').getTime() / 1000),
+            open: Number(r.adjOpen ?? r.open),
+            high: Number(r.adjHigh ?? r.high),
+            low: Number(r.adjLow ?? r.low),
+            close: Number(r.adjClose ?? r.close),
+            volume: Number(r.adjVolume ?? r.volume ?? 0),
+        }));
+    }
+
+    async fetchRangeCandles(symbol: string, interval: string, days: number, endTimeMs?: number): Promise<OHLCCandle[]> {
+        const end = endTimeMs ? new Date(endTimeMs) : new Date();
+        const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
+        const formattedStart = start.toISOString().split('T')[0];
+        // Only bound the end when paging older history; otherwise fetch through now.
+        const formattedEnd = endTimeMs ? end.toISOString().split('T')[0] : undefined;
+        const iv = interval.toLowerCase();
+        if (iv === '1d' || iv === 'd') {
+            return this.fetchDaily(symbol, formattedStart, formattedEnd);
+        }
+        return this.fetchIntraday(symbol, formattedStart, interval, formattedEnd);
+    }
 }
 
 /**
@@ -652,6 +758,12 @@ export class IBKRProvider implements ChartProvider {
  * scan when the gateway is re-authing or down.
  */
 export class FallbackProvider implements ChartProvider {
+    // Name of the inner provider that actually served the most recent fetch
+    // (e.g. "IBKR (CME)" vs "Yahoo Finance"), so callers can report the real
+    // source instead of the chain's own name. A fresh instance is created per
+    // getActiveProvider() call, so this is safe to read right after an await.
+    lastProviderUsed?: string;
+
     constructor(public name: string, private chain: ChartProvider[]) {}
 
     async fetchCandles(symbol: string, date: string, interval: string): Promise<OHLCCandle[]> {
@@ -660,12 +772,24 @@ export class FallbackProvider implements ChartProvider {
     async fetchRecentCandles(symbol: string, interval: string): Promise<OHLCCandle[]> {
         return this.run((p) => p.fetchRecentCandles(symbol, interval));
     }
+    async fetchRangeCandles(symbol: string, interval: string, days: number, endTimeMs?: number): Promise<OHLCCandle[]> {
+        // Prefer each provider's deep-history fetch, falling back to its recent
+        // window so a provider without range support still contributes candles.
+        return this.run((p) =>
+            p.fetchRangeCandles
+                ? p.fetchRangeCandles(symbol, interval, days, endTimeMs)
+                : p.fetchRecentCandles(symbol, interval),
+        );
+    }
     private async run(fn: (p: ChartProvider) => Promise<OHLCCandle[]>): Promise<OHLCCandle[]> {
         let lastError: unknown = new Error('no providers configured');
         for (const provider of this.chain) {
             try {
                 const candles = await fn(provider);
-                if (candles.length) return candles;
+                if (candles.length) {
+                    this.lastProviderUsed = provider.name;
+                    return candles;
+                }
                 lastError = new Error(`${provider.name} returned no candles`);
             } catch (error) {
                 lastError = error;
@@ -673,6 +797,12 @@ export class FallbackProvider implements ChartProvider {
         }
         throw lastError instanceof Error ? lastError : new Error(String(lastError));
     }
+}
+
+/** The effective provider name for a fetch: the winning inner provider when it's
+ *  a fallback chain, otherwise the provider's own name. Read after the fetch. */
+export function effectiveProviderName(provider: ChartProvider): string {
+    return (provider as FallbackProvider).lastProviderUsed ?? provider.name;
 }
 
 export interface UserProviderConfig {

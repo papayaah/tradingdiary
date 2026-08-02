@@ -46,6 +46,20 @@ export function displaySymbol(symbol: string): string {
   return s;
 }
 
+/** Compact source label for a provider name, e.g. "IBKR (CME)" -> "IBKR". */
+export function shortProviderLabel(provider?: string): string {
+  if (!provider) return '';
+  const p = provider.toLowerCase();
+  if (p.includes('ibkr')) return 'IBKR';
+  if (p.includes('databento')) return 'Databento';
+  if (p.includes('yahoo')) return 'Yahoo';
+  if (p.includes('tiingo')) return 'Tiingo';
+  if (p.includes('polygon')) return 'Polygon';
+  if (p.includes('twelve')) return 'TwelveData';
+  if (p.includes('alpaca')) return 'Alpaca';
+  return provider.split(' ')[0];
+}
+
 export function formatVolume(volume: number): string {
   return volume.toLocaleString('en-US');
 }

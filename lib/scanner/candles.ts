@@ -2,7 +2,7 @@
 // provider factory (which falls back to server env keys: POLYGON_API_KEY,
 // DATABENTO_API_KEY, ...), so the worker shares one code path with the app.
 
-import { getActiveProvider } from '@/lib/chart/providers';
+import { getActiveProvider, effectiveProviderName } from '@/lib/chart/providers';
 import type { Candle } from '@/lib/scanner/patterns';
 import { scannerConfig } from '@/lib/scanner/env';
 import type { AssetClass, WatchSession } from '@/lib/scanner/sessions';
@@ -124,5 +124,7 @@ export async function fetchCandles(
     ? provider.fetchCandles(symbol, newYorkTradingDate(), interval)
     : provider.fetchRecentCandles(symbol, interval);
   const raw = await Promise.race([request, timeout]);
-  return { candles: sanitizeCandles(raw as Array<Partial<Candle>>), provider: provider.name };
+  // Report the provider that actually served the bars (IBKR vs Yahoo), not the
+  // fallback chain's own name.
+  return { candles: sanitizeCandles(raw as Array<Partial<Candle>>), provider: effectiveProviderName(provider) };
 }

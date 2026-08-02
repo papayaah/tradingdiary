@@ -9,7 +9,7 @@ import {
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
-import { displaySymbol } from '@/lib/utils/format';
+import { displaySymbol, shortProviderLabel } from '@/lib/utils/format';
 import type { Candle } from './watchAnalysis';
 
 interface CompactWatchItem {
@@ -18,6 +18,7 @@ interface CompactWatchItem {
   lastChecked?: string;
   status?: 'bullish' | 'bearish' | 'none' | 'no-data' | 'error';
   lastError?: string;
+  provider?: string;
 }
 
 export interface CompactWatchlistEntry {
@@ -78,6 +79,14 @@ const CompactCard = React.memo(function CompactCard({
             <span className="rounded bg-muted-bg px-1.5 py-0.5 text-[9px] font-mono text-muted">
               {item.interval}
             </span>
+            {item.provider && (
+              <span
+                className="rounded bg-accent/10 px-1.5 py-0.5 text-[9px] font-semibold text-accent"
+                title={`Data source: ${item.provider}`}
+              >
+                {shortProviderLabel(item.provider)}
+              </span>
+            )}
           </div>
           <div className="mt-1 text-[10px] text-muted">
             {latestPrice === undefined ? 'No current price' : `$${latestPrice.toFixed(2)}`}

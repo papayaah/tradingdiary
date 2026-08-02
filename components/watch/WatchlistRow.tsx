@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import type { Candle } from './watchAnalysis';
 import { detectAllPatterns, CandleData } from '@/lib/chart/patterns';
-import { displaySymbol } from '@/lib/utils/format';
+import { displaySymbol, shortProviderLabel } from '@/lib/utils/format';
 
 interface WatchlistRowItem {
   symbol: string;
@@ -20,6 +20,7 @@ interface WatchlistRowItem {
   lastChecked?: string;
   status?: 'bullish' | 'bearish' | 'none' | 'no-data' | 'error';
   lastError?: string;
+  provider?: string;
 }
 
 interface WatchlistRowProps {
@@ -75,6 +76,14 @@ function WatchlistRow({
         title="Click to expand inline session chart"
       >
         {displaySymbol(item.symbol)}
+        {item.provider && (
+          <span
+            className="ml-2 rounded bg-accent/10 px-1.5 py-0.5 text-[9px] font-semibold text-accent align-middle"
+            title={`Data source: ${item.provider}`}
+          >
+            {shortProviderLabel(item.provider)}
+          </span>
+        )}
         {latestPrice !== undefined && (
           <span className="block text-[10px] font-normal text-muted mt-0.5">
             Last Price: ${latestPrice.toFixed(2)}
