@@ -19,6 +19,8 @@ import {
   CheckCircle2,
   PieChart as PieIcon,
   BarChart3,
+  Radio,
+  Play,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -27,8 +29,6 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  BarChart,
-  Bar,
   CartesianGrid,
 } from 'recharts';
 
@@ -137,6 +137,11 @@ interface AlertAnalyticsData {
   topSymbols: Array<{ symbol: string; count: number }>;
 }
 
+interface LivePresenceData {
+  activeConnections: number;
+  distinctUsers: number;
+}
+
 export default function AdminDashboard() {
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [queueInfo, setQueueInfo] = useState<QueueData | null>(null);
@@ -147,10 +152,12 @@ export default function AdminDashboard() {
   const [providerSummary, setProviderSummary] = useState<ProviderSummaryMap>({});
   const [userTrends, setUserTrends] = useState<UserTrendItem[]>([]);
   const [alertAnalytics, setAlertAnalytics] = useState<AlertAnalyticsData | null>(null);
+  const [livePresence, setLivePresence] = useState<LivePresenceData | null>(null);
   const [allowlistConfigured, setAllowlistConfigured] = useState<boolean>(true);
   const [loading, setLoading] = useState<boolean>(true);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [controlActionMsg, setControlActionMsg] = useState<string | null>(null);
 
   const fetchAllData = useCallback(async () => {
     setIsRefreshing(true);
@@ -165,6 +172,7 @@ export default function AdminDashboard() {
         governorRes,
         usersRes,
         alertsRes,
+        liveRes,
       ] = await Promise.all([
         fetch('/api/admin/status').then((r) => r.json()).catch(() => null),
         fetch('/api/admin/overview').then((r) => r.json()).catch(() => null),
@@ -175,6 +183,7 @@ export default function AdminDashboard() {
         fetch('/api/admin/governor').then((r) => r.json()).catch(() => null),
         fetch('/api/admin/users?days=30').then((r) => r.json()).catch(() => null),
         fetch('/api/admin/alerts?days=30').then((r) => r.json()).catch(() => null),
+        fetch('/api/admin/live').then((r) => r.json()).catch(() => null),
       ]);
 
       if (statusRes) setAllowlistConfigured(Boolean(statusRes.allowlistConfigured));
@@ -189,6 +198,7 @@ export default function AdminDashboard() {
       if (governorRes?.success && governorRes.governor) setGovernorItems(governorRes.governor);
       if (usersRes?.success && usersRes.signups) setUserTrends(usersRes.signups);
       if (alertsRes?.success) setAlertAnalytics(alertsRes);
+      if (liveRes?.success) setLivePresence(liveRes);
 
       setLastUpdated(new Date());
     } finally {
@@ -218,6 +228,7 @@ export default function AdminDashboard() {
       cacheMetrics,
       governorItems,
       providerSummary,
+      livePresence,
       alertAnalyticsSummary: alertAnalytics?.topSymbols,
     };
 
@@ -228,6 +239,27 @@ export default function AdminDashboard() {
     a.download = `tradingdiary-diagnostics-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleTriggerGlobalScan = async () => {
+    setControlActionMsg('Triggering global scan...');
+    try {
+      const res = await fetch('/api/admin/controls', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'trigger-scan-all' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setControlActionMsg(data.message);
+        fetchAllData();
+      } else {
+        setControlActionMsg(data.error || 'Failed');
+      }
+    } catch {
+      setControlActionMsg('Failed to trigger scan');
+    }
+    setTimeout(() => setControlActionMsg(null), 4000);
   };
 
   if (loading && !overview) {
@@ -251,7 +283,7 @@ export default function AdminDashboard() {
             Admin Observability Dashboard
           </h1>
           <p className="text-xs text-muted mt-1">
-            Real-time monitoring of scanner workload, governor cadence, cache efficiency, trends, and alert analytics.
+            Real-time monitoring of scanner workload, governor cadence, cache efficiency, trends, and live presence.
           </p>
         </div>
 
@@ -294,7 +326,7 @@ export default function AdminDashboard() {
 
       {/* KPI Overview Tiles */}
       {overview && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           {/* Tile 1: Users */}
           <div className="bg-card-bg border border-card-border rounded-xl p-4 flex flex-col justify-between">
             <div className="flex items-center justify-between text-muted mb-2">
@@ -302,14 +334,29 @@ export default function AdminDashboard() {
               <Users size={16} className="text-accent" />
             </div>
             <div className="text-2xl font-bold text-foreground">{overview.users.total}</div>
-            <div className="text-[11px] text-muted mt-2 flex items-center gap-2">
-              <span>24h active: <strong className="text-foreground">{overview.users.active24h}</strong></span>
+            <div className="text-[11px] text-muted mt-2 flex items-center gap-1.5">
+              <span>24h: <strong className="text-foreground">{overview.users.active24h}</strong></span>
               <span>•</span>
               <span>7d: <strong className="text-foreground">{overview.users.active7d}</strong></span>
             </div>
           </div>
 
-          {/* Tile 2: Total & Unique Watches */}
+          {/* Tile 2: Live SSE Presence (Phase 4) */}
+          <div className="bg-card-bg border border-card-border rounded-xl p-4 flex flex-col justify-between relative overflow-hidden">
+            <div className="flex items-center justify-between text-muted mb-2">
+              <span className="text-xs font-medium">Live SSE Presence</span>
+              <Radio size={16} className="text-profit animate-pulse" />
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-bold text-profit">{livePresence?.activeConnections ?? 0}</span>
+              <span className="text-xs text-muted">browsers open</span>
+            </div>
+            <div className="text-[11px] text-muted mt-2">
+              Distinct users online: <strong className="text-foreground">{livePresence?.distinctUsers ?? 0}</strong>
+            </div>
+          </div>
+
+          {/* Tile 3: Total & Unique Watches */}
           <div className="bg-card-bg border border-card-border rounded-xl p-4 flex flex-col justify-between">
             <div className="flex items-center justify-between text-muted mb-2">
               <span className="text-xs font-medium">Unique Symbols</span>
@@ -321,7 +368,7 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Tile 3: Headline Metric - Sharing Ratio */}
+          {/* Tile 4: Headline Metric - Sharing Ratio */}
           <div className="bg-card-bg border border-card-border rounded-xl p-4 flex flex-col justify-between relative overflow-hidden">
             <div className="flex items-center justify-between text-muted mb-2">
               <span className="text-xs font-medium">Cache Sharing Ratio</span>
@@ -336,7 +383,7 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Tile 4: Upstream Requests & Alerts Today */}
+          {/* Tile 5: Upstream Requests & Alerts Today */}
           <div className="bg-card-bg border border-card-border rounded-xl p-4 flex flex-col justify-between">
             <div className="flex items-center justify-between text-muted mb-2">
               <span className="text-xs font-medium">Activity Today</span>
@@ -352,6 +399,30 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+
+      {/* Operator Controls Bar (Phase 4) */}
+      <div className="bg-card-bg border border-card-border rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Zap size={18} className="text-accent" />
+          <div>
+            <span className="text-xs font-semibold text-foreground">Operator Controls</span>
+            <p className="text-[11px] text-muted">Trigger global scanner passes or manage active scanner jobs.</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {controlActionMsg && (
+            <span className="text-xs font-medium text-accent animate-pulse">{controlActionMsg}</span>
+          )}
+          <button
+            onClick={handleTriggerGlobalScan}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold bg-accent text-white hover:opacity-90 rounded-lg transition-all shadow-sm"
+          >
+            <Play size={14} />
+            Trigger Global Scan Now
+          </button>
+        </div>
+      </div>
 
       {/* Row 2: Phase 2 Metrics — Governor Cadence & Shared-Cache Efficiency */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

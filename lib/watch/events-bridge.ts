@@ -33,6 +33,20 @@ const client = postgres(connectionString, {
 });
 const bridgeDb = drizzle(client, { schema });
 
+export function getSubscriberInfo(): {
+  activeConnections: number;
+  distinctUsers: number;
+  userIds: string[];
+} {
+  const activeConnections = subscribers.size;
+  const userIds = Array.from(new Set(Array.from(subscribers).map((s) => s.userId)));
+  return {
+    activeConnections,
+    distinctUsers: userIds.length,
+    userIds,
+  };
+}
+
 const subscribers = new Set<Subscriber>();
 let listening = false;
 
