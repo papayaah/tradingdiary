@@ -163,7 +163,7 @@ export function PatternGuidePanel({
         <div>
           <div id="pattern-selector-title" className="flex items-center gap-1.5 text-xs font-bold text-foreground">
             <ScanSearch size={14} className="text-accent" />
-            Pattern to watch
+            Pattern
           </div>
           <p className="mt-0.5 text-[10px] text-muted">Choose one detector for every symbol in this watchlist.</p>
         </div>
@@ -224,7 +224,7 @@ export function PatternGuidePanel({
           id="pattern-selector-options"
           className="relative z-50 w-full rounded-xl border border-accent/40 bg-[#0f172a] p-2.5 shadow-2xl space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-150"
           role="listbox"
-          aria-label="Pattern to watch"
+          aria-label="Pattern"
         >
           <div className="px-1 text-[9px] font-bold uppercase tracking-wider text-muted">
             SELECT A PATTERN

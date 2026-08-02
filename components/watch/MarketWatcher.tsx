@@ -566,7 +566,19 @@ export default function MarketWatcher() {
 
   // Search, Category, and Filtering state for Watchlist table
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [autoPatternsEnabled, setAutoPatternsEnabled] = useState<boolean>(true);
+  const [autoPatternsEnabled, setAutoPatternsEnabled] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    const saved = localStorage.getItem('watcher-auto-patterns');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  const handleToggleAutoPatterns = React.useCallback(() => {
+    setAutoPatternsEnabled((prev) => {
+      const next = !prev;
+      localStorage.setItem('watcher-auto-patterns', String(next));
+      return next;
+    });
+  }, []);
   const [filterMode, setFilterMode] = useState<'all' | 'alerts' | 'errors'>('all');
   const [watchlistCategory, setWatchlistCategory] = useState<WatchlistCategory>('stocks');
   // Asset classes the user has switched off. Synced to the server so the scanner
@@ -638,6 +650,33 @@ export default function MarketWatcher() {
     requiredCandleCount,
     scanIntervalMinutes,
     selectedPatternId,
+  ]);
+
+  const handleGlobalIntervalChange = React.useCallback((interval: string) => {
+    setNewInterval(interval);
+    localStorage.setItem('watcher-new-interval', interval);
+    setWatchlist((current) => {
+      const updated = current.map((item) => ({ ...item, interval }));
+      persistWatchlist(updated);
+      void syncScannerSettings(
+        updated,
+        selectedPatternId,
+        activeWindow,
+        scanIntervalMinutes,
+        newMinMove,
+        requiredCandleCount,
+        maxBodyOverlapPercent,
+      ).catch(() => {});
+      return updated;
+    });
+  }, [
+    activeWindow,
+    maxBodyOverlapPercent,
+    newMinMove,
+    requiredCandleCount,
+    scanIntervalMinutes,
+    selectedPatternId,
+    syncScannerSettings,
   ]);
 
   const handleMaxBodyOverlapChange = React.useCallback((value: number) => {
@@ -949,21 +988,34 @@ export default function MarketWatcher() {
           setScanIntervalMinutes(minutes);
           localStorage.setItem('watcher-scan-interval', String(minutes));
         }
-        // Category on/off is server-authoritative: hydrate the toggles from the
-        // server's actual enabled flags, not localStorage, so every device shows
-        // the true state and the server is the single source of truth.
+        // Category on/off: hydrate from server enabled flags merged with local storage
+        // preferences so even categories with 0 items stay muted across reloads.
         if (Array.isArray(data?.disabledAssetClasses)) {
           const ASSET_CLASS_TO_CATEGORY: Record<string, ScanCategory> = {
             equity: 'stocks',
             crypto: 'crypto',
             futures: 'futures',
           };
-          const cats = data.disabledAssetClasses
+          const serverCats = data.disabledAssetClasses
             .map((c: string) => ASSET_CLASS_TO_CATEGORY[c])
             .filter((c: ScanCategory | undefined): c is ScanCategory => !!c);
-          disabledCategoriesRef.current = cats;
-          setDisabledCategories(cats);
-          localStorage.setItem('watcher-disabled-categories', JSON.stringify(cats));
+          
+          const savedLocal = localStorage.getItem('watcher-disabled-categories');
+          let localCats: ScanCategory[] = [];
+          if (savedLocal) {
+            try {
+              const parsed = JSON.parse(savedLocal);
+              if (Array.isArray(parsed)) {
+                localCats = parsed.filter(
+                  (c): c is ScanCategory => c === 'stocks' || c === 'crypto' || c === 'futures',
+                );
+              }
+            } catch {}
+          }
+          const merged = Array.from(new Set([...serverCats, ...localCats]));
+          disabledCategoriesRef.current = merged;
+          setDisabledCategories(merged);
+          localStorage.setItem('watcher-disabled-categories', JSON.stringify(merged));
         }
       })
       .catch(() => {});
@@ -2751,7 +2803,7 @@ export default function MarketWatcher() {
             </label>
 
             <button
-              onClick={() => setAutoPatternsEnabled(!autoPatternsEnabled)}
+              onClick={handleToggleAutoPatterns}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border ${
                 autoPatternsEnabled
                   ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
@@ -2774,7 +2826,7 @@ export default function MarketWatcher() {
           candles={testerCandles}
           height={380}
           autoPatternsEnabled={autoPatternsEnabled}
-          onTogglePatterns={() => setAutoPatternsEnabled(!autoPatternsEnabled)}
+          onTogglePatterns={handleToggleAutoPatterns}
           interval={testInterval}
           onIntervalChange={(newIv) => {
             setTestInterval(newIv);
@@ -2806,7 +2858,7 @@ export default function MarketWatcher() {
         <PatternOverlay
           candles={displayedCandles}
           enabled={autoPatternsEnabled}
-          onToggleEnabled={() => setAutoPatternsEnabled(!autoPatternsEnabled)}
+          onToggleEnabled={handleToggleAutoPatterns}
         />
         <svg
           width="100%"
@@ -3289,93 +3341,95 @@ export default function MarketWatcher() {
                 </div>
               </div>
 
-              {/* WATCHLIST CATEGORY SWITCHER */}
-              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                <div className="flex items-center gap-1.5 bg-muted-bg/40 p-1 rounded-xl border border-card-border/50">
-                  <button
-                    onClick={() => {
-                      setWatchlistCategory('stocks');
-                      localStorage.setItem('watcher-watchlist-category', 'stocks');
-                    }}
-                    className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                      watchlistCategory === 'stocks'
-                        ? 'bg-accent text-white shadow-sm'
-                        : 'text-muted hover:text-foreground'
-                    }`}
+              {/* SINGLE COMPACT TOOLBAR: Timeframe on Left, Category Tabs + Mute Icons on Right */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                {/* Left: Global Timeframe Selector */}
+                <div className="flex items-center gap-2 bg-muted-bg/30 px-3 py-1.5 rounded-xl border border-card-border/50 shrink-0">
+                  <span className="text-xs font-semibold text-muted flex items-center gap-1.5">
+                    <Clock size={14} className="text-accent" /> Timeframe:
+                  </span>
+                  <select
+                    value={newInterval}
+                    onChange={(e) => handleGlobalIntervalChange(e.target.value)}
+                    className="bg-card-bg border border-card-border focus:border-accent focus:ring-1 focus:ring-accent rounded-lg py-1 px-2 text-xs text-foreground font-bold cursor-pointer outline-none transition-all"
+                    title="Select global timeframe interval for all watchlist symbols"
                   >
-                    <ChartCandlestick size={14} />
-                    <span>
-                      Stocks ({watchlist.filter((w) => !isFuturesSymbol(w.symbol) && !isCryptoSymbol(w.symbol)).length})
-                    </span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      setWatchlistCategory('crypto');
-                      localStorage.setItem('watcher-watchlist-category', 'crypto');
-                    }}
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                      watchlistCategory === 'crypto'
-                        ? 'bg-accent text-white shadow-sm font-bold'
-                        : 'text-muted hover:text-foreground'
-                    }`}
-                  >
-                    <Bitcoin size={14} />
-                    <span>Crypto ({watchlist.filter((w) => isCryptoSymbol(w.symbol)).length})</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      setWatchlistCategory('futures');
-                      localStorage.setItem('watcher-watchlist-category', 'futures');
-                    }}
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                      watchlistCategory === 'futures'
-                        ? 'bg-accent text-white shadow-sm font-bold'
-                        : 'text-muted hover:text-foreground'
-                    }`}
-                  >
-                    <Zap size={14} />
-                    <span>Futures ({watchlist.filter((w) => isFuturesSymbol(w.symbol)).length})</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      setWatchlistCategory('all');
-                      localStorage.setItem('watcher-watchlist-category', 'all');
-                    }}
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                      watchlistCategory === 'all'
-                        ? 'bg-accent text-white shadow-sm'
-                        : 'text-muted hover:text-foreground'
-                    }`}
-                  >
-                    All Tickers ({watchlist.length})
-                  </button>
+                    <option value="1m">1m (Test)</option>
+                    <option value="2m">2m</option>
+                    <option value="5m">5m</option>
+                    <option value="10m">10m</option>
+                    <option value="15m">15m</option>
+                    <option value="30m">30m</option>
+                    <option value="45m">45m</option>
+                    <option value="1h">1h</option>
+                  </select>
                 </div>
 
-                {/* Per-category alert switches: turn a whole asset class off so the
-                    server scanner skips it (no scans/alerts/push), symbols kept. */}
-                <div className="flex items-center gap-1.5" title="Turn a category's background alerts on or off">
-                  {(['stocks', 'crypto', 'futures'] as const).map((cat) => {
-                    const off = disabledCategories.includes(cat);
+                {/* Right: Category Tabs with Integrated Category Mute (Bell) Buttons */}
+                <div className="flex flex-wrap items-center gap-1 bg-muted-bg/40 p-1 rounded-xl border border-card-border/50">
+                  {(
+                    [
+                      { id: 'stocks', label: 'Stocks', icon: ChartCandlestick, count: watchlist.filter((w) => !isFuturesSymbol(w.symbol) && !isCryptoSymbol(w.symbol)).length },
+                      { id: 'crypto', label: 'Crypto', icon: Bitcoin, count: watchlist.filter((w) => isCryptoSymbol(w.symbol)).length },
+                      { id: 'futures', label: 'Futures', icon: Zap, count: watchlist.filter((w) => isFuturesSymbol(w.symbol)).length },
+                      { id: 'all', label: 'All Tickers', icon: null, count: watchlist.length },
+                    ] as const
+                  ).map((cat) => {
+                    const active = watchlistCategory === cat.id;
+                    const Icon = cat.icon;
+                    const hasMuteToggle = cat.id === 'stocks' || cat.id === 'crypto' || cat.id === 'futures';
+                    const isOff = hasMuteToggle && disabledCategories.includes(cat.id);
+
                     return (
-                      <button
-                        key={cat}
-                        onClick={() => toggleCategoryScanning(cat)}
-                        title={off
-                          ? `${cat} alerts are OFF — click to turn on`
-                          : `${cat} alerts are ON — click to turn off`}
-                        className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide border transition-all ${
-                          off
-                            ? 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20'
-                            : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
+                      <div
+                        key={cat.id}
+                        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                          active
+                            ? 'bg-accent text-white shadow-sm font-bold'
+                            : 'text-muted hover:text-foreground'
                         }`}
                       >
-                        {off ? <BellOff size={12} /> : <Bell size={12} />}
-                        <span>{cat}</span>
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWatchlistCategory(cat.id);
+                            localStorage.setItem('watcher-watchlist-category', cat.id);
+                          }}
+                          className="flex items-center gap-1.5 focus:outline-none"
+                        >
+                          {Icon && <Icon size={14} />}
+                          <span>
+                            {cat.label} ({cat.count})
+                          </span>
+                        </button>
+
+                        {hasMuteToggle && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleCategoryScanning(cat.id as 'stocks' | 'crypto' | 'futures');
+                            }}
+                            title={
+                              isOff
+                                ? `${cat.label} background alerts are OFF — click to turn on`
+                                : `${cat.label} background alerts are ON — click to mute`
+                            }
+                            className={`p-0.5 rounded transition-all ml-0.5 ${
+                              isOff
+                                ? 'text-red-400 hover:bg-red-500/20'
+                                : active
+                                  ? 'text-white/80 hover:text-white hover:bg-white/10'
+                                  : 'text-muted hover:text-emerald-400 hover:bg-emerald-500/10'
+                            }`}
+                          >
+                            {isOff ? <BellOff size={13} /> : <Bell size={13} />}
+                          </button>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
-
               </div>
 
               <PatternGuidePanel
@@ -3419,28 +3473,8 @@ export default function MarketWatcher() {
                   }
                   onSearch={setSearchTerm}
                   onAdd={stableAddSymbol}
+                  className="sm:col-span-9 relative"
                 />
-
-                <div className="sm:col-span-5 relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted text-xs font-semibold">INTERVAL</span>
-                  <select
-                    value={newInterval}
-                    onChange={(e) => {
-                      setNewInterval(e.target.value);
-                      localStorage.setItem('watcher-new-interval', e.target.value);
-                    }}
-                    className="w-full bg-card-bg border border-card-border focus:border-accent focus:ring-1 focus:ring-accent rounded-xl py-2.5 pl-20 pr-3 text-sm text-foreground cursor-pointer outline-none transition-all"
-                  >
-                    <option value="1m">1m (Test)</option>
-                    <option value="2m">2m</option>
-                    <option value="5m">5m</option>
-                    <option value="10m">10m</option>
-                    <option value="15m">15m</option>
-                    <option value="30m">30m</option>
-                    <option value="45m">45m</option>
-                    <option value="1h">1h</option>
-                  </select>
-                </div>
 
                 <div className="sm:col-span-3">
                   <button
@@ -3528,7 +3562,7 @@ export default function MarketWatcher() {
                       </button>
 
                       <button
-                        onClick={() => setAutoPatternsEnabled(!autoPatternsEnabled)}
+                        onClick={handleToggleAutoPatterns}
                         className={`px-2.5 py-1 rounded-md transition-all font-semibold flex items-center gap-1.5 border ml-1 ${
                           autoPatternsEnabled
                             ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
@@ -3638,25 +3672,6 @@ export default function MarketWatcher() {
               {/* Global Watchlist Settings & Notification Test Controls */}
               <div className="mt-6 pt-6 border-t border-card-border space-y-4 text-xs text-muted">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                  <div className="flex flex-wrap items-center gap-4">
-                    <div className="flex items-center gap-2">
-                      <span>Scan Frequency:</span>
-                      <select
-                        value={scanIntervalMinutes}
-                        onChange={(e) => handleIntervalChange(parseFloat(e.target.value))}
-                        className="bg-card-bg border border-card-border rounded px-2 py-1 text-foreground font-medium"
-                      >
-                        <option value={0.25}>Adaptive (up to every 15 seconds)</option>
-                        <option value={0.5}>30 Seconds (Ultra Fast)</option>
-                        <option value={1}>1 Minute (Fast Test)</option>
-                        <option value={5}>5 Minutes</option>
-                        <option value={10}>10 Minutes</option>
-                        <option value={15}>15 Minutes</option>
-                        <option value={30}>30 Minutes</option>
-                      </select>
-                    </div>
-                  </div>
-
                   {watchlistCategory === 'futures' ? (
                     <div className="flex items-center gap-1.5 text-xs text-amber-400 font-semibold bg-amber-500/10 px-3 py-1.5 rounded-lg border border-amber-500/20">
                       <Zap size={14} />

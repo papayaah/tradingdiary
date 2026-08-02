@@ -175,11 +175,37 @@ export default function SharedTradingChart({
     loadingMoreRef.current = loadingMore;
   });
 
-  // Sorted candles used both for chart data and for slicing the visible window.
-  const sortedCandles = useMemo(
-    () => [...candles].sort((a, b) => a.time - b.time),
-    [candles],
+  const isDaily = interval === '1d' || interval === 'D';
+
+  const formatCandleTime = useCallback(
+    (timestamp: number): Time => {
+      if (isDaily) {
+        const d = new Date(timestamp * 1000);
+        const yyyy = d.getUTCFullYear();
+        const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+        const dd = String(d.getUTCDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}` as Time;
+      }
+      return timestamp as Time;
+    },
+    [isDaily],
   );
+
+  // Sorted & deduplicated candles used both for chart data and slicing the visible window.
+  const sortedCandles = useMemo(() => {
+    if (!candles || candles.length === 0) return [];
+    const rawSorted = [...candles].sort((a, b) => a.time - b.time);
+    const seen = new Set<string>();
+    const result: typeof candles = [];
+    for (const c of rawSorted) {
+      const key = String(formatCandleTime(c.time));
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push(c);
+      }
+    }
+    return result;
+  }, [candles, formatCandleTime]);
 
   // Candles currently within the viewport. Auto-pattern detection runs on THIS
   // subset — not the full loaded history — so the overlay reflects what the user
@@ -202,22 +228,6 @@ export default function SharedTradingChart({
     }
     return null;
   }, [visibleCandles, autoPatternsEnabled]);
-
-  const isDaily = interval === '1d' || interval === 'D';
-
-  const formatCandleTime = useCallback(
-    (timestamp: number): Time => {
-      if (isDaily) {
-        const d = new Date(timestamp * 1000);
-        const yyyy = d.getUTCFullYear();
-        const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-        const dd = String(d.getUTCDate()).padStart(2, '0');
-        return `${yyyy}-${mm}-${dd}` as Time;
-      }
-      return timestamp as Time;
-    },
-    [isDaily],
-  );
 
   // ── Effect A: create the chart + series ONCE per structural change ──────────
   // Rebuilding only on symbol/interval/height/volume (not on every candle

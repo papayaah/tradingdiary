@@ -194,6 +194,7 @@ interface TickerInputProps {
   category: SymbolSearchCategory;
   onSearch: (value: string) => void;
   onAdd: (value: string) => boolean;
+  className?: string;
 }
 
 interface SymbolSuggestion {
@@ -204,7 +205,7 @@ interface SymbolSuggestion {
 }
 
 const TickerInputComponent = forwardRef<TickerInputHandle, TickerInputProps>(
-function TickerInput({ placeholder, category, onSearch, onAdd }, ref) {
+function TickerInput({ placeholder, category, onSearch, onAdd, className }, ref) {
   const [value, setValue] = useState('');
   const [suggestions, setSuggestions] = useState<SymbolSuggestion[]>([]);
   const [open, setOpen] = useState(false);
@@ -311,7 +312,7 @@ function TickerInput({ placeholder, category, onSearch, onAdd }, ref) {
   };
 
   return (
-    <div ref={containerRef} className="sm:col-span-4 relative">
+    <div ref={containerRef} className={className || "sm:col-span-9 relative"}>
       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted text-xs font-semibold z-10">
         TICKER
       </span>
