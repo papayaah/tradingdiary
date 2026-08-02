@@ -1,0 +1,33 @@
+# Gateway-only smoke test for IBKR (Phase 0).
+# Goal: prove IB Gateway logs in and stays up. No sidecar, no scanner wiring yet.
+#
+#   docker-compose -f docker-compose.ibkr.yml --env-file .env.ibkr up
+#
+# Watch the logs for a successful login, then connect a VNC viewer to
+# localhost:5900 to see the Gateway GUI / approve the first 2FA prompt.
+#
+# Ports (gnzsnz/ib-gateway convention): container 4001/4002 (live/paper API) are
+# bridged out to 4003/4004, which we publish on the host as 4001 (live) / 4002
+# (paper). Everything is bound to 127.0.0.1 only.
+services:
+  ib-gateway:
+    image: ghcr.io/gnzsnz/ib-gateway:stable
+    platform: linux/amd64            # x86 Java app; runs under Colima emulation on Apple Silicon
+    container_name: tradingdiary-ibkr
+    restart: unless-stopped
+    environment:
+      TWS_USERID: ${IBKR_USER}
+      TWS_PASSWORD: ${IBKR_PASSWORD}
+      TRADING_MODE: ${TRADING_MODE:-paper}   # start with paper for the smoke test
+      READ_ONLY_API: "yes"                    # data only; never place/modify orders
+      VNC_SERVER_PASSWORD: ${VNC_PASSWORD}    # enables VNC so you can watch login / approve 2FA
+      TWOFA_TIMEOUT_ACTION: "restart"
+    ports:
+      - "127.0.0.1:4001:4003"   # live API  (used when TRADING_MODE=live)
+      - "127.0.0.1:4002:4004"   # paper API (used when TRADING_MODE=paper)
+      - "127.0.0.1:5900:5900"   # VNC
+    volumes:
+      - ibkr_settings:/root/Jts   # persist Gateway settings between restarts
+
+volumes:
+  ibkr_settings:

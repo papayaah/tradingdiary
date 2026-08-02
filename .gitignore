@@ -59,3 +59,4 @@ terraform.tfvars.json
 # intentionally disabled, so these need explicit rules).
 .env.deploy
 .env.local.bak*
+.env.ibkr
