@@ -626,6 +626,55 @@ export class DatabentoProvider implements ChartProvider {
     }
 }
 
+/**
+ * IBKR Gateway Provider (CME futures via headless IB Gateway).
+ *
+ * Reads recent historical bars through the persistent socket client. Historical
+ * data needs no real-time market-data subscription, so this works today. The
+ * socket lib is lazy-imported so it never lands in the web/client bundle.
+ */
+export class IBKRProvider implements ChartProvider {
+    name = "IBKR (CME)";
+
+    async fetchCandles(symbol: string, _date: string, interval: string): Promise<OHLCCandle[]> {
+        return this.fetchRecentCandles(symbol, interval);
+    }
+
+    async fetchRecentCandles(symbol: string, interval: string): Promise<OHLCCandle[]> {
+        const { getIbkrClient } = await import('./ibkr-client');
+        return getIbkrClient().fetchRecentCandles(symbol, interval);
+    }
+}
+
+/**
+ * Tries each provider in order, moving on when one throws or returns no candles.
+ * Lets the futures path degrade IBKR -> Databento -> Yahoo instead of failing a
+ * scan when the gateway is re-authing or down.
+ */
+export class FallbackProvider implements ChartProvider {
+    constructor(public name: string, private chain: ChartProvider[]) {}
+
+    async fetchCandles(symbol: string, date: string, interval: string): Promise<OHLCCandle[]> {
+        return this.run((p) => p.fetchCandles(symbol, date, interval));
+    }
+    async fetchRecentCandles(symbol: string, interval: string): Promise<OHLCCandle[]> {
+        return this.run((p) => p.fetchRecentCandles(symbol, interval));
+    }
+    private async run(fn: (p: ChartProvider) => Promise<OHLCCandle[]>): Promise<OHLCCandle[]> {
+        let lastError: unknown = new Error('no providers configured');
+        for (const provider of this.chain) {
+            try {
+                const candles = await fn(provider);
+                if (candles.length) return candles;
+                lastError = new Error(`${provider.name} returned no candles`);
+            } catch (error) {
+                lastError = error;
+            }
+        }
+        throw lastError instanceof Error ? lastError : new Error(String(lastError));
+    }
+}
+
 export interface UserProviderConfig {
     preferredProvider?: string;
     futuresProvider?: string;
@@ -641,9 +690,15 @@ export interface UserProviderConfig {
  * Factory to get the active provider based on environment variables or user config.
  * Supports distinct routing for Equities vs Futures.
  */
-export function getActiveProvider(symbol?: string, userConfig?: UserProviderConfig): ChartProvider {
+export function getActiveProvider(
+    symbol?: string,
+    userConfig?: UserProviderConfig,
+    assetClass?: 'equity' | 'futures' | 'crypto',
+): ChartProvider {
     const upperSymbol = symbol ? symbol.toUpperCase() : '';
-    const isFutures = symbol ? isFuturesSymbol(symbol) : false;
+    // Trust an explicit futures asset class (e.g. a watch storing the bare root
+    // "MES") in addition to symbol-notation sniffing ("MNQU6", "NQ=F").
+    const isFutures = assetClass === 'futures' || (symbol ? isFuturesSymbol(symbol) : false);
     const isCrypto = upperSymbol.endsWith('-USD');
 
     // 'user' when the request will use a user-supplied key (their quota), else
@@ -653,13 +708,29 @@ export function getActiveProvider(symbol?: string, userConfig?: UserProviderConf
 
     // Handle Futures Data Feed Selection separately
     if (isFutures) {
-        const futuresPref = userConfig?.futuresProvider || 'databento';
+        const futuresPref = userConfig?.futuresProvider || 'auto';
         const databentoKey = userConfig?.databentoKey || process.env.DATABENTO_API_KEY;
+        // IBKR is only usable where the Gateway is reachable (the scanner/server
+        // process), signalled by IBKR_GATEWAY_HOST / IBKR_ENABLED.
+        const ibkrConfigured = Boolean(process.env.IBKR_GATEWAY_HOST) || process.env.IBKR_ENABLED === 'true';
 
-        if ((futuresPref === 'databento' || futuresPref === 'auto') && databentoKey) {
+        // Explicit single-provider selections.
+        if (futuresPref === 'ibkr' && ibkrConfigured) {
+            return trackProvider(new IBKRProvider(), 'owner');
+        }
+        if (futuresPref === 'databento' && databentoKey) {
             return trackProvider(new DatabentoProvider(databentoKey), owner(userConfig?.databentoKey));
         }
-        return trackProvider(new YahooProvider(), 'owner');
+        if (futuresPref === 'yahoo') {
+            return trackProvider(new YahooProvider(), 'owner');
+        }
+
+        // 'auto': build a graceful fallback chain IBKR -> Databento -> Yahoo.
+        const chain: ChartProvider[] = [];
+        if (ibkrConfigured) chain.push(trackProvider(new IBKRProvider(), 'owner'));
+        if (databentoKey) chain.push(trackProvider(new DatabentoProvider(databentoKey), owner(userConfig?.databentoKey)));
+        chain.push(trackProvider(new YahooProvider(), 'owner'));
+        return chain.length === 1 ? chain[0] : new FallbackProvider('Futures (auto)', chain);
     }
 
     // Handle Equities Data Feed Selection

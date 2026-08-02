@@ -116,7 +116,7 @@ export async function fetchCandles(
   interval: string,
   assetClass: AssetClass = 'equity',
 ): Promise<FetchResult> {
-  const provider = getActiveProvider(symbol);
+  const provider = getActiveProvider(symbol, undefined, assetClass);
   const timeout = new Promise<never>((_, reject) =>
     setTimeout(() => reject(new Error('provider fetch timeout')), scannerConfig.fetchTimeoutMs),
   );
