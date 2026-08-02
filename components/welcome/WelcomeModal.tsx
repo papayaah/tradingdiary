@@ -81,53 +81,27 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
 
         {/* Modal Scrollable Body — Completely Zero Padding / Margin (100% Full-Bleed Video Focus) */}
         <div className="p-0 m-0 space-y-0 overflow-y-auto flex-1">
-          {/* Main Video Showcase Section — Flush Edge to Edge */}
+          {/* Main Video Showcase Section — Flush Edge to Edge, Auto-Play + Controls */}
           <div className="relative aspect-video w-full overflow-hidden bg-black group shadow-inner border-b border-card-border">
-            {isPlaying ? (
-              <div className="relative w-full h-full bg-black flex items-center justify-center">
-                {isMp4 ? (
-                  <video
-                    src={activeDemoVideo}
-                    controls
-                    autoPlay
-                    className="w-full h-full object-contain"
-                  />
-                ) : (
-                  <iframe
-                    src={activeDemoVideo.includes('youtube') ? `${activeDemoVideo}?autoplay=1` : activeDemoVideo}
-                    title="Trading Diary Overview Video"
-                    className="w-full h-full border-0"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen
-                  />
-                )}
-                <button
-                  onClick={() => setIsPlaying(false)}
-                  className="absolute top-4 left-4 px-3.5 py-1.5 rounded-lg bg-black/70 text-white text-xs font-semibold backdrop-blur-md hover:bg-black/90 transition-colors z-20 border border-white/10"
-                >
-                  Close Video
-                </button>
-              </div>
+            {isMp4 ? (
+              <video
+                key={`main-video-${isDarkMode}`}
+                src={activeDemoVideo}
+                autoPlay
+                loop
+                muted
+                playsInline
+                controls
+                className="w-full h-full object-contain"
+              />
             ) : (
-              <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-accent/20 via-background to-muted-bg/80 p-4 text-center">
-                {/* Decorative Background Pattern */}
-                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-accent/25 via-transparent to-transparent pointer-events-none" />
-
-                <div className="relative z-10 flex flex-col items-center gap-3">
-                  <button
-                    onClick={() => setIsPlaying(true)}
-                    className="relative group/btn flex items-center justify-center w-20 h-20 rounded-full bg-accent text-white shadow-2xl shadow-accent/50 hover:scale-105 active:scale-95 transition-all duration-200"
-                    aria-label="Play Walkthrough Video"
-                  >
-                    <Play size={32} className="ml-1 fill-white" />
-                    <span className="absolute -inset-1 rounded-full bg-accent/40 animate-ping pointer-events-none" />
-                  </button>
-
-                  <span className="text-xs font-bold text-foreground/90 tracking-wide bg-background/70 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-card-border shadow-sm">
-                    Click to Play 30s Master Demo
-                  </span>
-                </div>
-              </div>
+              <iframe
+                src={activeDemoVideo.includes('youtube') ? `${activeDemoVideo}?autoplay=1` : activeDemoVideo}
+                title="Trading Diary Overview Video"
+                className="w-full h-full border-0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
             )}
           </div>
 
