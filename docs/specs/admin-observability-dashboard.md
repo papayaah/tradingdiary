@@ -80,20 +80,23 @@ Grouped by panel. "Source" is where the number comes from today; **new** marks s
 
 ### 4. Scanner health
 
-| Metric | Source |
-|---|---|
-| Worker heartbeats (id, last beat, staleness) | `scanner_heartbeat` (existing `/api/admin/queues`) |
-| Queue depth (active/waiting/delayed/failed/completed) | BullMQ (existing `/api/admin/queues`) |
-| Redis connectivity | existing `/api/admin/queues` |
-| Shadow mode on/off | scanner config (**new** surfacing) |
-| Scans/min, failed jobs | BullMQ metrics / **new** counter |
-| Aggregation & governor enabled flags | scanner config (**new** surfacing) |
+| Metric | Source | Why |
+|---|---|---|
+| Worker heartbeats (id, last beat, staleness) | `scanner_heartbeat` (existing `/api/admin/queues`) | Worker liveness |
+| Queue depth (active/waiting/delayed/failed/completed) | BullMQ (existing `/api/admin/queues`) | Backlog monitoring |
+| **Redis memory used** (`used_memory_human`) | Redis `INFO memory` (**new**) | RAM footprint of cache, snapshots & metrics |
+| **Redis memory utilization %** (`used_memory / maxmemory`) | Redis `INFO memory` (**new**) | Early warning gauge before Redis eviction or OOM |
+| Redis connectivity | existing `/api/admin/queues` | Basic connection health |
+| Shadow mode on/off | scanner config (**new** surfacing) | Is scanner actively notifying? |
+| Scans/min, failed jobs & error summaries | BullMQ metrics / **new** counter | Performance & top failure reasons |
+| Aggregation & governor enabled flags | scanner config (**new** surfacing) | Current operational feature flags |
 
 ### 5. Provider usage & cost
 
 | Metric | Source | Why |
 |---|---|---|
 | Requests today by provider + key_owner (owner/user) | `provider_request_stats` (existing `/api/admin/provider-stats`) | The bill |
+| **Upstream errors & status code breakdown** (429 rate limit, 5xx, timeout) | `provider_request_stats` / **new** error counter | Identifies provider outages & rate cap hits |
 | Requests trend (30/90d) | `provider_request_stats` | Growth |
 | Projected daily vs. configured cap (per scope) | derived from governor budget | Are we near the ceiling? |
 | Headroom utilization (%) | derived | How much margin is left |
@@ -134,12 +137,13 @@ The evaluation result of every scan is broadcast to connected browsers over SSE 
 
 ### 8. Alerts & delivery
 
-| Metric | Source |
-|---|---|
-| Alerts created today / 7d, by pattern & direction | `server_watch_alert` |
-| Push notifications sent / failed | push send path (**new** counter) |
-| Watch events emitted (SSE volume) | `watch_event` |
-| Alert-to-fetch efficiency (alerts ÷ upstream requests) | derived |
+| Metric | Source | Why |
+|---|---|---|
+| Alerts created today / 7d, by pattern & direction | `server_watch_alert` | Value delivered to users |
+| Push notifications sent / failed | push send path (**new** counter) | Outbound push throughput |
+| **Push notification error breakdown** (expired VAPID / `410`, payload error, network timeout) | push send path (**new**) | Diagnoses failing push subscriptions |
+| Watch events emitted (SSE volume) | `watch_event` | In-app delivery volume |
+| Alert-to-fetch efficiency (alerts ÷ upstream requests) | derived | Yield per request |
 
 ## Architecture & data sources
 
@@ -166,7 +170,7 @@ The dashboard is a Next.js admin route reading from three places. The one real d
 
 ### Emission plan (the only new scanner work)
 
-- **Cache counters:** `SharedCandleService` increments Redis counters (`INCR metrics:cache:{hits,misses,waiters,upstream,errors}`, optionally bucketed by minute/hour) on each acquisition outcome. Cheap, fire-and-forget, never blocks a fetch.
+- **Cache counters & TTL lifecycle:** `SharedCandleService` increments Redis counters (`INCR metrics:cache:{YYYYMMDDHH}:{hits,misses,waiters,upstream,errors}`). All metrics keys **must set an explicit TTL** (e.g. `EXPIRE 7 days`) on creation so old keys expire cleanly. Cheap, fire-and-forget, never blocks a fetch.
 - **Governor state:** on each recompute, the scanner writes a small record per scope (`metrics:governor:<scope>` hash: `N`, `cadenceSeconds`, `bindingTerm`, `headroomUtilization`, `updatedAt`) to Redis, and optionally appends to a `scanner_governor_log` table for history.
 - **Config surfacing:** the scanner writes its effective flags (`shadow`, `aggregationEnabled`, `governorEnabled`, budgets) into its heartbeat `detail` payload (already a JSON column) so the admin API can show them without env access.
 - Everything else (users, watches, alerts, provider stats, heartbeats, queue) is **already persisted** — Phase 1 needs no scanner changes.
@@ -178,8 +182,8 @@ Extend the existing admin API namespace, all gated by `isAdminEmail`:
 - `GET /api/admin/overview` — the KPI tiles (users, watches, unique symbols, sharing ratio, alerts today, scanner status).
 - `GET /api/admin/users?days=30` — engagement series.
 - `GET /api/admin/watches` — symbol/interval/asset-class aggregates, top-N symbols.
-- `GET /api/admin/provider-stats` — **exists**; extend with projections vs. caps.
-- `GET /api/admin/queues` — **exists**; extend with config flags + scans/min.
+- `GET /api/admin/provider-stats` — **exists**; extend with status code error breakdowns & projections vs. caps.
+- `GET /api/admin/queues` — **exists**; extend with Redis memory stats (`used_memory_human`, utilization %), config flags + scans/min.
 - `GET /api/admin/governor` — per-scope `N`, cadence, binding term, predicted req/hr.
 - `GET /api/admin/cache` — hit rate, waiters, sharing ratio, snapshot count/age.
 
@@ -201,12 +205,14 @@ Either way:
 - Place it visually separated from the user's normal journal/watch nav (e.g. a lower "Admin" group or a divider) so it reads as an operator tool, not a normal feature.
 - **Design-system compliant:** semantic tokens (`background`, `card-bg`, `card-border`, `muted`, `accent`, `profit`, `loss`) — no raw palette values; legible in light and dark; **no modals** — use cards, expandable sections, and a page-level layout.
 - Layout: a top **Overview** row of KPI tiles, then collapsible sections per panel group above. `recharts` (already a dependency) for trend lines and small bar charts; plain tables for top-N and worker lists.
-- **Auto-refresh:** poll each panel's endpoint on a coarse interval (e.g. 15–30s) with a visible "updated Xs ago" and a manual refresh; reuse the SSE layer later if live updates are wanted.
+- **Auto-refresh & Page Visibility:** poll each panel's endpoint on a coarse interval (e.g. 15–30s) with a visible "updated Xs ago" indicator and a manual refresh button. Polling **must pause when `document.hidden` is true** (Page Visibility API) to save Redis/DB load when tabs are inactive.
+- **Export Diagnostic JSON:** include a header action to download a single diagnostic JSON dump (overview, Redis memory, worker status, error counts) for troubleshooting.
 - Empty/degraded states: if Redis is down, cache/governor panels show "unavailable" rather than erroring the page (mirrors how `/api/admin/queues` already degrades).
 
 ## Access control & privacy
 
-- Gate every admin route and endpoint with `isAdminEmail`. **Note the current default: with no `ADMIN_EMAILS`/`ADMIN_EMAIL` configured, `isAdminEmail` returns true for any signed-in user** — this dashboard exposes cross-user aggregates, so production **must** set the admin allowlist. Flag this prominently in the UI when the allowlist is empty.
+- Gate every admin route and endpoint with `isAdminEmail`.
+- **Security Rule (Fail-Closed in Production):** While dev environment may allow access when no allowlist is configured, `isAdminEmail` **must fail-closed (return `false`) in `production` (`NODE_ENV === 'production'`)** if `ADMIN_EMAILS`/`ADMIN_EMAIL` is missing. Flag this prominently with an amber alert card in dev UI when the allowlist is empty.
 - Show aggregates and top-N only; never render another user's watchlist, thresholds, or alert contents. Where a symbol's watcher count is shown, show the count, not who.
 - Redis keys and logs already avoid credentials (per the scanning spec); the dashboard must never surface API keys, tokens, or raw provider URLs.
 

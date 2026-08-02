@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import {
   BookOpen,
   Image as ImageIcon,
@@ -14,7 +15,8 @@ import {
   ChevronRight,
   PieChart,
   Bell,
-  Sparkles
+  Sparkles,
+  ShieldAlert
 } from 'lucide-react';
 import { useImport } from '@/contexts/ImportContext';
 import { useAccount } from '@/contexts/AccountContext';
@@ -40,6 +42,23 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { isProcessing } = useImport();
   const { accounts, selectedAccountId, setSelectedAccountId } = useAccount();
   const { openWelcomeModal } = useWelcome();
+
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/admin/status')
+      .then((res) => (res.ok ? res.json() : { isAdmin: false }))
+      .then((data) => {
+        if (active && data?.isAdmin) {
+          setIsAdmin(true);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <aside
@@ -123,6 +142,23 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
             </Link>
           );
         })}
+
+        {isAdmin && (
+          <div className="pt-2 border-t border-sidebar-border mt-2">
+            <Link
+              href="/admin"
+              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                pathname.startsWith('/admin')
+                  ? 'bg-sidebar-active text-foreground font-medium'
+                  : 'text-muted hover:bg-sidebar-hover hover:text-foreground'
+              } ${collapsed ? 'justify-center px-0' : ''}`}
+              title={collapsed ? 'Admin Observability' : undefined}
+            >
+              <ShieldAlert size={18} className="shrink-0 text-accent" />
+              {!collapsed && <span>Admin Dashboard</span>}
+            </Link>
+          </div>
+        )}
       </nav>
       <div className="p-2 border-t border-sidebar-border space-y-1">
         <button

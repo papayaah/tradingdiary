@@ -21,6 +21,12 @@ export async function GET(request: Request) {
     let queueCounts = { active: 0, completed: 0, failed: 0, delayed: 0, waiting: 0 };
     let workers: Array<{ workerId: string; lastBeatAt: string }> = [];
     let redisConnected = false;
+    let redisMemory = {
+      usedMemoryHuman: 'N/A',
+      usedMemoryPeakHuman: 'N/A',
+      maxmemoryHuman: 'N/A',
+      utilizationPct: null as number | null,
+    };
 
     try {
       const redisUrl = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
@@ -39,6 +45,28 @@ export async function GET(request: Request) {
           delayed: c.delayed ?? 0,
           waiting: c.waiting ?? 0,
         };
+
+        try {
+          const rawMem = await connection.info('memory');
+          const memMap: Record<string, string> = {};
+          for (const line of rawMem.split('\r\n')) {
+            if (line && !line.startsWith('#')) {
+              const [k, v] = line.split(':');
+              if (k && v) memMap[k.trim()] = v.trim();
+            }
+          }
+          const usedBytes = parseInt(memMap.used_memory || '0', 10);
+          const maxBytes = parseInt(memMap.maxmemory || '0', 10);
+          redisMemory = {
+            usedMemoryHuman: memMap.used_memory_human || '0B',
+            usedMemoryPeakHuman: memMap.used_memory_peak_human || '0B',
+            maxmemoryHuman: maxBytes > 0 ? memMap.maxmemory_human || '0B' : 'Unlimited',
+            utilizationPct: maxBytes > 0 ? Math.min(100, Math.round((usedBytes / maxBytes) * 100)) : null,
+          };
+        } catch {
+          // Keep fallback redisMemory defaults
+        }
+
         await queue.close();
       }
       await connection.quit().catch(() => {});
@@ -60,6 +88,7 @@ export async function GET(request: Request) {
       success: true,
       user: { id: session.user.id, email: session.user.email },
       redisConnected,
+      redisMemory,
       queue: queueCounts,
       workers,
     });
