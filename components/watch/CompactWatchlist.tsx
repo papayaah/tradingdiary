@@ -9,6 +9,7 @@ import {
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
+import { displaySymbol } from '@/lib/utils/format';
 import type { Candle } from './watchAnalysis';
 
 interface CompactWatchItem {
@@ -73,7 +74,7 @@ const CompactCard = React.memo(function CompactCard({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="truncate text-sm font-bold text-foreground">{item.symbol}</span>
+            <span className="truncate text-sm font-bold text-foreground">{displaySymbol(item.symbol)}</span>
             <span className="rounded bg-muted-bg px-1.5 py-0.5 text-[9px] font-mono text-muted">
               {item.interval}
             </span>

@@ -33,6 +33,19 @@ export function formatTradeTime(time24: string): string {
   return time24.substring(0, 5);
 }
 
+/**
+ * Strip provider notation for display only. The stored symbol keeps its
+ * canonical form (e.g. NQ=F) — which the frontend futures detection and the
+ * backend provider fallback both depend on — while the UI shows the clean root.
+ *   NQ=F -> NQ, /NQ -> NQ, NQ.C.0 -> NQ. Crypto (BTC-USD) and equities pass through.
+ */
+export function displaySymbol(symbol: string): string {
+  let s = symbol.trim();
+  if (s.startsWith('/')) s = s.slice(1);
+  s = s.replace(/=F$/i, '').replace(/\.C\.0$/i, '');
+  return s;
+}
+
 export function formatVolume(volume: number): string {
   return volume.toLocaleString('en-US');
 }

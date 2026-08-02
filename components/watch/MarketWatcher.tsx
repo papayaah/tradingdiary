@@ -203,6 +203,18 @@ const persistWatchlist = (items: WatchItem[]) => {
   localStorage.setItem('watcher-watchlist', JSON.stringify(getPersistedWatchlist(items)));
 };
 
+// How many days of history the manual tester fetches, scaled by interval so
+// higher timeframes cover more calendar time (deep panning) while low ones stay
+// a lighter payload. Mirrors the panning depth of a TradingView-style chart.
+const historyLookbackDays = (interval: string): number => {
+  const iv = interval.toLowerCase();
+  if (iv === '1d' || iv === 'd') return 400;
+  if (iv === '1h') return 60;
+  if (iv === '45m' || iv === '30m') return 30;
+  if (iv === '15m' || iv === '10m') return 10;
+  return 5; // 1m, 2m, 5m
+};
+
 // Client-side cache using existing 'tradingdiary-charts' IndexedDB ohlc store
 async function getLiveCache(symbol: string, interval: string) {
   if (typeof window === 'undefined') return null;
@@ -267,7 +279,11 @@ export default function MarketWatcher() {
   } | null>(null);
 
   const [selectedSetupTime, setSelectedSetupTime] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<'watchlist' | 'tester'>('watchlist');
+  const [activeTab, setActiveTab] = useState<'watchlist' | 'tester'>(() => {
+    if (typeof window === 'undefined') return 'watchlist';
+    const saved = localStorage.getItem('watcher-active-tab');
+    return saved === 'tester' ? 'tester' : 'watchlist';
+  });
   const [chartOffset, setChartOffset] = useState(0);
   const [nextScanIndex, setNextScanIndex] = useState(0);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
@@ -951,11 +967,9 @@ export default function MarketWatcher() {
     // Seed the market-open state immediately so the badge is correct on first paint
     setMarketOpen(isMarketOpen(initialWindow));
 
-    // Load tester settings
-    const savedActiveTab = localStorage.getItem('watcher-active-tab');
-    if (savedActiveTab === 'watchlist' || savedActiveTab === 'tester') {
-      setActiveTab(savedActiveTab);
-    }
+    // Load tester settings (activeTab is hydrated via its lazy useState
+    // initializer above, so it isn't re-read here — doing so races with the
+    // save effect and can clobber the persisted tab on refresh).
     const savedCategory = localStorage.getItem('watcher-watchlist-category');
     if (savedCategory === 'stocks' || savedCategory === 'crypto' || savedCategory === 'futures' || savedCategory === 'all') {
       setWatchlistCategory(savedCategory);
@@ -2282,9 +2296,8 @@ export default function MarketWatcher() {
   );
 
   // 9. Pattern Tester Handler
-  const handleRunTest = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const symbol = testSymbol.trim().toUpperCase();
+  const executePatternTest = async (targetSymbol: string, targetInterval: string) => {
+    const symbol = targetSymbol.trim().toUpperCase();
     if (!symbol) return;
 
     setIsTesting(true);
@@ -2296,26 +2309,21 @@ export default function MarketWatcher() {
       let candles: Candle[] = [];
       let providerName = 'Polygon.io';
 
-      // Check cache first
-      const cache = await getLiveCache(symbol, testInterval);
-      if (cache) {
-        candles = cache.candles;
-        providerName = cache.provider || 'Polygon.io';
-      } else {
-        // Fetch fresh
-        const res = await fetch(`/api/watch?symbol=${encodeURIComponent(symbol)}&interval=${testInterval}`);
-        if (!res.ok) {
-          const errData = await res.json();
-          throw new Error(errData.error || `Server returned ${res.status}`);
-        }
-
-        const data = await res.json();
-        candles = data.candles || [];
-        providerName = data.provider || 'Polygon.io';
-
-        // Cache it
-        await setLiveCache(symbol, testInterval, candles, providerName);
+      // Manual tester loads deep history (scaled by interval) so the chart can
+      // pan back like TradingView. Deliberately bypass the shared live cache:
+      // that cache holds the scanner's small live window keyed by symbol+interval
+      // and writing this large history into it would poison the scanner/watchlist
+      // mini-viz. This is an on-demand manual fetch, so no caching is needed.
+      const lookbackDays = historyLookbackDays(targetInterval);
+      const res = await fetch(`/api/watch?symbol=${encodeURIComponent(symbol)}&interval=${targetInterval}&days=${lookbackDays}`);
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || `Server returned ${res.status}`);
       }
+
+      const data = await res.json();
+      candles = data.candles || [];
+      providerName = data.provider || 'Polygon.io';
 
       const { matched, message } = detectPattern(
         candles,
@@ -2354,6 +2362,11 @@ export default function MarketWatcher() {
     }
   };
 
+  const handleRunTest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await executePatternTest(testSymbol, testInterval);
+  };
+
   // Keep only the current New York market date. Never substitute the previous
   // session: doing so makes stale candles look like live pre-market data.
   const filterCurrentDayOnly = (candles: Candle[]) => {
@@ -2385,7 +2398,8 @@ export default function MarketWatcher() {
       return getWatchlistViewCandles(sourceCandles, targetSymbol);
     }
     let filtered = testResult.candles;
-    if (testCurrentDayOnly) {
+    const isLongInterval = testInterval === '1h' || testInterval === '1d' || testInterval === 'D';
+    if (testCurrentDayOnly && !isLongInterval) {
       const dayFiltered = filterCurrentDayOnly(filtered);
       if (dayFiltered.length > 0) filtered = dayFiltered;
     }
@@ -2499,6 +2513,11 @@ export default function MarketWatcher() {
 
   const getDisplayedCandles = () => {
     const total = testerCandles.length;
+    if (total === 0) return [];
+    const isLongInterval = testInterval === '1h' || testInterval === '1d' || testInterval === 'D';
+    if (isLongInterval) {
+      return testerCandles;
+    }
     const count = Math.min(total, 80);
     const start = Math.max(0, total - count - chartOffset);
     const end = Math.max(count, total - chartOffset);
@@ -2634,14 +2653,24 @@ export default function MarketWatcher() {
         </div>
 
         <LightweightPatternChart
+          symbol={testSymbol}
           candles={displayedCandles}
           height={380}
           autoPatternsEnabled={autoPatternsEnabled}
           onTogglePatterns={() => setAutoPatternsEnabled(!autoPatternsEnabled)}
+          interval={testInterval}
+          onIntervalChange={(newIv) => {
+            setTestInterval(newIv);
+            executePatternTest(testSymbol, newIv);
+          }}
+          currentDayOnly={testCurrentDayOnly}
+          onToggleCurrentDayOnly={(val) => setTestCurrentDayOnly(val)}
+          providerBadge={testResult?.provider || 'Tiingo'}
+          subtitle={`Showing ${displayedCandles.length} candles of ${testResult?.candles?.length || 0} loaded (${testInterval})`}
         />
 
         {/* Slider for chart pagination if there are > 80 candles */}
-        {testerCandles.length > 80 && (
+        {testerCandles.length > 80 && testInterval !== '1d' && testInterval !== '1h' && testInterval !== 'D' && (
           <div className="flex items-center gap-4 bg-muted-bg/50 border border-card-border p-3 rounded-xl shrink-0">
             <div className="flex items-center gap-1.5 text-xs text-muted font-semibold">
               <History size={14} className="text-accent" />
@@ -3287,7 +3316,7 @@ export default function MarketWatcher() {
                   category={watchlistCategory}
                   placeholder={
                     watchlistCategory === 'futures'
-                      ? 'e.g. NQ=F, ES=F, CL=F'
+                      ? 'e.g. NQ, ES, CL'
                       : watchlistCategory === 'crypto'
                         ? 'e.g. BTC, ETH, SOL'
                         : 'e.g. AAPL, NVDA, SPY'
@@ -3724,6 +3753,7 @@ export default function MarketWatcher() {
                       <option value="30m">30m</option>
                       <option value="45m">45m</option>
                       <option value="1h">1h</option>
+                      <option value="1d">1d</option>
                     </select>
                   </div>
 

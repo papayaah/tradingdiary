@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import type { Candle } from './watchAnalysis';
 import { detectAllPatterns, CandleData } from '@/lib/chart/patterns';
+import { displaySymbol } from '@/lib/utils/format';
 
 interface WatchlistRowItem {
   symbol: string;
@@ -73,7 +74,7 @@ function WatchlistRow({
         className="py-4 px-4 font-bold text-foreground cursor-pointer hover:text-accent transition-colors"
         title="Click to expand inline session chart"
       >
-        {item.symbol}
+        {displaySymbol(item.symbol)}
         {latestPrice !== undefined && (
           <span className="block text-[10px] font-normal text-muted mt-0.5">
             Last Price: ${latestPrice.toFixed(2)}
