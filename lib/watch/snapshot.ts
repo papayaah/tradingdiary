@@ -14,7 +14,7 @@ import {
 import { scannerTimestampToUtcIso } from '@/lib/watch/timestamps';
 
 const HEARTBEAT_STALE_MS = 60_000;
-const RECENT_ALERTS_LIMIT = 50;
+const RECENT_ALERTS_LIMIT = 200;
 
 export interface WatchSnapshot {
   watches: unknown[];

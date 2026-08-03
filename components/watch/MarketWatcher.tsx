@@ -118,8 +118,8 @@ interface ServerSnapshotState {
   recentCandles?: Candle[] | null;
 }
 
-const ALERT_HISTORY_TTL_MS = 10 * 60 * 1000;
-const MAX_ALERT_HISTORY_ITEMS = 50;
+const ALERT_HISTORY_TTL_MS = 24 * 60 * 60 * 1000; // keep alerts visible for 24h
+const MAX_ALERT_HISTORY_ITEMS = 200;
 type WatchlistCategory = 'stocks' | 'crypto' | 'futures' | 'all';
 // Categories that can be switched off for background scanning/alerts. Mapped to
 // the server's asset-class names for the sync payload.
@@ -525,7 +525,7 @@ export default function MarketWatcher() {
       // replayed stream event do not appear twice (spec B6c).
       setAlertLogs((prev) => {
         if (prev.some((a) => a.id === alertId)) return prev;
-        return [newAlert, ...prev].slice(0, 100);
+        return [newAlert, ...prev].slice(0, MAX_ALERT_HISTORY_ITEMS);
       });
 
       // Only alert (sound + banner) for genuinely fresh events. A reconnect after
