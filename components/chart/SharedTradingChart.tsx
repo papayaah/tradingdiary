@@ -14,6 +14,11 @@ import {
   type IPriceLine,
   type SeriesMarker,
   type Time,
+  type ISeriesPrimitive,
+  type IPrimitivePaneView,
+  type IPrimitivePaneRenderer,
+  type PrimitivePaneViewZOrder,
+  type SeriesAttachedParameter,
 } from 'lightweight-charts';
 import PatternOverlay from '@/components/chart/PatternOverlay';
 import { displaySymbol } from '@/lib/utils/format';
@@ -33,18 +38,8 @@ import {
 } from '@/lib/scanner/patterns';
 import type { TransactionRecord } from '@/lib/db/schema';
 import { Loader2, Play } from 'lucide-react';
-
 const DEFAULT_INTERVALS = ['1m', '5m', '10m', '15m', '1h', '1d'] as const;
-
-// When the earliest loaded bar comes within this many bars of the visible left
-// edge, ask the parent to page in older history. A little slack (not 0) means we
-// prefetch just before the user hits the true edge, so panning feels seamless.
 const LOAD_MORE_THRESHOLD_BARS = 25;
-
-// On a fresh load, open on a recent window rather than fitting the entire
-// history. Fitting everything squeezes bars against `minBarSpacing`, leaving no
-// room to zoom out — which reads as "stuck". Opening zoomed-in gives room to
-// zoom out (revealing loaded bars) and to reach the left edge (fetching more).
 const DEFAULT_VISIBLE_BARS = 140;
 
 export interface SharedTradingChartProps {
@@ -78,9 +73,6 @@ export interface SharedTradingChartProps {
   hasMore?: boolean;
 }
 
-/**
- * Compute the UTC→ET offset in seconds for a given YYYYMMDD date string.
- */
 function getETOffsetSeconds(dateStr: string): number {
   if (!dateStr || dateStr.length !== 8) return 0;
   const year = parseInt(dateStr.substring(0, 4));
@@ -106,9 +98,7 @@ function findClosestCandleTime(candles: CandleData[], transactionTime: string, d
     const year = parseInt(dateStr.substring(0, 4));
     const month = parseInt(dateStr.substring(4, 6)) - 1;
     const day = parseInt(dateStr.substring(6, 8));
-    const etOffset = getETOffsetSeconds(dateStr);
-    const utcSec = Math.floor(Date.UTC(year, month, day, parts[0], parts[1], parts[2] || 0) / 1000);
-    targetSec = utcSec + etOffset;
+    targetSec = Math.floor(Date.UTC(year, month, day, parts[0], parts[1], parts[2] || 0) / 1000);
   } else {
     targetSec = parts[0] * 3600 + parts[1] * 60 + (parts[2] || 0);
   }
@@ -125,6 +115,189 @@ function findClosestCandleTime(candles: CandleData[], transactionTime: string, d
   }
 
   return closest.time;
+}
+
+function drawMetaTraderArrow(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  isBuy: boolean,
+  color: string,
+  barWidth: number = 8,
+  isHovered: boolean = false
+) {
+  const arrowWidth = Math.max(4, Math.min(11, Math.round(barWidth * 0.7)));
+  const arrowHeight = Math.max(5, Math.min(13, Math.round(barWidth * 0.85)));
+  const halfW = arrowWidth / 2;
+  const halfH = arrowHeight / 2;
+
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = isHovered ? '#ffffff' : (isBuy ? '#047857' : '#b91c1c');
+  ctx.lineWidth = isHovered ? 2 : 1;
+
+  ctx.beginPath();
+  if (isBuy) {
+    ctx.moveTo(x, y - halfH);
+    ctx.lineTo(x + halfW, y + halfH);
+    ctx.lineTo(x + halfW / 2, y + halfH);
+    ctx.lineTo(x + halfW / 2, y + halfH + 2);
+    ctx.lineTo(x - halfW / 2, y + halfH + 2);
+    ctx.lineTo(x - halfW / 2, y + halfH);
+    ctx.lineTo(x - halfW, y + halfH);
+  } else {
+    ctx.moveTo(x, y + halfH);
+    ctx.lineTo(x + halfW, y - halfH);
+    ctx.lineTo(x + halfW / 2, y - halfH);
+    ctx.lineTo(x + halfW / 2, y - halfH - 2);
+    ctx.lineTo(x - halfW / 2, y - halfH - 2);
+    ctx.lineTo(x - halfW / 2, y - halfH);
+    ctx.lineTo(x - halfW, y - halfH);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  if (isHovered) {
+    ctx.beginPath();
+    ctx.arc(x, y, halfW + 3, 0, Math.PI * 2);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+export class TradeExecutionPrimitive implements ISeriesPrimitive<Time> {
+  private _chart: IChartApi | null = null;
+  private _series: ISeriesApi<'Candlestick'> | null = null;
+  private _transactions: TransactionRecord[] = [];
+  private _sortedCandles: CandleData[] = [];
+  private _date?: string;
+  private _formatCandleTime: (t: number) => Time;
+  private _isDark: boolean = true;
+  private _paneViews: readonly IPrimitivePaneView[];
+  private _requestUpdate?: () => void;
+
+  constructor(formatCandleTime: (t: number) => Time, isDark: boolean) {
+    this._formatCandleTime = formatCandleTime;
+    this._isDark = isDark;
+    this._paneViews = [new TradeExecutionPaneView(this)];
+  }
+
+  get chart() { return this._chart; }
+  get series() { return this._series; }
+  get transactions() { return this._transactions; }
+  get sortedCandles() { return this._sortedCandles; }
+  get date() { return this._date; }
+  get formatCandleTime() { return this._formatCandleTime; }
+  get isDark() { return this._isDark; }
+
+  attached(param: SeriesAttachedParameter<Time>) {
+    this._chart = param.chart;
+    this._series = param.series as ISeriesApi<'Candlestick'>;
+    this._requestUpdate = param.requestUpdate;
+  }
+
+  detached() {
+    this._chart = null;
+    this._series = null;
+    this._requestUpdate = undefined;
+  }
+
+  update(transactions: TransactionRecord[], sortedCandles: CandleData[], date?: string, isDark?: boolean) {
+    this._transactions = transactions;
+    this._sortedCandles = sortedCandles;
+    this._date = date;
+    if (isDark !== undefined) this._isDark = isDark;
+    this._requestUpdate?.();
+  }
+
+  paneViews(): readonly IPrimitivePaneView[] {
+    return this._paneViews;
+  }
+}
+
+class TradeExecutionPaneView implements IPrimitivePaneView {
+  private _primitive: TradeExecutionPrimitive;
+
+  constructor(primitive: TradeExecutionPrimitive) {
+    this._primitive = primitive;
+  }
+
+  zOrder(): PrimitivePaneViewZOrder {
+    return 'normal';
+  }
+
+  renderer(): IPrimitivePaneRenderer | null {
+    return new TradeExecutionPaneRenderer(this._primitive);
+  }
+}
+
+class TradeExecutionPaneRenderer implements IPrimitivePaneRenderer {
+  private _primitive: TradeExecutionPrimitive;
+
+  constructor(primitive: TradeExecutionPrimitive) {
+    this._primitive = primitive;
+  }
+
+  draw(target: Parameters<IPrimitivePaneRenderer['draw']>[0]) {
+    target.useMediaCoordinateSpace((scope) => {
+      const ctx = scope.context;
+      const chart = this._primitive.chart;
+      const series = this._primitive.series;
+      if (!chart || !series) return;
+
+      const timeScale = chart.timeScale();
+      const transactions = this._primitive.transactions;
+      const sortedCandles = this._primitive.sortedCandles;
+      if (!transactions || transactions.length === 0 || sortedCandles.length === 0) return;
+
+      const mediaSize = scope.mediaSize;
+      const width = mediaSize.width;
+      const height = mediaSize.height;
+
+      let barWidth = 8;
+      if (sortedCandles.length >= 2) {
+        const x0 = timeScale.timeToCoordinate(this._primitive.formatCandleTime(sortedCandles[0].time));
+        const x1 = timeScale.timeToCoordinate(this._primitive.formatCandleTime(sortedCandles[1].time));
+        if (x0 !== null && x1 !== null) {
+          barWidth = Math.abs(x1 - x0);
+        }
+      }
+
+      transactions.forEach((t) => {
+        const tradeTime = findClosestCandleTime(sortedCandles, t.time, this._primitive.date);
+        if (tradeTime === null) return;
+
+        const timeFormatted = this._primitive.formatCandleTime(tradeTime);
+        const x = timeScale.timeToCoordinate(timeFormatted);
+        if (x === null || x < 0 || x > width) return;
+
+        let y: number | null = null;
+        if (typeof t.price === 'number' && isFinite(t.price) && t.price > 0) {
+          y = series.priceToCoordinate(t.price);
+        }
+
+        if (y === null) {
+          const matchedCandle = sortedCandles.find((c) => c.time === tradeTime);
+          if (matchedCandle) {
+            y = series.priceToCoordinate(matchedCandle.close);
+          }
+        }
+
+        if (y === null || y < 0 || y > height) return;
+
+        const isBuy = t.side === 'BUYTOOPEN' || t.side === 'BUYTOCLOSE';
+        const color = isBuy
+          ? (this._primitive.isDark ? '#4ade80' : '#16a34a')
+          : (this._primitive.isDark ? '#f87171' : '#dc2626');
+
+        drawMetaTraderArrow(ctx, x, y, isBuy, color, barWidth, false);
+      });
+    });
+  }
 }
 
 export default function SharedTradingChart({
@@ -164,6 +337,14 @@ export default function SharedTradingChart({
   const markersRef = useRef<{ setMarkers: (markers: SeriesMarker<Time>[]) => void } | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const patternSeriesRef = useRef<ISeriesApi<'Line'>[]>([]);
+  const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const primitiveRef = useRef<TradeExecutionPrimitive | null>(null);
+  const [hoveredTrade, setHoveredTrade] = useState<{
+    trade: TransactionRecord;
+    x: number;
+    y: number;
+    isBuy: boolean;
+  } | null>(null);
 
   // System Theme (Light vs Dark) detection for Chart background and scales
   const [isDark, setIsDark] = useState<boolean>(() => {
@@ -270,6 +451,123 @@ export default function SharedTradingChart({
     }
     return null;
   }, [visibleCandles, autoPatternsEnabled]);
+
+  const updateOverlayCanvas = useCallback(() => {
+    const canvas = overlayCanvasRef.current;
+    const chart = chartRef.current;
+    const candleSeries = candleSeriesRef.current;
+    const container = containerRef.current;
+    if (!canvas || !chart || !candleSeries || !container) return;
+
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+    const dpr = window.devicePixelRatio || 1;
+
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, width, height);
+
+    if (!transactions || transactions.length === 0 || sortedCandles.length === 0) return;
+
+    const timeScale = chart.timeScale();
+
+    // Determine average candle bar spacing in pixels for dynamic scaling
+    let barWidth = 8;
+    if (sortedCandles.length >= 2) {
+      const x0 = timeScale.timeToCoordinate(formatCandleTime(sortedCandles[0].time));
+      const x1 = timeScale.timeToCoordinate(formatCandleTime(sortedCandles[1].time));
+      if (x0 !== null && x1 !== null) {
+        barWidth = Math.abs(x1 - x0);
+      }
+    }
+
+    transactions.forEach((t) => {
+      const tradeTime = findClosestCandleTime(sortedCandles, t.time, date);
+      if (tradeTime === null) return;
+
+      const timeFormatted = formatCandleTime(tradeTime);
+      const x = timeScale.timeToCoordinate(timeFormatted);
+      if (x === null || x < 0 || x > width) return;
+
+      let y: number | null = null;
+      if (typeof t.price === 'number' && isFinite(t.price) && t.price > 0) {
+        y = candleSeries.priceToCoordinate(t.price);
+      }
+
+      if (y === null) {
+        const matchedCandle = sortedCandles.find((c) => c.time === tradeTime);
+        if (matchedCandle) {
+          y = candleSeries.priceToCoordinate(matchedCandle.close);
+        }
+      }
+
+      if (y === null || y < 0 || y > height) return;
+
+      const isBuy = t.side === 'BUYTOOPEN' || t.side === 'BUYTOCLOSE';
+      const color = isBuy ? (isDark ? '#4ade80' : '#16a34a') : (isDark ? '#f87171' : '#dc2626');
+      const isHovered = hoveredTrade?.trade.tradeId === t.tradeId || (hoveredTrade?.trade.time === t.time && hoveredTrade?.trade.price === t.price);
+
+      drawMetaTraderArrow(ctx, x, y, isBuy, color, barWidth, isHovered);
+    });
+  }, [transactions, sortedCandles, date, formatCandleTime, isDark, hoveredTrade]);
+
+  useEffect(() => {
+    updateOverlayCanvas();
+  }, [updateOverlayCanvas, visibleRange]);
+
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!transactions || transactions.length === 0 || !containerRef.current || !chartRef.current || !candleSeriesRef.current) {
+        if (hoveredTrade) setHoveredTrade(null);
+        return;
+      }
+
+      const rect = containerRef.current.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      const timeScale = chartRef.current.timeScale();
+      const candleSeries = candleSeriesRef.current;
+
+      let foundHover: { trade: TransactionRecord; x: number; y: number; isBuy: boolean } | null = null;
+      let minDistance = 14;
+
+      for (const t of transactions) {
+        const tradeTime = findClosestCandleTime(sortedCandles, t.time, date);
+        if (tradeTime === null) continue;
+
+        const x = timeScale.timeToCoordinate(formatCandleTime(tradeTime));
+        if (x === null || x < 0 || x > rect.width) continue;
+
+        let y: number | null = null;
+        if (typeof t.price === 'number' && isFinite(t.price) && t.price > 0) {
+          y = candleSeries.priceToCoordinate(t.price);
+        }
+
+        if (y === null || y < 0 || y > rect.height) continue;
+
+        const dist = Math.hypot(mouseX - x, mouseY - y);
+        if (dist < minDistance) {
+          minDistance = dist;
+          const isBuy = t.side === 'BUYTOOPEN' || t.side === 'BUYTOCLOSE';
+          foundHover = { trade: t, x, y, isBuy };
+        }
+      }
+
+      setHoveredTrade(foundHover);
+    },
+    [transactions, sortedCandles, date, formatCandleTime, hoveredTrade]
+  );
+
+  const handleMouseLeave = useCallback(() => {
+    setHoveredTrade(null);
+  }, []);
 
   // ── Effect A: create the chart + series ONCE per structural change ──────────
   // Rebuilding only on symbol/interval/height/volume (not on every candle
@@ -389,6 +687,10 @@ export default function SharedTradingChart({
     });
     candleSeriesRef.current = candleSeries;
 
+    const primitive = new TradeExecutionPrimitive(formatCandleTime, isDark);
+    candleSeries.attachPrimitive(primitive);
+    primitiveRef.current = primitive;
+
     if (showVolume) {
       const volumeSeries = chart.addSeries(HistogramSeries, {
         priceFormat: { type: 'volume' },
@@ -416,6 +718,7 @@ export default function SharedTradingChart({
     const timeScale = chart.timeScale();
     const onRangeChange = (range: { from: number; to: number } | null) => {
       if (!range) return;
+      updateOverlayCanvas();
       // Lazy-load older history when the user pans near the left edge — but only
       // on genuine user pans, not our own setData/fit/restore.
       if (
@@ -441,10 +744,15 @@ export default function SharedTradingChart({
       }, 150);
     };
     timeScale.subscribeVisibleLogicalRangeChange(onRangeChange);
+    const onTimeRangeChange = () => {
+      updateOverlayCanvas();
+    };
+    timeScale.subscribeVisibleTimeRangeChange(onTimeRangeChange);
 
     const observer = new ResizeObserver(() => {
       if (containerRef.current && chartRef.current) {
         chartRef.current.applyOptions({ width: containerRef.current.clientWidth });
+        updateOverlayCanvas();
       }
     });
     observer.observe(container);
@@ -452,6 +760,11 @@ export default function SharedTradingChart({
     return () => {
       observer.disconnect();
       timeScale.unsubscribeVisibleLogicalRangeChange(onRangeChange);
+      timeScale.unsubscribeVisibleTimeRangeChange(onTimeRangeChange);
+      if (primitiveRef.current && candleSeriesRef.current) {
+        candleSeriesRef.current.detachPrimitive(primitiveRef.current);
+        primitiveRef.current = null;
+      }
       if (visibleRangeTimerRef.current !== null) {
         window.clearTimeout(visibleRangeTimerRef.current);
         visibleRangeTimerRef.current = null;
@@ -559,38 +872,10 @@ export default function SharedTradingChart({
     const markers: SeriesMarker<Time>[] = [];
 
     // 1. Transaction Execution Markers (from Journal/Portfolio)
-    if (transactions && transactions.length > 0) {
-      const seenPriceLines = new Set<string>();
-      transactions.forEach((t) => {
-        const tradeTime = findClosestCandleTime(sortedCandles, t.time, date);
-        if (tradeTime !== null) {
-          const isBuy = t.side === 'BUYTOOPEN' || t.side === 'BUYTOCLOSE';
-          markers.push({
-            time: formatCandleTime(tradeTime),
-            position: isBuy ? 'belowBar' : 'aboveBar',
-            color: isBuy ? '#4ade80' : '#f87171',
-            shape: isBuy ? 'arrowUp' : 'arrowDown',
-            text: `${isBuy ? 'B' : 'S'} ${Math.abs(t.quantity)}`,
-          });
-        }
-        if (typeof t.price === 'number' && isFinite(t.price) && t.price > 0) {
-          const isBuy = t.side === 'BUYTOOPEN' || t.side === 'BUYTOCLOSE';
-          const key = `${isBuy ? 'B' : 'S'}-${t.price.toFixed(2)}`;
-          if (!seenPriceLines.has(key)) {
-            seenPriceLines.add(key);
-            priceLinesRef.current.push(
-              candleSeries.createPriceLine({
-                price: t.price,
-                color: isBuy ? '#4ade80' : '#f87171',
-                lineWidth: 1,
-                lineStyle: LineStyle.Dashed,
-                axisLabelVisible: true,
-                title: isBuy ? 'Buy' : 'Sell',
-              }),
-            );
-          }
-        }
-      });
+    // Precise MetaTrader execution arrows scaled relative to candle bar size
+    // are drawn in frame-perfect sync with lightweight-charts render loop via TradeExecutionPrimitive.
+    if (primitiveRef.current) {
+      primitiveRef.current.update(transactions, sortedCandles, date, isDark);
     }
 
     // 1.5 Scanner detector markers. These are separate from the optional
@@ -921,7 +1206,35 @@ export default function SharedTradingChart({
             <span className="text-xs text-rose-400 font-medium">{error}</span>
           </div>
         ) : (
-          <div ref={containerRef} className="w-full" style={{ height }} />
+          <div
+            className="relative w-full"
+            style={{ height }}
+            onMouseMove={handleMouseMove}
+            onMouseLeave={handleMouseLeave}
+          >
+            <div ref={containerRef} className="w-full h-full" />
+            <canvas
+              ref={overlayCanvasRef}
+              className="absolute inset-0 pointer-events-none z-10"
+            />
+            {hoveredTrade && (
+              <div
+                className="absolute z-30 pointer-events-none transform -translate-x-1/2 -translate-y-full mb-2 bg-card-bg/95 backdrop-blur-md border border-card-border px-2.5 py-1.5 rounded-lg shadow-xl text-xs flex flex-col gap-0.5 animate-in fade-in zoom-in-95 duration-100"
+                style={{ left: hoveredTrade.x, top: hoveredTrade.y - 8 }}
+              >
+                <div className="flex items-center gap-1.5 font-bold">
+                  <span className={hoveredTrade.isBuy ? 'text-profit' : 'text-loss'}>
+                    {hoveredTrade.isBuy ? 'BUY' : 'SELL'}
+                  </span>
+                  <span className="text-foreground">${hoveredTrade.trade.price.toFixed(2)}</span>
+                </div>
+                <div className="text-[10px] text-muted flex items-center gap-2 font-mono">
+                  <span>Qty: {Math.abs(hoveredTrade.trade.quantity)}</span>
+                  <span>{hoveredTrade.trade.time}</span>
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>
