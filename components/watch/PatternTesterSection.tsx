@@ -225,7 +225,7 @@ export function PatternTesterSection({
         {testResult && testResult.success && chartCandles.length > 0 ? (
           <>
             <div
-              className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-[11px] ${
+              className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3.5 py-2 text-[11px] ${
                 selectedPatternId === 'volume-expansion' && !hasVolumeData
                   ? 'border-amber-500/40 bg-amber-500/10'
                   : 'border-card-border/60 bg-card-bg/50'
@@ -243,13 +243,30 @@ export function PatternTesterSection({
                   Volume: {volumeBarCount}/{chartCandles.length} loaded bars
                 </span>
               </div>
-              <span className="text-muted">
-                {selectedPatternId === 'volume-expansion' && !hasVolumeData
-                  ? 'This feed response has no usable volume, so Volume Expansion cannot run.'
-                  : detectorMatches.length > 0
-                    ? 'Arrows mark the candle that completes each setup.'
-                    : 'Try a lower threshold, another interval, or more history.'}
-              </span>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={onToggleAutoPatterns}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border ${
+                    autoPatternsEnabled
+                      ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                      : 'bg-card-bg border-card-border text-muted hover:text-foreground'
+                  }`}
+                  title="Toggle Chart Pattern Recognition & Overlays"
+                >
+                  <Sparkles size={13} className={autoPatternsEnabled ? 'text-amber-400 animate-pulse' : ''} />
+                  <span>Auto Patterns</span>
+                </button>
+
+                <span className="text-muted hidden sm:inline">
+                  {selectedPatternId === 'volume-expansion' && !hasVolumeData
+                    ? 'No usable volume data available.'
+                    : detectorMatches.length > 0
+                      ? 'Arrows mark completing candles.'
+                      : 'Try a lower threshold or interval.'}
+                </span>
+              </div>
             </div>
             <LightweightPatternChart
               symbol={testSymbol}
