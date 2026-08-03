@@ -164,6 +164,33 @@ export default function SharedTradingChart({
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const patternSeriesRef = useRef<ISeriesApi<'Line'>[]>([]);
 
+  // System Theme (Light vs Dark) detection for Chart background and scales
+  const [isDark, setIsDark] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    return document.documentElement.classList.contains('dark') || window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const checkTheme = () => {
+      const isDarkTheme = document.documentElement.classList.contains('dark') || window.matchMedia('(prefers-color-scheme: dark)').matches;
+      setIsDark(isDarkTheme);
+    };
+    checkTheme();
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleMediaChange = (e: MediaQueryListEvent) => setIsDark(e.matches);
+    mediaQuery.addEventListener('change', handleMediaChange);
+
+    const observer = new MutationObserver(checkTheme);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+
+    return () => {
+      mediaQuery.removeEventListener('change', handleMediaChange);
+      observer.disconnect();
+    };
+  }, []);
+
   // Data-diff tracking so we can tell a fresh dataset (→ fitContent) from an
   // older-history prepend (→ preserve the user's scroll position).
   const prevCountRef = useRef(0);
@@ -250,12 +277,17 @@ export default function SharedTradingChart({
     if (!containerRef.current) return;
     const container = containerRef.current;
 
+    const bgColor = isDark ? '#090d16' : '#ffffff';
+    const textColor = isDark ? '#94a3b8' : '#334155';
+    const gridColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.06)';
+    const borderColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
+
     const chart = createChart(container, {
       width: container.clientWidth,
       height,
       layout: {
-        background: { type: ColorType.Solid, color: '#090d16' },
-        textColor: '#94a3b8',
+        background: { type: ColorType.Solid, color: bgColor },
+        textColor,
         fontFamily: 'var(--font-geist-sans), system-ui, -apple-system, sans-serif',
         fontSize: 11,
       },
@@ -289,19 +321,19 @@ export default function SharedTradingChart({
         },
       },
       grid: {
-        vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
-        horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
+        vertLines: { color: gridColor },
+        horzLines: { color: gridColor },
       },
       crosshair: { mode: 0 },
       rightPriceScale: {
-        borderColor: 'rgba(255, 255, 255, 0.1)',
+        borderColor,
         scaleMargins: {
           top: 0.12,
           bottom: showVolume ? 0.25 : 0.08,
         },
       },
       timeScale: {
-        borderColor: 'rgba(255, 255, 255, 0.1)',
+        borderColor,
         timeVisible: !isDaily,
         secondsVisible: false,
         tickMarkFormatter: (time: Time) => {
@@ -431,7 +463,7 @@ export default function SharedTradingChart({
       priceLinesRef.current = [];
       patternSeriesRef.current = [];
     };
-  }, [symbol, interval, height, showVolume, isDaily]);
+  }, [symbol, interval, height, showVolume, isDaily, isDark]);
 
   // ── Effect B1: push candle/volume DATA + position the view ──────────────────
   // Runs only when candle data changes — not on pattern/overlay changes — so
@@ -773,9 +805,9 @@ export default function SharedTradingChart({
   ]);
 
   return (
-    <div className="relative w-full rounded-2xl overflow-hidden border border-card-border bg-[#090d16] shadow-2xl flex flex-col">
+    <div className="relative w-full rounded-2xl overflow-hidden border border-card-border bg-card-bg shadow-2xl flex flex-col">
       {/* Top Chart Header & Timeline Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between px-5 py-3 gap-3 border-b border-card-border/50 bg-[#0c121e]/80 backdrop-blur-md">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between px-5 py-3 gap-3 border-b border-card-border/60 bg-muted-bg/40 backdrop-blur-md">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center text-accent shadow-inner">
             <span className="text-xs font-black uppercase">{symbol.substring(0, 1)}</span>
@@ -862,7 +894,7 @@ export default function SharedTradingChart({
       {/* Chart Canvas Area */}
       <div className="relative w-full">
         {loading && (
-          <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#090d16]/80 backdrop-blur-sm">
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-card-bg/80 backdrop-blur-sm">
             <Loader2 className="w-6 h-6 text-accent animate-spin" />
           </div>
         )}
