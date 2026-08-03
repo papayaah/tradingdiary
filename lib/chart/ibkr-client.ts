@@ -210,26 +210,38 @@ class IbkrClient {
   }
 
   async fetchRecentCandles(symbol: string, interval: string): Promise<OHLCCandle[]> {
-    const root = futuresRoot(symbol);
-    const contract = await this.qualifyFrontMonth(root);
+    // Compute bar size first so an unsupported interval fails fast, before we
+    // touch (and would then needlessly reset) a healthy connection.
     const barSize = barSizeForInterval(interval);
     const duration = durationForInterval(interval);
-
-    await this.connect();
-    this.takePacingSlot();
-    const reqId = this.nextReqId++;
-    const bars = await new Promise<OHLCCandle[]>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.historyReqs.delete(reqId);
-        reject(new Error(`IBKR historicalData timeout for ${root} ${interval}`));
-      }, REQUEST_TIMEOUT_MS);
-      this.historyReqs.set(reqId, { bars: [], resolve, reject, timer });
-      // endDateTime '' = up to now; whatToShow TRADES; useRTH 0 = all Globex
-      // hours (scanner applies its own session filter); formatDate 2 = epoch.
-      this.ib!.reqHistoricalData(reqId, contract, '', duration, barSize as BarSizeSetting, 'TRADES', 0, 2, false);
-    });
-    bars.sort((a, b) => a.time - b.time);
-    return bars;
+    const root = futuresRoot(symbol);
+    try {
+      const contract = await this.qualifyFrontMonth(root);
+      await this.connect();
+      this.takePacingSlot();
+      const reqId = this.nextReqId++;
+      const bars = await new Promise<OHLCCandle[]>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          this.historyReqs.delete(reqId);
+          reject(new Error(`IBKR historicalData timeout for ${root} ${interval}`));
+        }, REQUEST_TIMEOUT_MS);
+        this.historyReqs.set(reqId, { bars: [], resolve, reject, timer });
+        // endDateTime '' = up to now; whatToShow TRADES; useRTH 0 = all Globex
+        // hours (scanner applies its own session filter); formatDate 2 = epoch.
+        this.ib!.reqHistoricalData(reqId, contract, '', duration, barSize as BarSizeSetting, 'TRADES', 0, 2, false);
+      });
+      bars.sort((a, b) => a.time - b.time);
+      return bars;
+    } catch (err) {
+      // Self-heal: a connect/request timeout, disconnect, or stuck socket
+      // otherwise leaves a zombie connection (clientId registered but dead) that
+      // never recovers without a manual restart — exactly what we hit after a
+      // gateway re-auth. Drop it so the NEXT call reconnects fresh. The pacing
+      // guard is not a connection fault, so leave a healthy socket alone there.
+      const message = err instanceof Error ? err.message : String(err);
+      if (!message.includes('pacing guard')) this.teardown();
+      throw err;
+    }
   }
 }
 
