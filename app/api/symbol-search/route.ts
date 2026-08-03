@@ -33,7 +33,9 @@ export async function GET(request: NextRequest) {
   const category = parseSymbolSearchCategory(
     request.nextUrl.searchParams.get('category'),
   );
-  if (!q || q.length < 2) {
+  // Allow single-character queries so real single-letter tickers (U, W, F, T, X)
+  // autocomplete and validate. Empty still returns nothing.
+  if (!q) {
     return NextResponse.json({ results: [] });
   }
 

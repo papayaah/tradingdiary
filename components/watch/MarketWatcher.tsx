@@ -340,7 +340,7 @@ export default function MarketWatcher() {
   alertLogsRef.current = alertLogs;
   const alertPersistTimerRef = useRef<number | null>(null);
   const [addNotice, setAddNotice] = useState<{
-    type: 'success' | 'duplicate';
+    type: 'success' | 'duplicate' | 'error';
     message: string;
   } | null>(null);
   const addNoticeTimerRef = useRef<number | null>(null);
@@ -2220,7 +2220,7 @@ export default function MarketWatcher() {
     void syncScannerSettings(watchlist, selectedPatternId, activeWindow, mins).catch(() => {});
   };
 
-  const showAddNotice = (type: 'success' | 'duplicate', message: string) => {
+  const showAddNotice = (type: 'success' | 'duplicate' | 'error', message: string) => {
     setAddNotice({ type, message });
     if (addNoticeTimerRef.current !== null) {
       window.clearTimeout(addNoticeTimerRef.current);
@@ -2232,7 +2232,7 @@ export default function MarketWatcher() {
   };
 
   // 8. Watchlist Modifiers
-  const handleAddSymbol = (input: string) => {
+  const handleAddSymbol = async (input: string): Promise<boolean> => {
     let symbol = input.trim().toUpperCase();
     if (!symbol) return false;
     if (watchlistCategory === 'futures' && !symbol.includes('=F')) {
@@ -2246,6 +2246,30 @@ export default function MarketWatcher() {
     if (watchlist.some(w => w.symbol === symbol && w.interval === newInterval)) {
       showAddNotice('duplicate', `${symbol} (${newInterval}) is already in your watchlist.`);
       return false;
+    }
+
+    // Validate that an equity ticker actually exists before adding it, so typos
+    // (e.g. "CROS") don't get silently added and scanned forever. Futures/crypto
+    // pass through — they come from presets / the normalized =F,-USD forms, and
+    // Yahoo's search is unreliable for them. If the search itself fails (network),
+    // we don't block the add — only a definitive "no match" rejects.
+    if (watchlistCategory !== 'futures' && watchlistCategory !== 'crypto') {
+      try {
+        const base = process.env.NEXT_PUBLIC_SERVER_URL || '';
+        const params = new URLSearchParams({ q: symbol, category: 'stocks' });
+        const res = await fetch(`${base}/api/symbol-search?${params.toString()}`);
+        if (res.ok) {
+          const data = (await res.json()) as { results?: { symbol?: string }[] };
+          const results = Array.isArray(data.results) ? data.results : [];
+          const found = results.some((r) => (r.symbol ?? '').toUpperCase() === symbol);
+          if (!found) {
+            showAddNotice('error', `"${symbol}" not found — check the ticker symbol.`);
+            return false;
+          }
+        }
+      } catch {
+        // Network/route error — don't block the add on a transient failure.
+      }
     }
 
     const newItem: WatchItem = {
@@ -3043,7 +3067,9 @@ export default function MarketWatcher() {
                     className={`sm:col-span-12 flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${
                       addNotice.type === 'success'
                         ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-400'
-                        : 'border-amber-500/25 bg-amber-500/10 text-amber-400'
+                        : addNotice.type === 'error'
+                          ? 'border-rose-500/25 bg-rose-500/10 text-rose-400'
+                          : 'border-amber-500/25 bg-amber-500/10 text-amber-400'
                     }`}
                   >
                     {addNotice.type === 'success'

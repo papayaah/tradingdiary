@@ -193,7 +193,7 @@ interface TickerInputProps {
   placeholder: string;
   category: SymbolSearchCategory;
   onSearch: (value: string) => void;
-  onAdd: (value: string) => boolean;
+  onAdd: (value: string) => boolean | Promise<boolean>;
   className?: string;
 }
 
@@ -223,7 +223,8 @@ function TickerInput({ placeholder, category, onSearch, onAdd, className }, ref)
   // in-flight requests so results always match the latest keystrokes.
   useEffect(() => {
     const query = value.trim();
-    if (query.length < 2) {
+    // Allow single-character queries — real tickers exist (U, W, F, T, X…).
+    if (query.length < 1) {
       setSuggestions([]);
       setOpen(false);
       setLoading(false);
@@ -267,8 +268,8 @@ function TickerInput({ placeholder, category, onSearch, onAdd, className }, ref)
     return () => document.removeEventListener('mousedown', onDocMouseDown);
   }, []);
 
-  const add = () => {
-    if (onAdd(value)) {
+  const add = async () => {
+    if (await onAdd(value)) {
       setValue('');
       setSuggestions([]);
       setOpen(false);
@@ -276,10 +277,10 @@ function TickerInput({ placeholder, category, onSearch, onAdd, className }, ref)
   };
   useImperativeHandle(ref, () => ({ add }));
 
-  const selectSuggestion = (symbol: string) => {
+  const selectSuggestion = async (symbol: string) => {
     setOpen(false);
     setSuggestions([]);
-    if (onAdd(symbol)) {
+    if (await onAdd(symbol)) {
       setValue('');
     } else {
       setValue(symbol);
