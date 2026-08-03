@@ -60,3 +60,4 @@ terraform.tfvars.json
 .env.deploy
 .env.local.bak*
 .env.ibkr
+.env.ibkr.primary

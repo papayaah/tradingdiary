@@ -1,0 +1,35 @@
+# SECOND local gateway — for testing the PRIMARY account holder's real-time
+# futures data WITHOUT disturbing the existing spcykr123 gateway. It runs on
+# separate host ports (4011 / 5901) and its own container + volume, so both
+# gateways run side by side.
+#
+#   docker-compose -f docker-compose.ibkr-primary.yml -p tradingdiary-ibkr-primary \
+#     --env-file .env.ibkr.primary up -d
+#
+# 2FA: VNC to localhost:5901 (not 5900 — that's the other gateway).
+# Probe the LIVE API on host port 4011.
+#
+# WARNING: this logs in as the PRIMARY username, so it will EVICT any TWS/desktop
+# session on that same login (one active session per username).
+services:
+  ib-gateway-primary:
+    image: ghcr.io/gnzsnz/ib-gateway:stable
+    platform: linux/amd64
+    container_name: tradingdiary-ibkr-primary
+    restart: unless-stopped
+    environment:
+      TWS_USERID: ${IBKR_USER}
+      TWS_PASSWORD: ${IBKR_PASSWORD}
+      TRADING_MODE: ${TRADING_MODE:-live}
+      READ_ONLY_API: "yes"                    # data only; never place orders
+      VNC_SERVER_PASSWORD: ${VNC_PASSWORD}
+      TWOFA_TIMEOUT_ACTION: "restart"
+    ports:
+      - "127.0.0.1:4011:4003"   # live API  → probe this port
+      - "127.0.0.1:4012:4004"   # paper API
+      - "127.0.0.1:5901:5900"   # VNC → approve 2FA here
+    volumes:
+      - ibkr_settings_primary:/home/ibgateway/Jts
+
+volumes:
+  ibkr_settings_primary:

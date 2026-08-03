@@ -138,10 +138,16 @@ export default function MarketDataSettings() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {[
             {
+              id: 'ibkr',
+              name: 'IBKR Gateway (CME)',
+              desc: 'Real-time CME futures via your headless IB Gateway',
+              badge: 'Recommended'
+            },
+            {
               id: 'databento',
               name: 'Databento (GLBX.MDP3 CME)',
               desc: 'Institutional-grade live CME futures feed (OHLCV-1m)',
-              badge: 'Recommended'
+              badge: 'Premium'
             },
             {
               id: 'yahoo',
