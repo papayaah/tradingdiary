@@ -146,11 +146,11 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
               />
             </div>
 
-            {/* 4. Multi-Broker Import Short */}
+            {/* 4. Auto Pattern Detector Short */}
             <div className="relative overflow-hidden group min-h-[180px] flex flex-col justify-between bg-card-bg">
               <video
-                key={`import-${isDarkMode}`}
-                src={`/import-promo${themeSuffix}.mp4`}
+                key={`autoscan-${isDarkMode}`}
+                src={`/auto-scan-promo${themeSuffix}.mp4`}
                 autoPlay
                 loop
                 muted

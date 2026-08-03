@@ -1,6 +1,7 @@
 import { Composition } from 'remotion';
 import React from 'react';
 import { AnalyticsPromo } from './compositions/AnalyticsPromo';
+import { AutoScanPromo } from './compositions/AutoScanPromo';
 import { ImportPromo } from './compositions/ImportPromo';
 import { PatternPromo } from './compositions/PatternPromo';
 import { ProductMashupPromo } from './compositions/ProductMashupPromo';
@@ -116,6 +117,26 @@ export function VideoRoot() {
         fps={FPS}
         width={1920}
         height={1080}
+        defaultProps={{ themeMode: 'light' }}
+      />
+
+      {/* Auto Scan Promo */}
+      <Composition
+        id="AutoScanPromo"
+        component={AutoScanPromo}
+        durationInFrames={330}
+        fps={FPS}
+        width={WIDTH}
+        height={HEIGHT}
+        defaultProps={{ themeMode: 'dark' }}
+      />
+      <Composition
+        id="AutoScanPromoLight"
+        component={AutoScanPromo}
+        durationInFrames={330}
+        fps={FPS}
+        width={WIDTH}
+        height={HEIGHT}
         defaultProps={{ themeMode: 'light' }}
       />
     </>

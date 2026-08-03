@@ -27,6 +27,8 @@
     "video:render:analytics": "npx -p @remotion/cli@4.0.500 remotion render AnalyticsPromo marketing/videos/output/analytics-promo.mp4",
     "video:gif:analytics": "npx -p @remotion/cli@4.0.500 remotion render AnalyticsPromo marketing/videos/output/analytics-promo.gif --codec=gif --scale=0.5",
     "video:render:mashup": "npx -p @remotion/cli@4.0.500 remotion render ProductMashupPromo marketing/videos/output/trading-diary-demo.mp4",
+    "video:render:autoscan": "npx -p @remotion/cli@4.0.500 remotion render AutoScanPromo marketing/videos/output/auto-scan-promo.mp4",
+    "video:render:autoscan:light": "npx -p @remotion/cli@4.0.500 remotion render AutoScanPromoLight marketing/videos/output/auto-scan-promo-light.mp4",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:schema:push": "drizzle-kit push",
