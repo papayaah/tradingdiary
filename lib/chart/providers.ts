@@ -856,23 +856,25 @@ export function getActiveProvider(
         // process), signalled by IBKR_GATEWAY_HOST / IBKR_ENABLED.
         const ibkrConfigured = Boolean(process.env.IBKR_GATEWAY_HOST) || process.env.IBKR_ENABLED === 'true';
 
-        // Explicit single-provider selections.
-        if (futuresPref === 'ibkr' && ibkrConfigured) {
-            return trackProvider(new IBKRProvider(), 'owner');
-        }
-        if (futuresPref === 'databento' && databentoKey) {
-            return trackProvider(new DatabentoProvider(databentoKey), owner(userConfig?.databentoKey));
-        }
+        // Explicit Yahoo needs no fallback.
         if (futuresPref === 'yahoo') {
             return trackProvider(new YahooProvider(), 'owner');
         }
 
-        // 'auto': build a graceful fallback chain IBKR -> Databento -> Yahoo.
+        // For every other selection ('ibkr', 'databento', or 'auto') build a
+        // chain with the preferred provider FIRST and Yahoo as a last-resort
+        // fallback, so a down gateway or missing key degrades gracefully instead
+        // of erroring. effectiveProviderName() reports whichever actually served,
+        // so the UI badge shows the real source (e.g. "Yahoo Finance" on fallback).
         const chain: ChartProvider[] = [];
-        if (ibkrConfigured) chain.push(trackProvider(new IBKRProvider(), 'owner'));
-        if (databentoKey) chain.push(trackProvider(new DatabentoProvider(databentoKey), owner(userConfig?.databentoKey)));
+        if ((futuresPref === 'ibkr' || futuresPref === 'auto') && ibkrConfigured) {
+            chain.push(trackProvider(new IBKRProvider(), 'owner'));
+        }
+        if ((futuresPref === 'databento' || futuresPref === 'auto') && databentoKey) {
+            chain.push(trackProvider(new DatabentoProvider(databentoKey), owner(userConfig?.databentoKey)));
+        }
         chain.push(trackProvider(new YahooProvider(), 'owner'));
-        return chain.length === 1 ? chain[0] : new FallbackProvider('Futures (auto)', chain);
+        return chain.length === 1 ? chain[0] : new FallbackProvider('Futures', chain);
     }
 
     // Handle Equities Data Feed Selection
