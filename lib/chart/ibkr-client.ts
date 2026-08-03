@@ -14,7 +14,14 @@ import { futuresRoot } from './providers';
 
 const HOST = process.env.IBKR_GATEWAY_HOST || '127.0.0.1';
 const PORT = Number(process.env.IBKR_GATEWAY_PORT || 4001);
-const CLIENT_ID = Number(process.env.IBKR_CLIENT_ID || 7);
+const BASE_CLIENT_ID = Number(process.env.IBKR_CLIENT_ID || 7);
+// Rotate the clientId across reconnects. When the gateway restarts (nightly auto
+// restart or a re-auth), the old clientId can stay "in use" on the gateway for a
+// while, so immediately reconnecting with the SAME id yields a dead/zombie socket
+// (the bug that forced manual scanner restarts). Cycling through a few ids sidesteps
+// the stale registration so the reconnect is clean. Step of 10 keeps the scanner's
+// ids (7,17,27,37) disjoint from the web's (8,18,28,38).
+const CLIENT_ID_ROTATION = 4;
 
 // A down gateway fails instantly (connection refused), so this timeout only
 // guards rare hangs. Kept under the scanner's per-fetch budget
@@ -99,11 +106,15 @@ class IbkrClient {
   private readonly historyReqs = new Map<number, PendingHistory>();
   private readonly contractCache = new Map<string, { contract: Contract; day: string }>();
   private readonly requestTimes: number[] = [];
+  private connectSeq = 0;
 
   private connect(): Promise<void> {
     if (this.ready) return this.ready;
+    // Fresh clientId each (re)connect so a stale registration on the gateway
+    // (after its nightly restart/re-auth) doesn't hand us a zombie socket.
+    const clientId = BASE_CLIENT_ID + (this.connectSeq++ % CLIENT_ID_ROTATION) * 10;
     this.ready = new Promise<void>((resolve, reject) => {
-      const ib = new IBApi({ host: HOST, port: PORT, clientId: CLIENT_ID });
+      const ib = new IBApi({ host: HOST, port: PORT, clientId });
       this.ib = ib;
 
       const timer = setTimeout(() => {

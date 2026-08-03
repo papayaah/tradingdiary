@@ -35,9 +35,13 @@ services:
       TRADING_MODE: ${TRADING_MODE:-live}
       READ_ONLY_API: "yes"
       VNC_SERVER_PASSWORD: ${VNC_PASSWORD}
-      # Daily soft restart reuses the session — NO 2FA. Keeps the gateway healthy
-      # without a weekly-only uptime. Pick an off-hours time in the server TZ.
-      AUTO_RESTART_TIME: "02:00 AM"
+      # Run the gateway clock in ET so the restart time tracks the CME session
+      # regardless of DST (the host is UTC). Override with IBKR_TIME_ZONE if needed.
+      TIME_ZONE: ${IBKR_TIME_ZONE:-America/New_York}
+      # Daily soft restart reuses the session — NO 2FA. Set to 5:15 PM ET, inside
+      # the CME futures maintenance halt (5–6 PM ET), so the restart blip never
+      # lands during active trading. With TIME_ZONE=ET this stays correct across DST.
+      AUTO_RESTART_TIME: "05:15 PM"
       # Retry the login after a 2FA timeout instead of giving up.
       TWOFA_TIMEOUT_ACTION: "restart"
       RELOGIN_AFTER_TWOFA_TIMEOUT: "yes"
