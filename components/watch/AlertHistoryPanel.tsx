@@ -238,19 +238,43 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
   onToggle,
   onAlertClick,
 }: AlertHistoryCardProps) {
-  const hasIntradayChange =
-    Number.isFinite(alert.intradayChange)
-    && Number.isFinite(alert.intradayChangePercent);
-  const intradayDirection = (alert.intradayChange ?? 0) > 0
+  const effectiveChangePercent = React.useMemo(() => {
+    if (Number.isFinite(alert.intradayChangePercent)) {
+      return alert.intradayChangePercent!;
+    }
+    if (alert.candles && alert.candles.length >= 2) {
+      const firstOpen = alert.candles[0].open;
+      const lastClose = alert.candles[alert.candles.length - 1].close;
+      if (firstOpen > 0) {
+        return ((lastClose - firstOpen) / firstOpen) * 100;
+      }
+    }
+    return null;
+  }, [alert.intradayChangePercent, alert.candles]);
+
+  const effectiveChangeAmount = React.useMemo(() => {
+    if (Number.isFinite(alert.intradayChange)) {
+      return alert.intradayChange!;
+    }
+    if (alert.candles && alert.candles.length >= 2) {
+      const firstOpen = alert.candles[0].open;
+      const lastClose = alert.candles[alert.candles.length - 1].close;
+      return lastClose - firstOpen;
+    }
+    return null;
+  }, [alert.intradayChange, alert.candles]);
+
+  const hasIntradayChange = effectiveChangePercent !== null;
+  const intradayDirection = (effectiveChangeAmount ?? 0) > 0
     ? 'profit'
-    : (alert.intradayChange ?? 0) < 0
+    : (effectiveChangeAmount ?? 0) < 0
       ? 'loss'
       : 'flat';
-  const formattedIntradayAmount = hasIntradayChange
-    ? `${(alert.intradayChange ?? 0) < 0 ? '-' : ''}$${Math.abs(alert.intradayChange ?? 0).toFixed(2)}`
+  const formattedIntradayAmount = hasIntradayChange && effectiveChangeAmount !== null
+    ? `${effectiveChangeAmount < 0 ? '-' : '+'}$${Math.abs(effectiveChangeAmount).toFixed(2)}`
     : '';
-  const formattedIntradayPercent = hasIntradayChange
-    ? `${(alert.intradayChangePercent ?? 0).toFixed(2)}%`
+  const formattedIntradayPercent = hasIntradayChange && effectiveChangePercent !== null
+    ? `${effectiveChangePercent > 0 ? '+' : ''}${effectiveChangePercent.toFixed(2)}%`
     : '';
 
   return (
@@ -301,16 +325,16 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
             <span>Price: ${alert.price.toFixed(2)}</span>
             {hasIntradayChange ? (
               <span
-                className={
+                className={`font-bold ${
                   intradayDirection === 'profit'
                     ? 'text-profit'
                     : intradayDirection === 'loss'
                       ? 'text-loss'
                       : 'text-muted'
-                }
-                title="Change from the previous regular-session close"
+                }`}
+                title="Price change over session window"
               >
-                Day: {formattedIntradayAmount} ({formattedIntradayPercent})
+                ({formattedIntradayAmount ? `${formattedIntradayAmount} / ` : ''}{formattedIntradayPercent})
               </span>
             ) : null}
           </div>
