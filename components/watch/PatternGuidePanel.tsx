@@ -3,14 +3,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ScanSearch, ChevronDown, SlidersHorizontal, Check } from 'lucide-react';
 import {
-  DEFAULT_PATTERN_SETTINGS,
-  normalizePatternSettings,
   PATTERN_PRESETS,
+  DEFAULT_PATTERN_SETTINGS,
+  getPatternDefinition,
+  normalizePatternSettings,
   type PatternId,
   type PatternSettings,
 } from '@/lib/scanner/patterns';
-import { InteractivePatternVisualizer } from './InteractivePatternVisualizer';
 import { DETECTOR_RULE_GUIDANCE } from './pattern-settings/detectorGuidance';
+import { InteractivePatternVisualizer } from './InteractivePatternVisualizer';
 
 interface PatternGuidePanelProps {
   value: PatternId;
@@ -19,11 +20,11 @@ interface PatternGuidePanelProps {
   minMovePercent?: number;
   requiredCount?: number;
   maxBodyOverlapPercent?: number;
+  patternSettings?: PatternSettings;
   onMinMoveChange?: (val: number) => void;
   onRequiredCountChange?: (val: number) => void;
   onMaxBodyOverlapChange?: (val: number) => void;
-  patternSettings?: PatternSettings;
-  onPatternSettingsChange?: (settings: PatternSettings) => void;
+  onPatternSettingsChange?: (next: PatternSettings) => void;
 }
 
 interface PreviewCandle {
@@ -130,25 +131,20 @@ const PatternPreview = React.memo(function PatternPreview({
 export function PatternGuidePanel({
   value,
   onChange,
-  description = 'Choose one detector for every symbol in this watchlist.',
+  description: customDescription,
   minMovePercent = 0.25,
   requiredCount = 3,
   maxBodyOverlapPercent = 100,
+  patternSettings,
   onMinMoveChange,
   onRequiredCountChange,
   onMaxBodyOverlapChange,
-  patternSettings = DEFAULT_PATTERN_SETTINGS,
   onPatternSettingsChange,
 }: PatternGuidePanelProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isGuideExpanded, setIsGuideExpanded] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const selectedPreset = PATTERN_PRESETS.find((preset) => preset.id === value) ?? PATTERN_PRESETS[0];
-  const ruleGuidance = DETECTOR_RULE_GUIDANCE[value];
-  const resolvedPatternSettings = React.useMemo(
-    () => normalizePatternSettings(patternSettings),
-    [patternSettings],
-  );
 
   useEffect(() => {
     if (!isOpen) return;
@@ -170,10 +166,15 @@ export function PatternGuidePanel({
     };
   }, [isOpen]);
 
+  const definition = getPatternDefinition(value);
+  const description = customDescription ?? definition?.shortDescription ?? selectedPreset.shortDescription;
+  const resolvedPatternSettings = normalizePatternSettings(patternSettings ?? DEFAULT_PATTERN_SETTINGS);
+  const ruleGuidance = DETECTOR_RULE_GUIDANCE[value] ?? { minBodySummaryLabel: 'Min Body' };
+
   return (
     <section
       ref={containerRef}
-      className="relative z-30 mb-3 space-y-2 rounded-xl border border-card-border/60 bg-muted-bg/20 p-2.5 shadow-sm"
+      className="relative z-30 mb-3 space-y-2 rounded-xl border border-card-border/60 bg-card-bg p-2.5 shadow-sm"
       aria-labelledby="pattern-selector-title"
     >
       {/* Top Header: Left Title/Subtitle + Right Flushed Trigger Button & Parameters Toggle */}
@@ -194,7 +195,7 @@ export function PatternGuidePanel({
             aria-expanded={isOpen}
             aria-controls="pattern-selector-options"
             onClick={() => setIsOpen((open) => !open)}
-            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-accent/40 bg-card-bg/90 px-2 py-1.5 text-left transition-all hover:border-accent hover:bg-card-bg shadow-sm sm:w-[360px]"
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-accent/40 bg-card-bg px-2 py-1.5 text-left transition-all hover:border-accent shadow-sm sm:w-[360px]"
           >
             <PatternPreview patternId={selectedPreset.id} />
             <span className="min-w-0 flex-1">
@@ -211,7 +212,7 @@ export function PatternGuidePanel({
           <button
             type="button"
             onClick={() => setIsGuideExpanded((exp) => !exp)}
-            className="hidden lg:flex items-center gap-1.5 text-[10px] font-mono text-muted bg-card-bg border border-card-border/60 px-2.5 py-1.5 rounded-lg hover:border-accent/40 hover:text-foreground transition-all cursor-pointer shadow-sm"
+            className="hidden lg:flex items-center gap-1.5 text-[10px] font-mono text-muted bg-muted-bg/50 border border-card-border/60 px-2.5 py-1.5 rounded-lg hover:border-accent/40 hover:text-foreground transition-all cursor-pointer shadow-sm"
             title="Click to expand Pattern Settings & Visualizer"
           >
             <span>{ruleGuidance.minBodySummaryLabel}: <strong className="text-foreground">{minMovePercent}%</strong></span>
@@ -228,23 +229,16 @@ export function PatternGuidePanel({
               <>
                 <span>• Range: <strong className="text-foreground">{resolvedPatternSettings.rangeBreakout.lookbackBars} bars</strong></span>
                 <span>• Buffer: <strong className="text-foreground">{resolvedPatternSettings.rangeBreakout.minBreakoutPercent.toFixed(2)}%</strong></span>
-                {resolvedPatternSettings.rangeBreakout.volumeConfirmationMultiplier !== null ? (
-                  <span>• Vol: <strong className="text-foreground">{resolvedPatternSettings.rangeBreakout.volumeConfirmationMultiplier}×</strong></span>
-                ) : null}
               </>
             )}
             {value === 'volume-expansion' && (
               <>
                 <span>• Baseline: <strong className="text-foreground">{resolvedPatternSettings.volumeExpansion.lookbackBars} bars</strong></span>
                 <span>• Volume: <strong className="text-foreground">{resolvedPatternSettings.volumeExpansion.volumeMultiplier.toFixed(1)}×</strong></span>
-                <span>• Coverage: <strong className="text-foreground">{resolvedPatternSettings.volumeExpansion.minCoveragePercent}%</strong></span>
               </>
             )}
             {value === 'engulfing-reversal' && (
               <>
-                {resolvedPatternSettings.engulfingReversal.minPriorBodyPercent > 0 ? (
-                  <span>• Prior body: <strong className="text-foreground">{resolvedPatternSettings.engulfingReversal.minPriorBodyPercent.toFixed(2)}%</strong></span>
-                ) : null}
                 <span>• Strength: <strong className="text-foreground">{resolvedPatternSettings.engulfingReversal.minBodyRatio.toFixed(1)}×</strong></span>
               </>
             )}
@@ -266,11 +260,11 @@ export function PatternGuidePanel({
         </div>
       </div>
 
-      {/* Full-Width Expanded Dropdown Menu Overlay (Matching Original Full-Width Box) */}
+      {/* Semantic Theme Dropdown Overlay (Works in both Light & Dark themes) */}
       {isOpen ? (
         <div
           id="pattern-selector-options"
-          className="relative z-50 w-full rounded-xl border border-accent/40 bg-[#0f172a] p-2.5 shadow-2xl space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-150"
+          className="relative z-50 w-full rounded-xl border border-card-border bg-card-bg p-2.5 shadow-2xl space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-150"
           role="listbox"
           aria-label="Pattern"
         >
@@ -293,8 +287,8 @@ export function PatternGuidePanel({
                   }}
                   className={`relative flex min-h-[70px] items-center gap-2.5 rounded-lg border p-2 text-left transition-all ${
                     selected
-                      ? 'border-accent bg-accent/15 text-foreground shadow-md ring-1 ring-accent/30'
-                      : 'border-card-border/60 bg-[#162032] text-muted hover:border-accent/50 hover:bg-[#1e293b] hover:text-foreground'
+                      ? 'border-accent bg-accent/10 text-foreground shadow-md ring-1 ring-accent/30'
+                      : 'border-card-border/60 bg-muted-bg/30 text-muted hover:border-accent/50 hover:bg-muted-bg/60 hover:text-foreground'
                   }`}
                 >
                   <PatternPreview patternId={preset.id} large />
@@ -322,10 +316,10 @@ export function PatternGuidePanel({
             minMovePercent={minMovePercent}
             requiredCount={requiredCount}
             maxBodyOverlapPercent={maxBodyOverlapPercent}
+            patternSettings={patternSettings}
             onMinMoveChange={onMinMoveChange}
             onRequiredCountChange={onRequiredCountChange}
             onMaxBodyOverlapChange={onMaxBodyOverlapChange}
-            patternSettings={resolvedPatternSettings}
             onPatternSettingsChange={onPatternSettingsChange}
           />
         </div>

@@ -194,10 +194,10 @@ export function InteractivePatternVisualizer({
             <Sparkles size={18} />
           </div>
           <div>
-            <h4 className="text-sm font-bold text-foreground flex items-center gap-2">
+            <h4 className="text-base font-bold text-foreground flex items-center gap-2">
               Pattern settings & visual guide: <span className="text-accent">{patternDefinition.name}</span>
             </h4>
-            <p className="text-[11px] text-muted">
+            <p className="text-xs text-muted">
               These settings apply globally to every symbol in the watchlist.
             </p>
           </div>
@@ -205,32 +205,32 @@ export function InteractivePatternVisualizer({
 
         {/* Direction & Scenario Toggles */}
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[9px] font-bold uppercase tracking-wider text-muted">
+          <span className="text-xs font-bold uppercase tracking-wider text-muted">
             Preview direction
           </span>
           <div className="flex items-center rounded-lg border border-card-border bg-muted-bg p-0.5 text-xs">
             <button
               type="button"
               onClick={() => setDirection('bullish')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${
                 direction === 'bullish'
                   ? 'bg-profit/15 text-profit'
                   : 'text-muted hover:text-foreground'
               }`}
             >
-              <TrendingUp size={13} />
+              <TrendingUp size={14} />
               Bullish
             </button>
             <button
               type="button"
               onClick={() => setDirection('bearish')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${
                 direction === 'bearish'
                   ? 'bg-loss/15 text-loss'
                   : 'text-muted hover:text-foreground'
               }`}
             >
-              <TrendingDown size={13} />
+              <TrendingDown size={14} />
               Bearish
             </button>
           </div>
@@ -238,9 +238,9 @@ export function InteractivePatternVisualizer({
           <button
             type="button"
             onClick={() => setShowExplanation((prev) => !prev)}
-            className="flex items-center gap-1 rounded-lg border border-card-border bg-muted-bg px-2.5 py-1 text-[11px] font-medium text-muted hover:text-foreground transition-colors"
+            className="flex items-center gap-1.5 rounded-lg border border-card-border bg-muted-bg px-3 py-1.5 text-xs font-semibold text-muted hover:text-foreground transition-colors"
           >
-            <HelpCircle size={13} />
+            <HelpCircle size={14} />
             {showExplanation ? 'Hide Guide' : 'How it works'}
           </button>
         </div>
@@ -423,30 +423,30 @@ export function InteractivePatternVisualizer({
           />
         ) : null}
 
-        <div className="basis-full rounded-lg border border-card-border bg-card-bg/70 px-3 py-2">
-          <div className="mb-2 flex items-center gap-1.5 text-[10px] font-bold text-foreground">
-            <Info size={13} className="shrink-0 text-accent" />
+        <div className="basis-full rounded-xl border border-card-border bg-card-bg/70 p-3">
+          <div className="mb-2 flex items-center gap-1.5 text-xs font-bold text-foreground">
+            <Info size={14} className="shrink-0 text-accent" />
             Current detector rules
           </div>
-          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {ruleGuidance.currentRules.map((rule) => (
-              <div key={rule.label} className="rounded-md border border-card-border/60 bg-muted-bg/40 px-2 py-1.5 text-[9px]">
+              <div key={rule.label} className="rounded-lg border border-card-border/60 bg-muted-bg/40 p-2 text-xs">
                 <span className="block font-bold text-foreground">{rule.label}</span>
                 <span className="text-muted">{rule.value}</span>
               </div>
             ))}
           </div>
           {!isConsecutive ? (
-            <p className="mt-2 text-[9px] leading-relaxed text-muted">
+            <p className="mt-2 text-xs leading-relaxed text-muted">
               The preview below demonstrates the adjustable signal-body threshold only.
               A real match must also pass every fixed rule listed above.
             </p>
           ) : null}
-          <div className="mt-2 border-t border-card-border/60 pt-2">
-            <span className="text-[9px] font-bold text-foreground">
+          <div className="mt-2 border-t border-card-border/60 pt-2 text-xs">
+            <span className="font-bold text-foreground">
               Recommended next controls (not active yet):
             </span>
-            <span className="ml-1 text-[9px] text-muted">
+            <span className="ml-1 text-muted">
               {ruleGuidance.recommendedControls.join(' · ')}
             </span>
           </div>

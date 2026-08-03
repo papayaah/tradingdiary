@@ -8,7 +8,7 @@ interface MomentumBurstControlsProps {
   onChange?: (value: MomentumBurstSettings) => void;
 }
 
-const optionClass = (selected: boolean) => `rounded-md border px-2 py-1 text-[10px] font-bold transition-colors ${
+const optionClass = (selected: boolean) => `rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors ${
   selected
     ? 'border-accent bg-accent/15 text-accent'
     : 'border-card-border bg-card-bg text-muted hover:text-foreground'
@@ -23,14 +23,14 @@ export function MomentumBurstControls({
   };
 
   return (
-    <div className="basis-full rounded-lg border border-accent/20 bg-accent/5 p-3">
-      <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-foreground">
+    <div className="basis-full rounded-xl border border-accent/20 bg-accent/5 p-3.5 space-y-3">
+      <div className="text-xs font-bold uppercase tracking-wider text-foreground">
         Momentum Burst controls
       </div>
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <div className="space-y-1.5">
-          <span className="block text-xs font-medium text-muted">Body Baseline</span>
-          <div className="grid grid-cols-4 gap-1">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="space-y-2">
+          <span className="block text-xs font-semibold text-foreground">Body Baseline</span>
+          <div className="grid grid-cols-4 gap-1.5">
             {[5, 10, 20, 50].map((bars) => (
               <button
                 key={bars}
@@ -42,12 +42,12 @@ export function MomentumBurstControls({
               </button>
             ))}
           </div>
-          <p className="text-[9px] text-muted">Controls how much recent price action defines a normal candle body.</p>
+          <p className="text-xs text-muted">Controls how much recent price action defines a normal candle body.</p>
         </div>
 
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-muted">Required Body Expansion</span>
+            <span className="text-xs font-semibold text-foreground">Required Body Expansion</span>
             <span className="font-mono text-xs font-bold text-accent">
               {value.bodyMultiplier.toFixed(1)}×
             </span>
@@ -58,11 +58,10 @@ export function MomentumBurstControls({
             max="5"
             step="0.1"
             value={value.bodyMultiplier}
-            onChange={(event) => update({ bodyMultiplier: Number(event.target.value) })}
-            className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-card-border accent-accent"
-            aria-label="Required candle body expansion multiplier"
+            onChange={(e) => update({ bodyMultiplier: parseFloat(e.target.value) })}
+            className="w-full accent-accent cursor-pointer"
           />
-          <div className="flex justify-between text-[9px] font-mono text-muted">
+          <div className="flex items-center justify-between text-[11px] text-muted font-mono">
             <span>1.1× sensitive</span>
             <span>1.8× standard</span>
             <span>5× rare</span>

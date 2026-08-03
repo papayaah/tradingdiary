@@ -7,7 +7,7 @@ interface RangeBreakoutControlsProps {
   value: RangeBreakoutSettings;
   onChange?: (value: RangeBreakoutSettings) => void;
 }
-const optionClass = (selected: boolean) => `rounded-md border px-2 py-1 text-[10px] font-bold transition-colors ${
+const optionClass = (selected: boolean) => `rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors ${
   selected
     ? 'border-accent bg-accent/15 text-accent'
     : 'border-card-border bg-card-bg text-muted hover:text-foreground'
@@ -22,14 +22,14 @@ export function RangeBreakoutControls({
   };
 
   return (
-    <div className="basis-full rounded-lg border border-accent/20 bg-accent/5 p-3">
-      <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-foreground">
+    <div className="basis-full rounded-xl border border-accent/20 bg-accent/5 p-3.5 space-y-3">
+      <div className="text-xs font-bold uppercase tracking-wider text-foreground">
         Range Breakout controls
       </div>
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <div className="space-y-1.5">
-          <span className="block text-xs font-medium text-muted">Range Lookback</span>
-          <div className="grid grid-cols-4 gap-1">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="space-y-2">
+          <span className="block text-xs font-semibold text-foreground">Range Lookback</span>
+          <div className="grid grid-cols-4 gap-1.5">
             {[5, 10, 20, 50].map((bars) => (
               <button
                 key={bars}
@@ -41,12 +41,12 @@ export function RangeBreakoutControls({
               </button>
             ))}
           </div>
-          <p className="text-[9px] text-muted">Longer ranges produce fewer, more significant breaks.</p>
+          <p className="text-xs text-muted">Longer ranges produce fewer, more significant breaks.</p>
         </div>
 
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-muted">Minimum Close Beyond Range</span>
+            <span className="text-xs font-semibold text-foreground">Minimum Close Beyond Range</span>
             <span className="font-mono text-xs font-bold text-accent">
               {value.minBreakoutPercent.toFixed(2)}%
             </span>
@@ -58,14 +58,14 @@ export function RangeBreakoutControls({
             step="0.05"
             value={value.minBreakoutPercent}
             onChange={(event) => update({ minBreakoutPercent: Number(event.target.value) })}
-            className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-card-border accent-accent"
+            className="w-full accent-accent cursor-pointer"
             aria-label="Minimum close distance beyond the range"
           />
-          <p className="text-[9px] text-muted">Filters closes that barely cross the previous high or low.</p>
+          <p className="text-xs text-muted">Filters closes that barely cross the previous high or low.</p>
         </div>
 
-        <div className="space-y-1.5">
-          <label className="flex cursor-pointer items-center justify-between gap-2 text-xs font-medium text-muted">
+        <div className="space-y-2">
+          <label className="flex cursor-pointer items-center justify-between gap-2 text-xs font-semibold text-foreground">
             Require Volume Confirmation
             <input
               type="checkbox"
@@ -73,11 +73,11 @@ export function RangeBreakoutControls({
               onChange={(event) => update({
                 volumeConfirmationMultiplier: event.target.checked ? 1.5 : null,
               })}
-              className="accent-accent"
+              className="accent-accent h-4 w-4"
             />
           </label>
           {value.volumeConfirmationMultiplier !== null ? (
-            <div className="grid grid-cols-3 gap-1">
+            <div className="grid grid-cols-3 gap-1.5">
               {[1.5, 2, 3].map((multiplier) => (
                 <button
                   key={multiplier}
@@ -90,11 +90,11 @@ export function RangeBreakoutControls({
               ))}
             </div>
           ) : (
-            <div className="rounded-md border border-card-border/60 bg-card-bg px-2 py-1 text-[9px] text-muted">
+            <div className="rounded-lg border border-card-border/60 bg-card-bg px-2.5 py-1.5 text-xs text-muted">
               Disabled — price-only breakout
             </div>
           )}
-          <p className="text-[9px] text-muted">Requires usable volume on at least 80% of lookback bars.</p>
+          <p className="text-xs text-muted">Requires usable volume on at least 80% of lookback bars.</p>
         </div>
       </div>
     </div>
