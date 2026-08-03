@@ -8,7 +8,8 @@
 # ── one-time setup on the server ────────────────────────────────────────────
 #   docker network create tradingdiary-ibkr-net           # shared with the app
 #   cd /srv/tradingdiary
-#   # put IBKR_API_USER / IBKR_API_PASSWORD / VNC_PASSWORD in /srv/tradingdiary/.env
+#   # put IBKR_USER / IBKR_PASSWORD / VNC_PASSWORD in /srv/tradingdiary/.env
+#   # (same var names as .env.ibkr / .env.ibkr.primary — just different creds)
 #   docker compose -p tradingdiary-ibkr -f docker-compose.ibkr.server.yml up -d
 #   # then complete 2FA once (SSH-tunnel VNC — see below), and leave it running.
 #
@@ -29,9 +30,9 @@ services:
     container_name: tradingdiary-ibkr
     restart: unless-stopped
     environment:
-      TWS_USERID: ${IBKR_API_USER}
-      TWS_PASSWORD: ${IBKR_API_PASSWORD}
-      TRADING_MODE: "live"
+      TWS_USERID: ${IBKR_USER}
+      TWS_PASSWORD: ${IBKR_PASSWORD}
+      TRADING_MODE: ${TRADING_MODE:-live}
       READ_ONLY_API: "yes"
       VNC_SERVER_PASSWORD: ${VNC_PASSWORD}
       # Daily soft restart reuses the session — NO 2FA. Keeps the gateway healthy

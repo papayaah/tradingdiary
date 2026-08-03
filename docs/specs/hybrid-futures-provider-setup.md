@@ -125,7 +125,7 @@ docker-compose.ibkr.server.yml → ib-gateway                      (started ONCE
 **One-time server setup:**
 ```bash
 docker network create tradingdiary-ibkr-net
-# add IBKR_API_USER / IBKR_API_PASSWORD / VNC_PASSWORD to /srv/tradingdiary/.env
+# add IBKR_USER / IBKR_PASSWORD / VNC_PASSWORD to /srv/tradingdiary/.env
 docker compose -p tradingdiary-ibkr -f docker-compose.ibkr.server.yml up -d
 # complete 2FA once via SSH-tunnel VNC:  ssh -L 5900:127.0.0.1:5900 root@SERVER → vnc://localhost:5900
 ```
