@@ -25,6 +25,12 @@ services:
       ADMIN_EMAILS: ${ADMIN_EMAILS}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       POLYGON_API_KEY: ${POLYGON_API_KEY}
+      # IBKR gateway for the browser chart's /api/watch futures fetches. Uses a
+      # DISTINCT clientId from the scanner (default 7) so the two connections
+      # don't collide on the gateway. Reached over the shared ibkr-net network.
+      IBKR_GATEWAY_HOST: ${IBKR_GATEWAY_HOST:-ib-gateway}
+      IBKR_GATEWAY_PORT: ${IBKR_GATEWAY_PORT:-4003}
+      IBKR_CLIENT_ID: ${IBKR_WEB_CLIENT_ID:-8}
       # Web Push. The web process does not currently send push, but keep the keys
       # symmetric with the scanner so a future route handler cannot fail silently.
       NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
@@ -34,6 +40,9 @@ services:
       - "127.0.0.1:${APP_PORT:-3000}:3000"
     volumes:
       - media_storage:/srv/tradingdiary/media
+    networks:
+      - default
+      - ibkr-net
 
   postgres:
     image: postgres:16-alpine
