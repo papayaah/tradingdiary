@@ -34,8 +34,10 @@ export interface PatternTesterSectionProps {
   isTesting: boolean;
   onRunTest: (e: React.FormEvent) => void;
   testResult: PatternTestResult | null;
-  displayedCandles: Candle[];
   testerCandles: Candle[];
+  onLoadMoreHistory?: () => void;
+  loadingMore?: boolean;
+  hasMore?: boolean;
   autoPatternsEnabled: boolean;
   onToggleAutoPatterns: () => void;
   testCurrentDayOnly: boolean;
@@ -62,8 +64,10 @@ export function PatternTesterSection({
   isTesting,
   onRunTest,
   testResult,
-  displayedCandles,
   testerCandles,
+  onLoadMoreHistory,
+  loadingMore = false,
+  hasMore = false,
   autoPatternsEnabled,
   onToggleAutoPatterns,
   testCurrentDayOnly,
@@ -77,7 +81,7 @@ export function PatternTesterSection({
   patternSettings = DEFAULT_PATTERN_SETTINGS,
   onPatternSettingsChange,
 }: PatternTesterSectionProps) {
-  const chartCandles = testerCandles.length > 0 ? testerCandles : displayedCandles;
+  const chartCandles = testerCandles;
   const detectorMatches = React.useMemo(
     () => scanAllPatterns(
       chartCandles,
@@ -218,7 +222,7 @@ export function PatternTesterSection({
 
       {/* Right Chart Area */}
       <div className="lg:col-span-8 space-y-4">
-        {testResult && testResult.success && displayedCandles.length > 0 ? (
+        {testResult && testResult.success && chartCandles.length > 0 ? (
           <>
             <div
               className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-[11px] ${
@@ -264,7 +268,10 @@ export function PatternTesterSection({
               maxBodyOverlapPercent={maxBodyOverlapPercent}
               patternSettings={patternSettings}
               scannerPatternMarkersEnabled
-              subtitle={`Showing ${displayedCandles.length} candles of ${testerCandles.length} loaded (${testInterval})`}
+              subtitle={`${chartCandles.length} candles loaded (${testInterval})`}
+              onLoadMoreHistory={onLoadMoreHistory}
+              loadingMore={loadingMore}
+              hasMore={hasMore}
             />
           </>
         ) : (

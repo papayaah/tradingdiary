@@ -4,16 +4,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Bell, 
   BellOff, 
-  Play, 
   Plus, 
   Volume2, 
   VolumeX, 
-  RefreshCw, 
   CheckCircle2, 
-  XCircle, 
   AlertTriangle,
-  TrendingUp,
-  TrendingDown,
   Clock,
   Search,
   Sliders,
@@ -28,9 +23,7 @@ import {
 } from 'lucide-react';
 import { getChartDB } from '@/lib/chart/cache';
 import AlertHistoryPanel from './AlertHistoryPanel';
-import PatternOverlay from '@/components/chart/PatternOverlay';
 import LightweightPatternChart from '@/components/chart/LightweightPatternChart';
-import { detectAllPatterns, DoubleTopBottomResult, CupAndHandleResult } from '@/lib/chart/patterns';
 import {
   BatchScanControl,
   ScanCountdown,
@@ -320,16 +313,12 @@ export default function MarketWatcher() {
     testIntervalRef.current = testInterval;
   });
 
-  const [selectedSetupTime, setSelectedSetupTime] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'watchlist' | 'tester'>(() => {
     if (typeof window === 'undefined') return 'watchlist';
     const saved = localStorage.getItem('watcher-active-tab');
     return saved === 'tester' ? 'tester' : 'watchlist';
   });
-  const [chartOffset, setChartOffset] = useState(0);
   const [nextScanIndex, setNextScanIndex] = useState(0);
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   
   const [expandedRowIndex, setExpandedRowIndex] = useState<number | null>(null);
   const [watchlistView, setWatchlistView] = useState<WatchlistView>('compact');
@@ -1597,14 +1586,6 @@ export default function MarketWatcher() {
     });
   };
 
-  const formatEasternTime = (timestamp: number) =>
-    new Date(timestamp * 1000).toLocaleTimeString('en-US', {
-      timeZone: 'America/New_York',
-      hour12: false,
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-
   const persistAlertHistorySoon = (logs: AlertLog[]) => {
     if (alertPersistTimerRef.current !== null) {
       window.clearTimeout(alertPersistTimerRef.current);
@@ -2332,8 +2313,6 @@ export default function MarketWatcher() {
       setTestSymbol(item.symbol);
       setTestInterval(item.interval);
       setTestMinMove(newMinMove);
-      setSelectedSetupTime(null);
-      setChartOffset(0);
 
       // Instantly show existing cached candles if available for quick feedback
       if (item.candles && item.candles.length > 0) {
@@ -2549,8 +2528,6 @@ export default function MarketWatcher() {
 
     setIsTesting(true);
     setTestResult(null);
-    setSelectedSetupTime(null);
-    setChartOffset(0);
     // New symbol/interval → reset infinite-history paging.
     hasMoreHistoryRef.current = true;
     setHasMoreHistory(true);
@@ -2797,299 +2774,39 @@ export default function MarketWatcher() {
   // The Pattern Tester previews the same global minimum used by live scans.
   // Expanded watchlist charts keep their row-specific minimum for inspection.
   const analysisMinMove = activeTab === 'tester' ? newMinMove : testMinMove;
+  const testerHistoryPanningEnabled =
+    testInterval === '1h' ||
+    testInterval === '1d' ||
+    testInterval === 'D' ||
+    !testCurrentDayOnly;
 
-  // Price analysis & pattern scanning computed dynamically on the filtered candles
-  const currentPattern = React.useMemo(
-    () => detectPattern(
-      testerCandles,
-      analysisMinMove,
-      requiredCandleCount,
-      selectedPatternId,
-      maxBodyOverlapPercent,
-      patternSettings,
-    ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      testerCandles,
-      analysisMinMove,
-      testInterval,
-      requiredCandleCount,
-      selectedPatternId,
-      maxBodyOverlapPercent,
-      patternSettings,
-    ],
-  );
-  const { matched: currentPatternMatched, message: currentPatternMessage } = currentPattern;
-  const currentMatches = React.useMemo(
-    () => scanAllPatterns(
-      testerCandles,
-      analysisMinMove,
-      requiredCandleCount,
-      selectedPatternId,
-      maxBodyOverlapPercent,
-      patternSettings,
-    ),
-    [
-      testerCandles,
-      analysisMinMove,
-      requiredCandleCount,
-      selectedPatternId,
-      maxBodyOverlapPercent,
-      patternSettings,
-    ],
-  );
-
-  const getDisplayedCandles = () => {
-    const total = testerCandles.length;
-    if (total === 0) return [];
-    const isLongInterval = testInterval === '1h' || testInterval === '1d' || testInterval === 'D';
-    if (isLongInterval) {
-      return testerCandles;
-    }
-    const count = Math.min(total, 80);
-    const start = Math.max(0, total - count - chartOffset);
-    const end = Math.max(count, total - chartOffset);
-    return testerCandles.slice(start, end);
-  };
-
-  const displayedCandles = React.useMemo(
-    () => getDisplayedCandles(),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [testerCandles, chartOffset],
-  );
-
-  // Price ranges
-  let minPrice = 0;
-  let maxPrice = 0;
-  let priceRange = 1;
-  const paddingTop = 20;
-  const paddingBottom = 30;
-  const paddingLeft = 15;
-  const paddingRight = 65;
-  
-  if (displayedCandles.length > 0) {
-    const highs = displayedCandles.map(c => c.high);
-    const lows = displayedCandles.map(c => c.low);
-    maxPrice = Math.max(...highs);
-    minPrice = Math.min(...lows);
-    priceRange = maxPrice - minPrice || 1;
-  }
-
-  const getY = (price: number) => {
-    const chartHeight = 300 - paddingTop - paddingBottom;
-    return 300 - paddingBottom - ((price - minPrice) / priceRange) * chartHeight;
-  };
-
-  const chartWidth = 800 - paddingLeft - paddingRight;
-  const candleWidth = displayedCandles.length ? chartWidth / displayedCandles.length : 0;
-  const getX = (idx: number) => {
-    return paddingLeft + idx * candleWidth + candleWidth / 2;
-  };
-
-  // Mouse hover handler
-  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement, MouseEvent>) => {
-    if (!displayedCandles.length) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    
-    // Scale X, Y from client rect to 800 x 300 viewBox coordinates
-    const svgX = (x / rect.width) * 800;
-    const svgY = (y / rect.height) * 300;
-    
-    const chartX = svgX - paddingLeft;
-    const idx = Math.floor(chartX / candleWidth);
-    if (idx >= 0 && idx < displayedCandles.length) {
-      setHoveredIndex(idx);
-      setMousePos({ x: svgX, y: svgY });
-    } else {
-      setHoveredIndex(null);
-      setMousePos(null);
-    }
-  };
-
-  const handleMouseLeave = () => {
-    setHoveredIndex(null);
-    setMousePos(null);
-  };
-
-  const handleSelectSetup = (setupTime: number) => {
-    setSelectedSetupTime(selectedSetupTime === setupTime ? null : setupTime);
-    if (!testResult || !testResult.success) return;
-    
-    const total = testerCandles.length;
-    const idx = testerCandles.findIndex(c => c.time === setupTime);
-    if (idx !== -1) {
-      const count = Math.min(total, 80);
-      const targetOffset = Math.max(0, Math.min(total - count, total - idx - Math.floor(count / 2)));
-      setChartOffset(targetOffset);
-    }
-  };
-
-  const renderChartOnly = () => {
+  const renderJustChartCanvas = () => {
     if (!testResult || !testResult.success || testResult.candles.length === 0) return null;
     if (testerCandles.length === 0) {
       return (
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-8 text-center text-sm text-amber-300">
+        <div className="bg-muted-bg px-4 py-10 text-center text-sm text-muted">
           No candles are available for today&apos;s selected Eastern Time session.
         </div>
       );
     }
-    // Older bars can only surface when the view isn't pinned to the current day.
-    // Long intervals (1h/1d) ignore the current-day filter, so they always allow
-    // panning back; short intervals require "Current Day Only" to be unchecked.
-    const testerHistoryPanningEnabled =
-      testInterval === '1h' ||
-      testInterval === '1d' ||
-      testInterval === 'D' ||
-      !testCurrentDayOnly;
+
     return (
-      <div className="space-y-4">
-        {/* Title Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-card-border/40">
-          <div>
-            <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-              <Clock size={14} className="text-accent" />
-              {testSymbol.toUpperCase()} Intraday Candlestick Chart
-            </h3>
-            <p className="text-[10px] text-muted">
-              {testerCandles.length} candles loaded ({testInterval}) · zoom out or drag left for more history
-            </p>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            {/* Current Day Only Checkbox */}
-            <label className="flex items-center gap-1.5 text-[10px] font-semibold text-muted cursor-pointer hover:text-foreground select-none">
-              <input
-                type="checkbox"
-                checked={testCurrentDayOnly}
-                onChange={(e) => setTestCurrentDayOnly(e.target.checked)}
-                className="rounded border-card-border text-accent focus:ring-accent h-3 w-3 cursor-pointer"
-              />
-              <span>Current Day Only</span>
-            </label>
-
-            <button
-              onClick={handleToggleAutoPatterns}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border ${
-                autoPatternsEnabled
-                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                  : 'bg-muted-bg text-muted border-card-border hover:text-foreground'
-              }`}
-              title="Toggle Automated Chart Pattern Recognition & Overlays"
-            >
-              <Sparkles size={13} className={autoPatternsEnabled ? 'text-amber-400 animate-pulse' : ''} />
-              <span>Auto Patterns</span>
-            </button>
-
-            <div className="text-[10px] font-mono text-muted bg-muted-bg border border-card-border px-2 py-0.5 rounded">
-              {testResult.provider}
-            </div>
-          </div>
-        </div>
-
-        <LightweightPatternChart
-          symbol={testSymbol}
-          candles={testerCandles}
-          height={380}
-          autoPatternsEnabled={autoPatternsEnabled}
-          onTogglePatterns={handleToggleAutoPatterns}
-          interval={testInterval}
-          onIntervalChange={(newIv) => {
-            setTestInterval(newIv);
-            executePatternTest(testSymbol, newIv);
-          }}
-          currentDayOnly={testCurrentDayOnly}
-          onToggleCurrentDayOnly={(val) => setTestCurrentDayOnly(val)}
-          providerBadge={testResult?.provider || 'Tiingo'}
-          subtitle={`${testerCandles.length} candles loaded (${testInterval}) · zoom out for more`}
-          onLoadMoreHistory={testerHistoryPanningEnabled ? loadOlderHistory : undefined}
-          loadingMore={isLoadingHistory}
-          hasMore={testerHistoryPanningEnabled && hasMoreHistory}
-        />
-      </div>
-    );
-  };
-
-  const renderJustChartCanvas = () => {
-    if (!testResult || !testResult.success || testResult.candles.length === 0) return null;
-    if (displayedCandles.length === 0) {
-      return (
-        <div className="bg-card-bg px-4 py-8 text-center text-xs text-amber-500 font-semibold border-b border-card-border">
-          No candles are available for the selected trading session.
-        </div>
-      );
-    }
-    return (
-      <div className="p-3 bg-muted-bg/30 border-b border-card-border/60">
-        <LightweightPatternChart
-          symbol={testSymbol || 'WATCHLIST'}
-          candles={displayedCandles}
-          height={340}
-          autoPatternsEnabled={autoPatternsEnabled}
-          onTogglePatterns={handleToggleAutoPatterns}
-          interval={testInterval}
-          onIntervalChange={(iv: string) => {
-            setTestInterval(iv);
-            executePatternTest(testSymbol, iv);
-          }}
-          currentDayOnly={testCurrentDayOnly}
-          onToggleCurrentDayOnly={setTestCurrentDayOnly}
-          providerBadge={testResult.provider}
-        />
-      </div>
-    );
-  };
-
-  const renderSetupsGrid = () => {
-    if (!testResult || !testResult.success) return null;
-    return (
-      <div className="bg-card-bg border border-card-border shadow-xl rounded-2xl p-6">
-        <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4">
-          Daily Setups Detected ({currentMatches.length})
-        </h3>
-        {currentMatches.length === 0 ? (
-          <div className="p-4 bg-muted-bg/30 border border-card-border rounded-xl text-xs text-muted text-center">
-            No setup triggers found in today&apos;s data.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 max-h-[400px] overflow-y-auto pr-1">
-            {currentMatches.map((m, mIdx) => {
-              const isSelected = selectedSetupTime === m.time;
-              return (
-                <div
-                  key={mIdx}
-                  onClick={() => handleSelectSetup(m.time)}
-                  className={`flex flex-col justify-between p-3.5 rounded-xl text-xs border cursor-pointer transition-all hover:scale-[1.02] ${
-                    isSelected
-                      ? m.type === 'bullish'
-                        ? 'bg-emerald-950/35 border-emerald-500/50 text-emerald-400 font-bold ring-1 ring-emerald-500/20'
-                        : 'bg-rose-950/35 border-rose-500/50 text-rose-400 font-bold ring-1 ring-rose-500/20'
-                      : m.type === 'bullish'
-                      ? 'bg-emerald-950/10 border-emerald-900/20 text-emerald-400 hover:border-emerald-600/30'
-                      : 'bg-rose-950/10 border-rose-900/20 text-rose-400 hover:border-rose-600/30'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-1.5 font-bold">
-                      {m.type === 'bullish' ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                      <span className="tracking-wider">{m.type.toUpperCase()} SETUP</span>
-                    </div>
-                    <span className="font-semibold text-foreground">
-                      {m.type === 'bullish' ? '+' : '-'}{m.change.toFixed(2)}%
-                    </span>
-                  </div>
-                  
-                  <div className="flex items-center justify-between text-[10px] text-muted border-t border-card-border/20 pt-2 font-mono">
-                    <span>{new Date(m.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                    <span>SETUP</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      <LightweightPatternChart
+        symbol={testSymbol}
+        candles={testerCandles}
+        height={300}
+        autoPatternsEnabled={autoPatternsEnabled}
+        onTogglePatterns={handleToggleAutoPatterns}
+        interval={testInterval}
+        providerBadge={testResult.provider}
+        subtitle={`${testerCandles.length} candles loaded (${testInterval})`}
+        selectedPatternId={selectedPatternId}
+        minMovePercent={analysisMinMove}
+        requiredCount={requiredCandleCount}
+        maxBodyOverlapPercent={maxBodyOverlapPercent}
+        scannerPatternMarkersEnabled
+        patternSettings={patternSettings}
+      />
     );
   };
 
@@ -3656,8 +3373,10 @@ export default function MarketWatcher() {
             isTesting={isTesting}
             onRunTest={handleRunTest}
             testResult={testResult}
-            displayedCandles={displayedCandles}
             testerCandles={testerCandles}
+            onLoadMoreHistory={testerHistoryPanningEnabled ? loadOlderHistory : undefined}
+            loadingMore={isLoadingHistory}
+            hasMore={testerHistoryPanningEnabled && hasMoreHistory}
             autoPatternsEnabled={autoPatternsEnabled}
             onToggleAutoPatterns={handleToggleAutoPatterns}
             testCurrentDayOnly={testCurrentDayOnly}
