@@ -39,7 +39,11 @@ services:
       AUTO_RESTART_TIME: "02:00 AM"
       # Retry the login after a 2FA timeout instead of giving up.
       TWOFA_TIMEOUT_ACTION: "restart"
-      RELOGIN_AFTER_2FA_TIMEOUT: "yes"
+      RELOGIN_AFTER_TWOFA_TIMEOUT: "yes"
+      # Auto-select the 2FA device so the weekly re-auth skips the "IB Key /
+      # One-Time Passcode" picker and goes straight to a phone tap. Set
+      # IBKR_TWOFA_DEVICE in the server .env to your device name (e.g. "IB Key").
+      TWOFA_DEVICE: ${IBKR_TWOFA_DEVICE:-}
     ports:
       # VNC only, loopback only. Access via SSH tunnel; never expose publicly.
       - "127.0.0.1:5900:5900"

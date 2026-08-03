@@ -815,7 +815,7 @@ export default function SharedTradingChart({
           </div>
           <div className="flex flex-col">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-black text-foreground tracking-tight">{title || `${displaySymbol(symbol)} Candlestick Chart`}</span>
+              <span className="text-sm font-black text-foreground tracking-tight">{title || displaySymbol(symbol)}</span>
               {providerBadge && (
                 <span className="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-card-bg text-muted border border-card-border rounded-md">
                   {providerBadge}

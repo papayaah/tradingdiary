@@ -27,7 +27,7 @@ services:
       - "127.0.0.1:4002:4004"   # paper API (used when TRADING_MODE=paper)
       - "127.0.0.1:5900:5900"   # VNC
     volumes:
-      - ibkr_settings:/root/Jts   # persist Gateway settings between restarts
+      - ibkr_settings:/home/ibgateway/Jts   # persist Gateway settings (image runs as user ibgateway, HOME=/home/ibgateway)
 
 volumes:
   ibkr_settings:
