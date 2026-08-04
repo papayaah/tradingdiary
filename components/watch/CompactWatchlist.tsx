@@ -23,6 +23,8 @@ interface CompactWatchItem {
   lastError?: string;
   provider?: string;
   candles?: Candle[];
+  intradayChange?: number | null;
+  intradayChangePercent?: number | null;
 }
 
 export interface CompactWatchlistEntry {
@@ -59,9 +61,14 @@ const CompactCard = React.memo(function CompactCard({
   const { item, miniCandles, index } = entry;
   const latestPrice = miniCandles.at(-1)?.close;
   const priceChange = useMemo(() => {
+    // Prefer the server-computed change (correct prior-close/settlement baseline);
+    // fall back to the client window calc only when the server value is absent.
+    if (item.intradayChangePercent != null && Number.isFinite(item.intradayChangePercent)) {
+      return { amount: item.intradayChange ?? 0, percent: item.intradayChangePercent };
+    }
     const sourceCandles = item.candles?.length ? item.candles : miniCandles;
     return calculateWatchPriceChange(item.symbol, item.interval, sourceCandles);
-  }, [item.candles, item.interval, item.symbol, miniCandles]);
+  }, [item.intradayChange, item.intradayChangePercent, item.candles, item.interval, item.symbol, miniCandles]);
   const changeDirection = (priceChange?.amount ?? 0) > 0
     ? 'profit'
     : (priceChange?.amount ?? 0) < 0

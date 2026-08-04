@@ -23,6 +23,8 @@ interface WatchlistRowItem {
   lastError?: string;
   provider?: string;
   candles?: Candle[];
+  intradayChange?: number | null;
+  intradayChangePercent?: number | null;
 }
 
 interface WatchlistRowProps {
@@ -45,9 +47,15 @@ function WatchlistRow({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const latestPrice = miniCandles.at(-1)?.close;
   const priceChange = React.useMemo(() => {
+    // Prefer the server-computed change: it uses the correct baseline (equity
+    // prior RTH close, futures prior settlement). Fall back to a client window
+    // calc only when the server value is absent (e.g. a signed-out session).
+    if (item.intradayChangePercent != null && Number.isFinite(item.intradayChangePercent)) {
+      return { amount: item.intradayChange ?? 0, percent: item.intradayChangePercent };
+    }
     const sourceCandles = item.candles?.length ? item.candles : miniCandles;
     return calculateWatchPriceChange(item.symbol, item.interval, sourceCandles);
-  }, [item.candles, item.interval, item.symbol, miniCandles]);
+  }, [item.intradayChange, item.intradayChangePercent, item.candles, item.interval, item.symbol, miniCandles]);
   const changeClass = (priceChange?.amount ?? 0) > 0
     ? 'text-profit'
     : (priceChange?.amount ?? 0) < 0
