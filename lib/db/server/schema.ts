@@ -136,6 +136,10 @@ export const serverWatchState = pgTable("server_watch_state", {
     lastError: text("last_error"),
     // At most 60 ascending, session-filtered CandleSnapshot rows (see spec).
     recentCandles: jsonb("recent_candles").notNull().default('[]'),
+    // Session change vs the prior close/settlement (equity: prior RTH close;
+    // futures: prior daily settlement). Surfaced on the watchlist row.
+    intradayChange: doublePrecision("intraday_change"),
+    intradayChangePercent: doublePrecision("intraday_change_percent"),
     updatedAt: timestamp("updated_at", { mode: 'string' }).notNull().defaultNow(),
 });
 

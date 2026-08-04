@@ -27,7 +27,31 @@ import { getSharedCandleService, QuotaExceededError } from '@/lib/scanner/shared
 import { isSessionActive, type AssetClass, type WatchSession } from '@/lib/scanner/sessions';
 import { SCAN_QUEUE, scannerConfig } from '@/lib/scanner/env';
 import { createConnection, type ScanJob } from '@/lib/scanner/queue';
-import { calculateEquityIntradayChange } from '@/lib/market/intraday-change';
+import { calculateEquityIntradayChange, calculateFuturesDailyChange } from '@/lib/market/intraday-change';
+
+// Prior futures settlement (= prior daily bar close) changes only once per
+// trading day, so cache the daily bars per symbol per New York date. Fetching
+// them on every scan would roughly double IBKR request volume and trip the
+// gateway's pacing guard.
+const futuresDailyCache = new Map<string, { day: string; candles: Array<{ time: number; close: number }> }>();
+
+function newYorkDateKey(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
+async function getFuturesDailyBars(symbol: string): Promise<Array<{ time: number; close: number }>> {
+  const day = newYorkDateKey();
+  const cached = futuresDailyCache.get(symbol);
+  if (cached && cached.day === day) return cached.candles;
+  const res = await getSharedCandleService().getCandlesForWatch(symbol, '1d', 'futures');
+  futuresDailyCache.set(symbol, { day, candles: res.candles });
+  return res.candles;
+}
 
 export interface ScanOutcome {
   status: 'idle' | 'normal' | 'bullish' | 'bearish' | 'no-data' | 'error';
@@ -150,9 +174,21 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
 
   const status: ScanOutcome['status'] = !hasData ? 'no-data' : matched ?? 'normal';
   const willAlert = !!matched && !scannerConfig.shadow;
-  const intradayChange = watch.assetClass === 'equity'
-    ? calculateEquityIntradayChange(candles)
-    : null;
+  let intradayChange: { amount: number; percent: number } | null = null;
+  if (watch.assetClass === 'equity') {
+    intradayChange = calculateEquityIntradayChange(candles);
+  } else if (watch.assetClass === 'futures' && last) {
+    // Futures "change" is vs the prior session settlement (what IBKR shows), i.e.
+    // the close of the prior daily bar — not an arbitrary point in the intraday
+    // window. Fetch daily bars through the shared cache (deduped/cached) and
+    // compare the current price to the prior settlement.
+    try {
+      const daily = await getFuturesDailyBars(watch.symbol);
+      intradayChange = calculateFuturesDailyChange(daily, last.close);
+    } catch {
+      intradayChange = null;
+    }
+  }
   let createdAlertId: string | null = null;
 
   await db.transaction(async (tx) => {
@@ -167,6 +203,8 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
         lastProvider: providerName,
         lastError: null,
         recentCandles: boundRecent(candles),
+        intradayChange: intradayChange?.amount ?? null,
+        intradayChangePercent: intradayChange?.percent ?? null,
         updatedAt: nowIso,
       })
       .onConflictDoUpdate({
@@ -179,6 +217,8 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
           lastProvider: providerName,
           lastError: null,
           recentCandles: boundRecent(candles),
+          intradayChange: intradayChange?.amount ?? null,
+          intradayChangePercent: intradayChange?.percent ?? null,
           updatedAt: nowIso,
         },
       });
@@ -239,6 +279,8 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
       lastProvider: providerName,
       lastError: null,
       recentCandles: boundRecent(candles),
+      intradayChange: intradayChange?.amount ?? null,
+      intradayChangePercent: intradayChange?.percent ?? null,
     };
 
     const events: Array<{ type: string; payload: unknown }> = [];

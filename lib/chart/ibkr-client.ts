@@ -84,6 +84,22 @@ export function ibkrContractSpecForRoot(root: string): Pick<Contract, 'symbol' |
   };
 }
 
+/**
+ * Normalize an IBKR historical bar time to epoch seconds. Intraday bars arrive as
+ * epoch-second strings (formatDate=2); daily bars arrive as "YYYYMMDD" trading
+ * dates. Without this, daily-bar times parse as tiny numbers (~1970).
+ */
+function parseBarTime(raw: string | number): number {
+  const s = String(raw).trim();
+  if (/^\d{8}$/.test(s)) {
+    const year = Number(s.slice(0, 4));
+    const month = Number(s.slice(4, 6)) - 1;
+    const day = Number(s.slice(6, 8));
+    return Math.floor(Date.UTC(year, month, day) / 1000);
+  }
+  return Number(s);
+}
+
 function barSizeForInterval(interval: string): string {
   const size = BAR_SIZE_BY_INTERVAL[interval];
   if (!size) throw new Error(`IBKR: unsupported interval "${interval}"`);
@@ -191,9 +207,11 @@ class IbkrClient {
             req.resolve(req.bars);
             return;
           }
-          // formatDate=2 => epoch seconds; IBKR sends -1 for empty OHLC.
+          // Intraday bars come back as epoch seconds (formatDate=2); DAILY bars
+          // come back as "YYYYMMDD" strings, so normalize both. IBKR sends -1 for
+          // empty OHLC.
           if (open >= 0 && close >= 0) {
-            req.bars.push({ time: Number(time), open, high, low, close, volume: volume >= 0 ? volume : 0 });
+            req.bars.push({ time: parseBarTime(time), open, high, low, close, volume: volume >= 0 ? volume : 0 });
           }
         },
       );

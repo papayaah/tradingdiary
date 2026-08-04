@@ -2,9 +2,34 @@ import { describe, expect, it } from 'vitest';
 import {
   calculateCandleWindowChange,
   calculateEquityIntradayChange,
+  calculateFuturesDailyChange,
   calculateWatchPriceChange,
   candleCountForHours,
 } from './intraday-change';
+
+describe('calculateFuturesDailyChange', () => {
+  const daily = [
+    { time: 1, close: 28500 }, // older
+    { time: 2, close: 28891.75 }, // prior settlement (second-to-last)
+    { time: 3, close: 29050 }, // today's in-progress bar (last)
+  ];
+
+  it('measures change from the prior daily close (settlement), not the in-progress bar', () => {
+    const result = calculateFuturesDailyChange(daily, 29108.75);
+    expect(result).not.toBeNull();
+    expect(result!.amount).toBeCloseTo(217, 2); // 29108.75 - 28891.75
+    expect(result!.percent).toBeCloseTo(0.751, 2);
+  });
+
+  it('returns null without at least two daily bars or a finite price', () => {
+    expect(calculateFuturesDailyChange([{ time: 1, close: 100 }], 105)).toBeNull();
+    expect(calculateFuturesDailyChange(daily, Number.NaN)).toBeNull();
+  });
+
+  it('returns null when the prior close is zero', () => {
+    expect(calculateFuturesDailyChange([{ time: 1, close: 0 }, { time: 2, close: 0 }], 105)).toBeNull();
+  });
+});
 
 describe('calculateEquityIntradayChange', () => {
   it('uses the prior regular-session close and ignores prior after-hours candles', () => {

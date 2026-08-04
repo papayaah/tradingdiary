@@ -105,3 +105,25 @@ export function calculateEquityIntradayChange(
     percent: (amount / previousClose.close) * 100,
   };
 }
+
+/**
+ * Calculate a futures contract's session change from the prior settlement — the
+ * baseline IBKR (and exchanges) display as "Change". Futures trade nearly around
+ * the clock, so there is no regular-session prior close; the correct baseline is
+ * the previous trading day's settlement, which equals the close of the prior
+ * DAILY bar. `dailyCandles` must be ascending daily bars; the last is the
+ * current (in-progress) session and the one before it is the prior settlement.
+ */
+export function calculateFuturesDailyChange(
+  dailyCandles: PriceCandle[],
+  lastPrice: number,
+): IntradayChange | null {
+  if (!Number.isFinite(lastPrice) || dailyCandles.length < 2) return null;
+  const priorClose = dailyCandles[dailyCandles.length - 2]?.close;
+  if (!Number.isFinite(priorClose) || priorClose === 0) return null;
+  const amount = lastPrice - priorClose;
+  return {
+    amount,
+    percent: (amount / priorClose) * 100,
+  };
+}

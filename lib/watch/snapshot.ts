@@ -38,6 +38,8 @@ export async function buildSnapshot(userId: string): Promise<WatchSnapshot> {
       lastProvider: serverWatchState.lastProvider,
       lastError: serverWatchState.lastError,
       recentCandles: serverWatchState.recentCandles,
+      intradayChange: serverWatchState.intradayChange,
+      intradayChangePercent: serverWatchState.intradayChangePercent,
       updatedAt: serverWatchState.updatedAt,
     })
     .from(serverWatchState)
