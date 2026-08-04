@@ -5,8 +5,8 @@
 // one acquisition key (and therefore one upstream fetch) — while genuinely
 // different data is never merged just because display labels resemble each other.
 // Provider awareness comes from the capability registry, since the same display
-// symbol maps differently across providers (e.g. futures ROOT=F on Yahoo vs
-// ROOT.C.0 on Databento; crypto BTC-USD on Yahoo vs BTCUSD on Tiingo).
+// symbol maps differently across providers (e.g. futures ROOT=F on Yahoo vs a
+// bare root for IBKR; crypto BTC-USD on Yahoo vs BTCUSD on Tiingo).
 
 import { isFuturesSymbol, futuresRoot } from '@/lib/chart/providers';
 import type { AssetClass } from '@/lib/scanner/sessions';
@@ -29,7 +29,6 @@ function canonicalFutures(symbol: string, form: FuturesSymbology): string {
   // rebuild the selected provider's form.
   const root = futuresRoot(symbol);
   if (form === 'yahoo') return `${root}=F`;
-  if (form === 'databento') return `${root}.C.0`;
   return root;
 }
 

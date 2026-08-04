@@ -7,6 +7,7 @@ import {
   type PatternId,
 } from '@/lib/scanner/patterns';
 import { InteractivePatternVisualizer } from './InteractivePatternVisualizer';
+import FocusBackdrop from './FocusBackdrop';
 
 interface PatternSelectorProps {
   value: PatternId;
@@ -155,11 +156,22 @@ function PatternSelector({
   }, [isOpen]);
 
   return (
-    <section
-      ref={containerRef}
-      className="mb-3 space-y-2 rounded-lg border border-card-border/50 bg-muted-bg/20 p-2"
-      aria-labelledby="pattern-selector-title"
-    >
+    <>
+      {isOpen ? (
+        <FocusBackdrop
+          label="Close pattern selector"
+          onDismiss={() => setIsOpen(false)}
+        />
+      ) : null}
+      <section
+        ref={containerRef}
+        className={`relative mb-3 space-y-2 rounded-lg border bg-muted-bg/20 p-2 transition-shadow ${
+          isOpen
+            ? 'z-[100] border-accent/50 shadow-2xl shadow-background'
+            : 'border-card-border/50'
+        }`}
+        aria-labelledby="pattern-selector-title"
+      >
       <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center justify-between">
         <div>
           <div id="pattern-selector-title" className="flex items-center gap-1.5 text-xs font-bold text-foreground">
@@ -248,7 +260,8 @@ function PatternSelector({
           onMaxBodyOverlapChange={onMaxBodyOverlapChange}
         />
       </div>
-    </section>
+      </section>
+    </>
   );
 }
 

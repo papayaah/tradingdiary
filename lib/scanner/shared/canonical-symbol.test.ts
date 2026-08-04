@@ -31,12 +31,6 @@ describe('canonicalizeSymbol — futures collapse per provider form', () => {
     expect(new Set(canon)).toEqual(new Set(['MNQ=F']));
   });
 
-  it('collapses every notation to Databento continuous form', () => {
-    const cap = getProviderCapability('Databento (GLBX.MDP3 CME)', 'futures');
-    const canon = notations.map((s) => canonicalizeSymbol(s, 'futures', cap));
-    expect(new Set(canon)).toEqual(new Set(['MNQ.C.0']));
-  });
-
   it('uses the bare product root for a root-symbology provider', () => {
     const cap = getProviderCapability('Polygon.io', 'futures');
     expect(canonicalizeSymbol('MNQU6', 'futures', cap)).toBe('MNQ');
@@ -63,9 +57,8 @@ describe('getProviderCapability', () => {
     expect(yahoo.futuresSymbology).toBe('yahoo');
     expect(yahoo.returnsVolume).toBe(true);
 
-    const db = getProviderCapability('Databento (GLBX.MDP3 CME)', 'futures');
-    expect(db.futuresSymbology).toBe('databento');
-    expect(db.nativeIntervals).toEqual(['1m']);
+    const ibkr = getProviderCapability('IBKR (CME)', 'futures');
+    expect(ibkr.futuresSymbology).toBe('yahoo');
   });
 
   it('falls back to a conservative default for an unknown provider', () => {

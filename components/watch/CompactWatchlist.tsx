@@ -10,6 +10,9 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { displaySymbol, shortProviderLabel } from '@/lib/utils/format';
+import {
+  calculateWatchPriceChange,
+} from '@/lib/market/intraday-change';
 import type { Candle } from './watchAnalysis';
 
 interface CompactWatchItem {
@@ -19,6 +22,7 @@ interface CompactWatchItem {
   status?: 'bullish' | 'bearish' | 'none' | 'no-data' | 'error';
   lastError?: string;
   provider?: string;
+  candles?: Candle[];
 }
 
 export interface CompactWatchlistEntry {
@@ -54,6 +58,21 @@ const CompactCard = React.memo(function CompactCard({
 }) {
   const { item, miniCandles, index } = entry;
   const latestPrice = miniCandles.at(-1)?.close;
+  const priceChange = useMemo(() => {
+    const sourceCandles = item.candles?.length ? item.candles : miniCandles;
+    return calculateWatchPriceChange(item.symbol, item.interval, sourceCandles);
+  }, [item.candles, item.interval, item.symbol, miniCandles]);
+  const changeDirection = (priceChange?.amount ?? 0) > 0
+    ? 'profit'
+    : (priceChange?.amount ?? 0) < 0
+      ? 'loss'
+      : 'flat';
+  const formattedChangeAmount = priceChange
+    ? `${priceChange.amount < 0 ? '-' : '+'}$${Math.abs(priceChange.amount).toFixed(2)}`
+    : '';
+  const formattedChangePercent = priceChange
+    ? `${priceChange.percent > 0 ? '+' : ''}${priceChange.percent.toFixed(2)}%`
+    : '';
   const statusColor =
     item.status === 'bullish'
       ? 'border-emerald-500/30 bg-emerald-500/5'
@@ -76,9 +95,6 @@ const CompactCard = React.memo(function CompactCard({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="truncate text-sm font-bold text-foreground">{displaySymbol(item.symbol)}</span>
-            <span className="rounded bg-muted-bg px-1.5 py-0.5 text-[9px] font-mono text-muted">
-              {item.interval}
-            </span>
             {item.provider && (
               <span
                 className="rounded bg-accent/10 px-1.5 py-0.5 text-[9px] font-semibold text-accent"
@@ -88,8 +104,22 @@ const CompactCard = React.memo(function CompactCard({
               </span>
             )}
           </div>
-          <div className="mt-1 text-[10px] text-muted">
-            {latestPrice === undefined ? 'No current price' : `$${latestPrice.toFixed(2)}`}
+          <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] text-muted">
+            <span>{latestPrice === undefined ? 'No current price' : `$${latestPrice.toFixed(2)}`}</span>
+            {latestPrice !== undefined && priceChange ? (
+              <span
+                className={`font-bold ${
+                  changeDirection === 'profit'
+                    ? 'text-profit'
+                    : changeDirection === 'loss'
+                      ? 'text-loss'
+                      : 'text-muted'
+                }`}
+                title="Price change over the same session window used by alerts"
+              >
+                ({formattedChangeAmount} / {formattedChangePercent})
+              </span>
+            ) : null}
           </div>
         </div>
 

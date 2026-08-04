@@ -10,6 +10,7 @@ import type { Candle, PatternId } from './watchAnalysis';
 export interface WatchItem {
   symbol: string;
   interval: string;
+  provider?: string;
   lastChecked?: string;
   status?: 'bullish' | 'bearish' | 'none' | 'no-data' | 'error';
   lastPrice?: number;
@@ -43,7 +44,7 @@ export interface WatchlistSectionProps {
   onRefreshItem: (symbol: string, interval: string) => Promise<void> | void;
   getMiniCandles: (item: WatchItem) => Candle[];
   compactEntries: CompactWatchlistEntry[];
-  testResult: any;
+  testResult: { success: boolean } | null;
   renderJustChartCanvas: () => React.ReactNode;
   categoryCounts: { all: number; stocks: number; crypto: number; futures: number };
   quickPresets: readonly { label: string; symbol: string }[];
@@ -215,7 +216,6 @@ export function WatchlistSection({
             <thead>
               <tr className="border-b border-card-border/60 bg-muted-bg/40 text-[10px] font-bold uppercase tracking-wider text-muted">
                 <th className="py-3 px-4">Symbol</th>
-                <th className="py-3 px-4">Interval</th>
                 <th className="py-3 px-4">Last Candles</th>
                 <th className="py-3 px-4">Last Check</th>
                 <th className="py-3 px-4">Status</th>
@@ -235,7 +235,7 @@ export function WatchlistSection({
                   />
                   {expandedRowIndex === idx && testResult && testResult.success && (
                     <tr>
-                      <td colSpan={6} className="p-0 border-t border-b border-card-border/40">
+                      <td colSpan={5} className="p-0 border-t border-b border-card-border/40">
                         {renderJustChartCanvas()}
                       </td>
                     </tr>

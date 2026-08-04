@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getActiveProvider } from './providers';
+import { FallbackProvider, getActiveProvider, type ChartProvider } from './providers';
+import type { OHLCCandle } from './types';
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe('Tiingo crypto provider routing', () => {
@@ -82,5 +84,44 @@ describe('Tiingo crypto provider routing', () => {
     const requestUrl = String(fetchMock.mock.calls[0][0]);
     expect(requestUrl).toContain('columns=open,high,low,close,volume');
     expect(candles[0].volume).toBe(42_500);
+  });
+});
+
+describe('regional futures fallback', () => {
+  it('prioritizes deployed IBKR for futures', () => {
+    vi.stubEnv('IBKR_ENABLED', 'true');
+    const provider = getActiveProvider('SPI=F', undefined, 'futures');
+
+    expect(provider).toBeInstanceOf(FallbackProvider);
+    expect((provider as FallbackProvider).primaryName).toBe('IBKR (CME)');
+  });
+
+  it('returns no data after an expected provider miss', async () => {
+    const unavailable: ChartProvider = {
+      name: 'Unavailable',
+      fetchCandles: async (): Promise<OHLCCandle[]> => { throw new Error('unavailable'); },
+      fetchRecentCandles: async (): Promise<OHLCCandle[]> => [],
+    };
+    const provider = new FallbackProvider('Futures', [unavailable], true);
+
+    await expect(provider.fetchRecentCandles('K200=F', '10m')).resolves.toEqual([]);
+  });
+
+  it('uses Yahoo directly when the IBKR gateway is not configured', () => {
+    vi.stubEnv('IBKR_ENABLED', 'false');
+    vi.stubEnv('IBKR_GATEWAY_HOST', '');
+
+    expect(getActiveProvider('NQ=F', undefined, 'futures').name).toBe('Yahoo Finance');
+  });
+
+  it('keeps normal futures misses as errors', async () => {
+    const unavailable: ChartProvider = {
+      name: 'Unavailable',
+      fetchCandles: async (): Promise<OHLCCandle[]> => [],
+      fetchRecentCandles: async (): Promise<OHLCCandle[]> => [],
+    };
+    const provider = new FallbackProvider('Futures', [unavailable]);
+
+    await expect(provider.fetchRecentCandles('NQ=F', '10m')).rejects.toThrow('returned no candles');
   });
 });

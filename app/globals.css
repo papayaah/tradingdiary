@@ -21,6 +21,7 @@
   --muted-bg: #f3f4f6;
   --accent: #6366f1;
   --accent-light: #e0e7ff;
+  --focus-backdrop: rgba(15, 23, 42, 0.58);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -41,6 +42,7 @@
     --muted-bg: #1e293b;
     --accent: #818cf8;
     --accent-light: rgba(99, 102, 241, 0.15);
+    --focus-backdrop: rgba(0, 0, 0, 0.72);
   }
 }
 
@@ -61,6 +63,7 @@
   --color-muted-bg: var(--muted-bg);
   --color-accent: var(--accent);
   --color-accent-light: var(--accent-light);
+  --color-focus-backdrop: var(--focus-backdrop);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }

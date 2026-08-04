@@ -1,5 +1,5 @@
 // Server-side tracking of outbound market-data provider requests (Yahoo,
-// Tiingo, Polygon, Databento, ...). Every provider request in this app is made
+// Tiingo, IBKR, Yahoo, ...). Every provider request in this app is made
 // server-side (the browser only ever calls same-origin /api/* routes), so this
 // captures the true outbound load against the owner's IP and API quotas.
 //

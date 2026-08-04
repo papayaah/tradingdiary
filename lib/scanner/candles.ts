@@ -1,6 +1,6 @@
 // Candle fetching + normalization for the scanner. Reuses the existing
-// provider factory (which falls back to server env keys: POLYGON_API_KEY,
-// DATABENTO_API_KEY, ...), so the worker shares one code path with the app.
+// provider factory (which falls back to configured server providers), so the
+// worker shares one code path with the app.
 
 import { getActiveProvider, effectiveProviderName } from '@/lib/chart/providers';
 import type { Candle } from '@/lib/scanner/patterns';

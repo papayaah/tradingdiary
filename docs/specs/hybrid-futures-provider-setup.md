@@ -8,13 +8,11 @@ provider factory. Futures go to a headless **IB Gateway**; everything else stays
 Tiingo / Polygon / Yahoo. A fallback chain keeps futures scanning alive when the gateway
 is down.
 
-### Provider decision (IBKR over Databento)
+### Provider decision
 
-Databento (GLBX.MDP3 CME) works but real-time CME runs ~**$200/mo**. IBKR delivers the
-same CME data via the **CME Non-Professional bundle (~$1.25/mo)** on a funded account.
-The trade: IBKR is far cheaper but costs us a **stateful, session-bound gateway** (weekly
-2FA re-auth, contract qualification, a socket). We accept that and keep **Databento →
-Yahoo as automatic fallbacks** so a gateway outage degrades instead of breaking scans.
+IBKR is the primary futures provider. It requires a **stateful, session-bound gateway**
+(weekly 2FA re-auth, contract qualification, and a socket), while Yahoo is the automatic
+fallback so a gateway outage degrades instead of breaking scans.
 
 **Key finding:** IBKR **historical** bars need **no** real-time market-data subscription,
 so the MVP works today for free. The paid bundle is only needed for true live/streaming
@@ -29,7 +27,7 @@ Everything below is built, committed, and verified against a live gateway.
 | Area | Implementation |
 |---|---|
 | Socket client | `lib/chart/ibkr-client.ts` — one persistent socket, front-month contract qualification (cached, re-qualified daily → **auto rollover**), `reqHistoricalData`, sliding-window **pacing guard** (`PACING_MAX=50`/10min), symbol-alias map (`BTC`→`BRR`), tuned connect/request timeouts (8s/10s) under the scanner's 15s budget |
-| Provider seam | `IBKRProvider` + `FallbackProvider` in `lib/chart/providers.ts`; futures `auto` = **IBKR → Databento → Yahoo** |
+| Provider seam | `IBKRProvider` + `FallbackProvider` in `lib/chart/providers.ts`; futures = **IBKR → Yahoo** |
 | Routing | `getActiveProvider(symbol, cfg, assetClass)` — `assetClass:'futures'` routes bare roots too, not just `=F`/contract notations |
 | Source visibility | `effectiveProviderName()` reports the *winning* provider; scanner persists it to `server_watch_state.lastProvider`, `/api/watch` returns it, tiles/rows show an **IBKR/Yahoo badge** |
 | UX | `displaySymbol()` strips `=F` for display (stored symbol stays canonical); clean ticker placeholder |
@@ -57,10 +55,10 @@ The scanner's `fetchRecentCandles()` pull model is a good fit: for a small futur
   scanner worker ─ getActiveProvider(symbol, _, 'futures')
         │
         ▼  FallbackProvider "Futures (auto)"
-   ┌────────────┬──────────────┬────────────┐
-   │ IBKRProvider│ Databento    │ Yahoo      │   (first non-empty wins;
-   │  (gateway)  │ (if key)     │ (always)   │    lastProviderUsed recorded)
-   └─────┬───────┴──────────────┴────────────┘
+   ┌─────────────┬────────────┐
+   │ IBKRProvider│ Yahoo      │   (first non-empty wins;
+   │  (gateway)  │ (fallback) │    lastProviderUsed recorded)
+   └─────┬───────┴────────────┘
          ▼ ibkr-client.ts (persistent socket)
    IB Gateway (headless, IBC) ── CME/CBOT/COMEX/NYMEX historical bars
 ```
@@ -77,9 +75,8 @@ automatic (calendar roll at expiry). Streaming for sub-minute freshness / many s
   (so `@stoqey/ib` never lands in the web bundle).
 - `FallbackProvider` tries each provider in order, records `lastProviderUsed`, and throws
   only if all fail. `effectiveProviderName(provider)` returns the real winner.
-- Futures branch of `getActiveProvider()`: `ibkr` when `IBKR_GATEWAY_HOST`/`IBKR_ENABLED`
-  is set (server/scanner context), else Databento, else Yahoo; `auto` builds the fallback
-  chain.
+- Futures branch of `getActiveProvider()`: IBKR when `IBKR_GATEWAY_HOST`/`IBKR_ENABLED`
+  is set (server/scanner context), with Yahoo as the only fallback.
 - `ibkr-client.ts` maps roots → exchange (COMEX/NYMEX/CBOT else CME), intervals → IB bar
   sizes, and aliases (`BTC`→`BRR`). Add new special symbologies to `IBKR_SYMBOL_ALIAS`.
 
@@ -154,7 +151,7 @@ Then `./deploy.sh` as often as needed — the gateway is untouched. Scanner reac
 **MVP — done:**
 - [x] Futures resolve on IBKR (front month, auto-roll) and return real bars through the factory.
 - [x] Full scanner→worker→DB cycle persists IBKR candles; `lastProvider` shows the real source.
-- [x] Fallback IBKR→Databento→Yahoo; UI shows the source badge.
+- [x] Fallback IBKR→Yahoo; UI shows the source badge.
 - [x] Decoupled gateway compose + shared network; deploys don't restart the gateway.
 
 **Still open:**

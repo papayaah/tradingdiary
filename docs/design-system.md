@@ -17,6 +17,7 @@ Theme values live in `app/globals.css`. Components consume semantic Tailwind uti
 | Card surface | `bg-card-bg` | `--card-bg` |
 | Card border | `border-card-border` | `--card-border` |
 | Primary action | `bg-accent`, `text-accent` | `--accent` |
+| Focus backdrop | `bg-focus-backdrop` | `--focus-backdrop` |
 | Positive value | `text-profit` | `--profit` |
 | Negative/destructive value | `text-loss` | `--loss` |
 

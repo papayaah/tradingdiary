@@ -16,7 +16,7 @@
 import type { AssetClass } from '@/lib/scanner/sessions';
 
 /** How a futures symbol is written for a provider's request/canonical form. */
-export type FuturesSymbology = 'yahoo' | 'databento' | 'root';
+export type FuturesSymbology = 'yahoo' | 'root';
 
 export interface ProviderCapability {
   provider: string;
@@ -79,19 +79,11 @@ const REGISTRY: Record<string, Omit<ProviderCapability, 'provider'>> = {
     futuresSymbology: 'root',
     cryptoConcatenated: false,
   },
-  'Databento (GLBX.MDP3 CME)': {
-    // Fetches ohlcv-1m natively and aggregates up; 1m is the safe base.
-    returnsVolume: true,
-    nativeIntervals: ['1m'],
-    aggregatableFrom1m: true,
-    futuresSymbology: 'databento',
-    cryptoConcatenated: false,
-  },
   'IBKR (CME)': {
-    // The futures fetch is a fallback chain (IBKR -> Databento -> Yahoo), so the
+    // The futures fetch is a fallback chain (IBKR -> Yahoo), so the
     // canonical symbol must be a form EVERY chain member understands. The =F
-    // ("yahoo") form is chain-safe: IBKR/Databento reduce it to the root, and
-    // Yahoo needs it as-is. A bare root would break Yahoo's fallback. IBKR pulls
+    // ("yahoo") form is chain-safe: IBKR reduces it to the root, and Yahoo needs
+    // it as-is. A bare root would break Yahoo's fallback. IBKR pulls
     // each interval directly via reqHistoricalData, so no 1m aggregation.
     returnsVolume: true,
     nativeIntervals: [],

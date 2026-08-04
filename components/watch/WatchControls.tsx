@@ -43,32 +43,6 @@ export const WatchlistViewToggle = React.memo(function WatchlistViewToggle({
   );
 });
 
-const formatCountdown = (seconds: number) => {
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  if (minutes === 0) return `${remainingSeconds}s`;
-  return `${minutes}m ${remainingSeconds.toString().padStart(2, '0')}s`;
-};
-
-export const ScanCountdown = React.memo(function ScanCountdown({
-  seconds,
-}: {
-  seconds: number;
-}) {
-  const [remaining, setRemaining] = useState(seconds);
-
-  useEffect(() => {
-    const startedAt = Date.now();
-    const timer = window.setInterval(() => {
-      const elapsed = Math.floor((Date.now() - startedAt) / 1000);
-      setRemaining(Math.max(0, seconds - elapsed));
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [seconds]);
-
-  return <>{formatCountdown(remaining)}</>;
-});
-
 interface BatchScanProgress {
   current: number;
   total: number;

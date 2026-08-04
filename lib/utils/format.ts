@@ -51,7 +51,6 @@ export function shortProviderLabel(provider?: string): string {
   if (!provider) return '';
   const p = provider.toLowerCase();
   if (p.includes('ibkr')) return 'IBKR';
-  if (p.includes('databento')) return 'Databento';
   if (p.includes('yahoo')) return 'Yahoo';
   if (p.includes('tiingo')) return 'Tiingo';
   if (p.includes('polygon')) return 'Polygon';

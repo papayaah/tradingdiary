@@ -3,9 +3,48 @@ export interface PriceCandle {
   close: number;
 }
 
+export interface PriceWindowCandle extends PriceCandle {
+  open: number;
+}
+
 export interface IntradayChange {
   amount: number;
   percent: number;
+}
+
+export function candleCountForHours(interval: string, hours = 4): number {
+  const clean = interval.replace(/[ms]/g, '');
+  const value = parseInt(clean, 10) || 5;
+  const minutesPerCandle = interval.endsWith('h') ? value * 60 : value;
+  return Math.max(4, Math.ceil((hours * 60) / Math.max(1, minutesPerCandle)));
+}
+
+/** Price move across a supplied candle window, matching the alert-card fallback. */
+export function calculateCandleWindowChange(
+  candles: PriceWindowCandle[],
+): IntradayChange | null {
+  const firstOpen = candles[0]?.open;
+  const lastClose = candles.at(-1)?.close;
+  if (!Number.isFinite(firstOpen) || !Number.isFinite(lastClose) || firstOpen === 0) {
+    return null;
+  }
+
+  const amount = lastClose! - firstOpen!;
+  return { amount, percent: (amount / firstOpen!) * 100 };
+}
+
+/** Resolve the change displayed on watch cards/rows for any supported market. */
+export function calculateWatchPriceChange(
+  symbol: string,
+  interval: string,
+  candles: PriceWindowCandle[],
+): IntradayChange | null {
+  if (candles.length < 2) return null;
+  const windowCandles = candles.slice(-candleCountForHours(interval));
+  const isContinuousMarket = symbol.includes('=F') || symbol.includes('-USD');
+  return isContinuousMarket
+    ? calculateCandleWindowChange(windowCandles)
+    : calculateEquityIntradayChange(candles) ?? calculateCandleWindowChange(windowCandles);
 }
 
 const easternPartsFormatter = new Intl.DateTimeFormat('en-CA', {

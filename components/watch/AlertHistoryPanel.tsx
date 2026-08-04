@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { History, ChevronDown, ChevronUp, Loader2, BarChart2 } from 'lucide-react';
+import { calculateCandleWindowChange, candleCountForHours } from '@/lib/market/intraday-change';
 
 interface AlertCandle {
   time: number;
@@ -128,15 +129,6 @@ const MiniCandles = React.memo(function MiniCandles({ candles, interval = '5m' }
   );
 });
 
-function get4HourCandleCount(interval: string): number {
-  const clean = interval.replace(/[ms]/g, '');
-  const val = parseInt(clean, 10) || 5;
-  const isHour = interval.endsWith('h');
-  const minutesPerCandle = isHour ? val * 60 : val;
-  const count = Math.ceil((4 * 60) / Math.max(1, minutesPerCandle));
-  return Math.max(4, count);
-}
-
 const ExpandedMiniChart = React.memo(function ExpandedMiniChart({
   candles,
   interval = '5m',
@@ -146,7 +138,7 @@ const ExpandedMiniChart = React.memo(function ExpandedMiniChart({
 }) {
   const displayCandles = React.useMemo(() => {
     if (!candles || candles.length === 0) return [];
-    const targetCount = get4HourCandleCount(interval);
+    const targetCount = candleCountForHours(interval);
     return candles.slice(-targetCount);
   }, [candles, interval]);
 
@@ -242,26 +234,14 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
     if (Number.isFinite(alert.intradayChangePercent)) {
       return alert.intradayChangePercent!;
     }
-    if (alert.candles && alert.candles.length >= 2) {
-      const firstOpen = alert.candles[0].open;
-      const lastClose = alert.candles[alert.candles.length - 1].close;
-      if (firstOpen > 0) {
-        return ((lastClose - firstOpen) / firstOpen) * 100;
-      }
-    }
-    return null;
+    return calculateCandleWindowChange(alert.candles ?? [])?.percent ?? null;
   }, [alert.intradayChangePercent, alert.candles]);
 
   const effectiveChangeAmount = React.useMemo(() => {
     if (Number.isFinite(alert.intradayChange)) {
       return alert.intradayChange!;
     }
-    if (alert.candles && alert.candles.length >= 2) {
-      const firstOpen = alert.candles[0].open;
-      const lastClose = alert.candles[alert.candles.length - 1].close;
-      return lastClose - firstOpen;
-    }
-    return null;
+    return calculateCandleWindowChange(alert.candles ?? [])?.amount ?? null;
   }, [alert.intradayChange, alert.candles]);
 
   const hasIntradayChange = effectiveChangePercent !== null;

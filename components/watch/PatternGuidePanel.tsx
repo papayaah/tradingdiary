@@ -12,6 +12,7 @@ import {
 } from '@/lib/scanner/patterns';
 import { DETECTOR_RULE_GUIDANCE } from './pattern-settings/detectorGuidance';
 import { InteractivePatternVisualizer } from './InteractivePatternVisualizer';
+import FocusBackdrop from './FocusBackdrop';
 
 interface PatternGuidePanelProps {
   value: PatternId;
@@ -146,16 +147,22 @@ export function PatternGuidePanel({
   const containerRef = useRef<HTMLDivElement>(null);
   const selectedPreset = PATTERN_PRESETS.find((preset) => preset.id === value) ?? PATTERN_PRESETS[0];
 
+  const isFocused = isOpen || isGuideExpanded;
+
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isFocused) return;
 
     const handlePointerDown = (event: PointerEvent) => {
       if (!containerRef.current?.contains(event.target as Node)) {
         setIsOpen(false);
+        setIsGuideExpanded(false);
       }
     };
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsOpen(false);
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+        setIsGuideExpanded(false);
+      }
     };
 
     document.addEventListener('pointerdown', handlePointerDown);
@@ -164,7 +171,7 @@ export function PatternGuidePanel({
       document.removeEventListener('pointerdown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen]);
+  }, [isFocused]);
 
   const definition = getPatternDefinition(value);
   const description = customDescription ?? definition?.shortDescription ?? selectedPreset.shortDescription;
@@ -172,11 +179,25 @@ export function PatternGuidePanel({
   const ruleGuidance = DETECTOR_RULE_GUIDANCE[value] ?? { minBodySummaryLabel: 'Min Body' };
 
   return (
-    <section
-      ref={containerRef}
-      className="relative z-30 mb-3 space-y-2 rounded-xl border border-card-border/60 bg-card-bg p-2.5 shadow-sm"
-      aria-labelledby="pattern-selector-title"
-    >
+    <>
+      {isFocused ? (
+        <FocusBackdrop
+          label="Close pattern controls"
+          onDismiss={() => {
+            setIsOpen(false);
+            setIsGuideExpanded(false);
+          }}
+        />
+      ) : null}
+      <section
+        ref={containerRef}
+        className={`relative mb-3 space-y-2 rounded-xl border bg-card-bg p-2.5 transition-shadow ${
+          isFocused
+            ? 'z-[100] border-accent/50 shadow-2xl shadow-background'
+            : 'z-30 border-card-border/60 shadow-sm'
+        }`}
+        aria-labelledby="pattern-selector-title"
+      >
       {/* Top Header: Left Title/Subtitle + Right Flushed Trigger Button & Parameters Toggle */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center justify-between">
         <div>
@@ -324,7 +345,8 @@ export function PatternGuidePanel({
           />
         </div>
       )}
-    </section>
+      </section>
+    </>
   );
 }
 

@@ -14,19 +14,20 @@ import {
   Sliders,
   ChartCandlestick,
   Bitcoin,
-  Moon,
   Zap,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
-  Sparkles
+  Sparkles,
+  Settings,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { getChartDB } from '@/lib/chart/cache';
 import AlertHistoryPanel from './AlertHistoryPanel';
 import LightweightPatternChart from '@/components/chart/LightweightPatternChart';
 import {
   BatchScanControl,
-  ScanCountdown,
   TickerInput,
   WatchlistViewToggle,
   type BatchScanControlHandle,
@@ -56,6 +57,7 @@ import {
   type WatchStateUpdatePayload,
 } from '@/hooks/useServerWatchStream';
 import {
+  candleCountForHours,
   calculateEquityIntradayChange,
   type IntradayChange,
 } from '@/lib/market/intraday-change';
@@ -64,6 +66,7 @@ import { buildScannerSyncWatchlist } from '@/lib/watch/sync-settings';
 interface WatchItem {
   symbol: string;
   interval: string;
+  provider?: string;
   lastChecked?: string;
   status?: 'bullish' | 'bearish' | 'none' | 'no-data' | 'error';
   lastPrice?: number;
@@ -133,26 +136,25 @@ const CATEGORY_TO_ASSET_CLASS: Record<ScanCategory, string> = {
 const isFuturesSymbol = (symbol: string) => symbol.toUpperCase().includes('=F');
 const isCryptoSymbol = (symbol: string) => symbol.toUpperCase().endsWith('-USD');
 
-const FUTURES_QUICK_PRESETS = [
+const PRIMARY_FUTURES_PRESETS = [
+  { label: 'GC (Gold)', symbol: 'GC=F' },
   { label: 'NQ (Nasdaq)', symbol: 'NQ=F' },
+  { label: 'CL (Oil)', symbol: 'CL=F' },
+] as const;
+
+const SECONDARY_FUTURES_PRESETS = [
   { label: 'ES (S&P 500)', symbol: 'ES=F' },
   { label: 'YM (Dow)', symbol: 'YM=F' },
   { label: 'RTY (Russell)', symbol: 'RTY=F' },
-  { label: 'CL (Oil)', symbol: 'CL=F' },
-  { label: 'GC (Gold)', symbol: 'GC=F' },
+  { label: 'NIY (Nikkei 225)', symbol: 'NIY=F' },
+  { label: 'K200 (KOSPI 200)', symbol: 'K200=F' },
+  { label: 'HSI (Hang Seng)', symbol: 'HSI=F' },
+  { label: 'SPI (Australia 200)', symbol: 'SPI=F' },
+  { label: 'SSG (Singapore MSCI)', symbol: 'SSG=F' },
   { label: 'SI (Silver)', symbol: 'SI=F' },
   { label: 'ZB (Bonds)', symbol: 'ZB=F' },
   { label: 'BTC (CME BTC)', symbol: 'BTC=F' },
 ] as const;
-
-function get4HourCandleCount(interval: string): number {
-  const clean = interval.replace(/[ms]/g, '');
-  const val = parseInt(clean, 10) || 5;
-  const isHour = interval.endsWith('h');
-  const minutesPerCandle = isHour ? val * 60 : val;
-  const count = Math.ceil((4 * 60) / Math.max(1, minutesPerCandle));
-  return Math.max(4, count);
-}
 
 const pruneAlertHistory = (logs: AlertLog[], now = Date.now()) =>
   logs
@@ -280,6 +282,8 @@ export default function MarketWatcher() {
   const serverStateFlushTimerRef = useRef<number | null>(null);
   const [newInterval, setNewInterval] = useState('10m');
   const [newMinMove, setNewMinMove] = useState(0.25);
+  const [showAllPresets, setShowAllPresets] = useState(false);
+  const [showSettingsPanel, setShowSettingsPanel] = useState(false);
 
   // Tester State
   const [testSymbol, setTestSymbol] = useState('TSLA');
@@ -345,10 +349,8 @@ export default function MarketWatcher() {
   } | null>(null);
   const addNoticeTimerRef = useRef<number | null>(null);
   const [isPolygonActive, setIsPolygonActive] = useState(false);
-  const [isScannerPaused, setIsScannerPaused] = useState(false);
   const [autoPauseEnabled, setAutoPauseEnabled] = useState(true); // pause scanner outside chosen session
   const [activeWindow, setActiveWindow] = useState<'rth' | 'pre' | 'ext' | 'all'>('pre'); // which session the scanner runs in
-  const [marketOpen, setMarketOpen] = useState(true);
   const [parallelScanEnabled, setParallelScanEnabled] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
     const saved = localStorage.getItem('watcher-parallel-scan');
@@ -445,6 +447,7 @@ export default function MarketWatcher() {
               data.recentCandles && data.recentCandles.length > 0
                 ? data.recentCandles
                 : item.candles,
+            provider: data.lastProvider ?? item.provider,
             lastError: data.lastError ?? item.lastError,
           };
         });
@@ -495,7 +498,7 @@ export default function MarketWatcher() {
   }, [scheduleServerStateFlush]);
 
   // Server-side Live SSE Stream Integration
-  const { connected: isSseConnected } = useServerWatchStream({
+  useServerWatchStream({
     // Hold the connection until the snapshot cursor is known so we resume from
     // it instead of replaying history.
     enabled: isAuthenticated && snapshotCursor !== null,
@@ -1186,15 +1189,9 @@ export default function MarketWatcher() {
     if (savedAutoPause !== null) {
       setAutoPauseEnabled(savedAutoPause === 'true');
     }
-    const savedScannerPaused = localStorage.getItem('watcher-scanner-paused');
-    if (savedScannerPaused !== null) {
-      setIsScannerPaused(savedScannerPaused === 'true');
-    }
     const savedWindow = localStorage.getItem('watcher-active-window');
     const initialWindow = (savedWindow === 'rth' || savedWindow === 'pre' || savedWindow === 'ext') ? savedWindow : 'pre';
     if (savedWindow) setActiveWindow(initialWindow);
-    // Seed the market-open state immediately so the badge is correct on first paint
-    setMarketOpen(isMarketOpen(initialWindow));
 
     // Load tester settings (activeTab is hydrated via its lazy useState
     // initializer above, so it isn't re-read here — doing so races with the
@@ -1677,7 +1674,7 @@ export default function MarketWatcher() {
       intradayChange: dailyMove?.amount,
       intradayChangePercent: dailyMove?.percent,
       // Store the exact 4-hour window rather than the full provider response.
-      candles: candles ? candles.slice(-get4HourCandleCount(interval)) : undefined,
+      candles: candles ? candles.slice(-candleCountForHours(interval)) : undefined,
     };
     if (collector) {
       collector(alert);
@@ -1693,7 +1690,7 @@ export default function MarketWatcher() {
   ): Promise<WatchItem> => {
     try {
       let candles: Candle[] = [];
-      let providerName = 'Polygon.io';
+      let providerName = 'Live Feed';
 
       // 1. Try fetching from IndexedDB cache first (skipped on a manual refresh,
       // which should always hit the provider for the freshest data).
@@ -1705,7 +1702,7 @@ export default function MarketWatcher() {
       );
       if (cache && cacheHasCurrentSession) {
         candles = cache.candles;
-        providerName = cache.provider || 'Polygon.io';
+        providerName = cache.provider || 'Cached data';
         if (providerName === 'Polygon.io') {
           setIsPolygonActive(true);
         }
@@ -1735,7 +1732,7 @@ export default function MarketWatcher() {
 
           const data = await res.json();
           candles = data.candles || [];
-          providerName = data.provider || 'Polygon.io';
+          providerName = data.provider || 'Live Feed';
           if (providerName === 'Polygon.io') {
             setIsPolygonActive(true);
           }
@@ -1786,6 +1783,7 @@ export default function MarketWatcher() {
         lastChecked: new Date().toLocaleTimeString(),
         status,
         candles,
+        provider: providerName,
         lastError: scanCandles.length === 0 ? 'No candles available for today’s selected ET session' : undefined,
         lastAlertedCandleTime: matched !== 'none' ? time : item.lastAlertedCandleTime,
         lastAlertedType: matched !== 'none' ? matched : item.lastAlertedType,
@@ -1836,12 +1834,6 @@ export default function MarketWatcher() {
   const expandedRowIndexRef = useRef(expandedRowIndex);
   expandedRowIndexRef.current = expandedRowIndex;
 
-  // Derived scanner state used by the UI
-  const isStocksCategory = watchlistCategory === 'stocks';
-  const marketAutoPaused = autoPauseEnabled && !marketOpen && isStocksCategory;
-  const effectivelyActive = !isScannerPaused && !marketAutoPaused;
-  const windowStartLabel = activeWindow === 'rth' ? '9:30 AM ET' : '4:00 AM ET';
-
   const handleScanNext = async () => {
     const currentList = categoryItemsRef.current;
     if (currentList.length === 0 || isBackgroundScanning || isBatchScanning) return;
@@ -1891,7 +1883,7 @@ export default function MarketWatcher() {
             patternMatched: matched,
             message: message || 'Loaded',
             candles: scanned.candles,
-            provider: 'Tiingo',
+            provider: scanned.provider || 'Live Feed',
             allMatches
           });
         }
@@ -2114,12 +2106,9 @@ export default function MarketWatcher() {
     lastScanTimeRef.current = Date.now();
 
     const onTick = () => {
-      // Keep the market-open indicator fresh (no-op re-render when unchanged)
       const open = isMarketOpen(activeWindowRef.current);
-      setMarketOpen(open);
 
       if (isAuthenticatedRef.current) return; // Signed in: the server scanner owns scanning; the browser does not fetch per-symbol (avoids double-scanning + duplicate provider load).
-      if (isScannerPaused) return; // Manually paused
       const isStocksCategory = watchlistCategoryRef.current === 'stocks';
       if (autoPauseEnabledRef.current && !open && isStocksCategory) return; // Auto-paused outside the equities session
 
@@ -2207,7 +2196,6 @@ export default function MarketWatcher() {
   }, [
     categoryItems.length,
     isAuthenticated,
-    isScannerPaused,
     watchlistCategory,
   ]);
 
@@ -2363,7 +2351,7 @@ export default function MarketWatcher() {
           patternMatched: matched,
           message: message || 'Loaded',
           candles: currentDayCandles,
-          provider: 'Watchlist Cache',
+          provider: item.provider || 'Cached data',
           allMatches
         });
       } else {
@@ -2436,6 +2424,7 @@ export default function MarketWatcher() {
                 updated[index] = {
                   ...updated[index],
                   candles: freshCandles,
+                  provider: providerName,
                   status,
                   lastError: sessionCandles.length === 0 ? 'No candles available for today’s selected ET session' : undefined,
                   lastChecked: new Date().toLocaleTimeString(),
@@ -2560,7 +2549,7 @@ export default function MarketWatcher() {
 
     try {
       let candles: Candle[] = [];
-      let providerName = 'Polygon.io';
+      let providerName = 'Live Feed';
 
       // Manual tester loads deep history (scaled by interval) so the chart can
       // pan back like TradingView. Deliberately bypass the shared live cache:
@@ -2576,7 +2565,7 @@ export default function MarketWatcher() {
 
       const data = await res.json();
       candles = data.candles || [];
-      providerName = data.provider || 'Polygon.io';
+      providerName = data.provider || 'Live Feed';
 
       const { matched, message } = detectPattern(
         candles,
@@ -2814,6 +2803,10 @@ export default function MarketWatcher() {
       );
     }
 
+    const expandedProvider = activeTab === 'watchlist' && expandedRowIndex !== null
+      ? watchlist[expandedRowIndex]?.provider
+      : undefined;
+
     return (
       <LightweightPatternChart
         symbol={testSymbol}
@@ -2822,7 +2815,7 @@ export default function MarketWatcher() {
         autoPatternsEnabled={autoPatternsEnabled}
         onTogglePatterns={handleToggleAutoPatterns}
         interval={testInterval}
-        providerBadge={testResult.provider}
+        providerBadge={expandedProvider || testResult.provider}
         subtitle={`${testerCandles.length} candles loaded (${testInterval})`}
         selectedPatternId={selectedPatternId}
         minMovePercent={analysisMinMove}
@@ -2839,15 +2832,9 @@ export default function MarketWatcher() {
 
       {/* COMPACT HEADER HERO */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-card-border/40">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl md:text-2xl font-extrabold tracking-tight text-foreground">
-            Market Pattern Watcher
-          </h1>
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-accent/10 border border-accent/20 text-[10px] font-semibold text-accent">
-            <Clock size={12} className="animate-pulse" />
-            Live Scanner
-          </div>
-        </div>
+        <h1 className="text-xl md:text-2xl font-extrabold tracking-tight text-foreground">
+          Market Pattern Watcher
+        </h1>
       </div>
 
       {/* TABS SELECTION */}
@@ -2890,61 +2877,7 @@ export default function MarketWatcher() {
                   <p className="text-xs text-muted mt-0.5">Define assets and intervals to monitor automatically</p>
                 </div>
 
-                {/* Countdown / Scan Now */}
                 <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => {
-                      const next = !isScannerPaused;
-                      setIsScannerPaused(next);
-                      localStorage.setItem('watcher-scanner-paused', String(next));
-                    }}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                      isScannerPaused
-                        ? 'bg-amber-500/10 text-amber-500 border-amber-500/20 hover:bg-amber-500/20'
-                        : marketAutoPaused
-                        ? 'bg-slate-500/10 text-slate-400 border-slate-500/20 hover:bg-slate-500/20'
-                        : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20 hover:bg-emerald-500/20'
-                    }`}
-                    title={isScannerPaused ? 'Resume Automatic Scanning' : 'Pause Automatic Scanning'}
-                  >
-                    {marketAutoPaused && !isScannerPaused ? (
-                      <Moon size={12} className="shrink-0" />
-                    ) : (
-                      <span className={`w-2 h-2 rounded-full shrink-0 ${isScannerPaused ? 'bg-amber-500' : 'bg-emerald-500 animate-pulse'}`} />
-                    )}
-                    <span>{isAuthenticated ? (isSseConnected ? 'Live · Server Scanning' : 'Connecting…') : isScannerPaused ? 'Scanner Paused' : marketAutoPaused ? 'Market Closed' : 'Scanner Active'}</span>
-                  </button>
-
-                  {/* Browser round-robin countdown only applies to the signed-out
-                      local scanner; when authenticated the server scans, so hide it. */}
-                  {!isAuthenticated && effectivelyActive && categoryItems.length > 0 && (
-                    <div className="flex items-center gap-2 text-xs bg-muted-bg border border-card-border px-3 py-1.5 rounded-lg text-muted shrink-0 min-w-[15.5rem] justify-between">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <Clock size={12} className="text-accent shrink-0" />
-                        <span className="shrink-0">Next scan:</span>
-                        <span className="text-foreground font-semibold inline-flex items-center justify-center min-w-[3.75rem] max-w-[5.5rem] truncate px-1 py-0.5 rounded bg-card-bg/60 border border-card-border/40 text-center font-mono">
-                          {categoryItems[nextScanIndex % categoryItems.length]?.symbol}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <span className="text-muted">in</span>
-                        <span className="font-mono text-accent font-bold inline-block min-w-[2.25rem] text-right">
-                          <ScanCountdown
-                            key={`${nextScanIndex}-${scanIntervalMinutes}-${watchlistCategory}`}
-                            seconds={spacingSeconds}
-                          />
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {marketAutoPaused && !isScannerPaused && categoryItems.length > 0 && (
-                    <div className="flex items-center gap-2 text-xs bg-slate-500/10 border border-slate-500/20 px-3 py-1.5 rounded-lg text-slate-400">
-                      <Moon size={12} />
-                      <span>Auto-paused until session open ({windowStartLabel})</span>
-                    </div>
-                  )}
-                  
                   <BatchScanControl
                     ref={batchScanControlRef}
                     disabled={categoryItems.length === 0}
@@ -2956,26 +2889,42 @@ export default function MarketWatcher() {
 
               {/* SINGLE COMPACT TOOLBAR: Timeframe on Left, Category Tabs + Mute Icons on Right */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-                {/* Left: Global Timeframe Selector */}
-                <div className="flex items-center gap-2 bg-muted-bg/30 px-3 py-1.5 rounded-xl border border-card-border/50 shrink-0">
-                  <span className="text-xs font-semibold text-muted flex items-center gap-1.5">
-                    <Clock size={14} className="text-accent" /> Timeframe:
-                  </span>
-                  <select
-                    value={newInterval}
-                    onChange={(e) => handleGlobalIntervalChange(e.target.value)}
-                    className="bg-card-bg border border-card-border focus:border-accent focus:ring-1 focus:ring-accent rounded-lg py-1 px-2 text-xs text-foreground font-bold cursor-pointer outline-none transition-all"
-                    title="Select global timeframe interval for all watchlist symbols"
+                {/* Left: Global Timeframe Selector & Settings Icon */}
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 bg-muted-bg/30 px-3 py-1.5 rounded-xl border border-card-border/50 shrink-0">
+                    <span className="text-xs font-semibold text-muted flex items-center gap-1.5">
+                      <Clock size={14} className="text-accent" /> Timeframe:
+                    </span>
+                    <select
+                      value={newInterval}
+                      onChange={(e) => handleGlobalIntervalChange(e.target.value)}
+                      className="bg-card-bg border border-card-border focus:border-accent focus:ring-1 focus:ring-accent rounded-lg py-1 px-2 text-xs text-foreground font-bold cursor-pointer outline-none transition-all"
+                      title="Select global timeframe interval for all watchlist symbols"
+                    >
+                      <option value="1m">1m (Test)</option>
+                      <option value="2m">2m</option>
+                      <option value="5m">5m</option>
+                      <option value="10m">10m</option>
+                      <option value="15m">15m</option>
+                      <option value="30m">30m</option>
+                      <option value="45m">45m</option>
+                      <option value="1h">1h</option>
+                    </select>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowSettingsPanel(!showSettingsPanel)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                      showSettingsPanel
+                        ? 'bg-accent text-white border-accent shadow-sm'
+                        : 'bg-muted-bg/30 border-card-border/50 text-muted hover:text-foreground hover:bg-card-bg/60'
+                    }`}
+                    title="Market Watch Audio & Notification Settings"
                   >
-                    <option value="1m">1m (Test)</option>
-                    <option value="2m">2m</option>
-                    <option value="5m">5m</option>
-                    <option value="10m">10m</option>
-                    <option value="15m">15m</option>
-                    <option value="30m">30m</option>
-                    <option value="45m">45m</option>
-                    <option value="1h">1h</option>
-                  </select>
+                    <Settings size={14} />
+                    <span>Settings</span>
+                  </button>
                 </div>
 
                 {/* Right: Category Tabs with Integrated Category Mute (Bell) Buttons */}
@@ -3045,6 +2994,151 @@ export default function MarketWatcher() {
                 </div>
               </div>
 
+              {/* EMBEDDED SETTINGS PANEL */}
+              {showSettingsPanel && (
+                <div className="mb-6 p-4 rounded-2xl bg-muted-bg/40 border border-card-border/60 shadow-md space-y-3 animate-fadeIn text-xs">
+                  <div className="flex items-center justify-between font-bold text-foreground pb-2 border-b border-card-border/40">
+                    <span className="flex items-center gap-2">
+                      <Settings size={15} className="text-accent" />
+                      Market Watch Settings & Alerts
+                    </span>
+                    <button
+                      onClick={() => setShowSettingsPanel(false)}
+                      className="text-muted hover:text-foreground text-xs font-semibold px-2 py-0.5 rounded hover:bg-card-bg/60"
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  {watchlistCategory === 'futures' ? (
+                    <div className="flex items-center gap-1.5 text-xs text-amber-400 font-semibold bg-amber-500/10 px-3 py-1.5 rounded-lg border border-amber-500/20">
+                      <Zap size={14} />
+                      <span>Futures Scanner Mode: 24/7 Continuous Monitoring (Asian, European & US Sessions)</span>
+                    </div>
+                  ) : watchlistCategory === 'crypto' ? (
+                    <div className="flex items-center gap-1.5 text-xs text-orange-400 font-semibold bg-orange-500/10 px-3 py-1.5 rounded-lg border border-orange-500/20">
+                      <Bitcoin size={14} />
+                      <span>Crypto Scanner Mode: 24/7 Continuous Monitoring</span>
+                    </div>
+                  ) : null}
+
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={() => setIsSoundEnabled(!isSoundEnabled)}
+                        className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 text-xs font-semibold border ${
+                          isSoundEnabled
+                            ? 'bg-violet-600/20 text-violet-400 border-violet-500/30'
+                            : 'bg-slate-800/40 text-slate-400 border-card-border'
+                        }`}
+                        title={isSoundEnabled ? 'Disable Audio Alert' : 'Enable Audio Alert'}
+                      >
+                        {isSoundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
+                        <span>{isSoundEnabled ? 'Audio Alert On' : 'Audio Alert Off'}</span>
+                      </button>
+
+                      <button
+                        onClick={requestNotificationPermission}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
+                          isNotificationsEnabled
+                            ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                            : 'bg-amber-500/20 text-amber-300 border-amber-500/30 hover:bg-amber-500/30'
+                        }`}
+                      >
+                        {isNotificationsEnabled ? (
+                          <>
+                            <Bell size={14} /> Desktop Notifications Active
+                          </>
+                        ) : (
+                          <>
+                            <BellOff size={14} /> Enable Desktop Alerts
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleTestSound}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-muted-bg hover:bg-card-bg text-foreground border border-card-border transition-colors cursor-pointer"
+                      >
+                        Test Sound
+                      </button>
+                      <button
+                        onClick={handleTestNotification}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-muted-bg hover:bg-card-bg text-foreground border border-card-border transition-colors cursor-pointer"
+                      >
+                        <Bell size={13} /> Test Notification
+                      </button>
+                    </div>
+                  </div>
+
+                  {notificationFeedback && (
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      className={`rounded-lg border px-3 py-2 text-xs font-medium ${
+                        notificationFeedback.type === 'success'
+                          ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300'
+                          : 'border-amber-500/25 bg-amber-500/10 text-amber-300'
+                      }`}
+                    >
+                      {notificationFeedback.message}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* FUTURES QUICK PRESETS TOOLBAR */}
+              {watchlistCategory === 'futures' && (
+                <div className="flex flex-wrap items-center gap-1.5 mb-6 text-xs bg-muted-bg/10 p-3 rounded-xl border border-card-border/30">
+                  <span className="text-muted font-bold mr-1 flex items-center gap-1">
+                    <Zap size={13} />
+                    Quick Presets:
+                  </span>
+                  {(showAllPresets
+                    ? [...PRIMARY_FUTURES_PRESETS, ...SECONDARY_FUTURES_PRESETS]
+                    : PRIMARY_FUTURES_PRESETS
+                  ).map((preset) => {
+                    const exists = watchlist.some((w) => w.symbol === preset.symbol && w.interval === newInterval);
+                    return (
+                      <button
+                        key={preset.symbol}
+                        onClick={() => handleAddPreset(preset.symbol)}
+                        disabled={exists}
+                        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
+                          exists
+                            ? 'bg-muted-bg/30 text-muted/40 border-card-border/20 cursor-not-allowed'
+                            : 'bg-card-bg border-card-border hover:border-accent text-foreground hover:text-accent cursor-pointer shadow-sm'
+                        }`}
+                        title={exists ? `${preset.symbol} (${newInterval}) is already in your watchlist` : `Click to add ${preset.symbol} (${newInterval})`}
+                      >
+                        <Plus size={12} />
+                        <span>{preset.label}</span>
+                      </button>
+                    );
+                  })}
+
+                  <button
+                    type="button"
+                    onClick={() => setShowAllPresets(!showAllPresets)}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border bg-accent/10 border-accent/30 text-accent hover:bg-accent/20 cursor-pointer shadow-sm transition-all ml-1"
+                  >
+                    {showAllPresets ? (
+                      <>
+                        <ChevronUp size={12} />
+                        <span>Show Less</span>
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown size={12} />
+                        <span>+ More ({SECONDARY_FUTURES_PRESETS.length})</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+
               <PatternGuidePanel
                 value={selectedPatternId}
                 onChange={handlePatternChange}
@@ -3110,7 +3204,10 @@ export default function MarketWatcher() {
                     <Zap size={13} />
                     Quick Presets:
                   </span>
-                  {FUTURES_QUICK_PRESETS.map((preset) => {
+                  {(showAllPresets
+                    ? [...PRIMARY_FUTURES_PRESETS, ...SECONDARY_FUTURES_PRESETS]
+                    : PRIMARY_FUTURES_PRESETS
+                  ).map((preset) => {
                     const exists = watchlist.some((w) => w.symbol === preset.symbol && w.interval === newInterval);
                     return (
                       <button
@@ -3129,6 +3226,24 @@ export default function MarketWatcher() {
                       </button>
                     );
                   })}
+
+                  <button
+                    type="button"
+                    onClick={() => setShowAllPresets(!showAllPresets)}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border bg-accent/10 border-accent/30 text-accent hover:bg-accent/20 cursor-pointer shadow-sm transition-all ml-1"
+                  >
+                    {showAllPresets ? (
+                      <>
+                        <ChevronUp size={12} />
+                        <span>Show Less</span>
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown size={12} />
+                        <span>+ More ({SECONDARY_FUTURES_PRESETS.length})</span>
+                      </>
+                    )}
+                  </button>
                 </div>
               )}
 
@@ -3226,16 +3341,6 @@ export default function MarketWatcher() {
                             )}
                           </div>
                         </th>
-                        <th onClick={() => handleSort('interval')} className="py-3 px-4 cursor-pointer select-none hover:text-foreground transition-colors group">
-                          <div className="inline-flex items-center gap-1">
-                            <span>Interval</span>
-                            {sortColumn === 'interval' ? (
-                              sortDirection === 'asc' ? <ArrowUp size={12} className="text-accent" /> : <ArrowDown size={12} className="text-accent" />
-                            ) : (
-                              <ArrowUpDown size={11} className="text-muted/40 group-hover:text-muted transition-colors" />
-                            )}
-                          </div>
-                        </th>
                         <th className="py-3 px-4 text-center">Last Candles</th>
                         <th className="py-3 px-4">Last Check</th>
                         <th onClick={() => handleSort('status')} className="py-3 px-4 cursor-pointer select-none hover:text-foreground transition-colors group">
@@ -3271,7 +3376,7 @@ export default function MarketWatcher() {
                             {/* Expanded sub-row containing the chart */}
                             {expandedRowIndex === idx && testResult && testResult.success && testResult.candles.length > 0 && (
                               <tr className="bg-slate-900/10 border-t border-b border-card-border/30">
-                                <td colSpan={6} className="p-0">
+                                <td colSpan={5} className="p-0">
                                   {renderJustChartCanvas()}
                                 </td>
                               </tr>
@@ -3282,94 +3387,11 @@ export default function MarketWatcher() {
                     </tbody>
                   </table>
                 </div>
-                  )}
-              </div>
-            )}
-              
-              {/* Global Watchlist Settings & Notification Test Controls */}
-              <div className="mt-6 pt-6 border-t border-card-border space-y-4 text-xs text-muted">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                  {watchlistCategory === 'futures' ? (
-                    <div className="flex items-center gap-1.5 text-xs text-amber-400 font-semibold bg-amber-500/10 px-3 py-1.5 rounded-lg border border-amber-500/20">
-                      <Zap size={14} />
-                      <span>Futures Scanner Mode: 24/7 Continuous Monitoring (Asian, European & US Sessions)</span>
-                    </div>
-                  ) : watchlistCategory === 'crypto' ? (
-                    <div className="flex items-center gap-1.5 text-xs text-orange-400 font-semibold bg-orange-500/10 px-3 py-1.5 rounded-lg border border-orange-500/20">
-                      <Bitcoin size={14} />
-                      <span>Crypto Scanner Mode: 24/7 Continuous Monitoring</span>
-                    </div>
-                  ) : null}
-                </div>
-
-                {/* Sound & Notification Test Bar */}
-                <div className="pt-3 border-t border-card-border/40 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={() => setIsSoundEnabled(!isSoundEnabled)}
-                      className={`p-1.5 rounded-lg transition-all ${
-                        isSoundEnabled
-                          ? 'bg-violet-600/20 text-violet-400 border border-violet-500/30'
-                          : 'bg-slate-800/40 text-slate-500 border border-card-border'
-                      }`}
-                      title={isSoundEnabled ? 'Disable Audio Alert' : 'Enable Audio Alert'}
-                    >
-                      {isSoundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
-                    </button>
-
-                    <button
-                      onClick={requestNotificationPermission}
-                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all border ${
-                        isNotificationsEnabled
-                          ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                          : 'bg-amber-500/20 text-amber-300 border-amber-500/30 hover:bg-amber-500/30'
-                      }`}
-                    >
-                      {isNotificationsEnabled ? (
-                        <>
-                          <Bell size={14} /> Desktop Notifications Active
-                        </>
-                      ) : (
-                        <>
-                          <BellOff size={14} /> Enable Desktop Alerts
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={handleTestSound}
-                      className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-muted-bg hover:bg-card-bg text-foreground border border-card-border transition-colors cursor-pointer"
-                    >
-                      Test Sound
-                    </button>
-                    <button
-                      onClick={handleTestNotification}
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-muted-bg hover:bg-card-bg text-foreground border border-card-border transition-colors cursor-pointer"
-                    >
-                      <Bell size={13} /> Test Notification
-                    </button>
-                  </div>
-                </div>
-
-                {notificationFeedback && (
-                  <div
-                    role="status"
-                    aria-live="polite"
-                    className={`max-w-md rounded-lg border px-3 py-2 text-[11px] font-medium ${
-                      notificationFeedback.type === 'success'
-                        ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300'
-                        : 'border-amber-500/25 bg-amber-500/10 text-amber-300'
-                    }`}
-                  >
-                    {notificationFeedback.message}
-                  </div>
-                )}
-              </div>
+              )}
             </div>
-
-            </div>
+          )}
+        </div>
+      </div>
 
           <div className="order-1 lg:order-2 lg:col-span-4">
             <AlertHistoryPanel

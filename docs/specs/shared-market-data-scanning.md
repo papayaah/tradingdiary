@@ -2,11 +2,14 @@
 
 ## Status
 
-**Partially implemented (server-side).** Phases 1–4 and 6 are built and tested;
-Phase 5 is intentionally skipped. Phase 4 aggregation remains gated OFF. The
-Phase 6 request-and-bandwidth upgrade and current-session equity fetch scope are
-implemented locally and pending production deployment. Server-owned provider
-configuration remains outstanding. See "Implementation status" below.
+**Partially implemented (server-side).** Phases 1–4 and 6 provide exact-request
+sharing and advisory cadence control, but they do not yet provide the final
+unique-symbol acquisition architecture or a hard provider-quota guarantee.
+Phase 4 aggregation remains gated OFF. Phase 7 below is the next required body
+of work: separate provider-owned acquisition from user evaluation, acquire one
+base series per unique symbol where supported, and enforce physical-request
+budgets across every server process and request path. See "Implementation
+status" below.
 
 ### Implementation status
 
@@ -18,20 +21,21 @@ configuration remains outstanding. See "Implementation status" below.
 | Intraday equity fetch scope | 🚀 pending deploy | scanner requests only the current New York trading date and filters per-watch session before evaluation |
 | Phase 4 — base-interval aggregation | ⚙️ built, OFF | enable with `SCANNER_AGGREGATION=true` |
 | Phase 5 — scheduler grouping | ⏭️ skipped | "only if needed"; no measured queue pressure |
-| Phase 6 — adaptive cadence governor | 🚀 pending deploy | hourly, daily, and estimated monthly-bandwidth caps with 20% default reserve |
+| Phase 6 — adaptive cadence governor | ⚠️ advisory, pending deploy | formula and daily feedback are built, but inventory is still symbol × interval and there is no distributed hard quota gate |
+| Phase 7 — provider-owned base-series acquisition | ❌ next work | one Tiingo 1m series per unique symbol; provider calendar/cadence independent of user candle interval; staggered fair scheduling |
+| Physical-request quota enforcement | ❌ next work | Redis-backed hourly + daily limits across scanner, chart, tester, retries, and fallback attempts |
+| Evaluation-only Scan Now | ❌ next work | manual scans must evaluate cached data without accelerating provider acquisition |
 | Prerequisite 1 — server-authoritative provider config | ❌ not done | scanner still uses server env keys; per-user credentials never reach it |
 | Prerequisite 2 — authenticated browser is a pure viewer | ✅ done (signed-in) | `MarketWatcher.tsx` skips per-symbol fetching when authenticated (`if (isAuthenticatedRef.current) return`) and renders from `/api/watch/state` + `/api/watch/events` SSE. Only signed-OUT sessions still fetch client-side (no server watches to share). |
 | Provider-scoped distributed rate limiter | ❌ not done | still the single global BullMQ worker limiter |
 | Observability counters (hit rate, sharing ratio) | ❌ not done | snapshots written; metrics not yet emitted |
 
-For **signed-in** users the end-to-end invariant holds: the browser is a viewer
-(snapshot + SSE, no per-symbol fetching), and the server scanner fetches each
-unique symbol once and shares it across all users. What remains for full
-per-user entitlement sharing is Prerequisite 1 — until then all sharing happens
-under a single server-credential scope rather than per-user scopes. Signed-out
-(anonymous) sessions still fetch client-side by design, since they have no
-persistent server-side watches to share. The detailed single-symbol chart view
-is a separate client fetch path not covered by this scanning spec.
+For **signed-in** users the browser is now a viewer (snapshot + SSE, no automatic
+per-symbol fetching). The current server scanner shares only an exact provider,
+symbol, interval, fetch-scope, and time-bucket request. It does **not** yet fetch
+each unique symbol only once when users select different candle intervals.
+Signed-out sessions and detailed chart/tester requests are additional server
+request paths and must join the same physical-request quota gate in Phase 7.
 
 ## Related specification
 
@@ -43,12 +47,17 @@ The current scanner schedules and processes one job per user watch. A watch is u
 
 Market candles are not user-specific. The scanner should acquire an eligible candle snapshot once and reuse it across all watches that can legally and technically share that data. Pattern selection, thresholds, schedules, watch state, alerts, events, and notifications remain isolated per user.
 
-The implementation should proceed in two stages:
+The implementation proceeds in three stages:
 
 1. **Exact-request sharing:** deduplicate concurrent and recently completed fetches with the same provider entitlement, canonical symbol, requested interval, fetch scope, and time bucket.
 2. **Base-interval aggregation:** where provider semantics permit, fetch a small canonical interval such as `1m` once and derive `5m`, `10m`, `15m`, and other supported intervals.
+3. **Provider-owned acquisition:** schedule the canonical base series independently of user evaluation, stagger unique symbols fairly, and enforce the provider's physical hourly and daily request budgets across the whole application.
 
-Exact-request sharing delivers most of the immediate protection against duplicated API calls with substantially less risk. Aggregation is an additional optimization, not a prerequisite.
+Exact-request sharing delivers immediate protection against identical duplicate
+calls. It is not the final scaling boundary: the target for aggregatable
+providers such as Tiingo is one base-series acquisition per unique symbol,
+regardless of users, candle intervals, patterns, evaluation schedules, or
+manual scan taps.
 
 ## Prerequisites (found during single-user rollout)
 
@@ -154,7 +163,7 @@ Examples:
 
 - `yahoo:public`
 - `polygon:server-account`
-- `databento:server-account`
+- `ibkr-cme:server-account`
 - `polygon:user-credential:<credentialId>`
 
 Two requests may share data only when their provider scopes are compatible under the application's credential policy and the provider's terms. A per-user credential is private by default. Data fetched using it must not be served to another user unless an explicit entitlement and licensing policy permits that sharing.
@@ -248,9 +257,21 @@ Only a bounded recent window should be cached. PostgreSQL remains authoritative 
 
 ## Different user intervals
 
-Different intervals are handled using a hybrid strategy.
+The user's candle interval is an **evaluation preference**, not a provider
+acquisition setting. For a provider/asset class that supports safe base-series
+aggregation, changing a watch from `1m` to `5m` or `10m` must not create another
+upstream series, change the provider cadence, or consume more request quota.
 
-### Exact interval reuse
+The final acquisition identity for Tiingo equities is therefore approximately:
+
+```text
+(providerScope, canonicalSymbol, baseFetchScope)
+```
+
+The requested display/evaluation interval is deliberately absent. It is applied
+after acquisition when the scanner derives candles locally.
+
+### Transitional exact interval reuse
 
 If one user watches `AAPL 1m` and two users watch `AAPL 10m`, the first phase creates at most:
 
@@ -258,8 +279,9 @@ If one user watches `AAPL 1m` and two users watch `AAPL 10m`, the first phase cr
 - one shared `AAPL 10m` request per applicable fetch window.
 
 The two `10m` users share their request even if they use different patterns.
+This is the currently implemented Phase 1 behavior, not the target steady state.
 
-### Base-interval aggregation
+### Required base-interval aggregation
 
 Where safe, the second phase fetches `1m` candles once and derives larger intervals:
 
@@ -285,6 +307,12 @@ The scanner initially preserves the existing evaluation behavior: a latest in-pr
 
 Some providers offer better or more complete native higher-interval candles than can be derived from their `1m` endpoint. The system must maintain a provider capability table and use native intervals when aggregation would reduce correctness.
 
+For providers that cannot safely aggregate from one base interval, the
+provider-native interval remains part of the acquisition identity. This is a
+documented capability exception, not a reason to let user intervals influence
+Tiingo's acquisition inventory. IBKR futures require a separate parity and
+exchange-session alignment pass before they can move to a canonical 1m series.
+
 ## Different patterns and thresholds
 
 Patterns and thresholds are not part of the shared acquisition key.
@@ -303,13 +331,18 @@ Detector versions remain part of alert deduplication. Updating one pattern imple
 
 ## Different scan frequencies
 
-Acquisition cadence and user evaluation cadence are separate concepts.
+Acquisition cadence and user evaluation cadence are separate concepts and must
+be implemented by separate schedulers.
 
-- Market data is refreshed at the fastest cadence currently required by eligible watches within a provider scope.
+- Market data is refreshed at a server-owned cadence derived from provider
+  policy, the number of unique acquisition series, market calendars, and
+  remaining quota.
 - Each watch is evaluated only when its PostgreSQL `nextScanAt` is due.
 - A slower watch may reuse a snapshot fetched for a faster watch if it is fresh enough.
-- A fast watch is not delayed merely because most users chose a slower frequency;
-  it may be slowed when the shared provider budget requires it.
+- A user's candle interval or evaluation frequency never accelerates or slows
+  provider acquisition.
+- A manual scan evaluates the freshest cached series and never bypasses the
+  acquisition scheduler.
 
 Example:
 
@@ -319,13 +352,14 @@ User B: AAPL 10m, evaluate every 10 minutes
 User C: AAPL 10m, evaluate every 5 minutes
 ```
 
-When the provider budget is slack, the acquisition layer may refresh `AAPL 1m`
-every minute. User A evaluates each minute, User C evaluates every five minutes
-using the latest derived `10m` candle, and User B evaluates every ten minutes.
+The server may refresh the shared `AAPL 1m` series every 72 seconds because of
+the current Tiingo budget. User A evaluates each minute using the freshest
+available series, User C every five minutes using a derived `10m` view, and User
+B every ten minutes. None of those evaluation schedules changes the 72-second
+provider cadence.
 
 PostgreSQL remains the source of truth for each watch's requested schedule. The
-effective schedule is the slower of that request and the provider governor's
-safe cadence; Redis freshness does not independently change it.
+provider acquisition inventory and schedule are separate server-owned state.
 
 ### Worked example (all dimensions at once)
 
@@ -340,14 +374,22 @@ User B: 200 symbols incl. AAPL 10m, Consecutive Move, 0.25%, evaluate every 10m
 - **Today (no sharing):** ~400 provider fetches per A-cycle-equivalent — one per user-watch — scaling linearly with users. AAPL is fetched by A (1m) and by B (10m) independently, plus every overlapping symbol is fetched twice.
 - **Phase 1 (exact-request sharing):** fetches collapse to the number of unique `(providerScope, symbol, interval, fetchScope, timeBucket)` keys. The 150 overlapping symbols are fetched once *per distinct interval*; A's 1m and B's 10m of AAPL are still two fetches (different intervals), but a second user on AAPL 10m adds zero. Roughly: `unique(equity symbols) × unique(intervals in use)`, not `users × symbols`.
 - **Phase 2 (base-interval aggregation):** AAPL is fetched once at **1m**; B's 10m is **derived**, not fetched. Now overlapping symbols cost **one 1m fetch each** regardless of how many intervals or users consume them.
-- **Frequencies:** when budget is slack, the 1m acquisition runs every minute for A; B (every 10m) reuses the freshest derived 10m snapshot and triggers **no** extra upstream call. A is not slowed by B, but both can be paced by the shared provider governor.
+- **Provider-owned acquisition:** the 1m acquisition cadence comes only from server provider policy and quota. Neither A's nor B's interval or evaluation schedule changes it.
 - **Patterns/thresholds:** A's Momentum Burst @0.50% and B's Consecutive Move @0.25% both evaluate against the same candle array; each writes only its own state/alerts/push.
 
-The invariant to hold: **upstream requests scale with unique eligible acquisition keys, never with user count** — and the browser contributes zero (see Prerequisites).
+The invariant to hold for Tiingo equities: **upstream requests scale with unique
+eligible symbols, never with user count, selected candle intervals, pattern
+settings, evaluation frequency, or Scan Now taps**. Internal evaluations and
+database writes may still scale with user watches, but they make no provider
+request.
 
 ## Adaptive acquisition cadence (budget governor)
 
-The rule above ("refresh at the fastest cadence any user requests") answers *demand* but not *affordability*. As the aggregate symbol count grows, a fixed fast cadence will eventually exceed the provider's rate cap. Rather than impose a hard per-symbol limit, the acquisition layer **derives its cadence from the remaining budget**: spend as fast as safely possible when symbols are few, and automatically back off as they grow, so the provider cap is never crossed and cadence degrades smoothly instead of failing.
+As the aggregate symbol count grows, a fixed fast cadence eventually exceeds
+the provider's rate cap. The acquisition layer therefore derives cadence from
+server-owned provider policy and the remaining budget: spend as fast as safely
+possible when symbols are few, and automatically back off as they grow. User
+watch settings do not participate in this calculation.
 
 ### The control loop
 
@@ -360,7 +402,7 @@ usable_bytes  = monthly_bytes × headroom     # e.g. 40 GB × 0.8 = 32 GB
 
 cadence_seconds = max(
   PROVIDER_FLOOR,                             # hard safety floor (e.g. 15s)
-  fastest_cadence_any_user_requested,         # never fetch faster than demanded
+  PROVIDER_TARGET,                            # optional server-owned target
   ceil(N × 3600        / usable_hourly),      # stay under the hourly cap
   ceil(N × window_secs / usable_daily),       # stay under the daily cap
   ceil(monthly_bar_seconds × bytes_per_bar
@@ -368,45 +410,67 @@ cadence_seconds = max(
 )
 ```
 
-- **`N`** is the count of **unique enabled, in-session acquisition keys** for that provider scope — the same set that drives shared fetches (see Sessions below). Disabled and out-of-session watches never contribute to `N`.
-- **`window_secs`** is the length of the currently active session window for that scope (e.g. ~12h for a pre+RTH equity session, 24h for crypto). A longer active window forces a slower per-fetch cadence to keep the *daily total* under cap.
+- **`N`** is the count of unique enabled acquisition series for that provider scope. For Tiingo equities this is unique canonical symbols, not symbol × user interval.
+- **`window_secs`** is the server-owned provider/market acquisition window (for example 16h for US extended-hours equities), not a user's selected evaluation session. A longer active window forces a slower per-fetch cadence to keep the *daily total* under cap.
 - **`monthly_bar_seconds`** estimates each distinct response's bars multiplied
   by active seconds and trading days. It lets the governor account for the fact
   that repeatedly downloading a full current-day response costs more bandwidth
   as the session grows.
 - **`headroom`** reserves margin (e.g. 20%) for retries, bursts, and clock skew so the theoretical rate never rides the exact ceiling.
-- The `max(...)` means whichever constraint binds wins: with few symbols the user-requested cadence dominates (budget is slack); as `N` grows the budget terms dominate and every watch in the scope slows uniformly.
+- The `max(...)` means whichever constraint binds wins. With few symbols the provider floor/target dominates; as `N` grows the budget terms dominate and every acquisition series in the scope slows uniformly.
 
-The caps (`hourly_cap`, `daily_cap`) are **runtime configuration per provider scope**, not build-time constants — upgrading a provider plan is a config change that the governor picks up on its next recompute, with no redeploy. Because the formula takes the `max` over both the hourly and daily terms, the *tighter* limit always paces the system: raising only the daily total while the per-hour rate is unchanged leaves cadence bound by the hourly rate. Both numbers from a plan must be configured together for an upgrade to translate into a faster cadence. The governor scales in both directions — a plan upgrade tightens cadence toward the user-requested/floor limit; a downgrade or a provider-imposed reduction lengthens it — all without code change.
+The caps (`hourly_cap`, `daily_cap`) are **runtime configuration per provider scope**, not build-time constants — upgrading a provider plan is a config change that the governor picks up on its next recompute, with no redeploy. Because the formula takes the `max` over both the hourly and daily terms, the *tighter* limit always paces the system: raising only the daily total while the per-hour rate is unchanged leaves cadence bound by the hourly rate. Both numbers from a plan must be configured together for an upgrade to translate into a faster cadence. The governor scales in both directions — a plan upgrade tightens cadence toward the provider floor/target; a downgrade or a provider-imposed reduction lengthens it — all without code change.
 
 ### Behavior across scale
 
-With `headroom = 0.8`, a 10,000/hr + 100,000/day cap, and a 12h active window:
+With `headroom = 0.8`, a 10,000/hr + 100,000/day cap, and a
+16h extended-hours equity acquisition window, the usable budgets are 8,000/hr
+and 80,000/day. The daily budget allows an average of 5,000 requests/hour and is
+normally tighter than the hourly budget:
 
-| Unique keys `N` | Hourly floor | Daily floor | Effective cadence |
-|---|---|---|---|
-| 50 | 23s | 27s | ~27s (or the user's ask, if slower) |
-| 200 | 90s | 108s | ~1.8 min |
-| 500 | 3.75 min | 4.5 min | ~4.5 min |
-| 1000 | 7.5 min | 9 min | ~9 min |
+| Unique Tiingo symbols `N` | Effective cadence per symbol | Predicted requests/hour |
+|---:|---:|---:|
+| 20 | 15s provider floor | 4,800 |
+| 50 | 36s | 5,000 |
+| 100 | 72s | 5,000 |
+| 200 | 2.4 min | 5,000 |
+| 500 | 6 min | 5,000 |
+| 1,000 | 12 min | 5,000 |
+| 5,000 | 60 min | 5,000 |
 
-The system spends near real-time for a small deployment and auto-throttles as it grows, with no operator intervention and no hard symbol ceiling.
+One hundred users and one thousand users watching the same 100 symbols therefore
+have the same provider acquisition cost: approximately one request per symbol
+every 72 seconds. Their evaluation workload differs, but Tiingo usage does not.
+
+The formula selects a safe average cadence; it is not itself a hard limiter.
+The acquisition scheduler must stagger symbols evenly across the window instead
+of releasing the full inventory in a burst.
 
 ### Robustness requirements
 
-- **Measured feedback, not just the formula.** The governor must also read *actual* consumption from `provider_request_stats` for the current bucket and tighten cadence if real usage drifts toward the cap. The formula is the target; the meter is the guardrail (retries, negative-cache misses, and derived-interval refreshes all consume real calls the formula does not model).
+- **Measured feedback, not just the formula.** The governor must read actual physical HTTP consumption from hourly and daily counters and tighten cadence based on remaining quota and remaining active-session time.
+- **Hard enforcement.** A provider-scoped Redis quota gate must atomically reserve capacity before every physical HTTP attempt. The cadence formula is an optimizer; the quota gate is the safety boundary.
+- **Whole-application coverage.** Scanner acquisition, charts, the pattern tester, anonymous requests, retries, and fallback endpoint attempts using the same credential must use the same quota gate.
+- **Physical attempts, not logical operations.** If one provider operation tries a primary endpoint and then a compatibility endpoint, both HTTP attempts consume and record quota.
 - **Hysteresis.** Apply budget-required slowdowns immediately. Require a
   threshold change only before speeding back up, so cadence does not oscillate
   when `N` sits on a boundary and hysteresis never consumes reserved headroom.
 - **Per-provider scope.** Each provider has its own cap, its own `N`, and its own governor; throttling Tiingo must not affect Polygon.
-- **Fairness.** When the budget binds, the slowdown applies uniformly across the scope's keys; no single user's fast request can starve the shared budget for everyone else.
+- **Fairness.** Acquire the stalest due symbol first and stagger the inventory; no user action or hot symbol can starve the rest of the scope.
 - **Observability.** Emit the current effective cadence, `N`, and headroom utilization as metrics so the throttle is legible in the admin provider-stats view.
 
 ## Sessions and market calendars
 
-Session eligibility remains per watch. A watch outside its configured session is deferred without triggering an acquisition solely for that watch.
+Session eligibility remains per watch for evaluation. Acquisition eligibility
+uses a server-owned market calendar and provider feed window. A user's `rth`,
+`pre`, or `ext` choice filters the shared base series during evaluation; it does
+not redefine the provider's cadence or quota window.
 
-The same exclusion applies to **disabled watches**. Users can switch a whole asset class off (stored as `server_watch.enabled = false`); disabled watches must be excluded from acquisition grouping entirely — they must never contribute a symbol/interval to a shared fetch, exactly like an out-of-session watch. A shared fetch is driven only by the set of currently **enabled, in-session** watches.
+The same exclusion applies to **disabled watches**. Users can switch a whole
+asset class off (stored as `server_watch.enabled = false`); disabled watches do
+not create acquisition demand. A symbol remains in the provider inventory while
+at least one enabled watch consumes it, and it is fetched only while the
+server-owned market calendar says its feed is active.
 
 Sharing is allowed when the fetched candle scope contains sufficient data for every participating watch. A broad extended-hours fetch may be filtered independently for regular-hours evaluation, provided that:
 
@@ -421,11 +485,19 @@ Futures and crypto require their own calendar and maintenance-window rules. A si
 
 ### Scheduler
 
-The scheduler continues selecting due `server_watch` rows from PostgreSQL. The first phase does not require grouping all watches into one large job; independent watch jobs can call the shared acquisition service and still deduplicate provider requests through Redis.
+Phase 7 separates scheduling into two independent loops:
 
-This minimizes migration risk and preserves existing retry behavior.
+1. **Acquisition scheduler:** maintains one due record per provider acquisition
+   series, computes a server-owned cadence, orders due series by staleness, and
+   spreads requests evenly through the available provider budget.
+2. **Evaluation scheduler:** selects due `server_watch` rows, derives the user's
+   requested interval and session view from the latest base snapshot, then runs
+   the user's detector. It cannot call the provider directly.
 
-A later optimization may group due watches by acquisition key and enqueue one acquisition job plus evaluation jobs. That should be considered only if per-watch queue overhead becomes material.
+The existing per-watch scheduler remains during migration, but provider fetching
+must be removed from that worker before the unique-symbol invariant is declared
+complete. Evaluation jobs may remain per-watch unless queue or database pressure
+shows that fan-out grouping is needed.
 
 ### Acquisition service
 
@@ -448,6 +520,9 @@ It owns:
 - safe interval aggregation;
 - acquisition metrics.
 
+In Phase 7 it also owns the rolling base series and exposes read-only derived
+snapshots to evaluators. Only the acquisition scheduler may refresh that series.
+
 It does not own pattern detection, user state, alert creation, SSE, or Web Push.
 
 ### Watch evaluator
@@ -456,7 +531,7 @@ The existing worker becomes an evaluator:
 
 1. Load the user watch.
 2. Confirm it remains enabled and in session.
-3. Request a candle snapshot from `SharedCandleService`.
+3. Read a candle snapshot from `SharedCandleService`; never initiate acquisition.
 4. Run the watch's detector and threshold.
 5. Transactionally update that watch's state, alert, and event.
 6. Notify only that user.
@@ -479,7 +554,11 @@ These values must be configuration, not scattered constants. The cache record's 
 
 ### Redis unavailable
 
-The scanner may fall back to direct provider fetching under the existing global rate limiter, or deliberately fail and retry based on an environment-controlled policy. Production should prefer bounded degradation over an uncontrolled request storm.
+Production acquisition fails closed or enters an explicitly bounded degraded
+mode. It must not bypass the distributed quota gate with an uncontrolled direct
+provider fetch. User evaluations may continue from a sufficiently fresh local
+or persisted snapshot and otherwise return `no-data`/`error` until coordination
+recovers.
 
 ### Lock owner crashes
 
@@ -503,7 +582,24 @@ No durable user data is lost. Subsequent evaluations repopulate snapshots from t
 
 Rate limits apply to actual upstream provider calls, not cache hits or pattern evaluations.
 
-Use a provider-scoped distributed limiter so multiple scanner processes share the same quota. Note the **current** implementation is a single global BullMQ *worker* limiter (`SCANNER_RATE_MAX` per `SCANNER_RATE_DURATION_MS`, default 10/sec) that throttles job throughput regardless of provider — it does not partition by `providerScope` and does not coordinate across multiple worker containers. Migrating to a provider-scoped, Redis-backed distributed limiter is part of this work; until then, a single worker's global cap is the only protection and it must be tuned below the provider's real limit (which is per-plan, e.g. Tiingo Power vs Polygon free — the mismatch that caused live 429s in the single-user rollout). Metrics must distinguish:
+Use a provider-scope/credential-scope distributed limiter so all application
+processes share the same quota. It must atomically enforce both an hourly budget
+and a daily budget; satisfying one limit never permits crossing the other. The
+configured headroom is reserved before scheduling normal acquisition.
+
+The quota permit sits immediately around the physical HTTP request, below the
+scanner/chart/tester routing layers. This ensures every attempt is counted,
+including retries and a second endpoint attempted by a fallback provider. A
+request without a permit is deferred or rejected; it never proceeds optimistically.
+
+The **current** implementation is only a single global BullMQ *worker* limiter
+(`SCANNER_RATE_MAX` per `SCANNER_RATE_DURATION_MS`, default 10/sec). It throttles
+evaluation job throughput regardless of provider, does not coordinate multiple
+worker containers, does not cover web request paths, and does not enforce either
+the Tiingo hourly or daily physical-request quota. It must remain described as a
+temporary guard, not the completed provider limiter.
+
+Metrics must distinguish:
 
 - evaluation jobs;
 - cache hits;
@@ -512,6 +608,10 @@ Use a provider-scoped distributed limiter so multiple scanner processes share th
 - upstream requests;
 - provider throttles;
 - provider errors.
+
+They must additionally report remaining hourly permits, remaining daily permits,
+physical attempts by endpoint, predicted versus actual requests/hour, oldest
+acquisition age, and acquisition-schedule lag.
 
 Retries must re-enter acquisition through the shared cache rather than bypassing it.
 
@@ -606,17 +706,47 @@ If exact sharing and aggregation later require durable provider capability or ca
 - Consider acquisition-group jobs only if queue volume or database reads become a measured bottleneck. **Skipped** — no measured bottleneck; per-watch jobs already dedupe through Redis.
 - Do not combine user evaluation transactions or notifications.
 
-### Phase 6 — Adaptive cadence governor 🚀 enabled in code, pending deployment
+### Phase 6 — Adaptive cadence governor ⚠️ advisory, pending deployment
 
 - Compute the effective acquisition cadence per provider scope from the budget formula. **Done** (`governor.ts` `computeCadenceSeconds`).
-- Drive `N` from the set of unique enabled, in-session acquisition keys. **Done** (`acquisition-inventory.ts`).
-- Feed measured usage from `provider_request_stats` back into the governor and tighten when real usage drifts toward the cap. **Done** (`measuredCadenceSeconds`), at daily granularity (the stats table's resolution); hourly-resolution feedback would need a schema change.
+- Drive `N` from the set of unique enabled acquisition series. **Partial** — `acquisition-inventory.ts` currently counts `(canonicalSymbol, interval)` and derives demand from user session/frequency; Phase 7 must make Tiingo inventory symbol-only and provider-owned.
+- Feed measured usage from `provider_request_stats` back into the governor and tighten when real usage drifts toward the cap. **Partial** — daily logical-operation feedback exists, but hourly physical-request accounting and enforcement do not.
 - Apply hysteresis on a coarse recompute interval; emit effective cadence, `N` as metrics. **Done** (`CadenceGovernor` hysteresis; recompute loop logs cadence + `N`). Headroom-utilization metric not yet emitted.
 - Enabled by default through `SCANNER_GOVERNOR`. The cadence takes the strictest
   hourly-request, daily-request, and estimated monthly-bandwidth term, all with
   configurable headroom. When explicitly disabled, acquisition uses the fixed
   bucket. Caps are runtime config (`SCANNER_BUDGET_*`, per-scope
   `SCANNER_PROVIDER_BUDGETS`).
+
+### Phase 7 — Provider-owned unique-symbol acquisition ❌ next work
+
+- Change Tiingo inventory from distinct `(canonicalSymbol, interval)` keys to
+  distinct canonical symbols with one `1m` base series per provider/fetch scope.
+- Make provider floor, target cadence, market calendar, and budget window
+  server-owned configuration. Remove user interval, user evaluation frequency,
+  and user session length from acquisition cadence calculations.
+- Enable Tiingo base-series aggregation only after native-versus-derived parity
+  covers supported intervals, missing bars, partial candles, DST, and extended
+  hours. Remove native interval fallback as an automatic quota bypass; a parity
+  failure yields bounded no-data/error unless a separately budgeted exception is
+  configured.
+- Introduce a provider acquisition scheduler that staggers unique symbols fairly
+  and refreshes the stalest due series first.
+- Make the watch worker evaluation-only. It reads the latest base series, applies
+  the user's session filter, derives the requested interval, evaluates the
+  pattern, and persists isolated user state.
+- Make `Scan Now All` mark evaluations due without marking provider acquisition
+  due. Repeated taps must produce zero additional upstream calls.
+- Add a Redis-backed quota gate for physical hourly and daily requests, keyed by
+  provider credential scope and shared by scanner, web, charts, tester,
+  anonymous requests, retries, and provider fallback attempts.
+- Add hourly-resolution physical-request accounting; retain daily durable totals
+  for audit and reconciliation.
+- Treat Redis/quota coordination failure as fail-closed or explicitly bounded
+  degradation, never unlimited direct fetching.
+- Add a separate provider-owned acquisition policy for IBKR. Do not enable 1m
+  futures aggregation until contract/session bucket alignment and historical
+  pacing parity are verified.
 
 ## Acceptance criteria
 
@@ -635,23 +765,34 @@ If exact sharing and aggregation later require durable provider capability or ca
 ### Different intervals
 
 - Users sharing the same native interval reuse one provider request.
-- When aggregation is enabled, derived OHLCV matches exchange-aligned native candles within defined parity tolerances.
+- For Tiingo, one symbol watched at any combination of `1m`, `5m`, `10m`,
+  `15m`, and other approved derived intervals produces one base-series
+  acquisition schedule.
+- Changing a user's candle interval does not change unique acquisition count,
+  provider cadence, or upstream request volume.
+- Derived OHLCV matches exchange-aligned native candles within defined parity tolerances.
 - Missing base bars never produce fabricated complete candles.
 - In-progress derived candles retain a stable interval bucket timestamp.
 
 ### Different frequencies
 
-- Fast watches receive evaluations at their configured cadence while the
-  provider budget is slack, then at the governor's slower safe cadence.
-- Slow watches do not create additional provider calls when a sufficiently fresh shared snapshot exists.
-- PostgreSQL `nextScanAt` remains authoritative.
+- Watches receive evaluations according to their PostgreSQL schedule using the
+  freshest available shared snapshot.
+- Changing a user evaluation frequency creates no provider acquisition request
+  and does not change provider cadence.
+- PostgreSQL `nextScanAt` remains authoritative for evaluation only.
+- `Scan Now All` makes evaluations due and causes zero provider requests by itself.
 
 ### Adaptive cadence
 
-- With a small symbol count, effective cadence equals the fastest user-requested cadence (budget is slack).
-- As the unique-key count grows, effective cadence lengthens automatically and aggregate upstream usage stays under the configured provider cap (minus headroom).
-- The governor never crosses the cap even when measured usage (retries, misses) exceeds the theoretical formula.
+- With a small symbol count, effective cadence equals the server-owned provider
+  floor/target when budget is slack.
+- As the unique-symbol count grows, effective cadence lengthens automatically and aggregate upstream usage stays under both configured provider caps minus headroom.
+- The distributed quota gate never crosses the hourly or daily cap even when
+  retries, misses, fallback endpoints, manual requests, charts, or multiple
+  application processes exceed the theoretical formula.
 - No hard per-symbol ceiling is imposed; the cap alone paces the system.
+- Due symbols are staggered fairly rather than emitted as synchronized bursts.
 
 ### Concurrency and failure
 
@@ -677,6 +818,11 @@ If exact sharing and aggregation later require durable provider capability or ca
 - in-progress and completed candle handling;
 - missing, duplicated, and out-of-order base bars;
 - lock-token ownership.
+- symbol-only Tiingo inventory regardless of requested candle intervals;
+- provider cadence calculations ignore user evaluation interval/frequency;
+- atomic hourly and daily quota permit reservation;
+- physical retry and fallback-attempt accounting;
+- fair oldest-due acquisition ordering and staggering.
 
 ### Integration tests
 
@@ -688,6 +834,10 @@ If exact sharing and aggregation later require durable provider capability or ca
 - worker crash while holding a lock;
 - Redis flush and repopulation;
 - per-user alert and event isolation.
+- repeated `Scan Now All` evaluations with zero acquisition calls;
+- scanner, chart, tester, and anonymous paths sharing one credential quota;
+- multiple worker/web processes contending for the last hourly/daily permits;
+- Redis loss failing closed without an uncontrolled provider request.
 
 ### Load tests
 
@@ -699,7 +849,9 @@ Compare:
 4. several patterns and thresholds per shared symbol;
 5. multiple scanner workers competing on the same Redis instance.
 
-The primary success measure is upstream requests per unique eligible acquisition key, not jobs processed per second.
+The primary Tiingo success measure is physical upstream requests per unique
+eligible symbol, not jobs processed per second. Mixed user intervals must not
+increase that number.
 
 ## Decisions captured by this specification
 
@@ -709,5 +861,10 @@ The primary success measure is upstream requests per unique eligible acquisition
 - Use distributed single-flight in addition to caching.
 - Partition sharing by provider entitlement.
 - Preserve per-watch PostgreSQL scheduling.
+- Treat per-watch scheduling as evaluation scheduling, not acquisition scheduling.
+- Make provider cadence and market windows server-owned configuration.
+- For Tiingo, acquire one canonical 1m series per unique symbol and derive user intervals locally.
+- Enforce quotas at the physical HTTP boundary across the whole application.
+- Make manual scans evaluation-only.
 - Preserve current intrabar evaluation behavior during the optimization.
 - Treat Redis snapshots as disposable and PostgreSQL user state as authoritative.

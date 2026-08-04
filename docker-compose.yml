@@ -96,7 +96,6 @@ services:
       SCANNER_ESTIMATED_BYTES_PER_BAR: ${SCANNER_ESTIMATED_BYTES_PER_BAR:-110}
       SCANNER_PROVIDER_BUDGETS: ${SCANNER_PROVIDER_BUDGETS:-}
       POLYGON_API_KEY: ${POLYGON_API_KEY:-}
-      DATABENTO_API_KEY: ${DATABENTO_API_KEY:-}
       TIINGO_API_KEY: ${TIINGO_API_KEY:-}
       # IBKR Gateway (CME futures) — reached over the shared external network, not
       # a host port. 4003 is the container-internal socat bridge for the LIVE API

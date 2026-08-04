@@ -13,6 +13,7 @@ import {
 import type { Candle } from './watchAnalysis';
 import { detectAllPatterns, CandleData } from '@/lib/chart/patterns';
 import { displaySymbol, shortProviderLabel } from '@/lib/utils/format';
+import { calculateWatchPriceChange } from '@/lib/market/intraday-change';
 
 interface WatchlistRowItem {
   symbol: string;
@@ -21,6 +22,7 @@ interface WatchlistRowItem {
   status?: 'bullish' | 'bearish' | 'none' | 'no-data' | 'error';
   lastError?: string;
   provider?: string;
+  candles?: Candle[];
 }
 
 interface WatchlistRowProps {
@@ -42,6 +44,15 @@ function WatchlistRow({
 }: WatchlistRowProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const latestPrice = miniCandles.at(-1)?.close;
+  const priceChange = React.useMemo(() => {
+    const sourceCandles = item.candles?.length ? item.candles : miniCandles;
+    return calculateWatchPriceChange(item.symbol, item.interval, sourceCandles);
+  }, [item.candles, item.interval, item.symbol, miniCandles]);
+  const changeClass = (priceChange?.amount ?? 0) > 0
+    ? 'text-profit'
+    : (priceChange?.amount ?? 0) < 0
+      ? 'text-loss'
+      : 'text-muted';
 
   const detectedPattern = React.useMemo(() => {
     if (!miniCandles || miniCandles.length < 10) return null;
@@ -85,17 +96,19 @@ function WatchlistRow({
           </span>
         )}
         {latestPrice !== undefined && (
-          <span className="block text-[10px] font-normal text-muted mt-0.5">
-            Last Price: ${latestPrice.toFixed(2)}
+          <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] font-normal text-muted">
+            <span>Last Price: ${latestPrice.toFixed(2)}</span>
+            {priceChange ? (
+              <span
+                className={`font-bold ${changeClass}`}
+                title="Price change over the same session window used by alerts"
+              >
+                ({priceChange.amount < 0 ? '-' : '+'}${Math.abs(priceChange.amount).toFixed(2)} /{' '}
+                {priceChange.percent > 0 ? '+' : ''}{priceChange.percent.toFixed(2)}%)
+              </span>
+            ) : null}
           </span>
         )}
-      </td>
-      <td
-        onClick={() => onToggle(index)}
-        className="py-4 px-4 text-xs font-mono text-muted cursor-pointer hover:text-accent transition-colors"
-        title="Click to expand inline session chart"
-      >
-        {item.interval}
       </td>
       <td
         onClick={() => onToggle(index)}

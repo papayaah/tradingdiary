@@ -51,9 +51,9 @@ describe('computeInventory', () => {
   it('separates provider scopes', () => {
     const inv = computeInventory([
       entry({ providerScope: 'tiingo:server', providerName: 'Tiingo', canonicalSymbol: 'AAPL' }),
-      entry({ providerScope: 'databento:server', providerName: 'Databento', canonicalSymbol: 'MNQ.C.0' }),
+      entry({ providerScope: 'ibkr-cme:server', providerName: 'IBKR (CME)', canonicalSymbol: 'MNQ=F' }),
     ]);
-    expect(inv.map((i) => i.providerScope).sort()).toEqual(['databento:server', 'tiingo:server']);
+    expect(inv.map((i) => i.providerScope).sort()).toEqual(['ibkr-cme:server', 'tiingo:server']);
     expect(inv.every((i) => i.uniqueKeys === 1)).toBe(true);
   });
 

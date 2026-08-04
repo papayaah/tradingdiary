@@ -3,7 +3,7 @@
 // root's front-month contract (cached, re-qualified daily for rollover), and
 // pulls recent historical bars. A sliding-window pacing guard keeps us under
 // IBKR's ~60-requests/10-min historical limit; on breach we throw so the
-// provider factory falls back to Databento/Yahoo.
+// provider factory falls back to Yahoo.
 //
 // Historical bars need no real-time market-data subscription, so this works
 // today. Real-time streaming (reqRealTimeBars) is a later phase.
@@ -26,7 +26,7 @@ const CLIENT_ID_ROTATION = 4;
 // A down gateway fails instantly (connection refused), so this timeout only
 // guards rare hangs. Kept under the scanner's per-fetch budget
 // (SCANNER_FETCH_TIMEOUT_MS, default 15s) so the FallbackProvider still reaches
-// Databento/Yahoo within the same tick, but high enough for a cold first connect
+// Yahoo within the same tick, but high enough for a cold first connect
 // (the persistent singleton pays this once at startup, not per scan).
 const CONNECT_TIMEOUT_MS = 8_000;
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -43,12 +43,24 @@ const IBKR_SYMBOL_ALIAS: Record<string, string> = {
   BTC: 'BRR', // CME Bitcoin future (symbol=BRR, localSymbol=BTCU6, tradingClass=BTC)
 };
 
-// COMEX/NYMEX/CBOT roots; everything else defaults to CME.
+// Contract routing for roots that do not trade as USD-denominated CME futures.
 const EXCHANGE_BY_ROOT: Record<string, string> = {
   GC: 'COMEX', MGC: 'COMEX', SI: 'COMEX', SIL: 'COMEX', HG: 'COMEX',
   CL: 'NYMEX', MCL: 'NYMEX', NG: 'NYMEX', QM: 'NYMEX', RB: 'NYMEX', HO: 'NYMEX',
   YM: 'CBOT', MYM: 'CBOT', ZB: 'CBOT', ZN: 'CBOT', ZF: 'CBOT', ZT: 'CBOT',
   ZC: 'CBOT', ZS: 'CBOT', ZW: 'CBOT',
+  K200: 'KSE',
+  HSI: 'HKFE',
+  SPI: 'SNFE',
+  SSG: 'SGX',
+};
+
+const CURRENCY_BY_ROOT: Record<string, string> = {
+  NIY: 'JPY',
+  K200: 'KRW',
+  HSI: 'HKD',
+  SPI: 'AUD',
+  SSG: 'SGD',
 };
 
 const BAR_SIZE_BY_INTERVAL: Record<string, string> = {
@@ -60,6 +72,15 @@ const BAR_SIZE_BY_INTERVAL: Record<string, string> = {
 
 function exchangeForRoot(root: string): string {
   return EXCHANGE_BY_ROOT[root.toUpperCase()] || 'CME';
+}
+
+export function ibkrContractSpecForRoot(root: string): Pick<Contract, 'symbol' | 'exchange' | 'currency'> {
+  const normalizedRoot = root.toUpperCase();
+  return {
+    symbol: IBKR_SYMBOL_ALIAS[normalizedRoot] ?? normalizedRoot,
+    exchange: exchangeForRoot(normalizedRoot),
+    currency: CURRENCY_BY_ROOT[normalizedRoot] ?? 'USD',
+  };
 }
 
 function barSizeForInterval(interval: string): string {
@@ -210,10 +231,8 @@ class IbkrClient {
       }, REQUEST_TIMEOUT_MS);
       this.detailReqs.set(reqId, { contracts: [], resolve, reject, timer });
       this.ib!.reqContractDetails(reqId, {
-        symbol: IBKR_SYMBOL_ALIAS[root] ?? root,
+        ...ibkrContractSpecForRoot(root),
         secType: SecType.FUT,
-        exchange: exchangeForRoot(root),
-        currency: 'USD',
       });
     });
     this.contractCache.set(root, { contract, day: today });

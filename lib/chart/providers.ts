@@ -87,7 +87,7 @@ const IBKR_FUTURES_RE = /^([A-Z]{1,4})[FGHJKMNQUVXZ]\d{1,2}$/;
 
 /**
  * Detect futures symbols across the notations we ingest:
- * Yahoo (NQ=F), Databento continuous (NQ.C.0), slash-prefixed (/NQ),
+ * Yahoo continuous (NQ=F), legacy continuous (NQ.C.0), slash-prefixed (/NQ),
  * and IBKR contract codes (MNQU6).
  */
 export function isFuturesSymbol(symbol: string): boolean {
@@ -608,135 +608,6 @@ class TiingoCryptoProvider implements ChartProvider {
     }
 }
 
-function aggregate1mCandles(candles: OHLCCandle[], targetInterval: string): OHLCCandle[] {
-    const minutes = parseInt(targetInterval.replace(/[ms]/g, '')) || 1;
-    if (minutes <= 1) return candles;
-    const intervalSeconds = minutes * 60;
-    const groups = new Map<number, OHLCCandle[]>();
-
-    for (const c of candles) {
-        const bucketTime = Math.floor(c.time / intervalSeconds) * intervalSeconds;
-        if (!groups.has(bucketTime)) {
-            groups.set(bucketTime, []);
-        }
-        groups.get(bucketTime)!.push(c);
-    }
-
-    const aggregated: OHLCCandle[] = [];
-    for (const [time, chunk] of groups.entries()) {
-        const open = chunk[0].open;
-        const close = chunk[chunk.length - 1].close;
-        const high = Math.max(...chunk.map(c => c.high));
-        const low = Math.min(...chunk.map(c => c.low));
-        const volume = chunk.reduce((sum, c) => sum + c.volume, 0);
-
-        aggregated.push({ time, open, high, low, close, volume });
-    }
-    return aggregated;
-}
-
-/**
- * Databento CME Futures Provider (GLBX.MDP3)
- */
-export class DatabentoProvider implements ChartProvider {
-    name = "Databento (GLBX.MDP3 CME)";
-    private apiKey: string;
-
-    constructor(apiKey: string) {
-        this.apiKey = apiKey;
-    }
-
-    private mapSymbol(symbol: string): string {
-        const clean = symbol.toUpperCase().trim();
-        if (clean.includes('.')) return clean;
-        // Reduce IBKR contract codes (MNQU6) and Yahoo tickers (MNQ=F) to the
-        // product root before requesting Databento's continuous front month.
-        return `${futuresRoot(clean)}.c.0`;
-    }
-
-    async fetchCandles(symbol: string, date: string, interval: string): Promise<OHLCCandle[]> {
-        return this.fetchRecentCandles(symbol, interval);
-    }
-
-    async fetchRecentCandles(symbol: string, interval: string): Promise<OHLCCandle[]> {
-        if (!this.apiKey) {
-            throw new Error("Missing DATABENTO_API_KEY");
-        }
-
-        const dbSymbol = this.mapSymbol(symbol);
-        const basicAuth = Buffer.from(this.apiKey.trim() + ':').toString('base64');
-
-        const now = new Date();
-        const endHour = new Date(Math.floor(now.getTime() / (60 * 60 * 1000)) * (60 * 60 * 1000));
-        const startHour = new Date(endHour.getTime() - 24 * 60 * 60 * 1000);
-
-        const startIso = startHour.toISOString().replace(/\:\d{2}\:\d{2}\.\d{3}Z$/, ':00:00Z');
-        const endIso = endHour.toISOString().replace(/\:\d{2}\:\d{2}\.\d{3}Z$/, ':00:00Z');
-
-        const url = `https://hist.databento.com/v0/timeseries.get_range?dataset=GLBX.MDP3&symbols=${dbSymbol}&schema=ohlcv-1m&stype_in=continuous&stype_out=instrument_id&encoding=json&pretty_px=1&pretty_ts=1&start=${startIso}&end=${endIso}`;
-
-        const cleanRoot = futuresRoot(symbol);
-
-        let res = await fetch(url, {
-            headers: {
-                'Authorization': `Basic ${basicAuth}`
-            }
-        });
-
-        // Fallback to parent symbology (e.g., NQ.FUT) if continuous symbology fails
-        if (!res.ok) {
-            const parentSymbol = `${cleanRoot}.FUT`;
-            const fallbackUrl = `https://hist.databento.com/v0/timeseries.get_range?dataset=GLBX.MDP3&symbols=${parentSymbol}&schema=ohlcv-1m&stype_in=parent&stype_out=instrument_id&encoding=json&pretty_px=1&pretty_ts=1&start=${startIso}&end=${endIso}`;
-            res = await fetch(fallbackUrl, {
-                headers: {
-                    'Authorization': `Basic ${basicAuth}`
-                }
-            });
-        }
-
-        if (!res.ok) {
-            const errText = await res.text().catch(() => '');
-            throw new Error(`Databento API error ${res.status}: ${errText.substring(0, 100)}`);
-        }
-
-        const text = await res.text();
-        if (!text.trim()) return [];
-
-        const lines = text.trim().split('\n');
-        const raw1mCandles: OHLCCandle[] = [];
-
-        for (const line of lines) {
-            if (!line.trim()) continue;
-            try {
-                const record = JSON.parse(line);
-                let sec = 0;
-                if (typeof record.ts_event === 'number') {
-                    sec = Math.floor(record.ts_event / 1e9);
-                } else if (typeof record.ts_event === 'string') {
-                    sec = Math.floor(new Date(record.ts_event).getTime() / 1000);
-                }
-                
-                const open = typeof record.open === 'number' ? record.open : parseFloat(record.open);
-                const high = typeof record.high === 'number' ? record.high : parseFloat(record.high);
-                const low = typeof record.low === 'number' ? record.low : parseFloat(record.low);
-                const close = typeof record.close === 'number' ? record.close : parseFloat(record.close);
-                const volume = typeof record.volume === 'number' ? record.volume : parseFloat(record.volume || 0);
-
-                if (sec && !isNaN(close)) {
-                    raw1mCandles.push({ time: sec, open, high, low, close, volume });
-                }
-            } catch {
-                // skip metadata or non-candle record
-            }
-        }
-
-        const aggregated = aggregate1mCandles(raw1mCandles, interval);
-        aggregated.sort((a, b) => a.time - b.time);
-        // Ensure we return the latest candles ending right now!
-        return aggregated.slice(-144);
-    }
-}
-
 /**
  * IBKR Gateway Provider (CME futures via headless IB Gateway).
  *
@@ -759,7 +630,7 @@ export class IBKRProvider implements ChartProvider {
 
 /**
  * Tries each provider in order, moving on when one throws or returns no candles.
- * Lets the futures path degrade IBKR -> Databento -> Yahoo instead of failing a
+ * Lets the futures path degrade IBKR -> Yahoo instead of failing a
  * scan when the gateway is re-authing or down.
  */
 export class FallbackProvider implements ChartProvider {
@@ -769,7 +640,11 @@ export class FallbackProvider implements ChartProvider {
     // getActiveProvider() call, so this is safe to read right after an await.
     lastProviderUsed?: string;
 
-    constructor(public name: string, private chain: ChartProvider[]) {}
+    constructor(
+        public name: string,
+        private chain: ChartProvider[],
+        private emptyWhenExhausted = false,
+    ) {}
 
     /** The expected primary source (first in the chain) — used for entitlement
      *  scope / capability resolution, since the chain's own name ("Futures
@@ -807,9 +682,18 @@ export class FallbackProvider implements ChartProvider {
                 lastError = error;
             }
         }
+        if (this.emptyWhenExhausted) {
+            this.lastProviderUsed = this.primaryName;
+            return [];
+        }
         throw lastError instanceof Error ? lastError : new Error(String(lastError));
     }
 }
+
+// These contracts are available through the deployed IBKR gateway but do not
+// have a reliable Yahoo futures endpoint. Exhausted fallback therefore means
+// "no data" rather than a failed scan/request.
+const IBKR_PRIMARY_FUTURES_ROOTS = new Set(['K200', 'HSI', 'SPI', 'SSG']);
 
 /** The effective provider name for a fetch: the winning inner provider when it's
  *  a fallback chain, otherwise the provider's own name. Read after the fetch. */
@@ -819,8 +703,6 @@ export function effectiveProviderName(provider: ChartProvider): string {
 
 export interface UserProviderConfig {
     preferredProvider?: string;
-    futuresProvider?: string;
-    databentoKey?: string;
     alpacaKeyId?: string;
     alpacaSecret?: string;
     twelveKey?: string;
@@ -850,31 +732,22 @@ export function getActiveProvider(
 
     // Handle Futures Data Feed Selection separately
     if (isFutures) {
-        const futuresPref = userConfig?.futuresProvider || 'auto';
-        const databentoKey = userConfig?.databentoKey || process.env.DATABENTO_API_KEY;
+        const cleanRoot = futuresRoot(upperSymbol);
+        const isIbkrPrimaryRoot = IBKR_PRIMARY_FUTURES_ROOTS.has(cleanRoot);
         // IBKR is only usable where the Gateway is reachable (the scanner/server
         // process), signalled by IBKR_GATEWAY_HOST / IBKR_ENABLED.
         const ibkrConfigured = Boolean(process.env.IBKR_GATEWAY_HOST) || process.env.IBKR_ENABLED === 'true';
 
-        // Explicit Yahoo needs no fallback.
-        if (futuresPref === 'yahoo') {
-            return trackProvider(new YahooProvider(), 'owner');
-        }
-
-        // For every other selection ('ibkr', 'databento', or 'auto') build a
-        // chain with the preferred provider FIRST and Yahoo as a last-resort
-        // fallback, so a down gateway or missing key degrades gracefully instead
-        // of erroring. effectiveProviderName() reports whichever actually served,
-        // so the UI badge shows the real source (e.g. "Yahoo Finance" on fallback).
+        // Futures always use the deployed gateway first and Yahoo as the only
+        // fallback. effectiveProviderName() reports whichever actually served.
         const chain: ChartProvider[] = [];
-        if ((futuresPref === 'ibkr' || futuresPref === 'auto') && ibkrConfigured) {
+        if (ibkrConfigured) {
             chain.push(trackProvider(new IBKRProvider(), 'owner'));
         }
-        if ((futuresPref === 'databento' || futuresPref === 'auto') && databentoKey) {
-            chain.push(trackProvider(new DatabentoProvider(databentoKey), owner(userConfig?.databentoKey)));
-        }
         chain.push(trackProvider(new YahooProvider(), 'owner'));
-        return chain.length === 1 ? chain[0] : new FallbackProvider('Futures', chain);
+        return chain.length === 1 && !isIbkrPrimaryRoot
+            ? chain[0]
+            : new FallbackProvider('Futures', chain, isIbkrPrimaryRoot);
     }
 
     // Handle Equities Data Feed Selection
