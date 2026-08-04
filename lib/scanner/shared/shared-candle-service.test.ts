@@ -38,9 +38,11 @@ vi.mock('@/lib/chart/providers', async (importOriginal) => {
 import {
   SharedCandleService,
   NegativeCacheError,
+  QuotaExceededError,
   storageKeysFor,
 } from './shared-candle-service';
 import { buildAcquisitionKey } from './acquisition-key';
+import { dayKey, readUsage } from './request-quota';
 
 const SAMPLE = [
   { time: 1_700_000_000, open: 10, high: 11, low: 9, close: 10.5, volume: 100 },
@@ -426,6 +428,73 @@ describe('SharedCandleService — cache-only read (evaluate/Scan Now)', () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
     expect(cached?.cacheHit).toBe(true);
     expect(cached?.candles).toHaveLength(SAMPLE.length);
+  });
+});
+
+describe('SharedCandleService — physical-request quota gate', () => {
+  const SCOPE = 'fakeprov:server'; // the scope the request() helper resolves to
+  const OVER_CAP = '100000000'; // far above the default daily cap
+
+  it('counts a real fetch in the scope quota counters', async () => {
+    const store = new MemoryCacheStore(() => T);
+    const svc = new SharedCandleService({
+      store,
+      fetchFn: okFetch(),
+      now: () => T,
+      config: { ...FAST, quotaEnabled: true, quotaEnforce: false },
+    });
+
+    await svc.getCandles(request());
+    await new Promise((r) => setTimeout(r, 5)); // flush fire-and-forget recordRequest
+
+    expect((await readUsage(store, SCOPE, T)).daily).toBe(1);
+  });
+
+  it('enforce mode refuses a fetch over the cap and never calls the provider', async () => {
+    const store = new MemoryCacheStore(() => T);
+    const fetchFn = okFetch();
+    const svc = new SharedCandleService({
+      store,
+      fetchFn,
+      now: () => T,
+      config: { ...FAST, quotaEnabled: true, quotaEnforce: true },
+    });
+    await store.set(dayKey(SCOPE, T), OVER_CAP, 3_600_000);
+
+    await expect(svc.getCandles(request())).rejects.toBeInstanceOf(QuotaExceededError);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it('observe mode allows the fetch over the cap (logs only)', async () => {
+    const store = new MemoryCacheStore(() => T);
+    const fetchFn = okFetch();
+    const svc = new SharedCandleService({
+      store,
+      fetchFn,
+      now: () => T,
+      config: { ...FAST, quotaEnabled: true, quotaEnforce: false },
+    });
+    await store.set(dayKey(SCOPE, T), OVER_CAP, 3_600_000);
+
+    const res = await svc.getCandles(request());
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(res.candles.length).toBeGreaterThan(0);
+  });
+
+  it('does not count or gate when quota is disabled', async () => {
+    const store = new MemoryCacheStore(() => T);
+    const svc = new SharedCandleService({
+      store,
+      fetchFn: okFetch(),
+      now: () => T,
+      config: { ...FAST, quotaEnabled: false, quotaEnforce: true },
+    });
+    await store.set(dayKey(SCOPE, T), OVER_CAP, 3_600_000);
+
+    // Over cap, but quota disabled => fetch proceeds and nothing new is counted.
+    const res = await svc.getCandles(request());
+    expect(res.candles.length).toBeGreaterThan(0);
+    expect((await readUsage(store, SCOPE, T)).daily).toBe(Number(OVER_CAP));
   });
 });
 

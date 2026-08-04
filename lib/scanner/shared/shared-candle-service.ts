@@ -42,6 +42,8 @@ import { getProviderCapability, type ProviderCapability } from './provider-capab
 import { buildFetchScope, canonicalizeSymbol, classifyAssetClass } from './canonical-symbol';
 import { aggregateCandles, parseIntervalMinutes, BASE_INTERVAL } from './aggregate';
 import { getSharedCacheStore, type CacheStore } from './cache-store';
+import { getProviderBudget } from './provider-budget';
+import { checkQuota, readUsage, recordRequest } from './request-quota';
 
 /** Bounded, disposable snapshot persisted in Redis (see spec). */
 export interface SharedCandleSnapshot {
@@ -76,6 +78,14 @@ export class SingleFlightTimeoutError extends Error {
   }
 }
 
+/** Error thrown when the physical-request quota gate refuses a fetch (enforce mode). */
+export class QuotaExceededError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'QuotaExceededError';
+  }
+}
+
 interface ServiceConfig {
   acquisitionBucketMs: number;
   snapshotTtlMs: number;
@@ -85,6 +95,8 @@ interface ServiceConfig {
   lockPollMs: number;
   negativeCacheTtlMs: number;
   aggregationEnabled: boolean;
+  quotaEnabled: boolean;
+  quotaEnforce: boolean;
 }
 
 /** Shared acquisition context for a watch's symbol (provider-resolved once). */
@@ -163,6 +175,8 @@ export class SharedCandleService {
       lockPollMs: deps.config?.lockPollMs ?? scannerConfig.lockPollMs,
       negativeCacheTtlMs: deps.config?.negativeCacheTtlMs ?? scannerConfig.negativeCacheTtlMs,
       aggregationEnabled: deps.config?.aggregationEnabled ?? scannerConfig.aggregationEnabled,
+      quotaEnabled: deps.config?.quotaEnabled ?? scannerConfig.quotaEnabled,
+      quotaEnforce: deps.config?.quotaEnforce ?? scannerConfig.quotaEnforce,
     };
     this.cadenceProvider = deps.cadenceProvider;
   }
@@ -334,7 +348,7 @@ export class SharedCandleService {
     });
   }
 
-  private emitMetric(metric: 'hits' | 'misses' | 'waiters' | 'upstream' | 'errors'): void {
+  private emitMetric(metric: 'hits' | 'misses' | 'waiters' | 'upstream' | 'errors' | 'quotaBlocked'): void {
     try {
       const d = new Date(this.now());
       const YYYYMMDDHH = d.toISOString().slice(0, 13).replace(/[-T]/g, '');
@@ -345,6 +359,31 @@ export class SharedCandleService {
     } catch {
       // Fire-and-forget
     }
+  }
+
+  /**
+   * Hard physical-request ceiling. Reads the scope's Redis hourly/daily counters
+   * and, if a fetch would exceed the budget, either refuses it (enforce) or logs
+   * what it would have refused (observe). On refusal it writes a short quota
+   * negative-cache record so concurrent waiters for the same key fail fast
+   * instead of piling onto the exhausted provider, then throws. No-op when
+   * quota counting is disabled.
+   */
+  private async enforceQuota(providerScope: string, errorKey: string): Promise<void> {
+    if (!this.config.quotaEnabled) return;
+    const budget = getProviderBudget(providerScope);
+    const usage = await readUsage(this.store, providerScope, this.now());
+    const decision = checkQuota(usage, budget);
+    if (decision.allowed) return;
+
+    this.emitMetric('quotaBlocked');
+    if (!this.config.quotaEnforce) {
+      // Observe mode: surface what enforcement WOULD block, then allow the fetch.
+      console.warn(`[scanner] quota (observe) would block ${providerScope}: ${decision.reason}`);
+      return;
+    }
+    await this.writeNegativeCache(errorKey, `quota: ${decision.reason}`);
+    throw new QuotaExceededError(`upstream quota exceeded for ${providerScope}: ${decision.reason}`);
   }
 
   private async acquire(
@@ -399,10 +438,19 @@ export class SharedCandleService {
     lock: { key: string; token: string } | null,
   ): Promise<AcquireResult> {
     try {
+      // Physical-request quota gate: this is the one place a real upstream fetch
+      // happens on the owner path, so it is the choke point for the hard ceiling.
+      await this.enforceQuota(request.providerScope, keys.error);
+
       // The one upstream request (records exactly one provider request).
       this.emitMetric('upstream');
       this.emitMetric('misses');
       const result = await this.fetchFn(request.canonicalSymbol, request.interval, assetClass);
+      // Count the physical request against the scope's fast Redis counters
+      // (the durable Postgres audit is recorded separately by trackProvider).
+      if (this.config.quotaEnabled) {
+        void recordRequest(this.store, request.providerScope, this.now());
+      }
       await this.writeSnapshot(keys.snapshot, request, result);
       return {
         candles: result.candles,
@@ -411,9 +459,13 @@ export class SharedCandleService {
         acquisitionKey,
       };
     } catch (err) {
-      this.emitMetric('errors');
-      const message = err instanceof Error ? err.message : 'provider fetch failed';
-      await this.writeNegativeCache(keys.error, message);
+      // A quota denial already wrote its own negative-cache record and metric in
+      // enforceQuota; don't double-count it as a provider error.
+      if (!(err instanceof QuotaExceededError)) {
+        this.emitMetric('errors');
+        const message = err instanceof Error ? err.message : 'provider fetch failed';
+        await this.writeNegativeCache(keys.error, message);
+      }
       throw err;
     } finally {
       if (lock) {

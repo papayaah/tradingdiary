@@ -23,7 +23,7 @@ import {
   type Candle,
 } from '@/lib/scanner/patterns';
 import { boundRecent, filterCandlesForSession, type CandleSnapshot } from '@/lib/scanner/candles';
-import { getSharedCandleService } from '@/lib/scanner/shared/shared-candle-service';
+import { getSharedCandleService, QuotaExceededError } from '@/lib/scanner/shared/shared-candle-service';
 import { isSessionActive, type AssetClass, type WatchSession } from '@/lib/scanner/sessions';
 import { SCAN_QUEUE, scannerConfig } from '@/lib/scanner/env';
 import { createConnection, type ScanJob } from '@/lib/scanner/queue';
@@ -105,6 +105,12 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
       );
       providerName = res.provider;
     } catch (err) {
+      // Quota ceiling hit: this is a deliberate, expected refusal, not a fault.
+      // Skip cleanly — keep the last state, don't mark the row errored, and don't
+      // let BullMQ retry (a retry would just hit the same exhausted budget).
+      if (err instanceof QuotaExceededError) {
+        return { status: 'idle', alerted: false, skipped: 'quota' };
+      }
       const message = err instanceof Error ? err.message : 'fetch failed';
       await db
         .insert(serverWatchState)

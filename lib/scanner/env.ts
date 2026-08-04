@@ -78,6 +78,17 @@ export const scannerConfig = {
   ),
   budgetHeadroom: Number(process.env.SCANNER_BUDGET_HEADROOM ?? 0.8),
   budgetFloorSeconds: Number(process.env.SCANNER_BUDGET_FLOOR_SECONDS ?? 15),
+
+  // Phase 7 physical-request quota gate. `quotaEnabled` counts every real
+  // upstream fetch in Redis (hourly + daily, per provider scope) — a fast atomic
+  // backstop distinct from the durable Postgres audit in provider_request_stats.
+  // `quotaEnforce` decides what happens at the cap: OFF (default) observes and
+  // logs what it WOULD block so we can watch real headroom first; ON refuses the
+  // fetch (bounded degradation to cache/no-data) so a plan limit is never
+  // crossed. The governor's cadence keeps us under the cap in normal operation;
+  // this gate is the hard ceiling when cadence estimation is wrong.
+  quotaEnabled: (process.env.SCANNER_QUOTA ?? 'true').toLowerCase() === 'true',
+  quotaEnforce: (process.env.SCANNER_QUOTA_ENFORCE ?? 'false').toLowerCase() === 'true',
 } as const;
 
 export const SCAN_QUEUE = 'market-scan';
