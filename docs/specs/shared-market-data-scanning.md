@@ -3,12 +3,28 @@
 ## Status
 
 **Partially implemented (server-side).** Phases 1–4 and 6 provide exact-request
-sharing and advisory cadence control, but they do not yet provide the final
-unique-symbol acquisition architecture or a hard provider-quota guarantee.
-Phase 4 aggregation remains gated OFF. Phase 7 below is the next required body
-of work: separate provider-owned acquisition from user evaluation, acquire one
-base series per unique symbol where supported, and enforce physical-request
-budgets across every server process and request path. See "Implementation
+sharing and advisory cadence control. Phase 7 is now underway: the pieces that
+make acquisition provider-owned and per-symbol are built but gated OFF for a safe
+rollout —
+
+- **Symbol-only inventory** (`acquisitionInterval`): with aggregation on, a symbol
+  watched at any mix of minute intervals collapses to one 1m base series, so the
+  governor's `N` counts symbols, not `(symbol, interval)`.
+- **Derived-vs-native parity harness** (`aggregation-parity.ts` + `dev-parity.ts`):
+  the gate for trusting derived candles before enabling `SCANNER_AGGREGATION`.
+- **Evaluation-only Scan Now**: manual scans re-run the detector against cached
+  data only (`getCachedCandlesForWatch`) and never trigger a provider request.
+- **Physical-request quota gate** (`request-quota.ts`): Redis hourly + daily
+  counters per provider scope, checked at the scanner's single upstream fetch.
+  Counts by default (`SCANNER_QUOTA`); refuses over-budget fetches only when
+  `SCANNER_QUOTA_ENFORCE` is on (default off → observe + log).
+
+Phase 4 aggregation and quota enforcement both remain flag-OFF pending a clean
+parity run and an observation window. The remaining Phase 7 work is a
+provider-owned acquisition scheduler that refreshes each unique base series on the
+governor's cadence independent of user intervals, extending the quota gate to the
+chart/tester/web paths, reconciling the Redis counters with the durable Postgres
+audit, and an IBKR-specific futures-aggregation policy. See "Implementation
 status" below.
 
 ### Implementation status
