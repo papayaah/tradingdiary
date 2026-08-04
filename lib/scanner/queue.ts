@@ -12,6 +12,12 @@ import { SCAN_QUEUE, scannerConfig } from '@/lib/scanner/env';
 export interface ScanJob {
   watchId: string;
   scheduledFor: number; // epoch seconds of the scan window this job represents
+  /**
+   * 'scan' (default) may fetch upstream when the shared cache is cold; 'evaluate'
+   * is a manual Scan Now — it re-runs the detector against already-cached data
+   * only and never triggers a provider request, so repeated taps cost nothing.
+   */
+  mode?: 'scan' | 'evaluate';
 }
 
 export function createConnection(): IORedis {
@@ -32,4 +38,11 @@ export function getScanQueue(): Queue<ScanJob> {
  *  BullMQ forbids ':' in custom job ids, so use '_' as the separator. */
 export function scanJobId(watchId: string, scheduledFor: number): string {
   return `${watchId}_${scheduledFor}`;
+}
+
+/** Job id for a manual evaluate-only scan. Distinct namespace from scheduled
+ *  scans so the two never dedupe against each other; taps within the same second
+ *  collapse to one (harmless — same cached data). */
+export function evaluateJobId(watchId: string, atSeconds: number): string {
+  return `eval_${watchId}_${atSeconds}`;
 }

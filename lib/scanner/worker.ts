@@ -20,8 +20,9 @@ import {
   normalizePatternSettings,
   scanAllPatterns,
   PATTERN_VERSION,
+  type Candle,
 } from '@/lib/scanner/patterns';
-import { boundRecent, filterCandlesForSession } from '@/lib/scanner/candles';
+import { boundRecent, filterCandlesForSession, type CandleSnapshot } from '@/lib/scanner/candles';
 import { getSharedCandleService } from '@/lib/scanner/shared/shared-candle-service';
 import { isSessionActive, type AssetClass, type WatchSession } from '@/lib/scanner/sessions';
 import { SCAN_QUEUE, scannerConfig } from '@/lib/scanner/env';
@@ -47,42 +48,80 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
   }
 
   const nowIso = new Date().toISOString();
+  const evaluateOnly = job.mode === 'evaluate';
 
-  let candles;
+  let candles: Candle[];
   let providerName: string;
-  try {
-    // Shared acquisition: equivalent watches (any user/device) needing the same
-    // provider/symbol/interval/scope/bucket collapse to one upstream fetch. Only
-    // the fetch is shared — evaluation, state, alerts, events, and push below
-    // remain per-watch and unchanged.
-    const res = await getSharedCandleService().getCandlesForWatch(
+  if (evaluateOnly) {
+    // Manual Scan Now: re-run the detector against ALREADY-CACHED data, never a
+    // provider fetch. Repeated taps therefore cost zero upstream calls.
+    const cached = await getSharedCandleService().getCachedCandlesForWatch(
       watch.symbol,
       watch.interval,
       watch.assetClass as AssetClass,
     );
-    candles = filterCandlesForSession(
-      res.candles,
-      watch.session as WatchSession,
-      watch.assetClass as AssetClass,
-    );
-    providerName = res.provider;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'fetch failed';
-    await db
-      .insert(serverWatchState)
-      .values({
-        watchId: watch.id,
-        status: 'error',
-        lastError: message,
-        lastScannedAt: nowIso,
-        recentCandles: [],
-        updatedAt: nowIso,
-      })
-      .onConflictDoUpdate({
-        target: serverWatchState.watchId,
-        set: { status: 'error', lastError: message, lastScannedAt: nowIso, updatedAt: nowIso },
-      });
-    throw err; // let BullMQ retry with backoff
+    if (cached && cached.candles.length > 0) {
+      candles = filterCandlesForSession(
+        cached.candles,
+        watch.session as WatchSession,
+        watch.assetClass as AssetClass,
+      );
+      providerName = cached.provider;
+    } else {
+      // Shared cache empty (e.g. the acquisition bucket just rolled): fall back to
+      // this watch's last persisted candles — still zero upstream calls. They were
+      // already session-filtered and sanitized when persisted, so use them as-is.
+      const [prev] = await db
+        .select({
+          recentCandles: serverWatchState.recentCandles,
+          lastProvider: serverWatchState.lastProvider,
+        })
+        .from(serverWatchState)
+        .where(eq(serverWatchState.watchId, watch.id));
+      const prevCandles = Array.isArray(prev?.recentCandles)
+        ? (prev!.recentCandles as CandleSnapshot[])
+        : [];
+      if (prevCandles.length === 0) {
+        return { status: 'idle', alerted: false, skipped: 'no-cache' };
+      }
+      candles = prevCandles.map((c) => ({ ...c, volume: c.volume ?? 0 }));
+      providerName = prev?.lastProvider ?? 'cache';
+    }
+  } else {
+    try {
+      // Shared acquisition: equivalent watches (any user/device) needing the same
+      // provider/symbol/interval/scope/bucket collapse to one upstream fetch. Only
+      // the fetch is shared — evaluation, state, alerts, events, and push below
+      // remain per-watch and unchanged.
+      const res = await getSharedCandleService().getCandlesForWatch(
+        watch.symbol,
+        watch.interval,
+        watch.assetClass as AssetClass,
+      );
+      candles = filterCandlesForSession(
+        res.candles,
+        watch.session as WatchSession,
+        watch.assetClass as AssetClass,
+      );
+      providerName = res.provider;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'fetch failed';
+      await db
+        .insert(serverWatchState)
+        .values({
+          watchId: watch.id,
+          status: 'error',
+          lastError: message,
+          lastScannedAt: nowIso,
+          recentCandles: [],
+          updatedAt: nowIso,
+        })
+        .onConflictDoUpdate({
+          target: serverWatchState.watchId,
+          set: { status: 'error', lastError: message, lastScannedAt: nowIso, updatedAt: nowIso },
+        });
+      throw err; // let BullMQ retry with backoff
+    }
   }
 
   const last = candles[candles.length - 1];

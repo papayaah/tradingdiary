@@ -400,6 +400,35 @@ describe('SharedCandleService.buildRequest — provider-aware canonicalization',
   });
 });
 
+describe('SharedCandleService — cache-only read (evaluate/Scan Now)', () => {
+  it('returns null and never fetches when nothing is cached', async () => {
+    const store = new MemoryCacheStore(() => T);
+    const fetchFn = okFetch();
+    const svc = new SharedCandleService({ store, fetchFn, now: () => T, config: FAST });
+
+    const res = await svc.getCachedCandlesForWatch('AAPL', '10m', 'equity');
+
+    expect(res).toBeNull();
+    expect(fetchFn).not.toHaveBeenCalled(); // the whole point: zero upstream calls
+  });
+
+  it('serves the cached snapshot a prior scan populated, still without fetching', async () => {
+    const store = new MemoryCacheStore(() => T);
+    const fetchFn = okFetch();
+    const svc = new SharedCandleService({ store, fetchFn, now: () => T, config: FAST });
+
+    // A normal scan populates the shared cache (one upstream call).
+    await svc.getCandlesForWatch('AAPL', '10m', 'equity');
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+
+    // Scan Now then reads that snapshot without adding any call.
+    const cached = await svc.getCachedCandlesForWatch('AAPL', '10m', 'equity');
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(cached?.cacheHit).toBe(true);
+    expect(cached?.candles).toHaveLength(SAMPLE.length);
+  });
+});
+
 describe('MemoryCacheStore — lock-token ownership (contract used by the service)', () => {
   it('acquires with NX, refuses while held, and releases only for the owning token', async () => {
     const store = new MemoryCacheStore(() => T);

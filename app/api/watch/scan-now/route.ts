@@ -3,14 +3,14 @@ import { and, eq } from 'drizzle-orm';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db/server';
 import { serverWatch } from '@/lib/db/server/schema';
+import { getScanQueue, evaluateJobId, type ScanJob } from '@/lib/scanner/queue';
 
-// Force an immediate scan of the signed-in user's watches: mark them due now so
-// the running scanner picks them up on its next scheduler tick (~5s) instead of
-// waiting for the normal cadence. Rows then update live over SSE.
-//
-// Requires the scanner process to be running — always on in production, and
-// `npm run scanner` locally. Without it, the watches are marked due but nothing
-// processes them until the scanner runs.
+// Manual "Scan Now": re-evaluate the signed-in user's watches against the data
+// already in the shared cache and emit fresh state over SSE — WITHOUT triggering
+// any provider request. It enqueues evaluate-only jobs (mode: 'evaluate') for the
+// running scanner to process; it deliberately does NOT touch nextScanAt, so the
+// provider acquisition cadence is untouched and repeated taps cost zero upstream
+// calls. (Requires the scanner process to be running — always on in production.)
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -20,12 +20,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const nowIso = new Date().toISOString();
   const rows = await db
-    .update(serverWatch)
-    .set({ nextScanAt: nowIso, updatedAt: nowIso })
-    .where(and(eq(serverWatch.userId, session.user.id), eq(serverWatch.enabled, true)))
-    .returning({ id: serverWatch.id });
+    .select({ id: serverWatch.id })
+    .from(serverWatch)
+    .where(and(eq(serverWatch.userId, session.user.id), eq(serverWatch.enabled, true)));
 
-  return NextResponse.json({ enqueued: rows.length });
+  const queue = getScanQueue();
+  const atSeconds = Math.floor(Date.now() / 1000);
+  let enqueued = 0;
+  for (const row of rows) {
+    const job: ScanJob = { watchId: row.id, scheduledFor: atSeconds, mode: 'evaluate' };
+    await queue.add('scan', job, {
+      jobId: evaluateJobId(row.id, atSeconds),
+      removeOnComplete: 1000,
+      removeOnFail: 1000,
+      attempts: 1, // cache-only read; nothing to retry
+    });
+    enqueued += 1;
+  }
+
+  return NextResponse.json({ enqueued });
 }

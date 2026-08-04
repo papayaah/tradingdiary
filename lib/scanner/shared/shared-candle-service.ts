@@ -266,6 +266,53 @@ export class SharedCandleService {
   }
 
   /**
+   * Cache-ONLY variant of getCandlesForWatch for manual/evaluate scans: return
+   * the freshest shared snapshot if one exists, deriving from the 1m base when
+   * aggregation applies, but NEVER acquire a lock or call the provider. Returns
+   * null when nothing usable is cached, so the caller can decide what to do
+   * without any upstream request. This is the choke point that makes Scan Now
+   * free: it reads, it never fetches.
+   */
+  async getCachedCandlesForWatch(
+    symbol: string,
+    interval: string,
+    assetClass: AssetClass = classifyAssetClass(symbol),
+  ): Promise<AcquireResult | null> {
+    const ctx = this.resolveContext(symbol, assetClass);
+    const minutes = parseIntervalMinutes(interval);
+    const canAggregate =
+      this.config.aggregationEnabled &&
+      ctx.capability.aggregatableFrom1m &&
+      minutes !== null &&
+      minutes > 1;
+
+    if (canAggregate) {
+      const base = await this.readSnapshotOnly(this.requestFor(ctx, BASE_INTERVAL));
+      if (!base) return null;
+      const derived = aggregateCandles(base.candles, interval);
+      if (derived.ok && derived.candles.length > 0) {
+        return { ...base, candles: derived.candles };
+      }
+      return null; // no native fallback in cache-only mode — that would fetch
+    }
+
+    return this.readSnapshotOnly(this.requestFor(ctx, interval));
+  }
+
+  /**
+   * Read a canonical request's snapshot from the store without locking, fetching,
+   * or negative-caching. Returns null on a miss. Used only by the cache-only path.
+   */
+  private async readSnapshotOnly(request: MarketDataRequest): Promise<AcquireResult | null> {
+    const acquisitionKey = buildAcquisitionKey(request);
+    const keys = storageKeysFor(acquisitionKey);
+    const snapshot = await this.readFreshSnapshot(keys.snapshot, request.providerScope);
+    if (!snapshot) return null;
+    this.emitMetric('hits');
+    return this.hitResult(snapshot, acquisitionKey);
+  }
+
+  /**
    * Return candles for a canonical request. Serves a fresh cached snapshot
    * without calling the provider; otherwise elects one owner (across processes)
    * to fetch once, caches a sanitized bounded snapshot, and shares it. Concurrent
