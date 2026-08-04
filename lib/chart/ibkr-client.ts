@@ -1,7 +1,8 @@
 // Persistent IBKR Gateway connection for the scanner. Holds ONE socket to the
-// headless IB Gateway (see docker-compose.ibkr.yml), qualifies each futures
-// root's front-month contract (cached, re-qualified daily for rollover), and
-// pulls recent historical bars. A sliding-window pacing guard keeps us under
+// headless IB Gateway (see docker-compose.ibkr.yml), resolves each futures
+// root's active (most-liquid) contract via the continuous future — the same
+// contract TWS charts by default — cached and re-qualified daily for rollover,
+// and pulls recent historical bars. A sliding-window pacing guard keeps us under
 // IBKR's ~60-requests/10-min historical limit; on breach we throw so the
 // provider factory falls back to Yahoo.
 //
@@ -166,11 +167,17 @@ class IbkrClient {
         clearTimeout(req.timer);
         this.detailReqs.delete(reqId);
         const today = nyDate();
+        // For a FUT request IBKR returns every listed month; pick the nearest
+        // non-expired one. For a CONTFUT request it returns the single resolved
+        // continuous (active/most-liquid) contract — which may not carry a
+        // month field — so fall back to the first contract when none match the
+        // expiry filter, rather than failing.
         const future = req.contracts
           .filter((c) => c.lastTradeDateOrContractMonth && String(c.lastTradeDateOrContractMonth) >= today)
           .sort((a, b) => String(a.lastTradeDateOrContractMonth).localeCompare(String(b.lastTradeDateOrContractMonth)));
-        if (!future.length) { req.reject(new Error('IBKR: no active contract')); return; }
-        req.resolve(future[0]);
+        const chosen = future[0] ?? req.contracts[0];
+        if (!chosen) { req.reject(new Error('IBKR: no active contract')); return; }
+        req.resolve(chosen);
       });
 
       ib.on(
@@ -216,25 +223,42 @@ class IbkrClient {
     this.requestTimes.push(now);
   }
 
-  private async qualifyFrontMonth(root: string): Promise<Contract> {
-    const today = nyDate();
-    const cached = this.contractCache.get(root);
-    if (cached && cached.day === today) return cached.contract;
-
+  /** One reqContractDetails round-trip for a root at a given security type. */
+  private async requestContract(root: string, secType: SecType): Promise<Contract> {
     await this.connect();
     this.takePacingSlot();
     const reqId = this.nextReqId++;
-    const contract = await new Promise<Contract>((resolve, reject) => {
+    return new Promise<Contract>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.detailReqs.delete(reqId);
         reject(new Error(`IBKR contractDetails timeout for ${root}`));
       }, REQUEST_TIMEOUT_MS);
       this.detailReqs.set(reqId, { contracts: [], resolve, reject, timer });
-      this.ib!.reqContractDetails(reqId, {
-        ...ibkrContractSpecForRoot(root),
-        secType: SecType.FUT,
-      });
+      this.ib!.reqContractDetails(reqId, { ...ibkrContractSpecForRoot(root), secType });
     });
+  }
+
+  /**
+   * Resolve the contract to fetch bars from, cached per NY day (auto-rollover).
+   *
+   * Prefer the CONTINUOUS future (CONTFUT): IBKR maps it to the currently
+   * active/most-liquid contract — the same one TWS charts by default — so
+   * products whose nearest-expiry month is a thin serial/expiring contract
+   * (gold, silver) return dense data instead of a near-empty chart. Fall back to
+   * nearest-expiry FUT if CONTFUT is unavailable, so index futures (whose nearest
+   * quarterly already IS the active contract) never regress.
+   */
+  private async qualifyActiveContract(root: string): Promise<Contract> {
+    const today = nyDate();
+    const cached = this.contractCache.get(root);
+    if (cached && cached.day === today) return cached.contract;
+
+    let contract: Contract;
+    try {
+      contract = await this.requestContract(root, SecType.CONTFUT);
+    } catch {
+      contract = await this.requestContract(root, SecType.FUT);
+    }
     this.contractCache.set(root, { contract, day: today });
     return contract;
   }
@@ -246,7 +270,7 @@ class IbkrClient {
     const duration = durationForInterval(interval);
     const root = futuresRoot(symbol);
     try {
-      const contract = await this.qualifyFrontMonth(root);
+      const contract = await this.qualifyActiveContract(root);
       await this.connect();
       this.takePacingSlot();
       const reqId = this.nextReqId++;
