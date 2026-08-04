@@ -10,13 +10,35 @@
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/scanner/db';
 import { serverWatch } from '@/lib/db/server/schema';
+import { scannerConfig } from '@/lib/scanner/env';
 import { isSessionActive, type AssetClass, type WatchSession } from '@/lib/scanner/sessions';
 import { resolveProviderIdentity } from './provider-scope';
-import { getProviderCapability } from './provider-capabilities';
+import { getProviderCapability, type ProviderCapability } from './provider-capabilities';
 import { canonicalizeSymbol } from './canonical-symbol';
-import { parseIntervalMinutes } from './aggregate';
+import { parseIntervalMinutes, BASE_INTERVAL } from './aggregate';
 
 const HOUR = 3600;
+
+/**
+ * The interval actually fetched upstream for a watch. This MUST mirror
+ * `SharedCandleService.getCandlesForWatch`: when aggregation is enabled and the
+ * provider derives from 1m, every minute-based interval collapses onto the single
+ * 1m base series, so a symbol watched at 1m/5m/10m/15m is ONE acquisition, not
+ * four. Non-minute intervals (e.g. seconds) and non-aggregatable providers keep
+ * their native interval. If this drifts from the fetch path, the governor's N no
+ * longer matches real upstream volume.
+ */
+export function acquisitionInterval(
+  interval: string,
+  capability: ProviderCapability,
+  aggregationEnabled: boolean = scannerConfig.aggregationEnabled,
+): string {
+  const minutes = parseIntervalMinutes(interval);
+  if (aggregationEnabled && capability.aggregatableFrom1m && minutes !== null) {
+    return BASE_INTERVAL;
+  }
+  return interval;
+}
 
 /** Active session window length (seconds) — a longer window forces a slower per-fetch cadence. */
 export function sessionWindowSeconds(session: WatchSession, assetClass: AssetClass): number {
@@ -53,25 +75,31 @@ export interface ScopeInventory {
 }
 
 /** Resolve one watch into its acquisition entry (provider-aware; no upstream request). */
-export function entryForWatch(watch: {
-  symbol: string;
-  interval: string;
-  assetClass: string;
-  session: string;
-  scanFrequencySeconds: number;
-}): AcquisitionEntry {
+export function entryForWatch(
+  watch: {
+    symbol: string;
+    interval: string;
+    assetClass: string;
+    session: string;
+    scanFrequencySeconds: number;
+  },
+  aggregationEnabled: boolean = scannerConfig.aggregationEnabled,
+): AcquisitionEntry {
   const assetClass = watch.assetClass as AssetClass;
   const { providerName, providerScope } = resolveProviderIdentity(watch.symbol, assetClass);
   const capability = getProviderCapability(providerName, assetClass);
   const windowSeconds = sessionWindowSeconds(watch.session as WatchSession, assetClass);
-  const intervalMinutes = parseIntervalMinutes(watch.interval) ?? 1;
+  // Count and size the entry by the interval actually fetched (the 1m base when
+  // aggregation collapses this symbol), not the user's display interval.
+  const interval = acquisitionInterval(watch.interval, capability, aggregationEnabled);
+  const intervalMinutes = parseIntervalMinutes(interval) ?? 1;
   const estimatedBars = Math.max(1, Math.ceil(windowSeconds / (intervalMinutes * 60)));
   const activeDaysPerMonth = assetClass === 'equity' ? 22 : 30;
   return {
     providerScope,
     providerName,
     canonicalSymbol: canonicalizeSymbol(watch.symbol, assetClass, capability),
-    interval: watch.interval,
+    interval,
     scanFrequencySeconds: watch.scanFrequencySeconds,
     windowSeconds,
     monthlyBarSeconds: estimatedBars * windowSeconds * activeDaysPerMonth,
@@ -116,12 +144,15 @@ export function computeInventory(entries: AcquisitionEntry[]): ScopeInventory[] 
  * Load the current inventory from PostgreSQL: enabled watches that are in session
  * right now, folded per provider scope. Used by the governor's recompute loop.
  */
-export async function loadScopeInventory(now: Date = new Date()): Promise<ScopeInventory[]> {
+export async function loadScopeInventory(
+  now: Date = new Date(),
+  aggregationEnabled: boolean = scannerConfig.aggregationEnabled,
+): Promise<ScopeInventory[]> {
   const rows = await db.select().from(serverWatch).where(eq(serverWatch.enabled, true));
   const entries: AcquisitionEntry[] = [];
   for (const w of rows) {
     if (!isSessionActive(w.session as WatchSession, w.assetClass as AssetClass, now)) continue;
-    entries.push(entryForWatch(w));
+    entries.push(entryForWatch(w, aggregationEnabled));
   }
   return computeInventory(entries);
 }

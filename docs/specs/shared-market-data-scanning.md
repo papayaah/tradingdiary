@@ -21,8 +21,8 @@ status" below.
 | Intraday equity fetch scope | 🚀 pending deploy | scanner requests only the current New York trading date and filters per-watch session before evaluation |
 | Phase 4 — base-interval aggregation | ⚙️ built, OFF | enable with `SCANNER_AGGREGATION=true` |
 | Phase 5 — scheduler grouping | ⏭️ skipped | "only if needed"; no measured queue pressure |
-| Phase 6 — adaptive cadence governor | ⚠️ advisory, pending deploy | formula and daily feedback are built, but inventory is still symbol × interval and there is no distributed hard quota gate |
-| Phase 7 — provider-owned base-series acquisition | ❌ next work | one Tiingo 1m series per unique symbol; provider calendar/cadence independent of user candle interval; staggered fair scheduling |
+| Phase 6 — adaptive cadence governor | ⚠️ advisory, pending deploy | formula + daily feedback built; inventory now folds to the fetched interval (symbol-only when aggregation is on); still no distributed hard quota gate |
+| Phase 7 — provider-owned base-series acquisition | ⚙️ partially built | symbol-only inventory (`acquisitionInterval`) ✅ and derived-vs-native parity harness (`aggregation-parity.ts` + `dev-parity.ts`) ✅; still to do: flip `SCANNER_AGGREGATION` after a clean parity run, provider-owned scheduler independent of user interval, staggered fair scheduling |
 | Physical-request quota enforcement | ❌ next work | Redis-backed hourly + daily limits across scanner, chart, tester, retries, and fallback attempts |
 | Evaluation-only Scan Now | ❌ next work | manual scans must evaluate cached data without accelerating provider acquisition |
 | Prerequisite 1 — server-authoritative provider config | ❌ not done | scanner still uses server env keys; per-user credentials never reach it |
@@ -698,7 +698,7 @@ If exact sharing and aggregation later require durable provider capability or ca
 
 - Implement pure aggregation functions with exchange-aligned buckets. **Done** (`aggregate.ts`).
 - Preserve in-progress candle identity and completed-candle status. **Done** (latest partial bucket kept with stable start time).
-- Compare derived output against native provider candles in shadow metrics. **Not done** — rollout chose a simpler flag-off gate instead of a shadow-compare harness.
+- Compare derived output against native provider candles in shadow metrics. **Done (offline harness)** — `aggregation-parity.ts` (`compareDerivedToNative`) aligns derived-from-1m against native bucket-by-bucket within OHLC/volume tolerances, ignores the still-forming latest bucket, and reports every mismatch. Run it over representative symbols via `dev-parity.ts` and confirm all reports are OK before enabling the flag. A continuously-sampled live shadow hook is still optional.
 - Enable per provider and asset class only after parity meets an agreed threshold. **Gated** behind `SCANNER_AGGREGATION` (default off) + registry `aggregatableFrom1m`. Note: the shared 1m snapshot is bounded by `maxSnapshotCandles` (~25h) — raise before enabling in production if intraday-change prior-day lookback matters.
 
 ### Phase 5 — Scheduler grouping, if needed ⏭️ skipped
@@ -709,7 +709,7 @@ If exact sharing and aggregation later require durable provider capability or ca
 ### Phase 6 — Adaptive cadence governor ⚠️ advisory, pending deployment
 
 - Compute the effective acquisition cadence per provider scope from the budget formula. **Done** (`governor.ts` `computeCadenceSeconds`).
-- Drive `N` from the set of unique enabled acquisition series. **Partial** — `acquisition-inventory.ts` currently counts `(canonicalSymbol, interval)` and derives demand from user session/frequency; Phase 7 must make Tiingo inventory symbol-only and provider-owned.
+- Drive `N` from the set of unique enabled acquisition series. **Done (flag-consistent)** — `acquisition-inventory.ts` now folds each watch onto the interval actually fetched (`acquisitionInterval`): with `SCANNER_AGGREGATION` on and an `aggregatableFrom1m` provider, every minute-based interval collapses to one 1m base series, so `N` counts unique symbols, not `(symbol, interval)`. With the flag off it counts per interval as before, so inventory always mirrors the fetch path.
 - Feed measured usage from `provider_request_stats` back into the governor and tighten when real usage drifts toward the cap. **Partial** — daily logical-operation feedback exists, but hourly physical-request accounting and enforcement do not.
 - Apply hysteresis on a coarse recompute interval; emit effective cadence, `N` as metrics. **Done** (`CadenceGovernor` hysteresis; recompute loop logs cadence + `N`). Headroom-utilization metric not yet emitted.
 - Enabled by default through `SCANNER_GOVERNOR`. The cadence takes the strictest
