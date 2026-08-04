@@ -449,6 +449,8 @@ export default function MarketWatcher() {
                 : item.candles,
             provider: data.lastProvider ?? item.provider,
             lastError: data.lastError ?? item.lastError,
+            intradayChange: data.intradayChange ?? null,
+            intradayChangePercent: data.intradayChangePercent ?? null,
           };
         });
         return changed ? next : current;
@@ -1933,6 +1935,8 @@ export default function MarketWatcher() {
           lastChecked: s.lastScannedAt ? new Date(s.lastScannedAt as string).toLocaleTimeString() : item.lastChecked,
           candles: Array.isArray(s.recentCandles) && s.recentCandles.length > 0 ? (s.recentCandles as Candle[]) : item.candles,
           lastError: (s.lastError as string) ?? item.lastError,
+          intradayChange: (s.intradayChange as number | null) ?? null,
+          intradayChangePercent: (s.intradayChangePercent as number | null) ?? null,
         };
       }),
     );

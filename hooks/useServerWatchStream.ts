@@ -14,6 +14,8 @@ export interface WatchStateUpdatePayload {
   lastProvider?: string | null;
   lastError?: string | null;
   recentCandles?: any[];
+  intradayChange?: number | null;
+  intradayChangePercent?: number | null;
 }
 
 export interface WatchAlertPayload {
