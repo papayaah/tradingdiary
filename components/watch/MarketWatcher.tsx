@@ -1934,6 +1934,7 @@ export default function MarketWatcher() {
           lastPrice: (s.lastPrice as number) ?? item.lastPrice,
           lastChecked: s.lastScannedAt ? new Date(s.lastScannedAt as string).toLocaleTimeString() : item.lastChecked,
           candles: Array.isArray(s.recentCandles) && s.recentCandles.length > 0 ? (s.recentCandles as Candle[]) : item.candles,
+          provider: (s.lastProvider as string) ?? item.provider,
           lastError: (s.lastError as string) ?? item.lastError,
           intradayChange: (s.intradayChange as number | null) ?? null,
           intradayChangePercent: (s.intradayChangePercent as number | null) ?? null,
@@ -1944,6 +1945,18 @@ export default function MarketWatcher() {
       setAlertLogs(mapSnapshotAlerts(snapshot));
     }
   }, []);
+
+  // On load (signed in), pull the scanner's per-watch state onto the rows so they
+  // show the server's data — provider, price, candles, and the settlement-based
+  // change — immediately. Without this the rows sit on stale local data (their
+  // own Yahoo fetch + a client window change) until a manual "Scan Now All" or
+  // the next SSE scan event. Runs once, after the watchlist has loaded.
+  const didInitialServerRefreshRef = useRef(false);
+  useEffect(() => {
+    if (!isAuthenticated || watchlist.length === 0 || didInitialServerRefreshRef.current) return;
+    didInitialServerRefreshRef.current = true;
+    void refreshFromServerSnapshot();
+  }, [isAuthenticated, watchlist.length, refreshFromServerSnapshot]);
 
   const handleScanAll = async () => {
     // "Scan All" spans the whole watchlist, not just the current tab — but skips
