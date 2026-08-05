@@ -16,6 +16,8 @@ export interface WatchItem {
   lastPrice?: number;
   lastError?: string;
   candles?: Candle[];
+  selectedPatternIds?: PatternId[];
+  matchedPatternIds?: PatternId[];
   lastAlertedCandleTime?: number;
   lastAlertedType?: 'bullish' | 'bearish';
   lastAlertedPatternId?: PatternId;

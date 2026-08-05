@@ -7,6 +7,8 @@ export interface WatchStateUpdatePayload {
   symbol: string;
   interval: string;
   patternId: string;
+  patternIds?: string[];
+  matchedPatternIds?: string[];
   status: 'normal' | 'bullish' | 'bearish' | 'no-data' | 'error';
   lastPrice?: number | null;
   lastCandleTime?: string | null;

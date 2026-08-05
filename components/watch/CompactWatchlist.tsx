@@ -14,6 +14,11 @@ import {
   calculateWatchPriceChange,
 } from '@/lib/market/intraday-change';
 import type { Candle } from './watchAnalysis';
+import {
+  getPatternDefinition,
+  isPatternId,
+  type PatternId,
+} from '@/lib/scanner/patterns';
 
 interface CompactWatchItem {
   symbol: string;
@@ -23,6 +28,8 @@ interface CompactWatchItem {
   lastError?: string;
   provider?: string;
   candles?: Candle[];
+  selectedPatternIds?: PatternId[];
+  matchedPatternIds?: PatternId[];
   intradayChange?: number | null;
   intradayChangePercent?: number | null;
 }
@@ -80,6 +87,12 @@ const CompactCard = React.memo(function CompactCard({
   const formattedChangePercent = priceChange
     ? `${priceChange.percent > 0 ? '+' : ''}${priceChange.percent.toFixed(2)}%`
     : '';
+  const matchedPatternNames = (item.matchedPatternIds ?? [])
+    .filter(isPatternId)
+    .map((patternId) => getPatternDefinition(patternId).name);
+  const selectedPatternCount = (item.selectedPatternIds ?? []).filter(isPatternId).length;
+  const primaryPatternName = matchedPatternNames[0];
+  const matchTitle = matchedPatternNames.join(', ');
   const statusColor =
     item.status === 'bullish'
       ? 'border-emerald-500/30 bg-emerald-500/5'
@@ -149,12 +162,14 @@ const CompactCard = React.memo(function CompactCard({
       <div className="mt-3 flex items-center justify-between gap-2 border-t border-card-border/30 pt-2">
         <div className="min-w-0 text-[10px] font-semibold">
           {item.status === 'bullish' ? (
-            <span className="flex items-center gap-1 text-emerald-400">
-              <TrendingUp size={11} /> Ascending
+            <span className="flex items-center gap-1 text-profit" title={matchTitle || 'Bullish alert'}>
+              <TrendingUp size={11} /> {primaryPatternName ? `${primaryPatternName} · Bullish` : 'Bullish Alert'}
+              {matchedPatternNames.length > 1 ? ` +${matchedPatternNames.length - 1}` : ''}
             </span>
           ) : item.status === 'bearish' ? (
-            <span className="flex items-center gap-1 text-rose-400">
-              <TrendingDown size={11} /> Descending
+            <span className="flex items-center gap-1 text-loss" title={matchTitle || 'Bearish alert'}>
+              <TrendingDown size={11} /> {primaryPatternName ? `${primaryPatternName} · Bearish` : 'Bearish Alert'}
+              {matchedPatternNames.length > 1 ? ` +${matchedPatternNames.length - 1}` : ''}
             </span>
           ) : item.status === 'error' ? (
             <span className="flex items-center gap-1 truncate text-amber-400" title={item.lastError}>
@@ -165,7 +180,9 @@ const CompactCard = React.memo(function CompactCard({
               <Clock size={11} /> No current data
             </span>
           ) : (
-            <span className="text-muted">Normal</span>
+            <span className="text-muted">
+              Normal{selectedPatternCount > 0 ? ` · ${selectedPatternCount} checked` : ''}
+            </span>
           )}
         </div>
         <span className="shrink-0 text-[9px] font-mono text-muted/70">

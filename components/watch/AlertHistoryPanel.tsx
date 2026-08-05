@@ -2,8 +2,17 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { History, ChevronDown, ChevronUp, Loader2, BarChart2 } from 'lucide-react';
+import {
+  History,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+  BarChart2,
+  TrendingDown,
+  TrendingUp,
+} from 'lucide-react';
 import { calculateCandleWindowChange, candleCountForHours } from '@/lib/market/intraday-change';
+import { MAX_ALERT_HISTORY_ITEMS } from '@/lib/watch/alert-history';
 
 interface AlertCandle {
   time: number;
@@ -57,7 +66,10 @@ const TimeAgo = React.memo(function TimeAgo({ timestamp }: { timestamp: number }
   }, []);
 
   return (
-    <span title={new Date(timestamp).toLocaleString()}>
+    <span
+      className="whitespace-nowrap text-sm font-semibold leading-none text-foreground"
+      title={new Date(timestamp).toLocaleString()}
+    >
       {formatTimeAgo(timestamp, now)}
     </span>
   );
@@ -173,15 +185,15 @@ const ExpandedMiniChart = React.memo(function ExpandedMiniChart({
     <div className="w-full flex flex-col items-center">
       <svg width="100%" viewBox={`0 0 ${width} ${height}`} className="overflow-visible select-none font-mono">
         {/* Background Grid Lines */}
-        <line x1={margin.left} y1={margin.top} x2={width - margin.right} y2={margin.top} stroke="#ffffff15" strokeDasharray="2,2" />
-        <line x1={margin.left} y1={margin.top + plotHeight / 2} x2={width - margin.right} y2={margin.top + plotHeight / 2} stroke="#ffffff10" strokeDasharray="2,2" />
-        <line x1={margin.left} y1={margin.top + plotHeight} x2={width - margin.right} y2={margin.top + plotHeight} stroke="#ffffff15" strokeDasharray="2,2" />
+        <line x1={margin.left} y1={margin.top} x2={width - margin.right} y2={margin.top} stroke="currentColor" className="text-card-border" strokeDasharray="2,2" />
+        <line x1={margin.left} y1={margin.top + plotHeight / 2} x2={width - margin.right} y2={margin.top + plotHeight / 2} stroke="currentColor" className="text-card-border" strokeDasharray="2,2" />
+        <line x1={margin.left} y1={margin.top + plotHeight} x2={width - margin.right} y2={margin.top + plotHeight} stroke="currentColor" className="text-card-border" strokeDasharray="2,2" />
 
         {/* Price Axis Labels */}
-        <text x={margin.left - 4} y={margin.top + 3} textAnchor="end" fill="#94a3b8" fontSize={9}>
+        <text x={margin.left - 4} y={margin.top + 3} textAnchor="end" fill="currentColor" className="text-muted" fontSize={9}>
           ${maxPrice.toFixed(2)}
         </text>
-        <text x={margin.left - 4} y={margin.top + plotHeight + 3} textAnchor="end" fill="#94a3b8" fontSize={9}>
+        <text x={margin.left - 4} y={margin.top + plotHeight + 3} textAnchor="end" fill="currentColor" className="text-muted" fontSize={9}>
           ${minPrice.toFixed(2)}
         </text>
 
@@ -259,10 +271,10 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
 
   return (
     <div
-      className={`p-3 rounded-xl border flex flex-col justify-between gap-2 text-xs hover:border-card-border/80 transition-all select-none ${
+      className={`p-3 rounded-xl border flex flex-col justify-between gap-2 text-sm transition-all select-none ${
         alert.type === 'bullish'
-          ? 'bg-emerald-950/20 border-emerald-900/30 hover:bg-emerald-950/30'
-          : 'bg-rose-950/20 border-rose-900/30 hover:bg-rose-950/30'
+          ? 'bg-profit/5 border-profit/25 hover:bg-profit/10 hover:border-profit/40'
+          : 'bg-loss/5 border-loss/25 hover:bg-loss/10 hover:border-loss/40'
       } ${isExpanded ? 'ring-1 ring-accent border-accent/60' : ''} ${
         isOpening ? 'brightness-110' : ''
       }`}
@@ -284,23 +296,31 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
                 {alert.interval}
               </span>
               <span
-                className={`font-semibold ${
-                  alert.type === 'bullish' ? 'text-emerald-400' : 'text-rose-400'
+                className={`inline-flex items-center ${
+                  alert.type === 'bullish' ? 'text-profit' : 'text-loss'
                 }`}
+                title={alert.type === 'bullish' ? 'Bullish alert' : 'Bearish alert'}
               >
-                {alert.type === 'bullish' ? 'Ascending' : 'Descending'}
+                {alert.type === 'bullish' ? (
+                  <TrendingUp size={15} aria-hidden="true" />
+                ) : (
+                  <TrendingDown size={15} aria-hidden="true" />
+                )}
+                <span className="sr-only">
+                  {alert.type === 'bullish' ? 'Bullish alert' : 'Bearish alert'}
+                </span>
               </span>
             </div>
             {alert.candles && alert.candles.length > 0 && (
-              <div className="flex items-center bg-black/40 px-1.5 py-0.5 rounded border border-card-border/30 shadow-inner">
+              <div className="flex items-center rounded border border-card-border bg-muted-bg/70 px-1.5 py-0.5 shadow-inner">
                 <MiniCandles candles={alert.candles} interval={alert.interval} />
               </div>
             )}
           </div>
-          <p className="text-muted mt-1 text-[11px] leading-relaxed">{alert.details}</p>
+          <p className="mt-1 text-xs font-medium leading-relaxed text-foreground/85">{alert.details}</p>
         </div>
 
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 font-mono text-[10px] text-muted border-t border-card-border/20 pt-1.5 w-full">
+        <div className="flex w-full flex-wrap items-center justify-between gap-3 border-t border-card-border/60 pt-2 font-mono text-xs text-foreground/80">
           <div className="min-w-0 flex flex-wrap items-center gap-x-2 gap-y-0.5">
             <span>Price: ${alert.price.toFixed(2)}</span>
             {hasIntradayChange ? (
@@ -318,32 +338,32 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
               </span>
             ) : null}
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             <span className="whitespace-nowrap">
               <TimeAgo timestamp={alert.createdAt} />
             </span>
             <span
-              className={`flex min-w-[98px] shrink-0 items-center justify-center gap-1 whitespace-nowrap text-[10px] font-semibold px-2 py-0.5 rounded-full border transition-all ${
-              isExpanded
-                ? 'bg-accent text-white border-accent shadow-sm'
+              className={`flex min-w-[112px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold transition-all ${
+                isExpanded
+                ? 'bg-accent text-background border-accent shadow-sm'
                 : 'bg-accent/10 text-accent border-accent/30 hover:bg-accent/20'
             }`}
             >
               {isOpening ? (
                 <>
-                  <Loader2 size={11} className="shrink-0 animate-spin" />
+                  <Loader2 size={13} className="shrink-0 animate-spin" />
                   <span>Opening...</span>
                 </>
               ) : isExpanded ? (
                 <>
-                  <ChevronUp size={11} className="shrink-0" />
+                  <ChevronUp size={13} className="shrink-0" />
                   <span>Hide Chart</span>
                 </>
               ) : (
                 <>
-                  <BarChart2 size={11} className="shrink-0" />
+                  <BarChart2 size={13} className="shrink-0" />
                   <span>Show Chart</span>
-                  <ChevronDown size={11} className="shrink-0 opacity-70" />
+                  <ChevronDown size={13} className="shrink-0 opacity-70" />
                 </>
               )}
             </span>
@@ -361,29 +381,29 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
           <div className="flex items-center justify-between text-[10px] text-muted font-mono">
             <span className="flex items-center gap-1 text-accent font-semibold">
               <BarChart2 size={11} />
-              {alert.symbol} {alert.interval} Chart (4H Window)
+              4H window
             </span>
             <button
               type="button"
               onClick={() => onAlertClick(alert)}
               className="text-[10px] text-accent hover:underline font-semibold flex items-center gap-1"
             >
-              <span>Jump to Watchlist Row</span>
+              <span>View watchlist</span>
               <span>→</span>
             </button>
           </div>
 
           {isOpening ? (
-            <div className="min-h-[135px] bg-black/60 border border-accent/30 rounded-xl p-4 flex flex-col items-center justify-center gap-2 text-xs font-mono text-accent">
+            <div className="min-h-[135px] bg-background/70 border border-accent/30 rounded-xl p-4 flex flex-col items-center justify-center gap-2 text-xs font-mono text-accent">
               <Loader2 size={18} className="animate-spin" />
               <span className="font-semibold">Opening {alert.symbol} chart…</span>
             </div>
           ) : alert.candles && alert.candles.length > 0 ? (
-            <div className="bg-black/60 border border-card-border/50 rounded-xl p-2 flex flex-col items-center">
+            <div className="bg-background/70 border border-card-border rounded-xl p-2 flex flex-col items-center">
               <ExpandedMiniChart candles={alert.candles} interval={alert.interval} />
             </div>
           ) : (
-            <div className="bg-black/60 border border-card-border/50 rounded-xl p-4 flex flex-col items-center justify-center gap-2 text-xs font-mono text-muted text-center">
+            <div className="bg-background/70 border border-card-border rounded-xl p-4 flex flex-col items-center justify-center gap-2 text-xs font-mono text-foreground text-center">
               <div className="flex items-center gap-2 text-accent font-semibold">
                 <Loader2 size={14} className="animate-spin" />
                 <span>Fetching Live {alert.symbol} {alert.interval} Chart Data...</span>
@@ -391,7 +411,7 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
               <button
                 type="button"
                 onClick={() => onAlertClick(alert)}
-                className="mt-1 px-3 py-1 bg-accent/20 hover:bg-accent hover:text-white border border-accent/40 text-accent rounded-lg text-[11px] font-semibold transition-all"
+                className="mt-1 px-3 py-1 bg-accent/20 hover:bg-accent hover:text-background border border-accent/40 text-accent rounded-lg text-[11px] font-semibold transition-all"
               >
                 Jump to Watchlist to View Chart →
               </button>
@@ -450,9 +470,14 @@ function AlertHistoryPanel({
     <div className="lg:col-span-4">
       <div className="bg-card-bg border border-card-border shadow-xl rounded-2xl p-4 md:p-5 h-full flex flex-col">
         <div className="flex items-center justify-between mb-4 shrink-0">
-          <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
-            <History size={18} className="text-accent" /> Alert History
-          </h2>
+          <div>
+            <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
+              <History size={18} className="text-accent" /> Alert History
+            </h2>
+            <p className="mt-0.5 text-xs font-medium text-foreground/70">
+              Keeping the latest {MAX_ALERT_HISTORY_ITEMS} alerts
+            </p>
+          </div>
           {alerts.length > 0 && (
             <button
               onClick={onClear}
@@ -465,7 +490,7 @@ function AlertHistoryPanel({
 
         {alerts.length === 0 ? (
           <div className="text-center py-12 text-muted text-xs flex-1 flex items-center justify-center border border-dashed border-card-border rounded-xl">
-            No alerts triggered in this session.
+            No alerts yet.
           </div>
         ) : (
           <div className="space-y-3 overflow-y-auto flex-1 pr-1 min-h-[500px] max-h-[calc(100vh-220px)]">

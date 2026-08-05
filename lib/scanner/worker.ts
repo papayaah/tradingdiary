@@ -143,6 +143,7 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
         .values({
           watchId: watch.id,
           status: 'error',
+          matchedPatternIds: [],
           lastError: message,
           lastScannedAt: nowIso,
           recentCandles: [],
@@ -150,7 +151,13 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
         })
         .onConflictDoUpdate({
           target: serverWatchState.watchId,
-          set: { status: 'error', lastError: message, lastScannedAt: nowIso, updatedAt: nowIso },
+          set: {
+            status: 'error',
+            matchedPatternIds: [],
+            lastError: message,
+            lastScannedAt: nowIso,
+            updatedAt: nowIso,
+          },
         });
       throw err; // let BullMQ retry with backoff
     }
@@ -176,6 +183,7 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
       })
     : [];
   const matched = latestMatches[0]?.type ?? null;
+  const matchedPatternIds = latestMatches.map((match) => match.patternId);
 
   const status: ScanOutcome['status'] = !hasData ? 'no-data' : matched ?? 'normal';
   const willAlert = !!matched && !scannerConfig.shadow;
@@ -202,6 +210,7 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
       .values({
         watchId: watch.id,
         status,
+        matchedPatternIds,
         lastPrice: last?.close,
         lastCandleTime: last ? new Date(last.time * 1000).toISOString() : null,
         lastScannedAt: nowIso,
@@ -216,6 +225,7 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
         target: serverWatchState.watchId,
         set: {
           status,
+          matchedPatternIds,
           lastPrice: last?.close,
           lastCandleTime: last ? new Date(last.time * 1000).toISOString() : null,
           lastScannedAt: nowIso,
@@ -279,6 +289,7 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
       interval: watch.interval,
       patternId,
       patternIds,
+      matchedPatternIds,
       maxBodyOverlapPercent: watch.maxBodyOverlapPercent,
       status,
       lastPrice: last?.close,

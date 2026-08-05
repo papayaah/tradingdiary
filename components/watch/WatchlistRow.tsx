@@ -5,13 +5,16 @@ import {
   AlertTriangle,
   Clock,
   RefreshCw,
-  Sparkles,
   Trash2,
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
 import type { Candle } from './watchAnalysis';
-import { detectAllPatterns, CandleData } from '@/lib/chart/patterns';
+import {
+  getPatternDefinition,
+  isPatternId,
+  type PatternId,
+} from '@/lib/scanner/patterns';
 import { displaySymbol, shortProviderLabel } from '@/lib/utils/format';
 import { calculateWatchPriceChange } from '@/lib/market/intraday-change';
 
@@ -23,6 +26,8 @@ interface WatchlistRowItem {
   lastError?: string;
   provider?: string;
   candles?: Candle[];
+  selectedPatternIds?: PatternId[];
+  matchedPatternIds?: PatternId[];
   intradayChange?: number | null;
   intradayChangePercent?: number | null;
 }
@@ -62,11 +67,17 @@ function WatchlistRow({
       ? 'text-loss'
       : 'text-muted';
 
-  const detectedPattern = React.useMemo(() => {
-    if (!miniCandles || miniCandles.length < 10) return null;
-    const res = detectAllPatterns(miniCandles as CandleData[]);
-    return res.patterns[0];
-  }, [miniCandles]);
+  const matchedPatternNames = (item.matchedPatternIds ?? [])
+    .filter(isPatternId)
+    .map((patternId) => getPatternDefinition(patternId).name);
+  const selectedPatternNames = (item.selectedPatternIds ?? [])
+    .filter(isPatternId)
+    .map((patternId) => getPatternDefinition(patternId).name);
+  const primaryPatternName = matchedPatternNames[0];
+  const additionalMatchCount = Math.max(0, matchedPatternNames.length - 1);
+  const selectedPatternTitle = selectedPatternNames.length > 0
+    ? `Checked: ${selectedPatternNames.join(', ')}`
+    : 'No selected-pattern details are available yet';
 
   const handleRefresh = async () => {
     if (isRefreshing) return;
@@ -144,26 +155,36 @@ function WatchlistRow({
       <td className="py-4 px-4 text-xs text-muted">{item.lastChecked || 'Never'}</td>
       <td className="py-4 px-4">
         {item.status === 'bullish' && (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 animate-pulse">
-            <TrendingUp size={12} /> Bullish Alert
-          </span>
+          <div className="flex flex-wrap items-center gap-1" title={matchedPatternNames.join(', ') || 'Bullish alert'}>
+            <span className="inline-flex items-center gap-1 rounded-full border border-profit/25 bg-profit/10 px-2.5 py-0.5 text-xs font-semibold text-profit animate-pulse">
+              <TrendingUp size={12} /> {primaryPatternName ? `${primaryPatternName} · Bullish` : 'Bullish Alert'}
+            </span>
+            {additionalMatchCount > 0 && (
+              <span className="text-[10px] font-semibold text-muted">+{additionalMatchCount}</span>
+            )}
+          </div>
         )}
         {item.status === 'bearish' && (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20 animate-pulse">
-            <TrendingDown size={12} /> Bearish Alert
-          </span>
+          <div className="flex flex-wrap items-center gap-1" title={matchedPatternNames.join(', ') || 'Bearish alert'}>
+            <span className="inline-flex items-center gap-1 rounded-full border border-loss/25 bg-loss/10 px-2.5 py-0.5 text-xs font-semibold text-loss animate-pulse">
+              <TrendingDown size={12} /> {primaryPatternName ? `${primaryPatternName} · Bearish` : 'Bearish Alert'}
+            </span>
+            {additionalMatchCount > 0 && (
+              <span className="text-[10px] font-semibold text-muted">+{additionalMatchCount}</span>
+            )}
+          </div>
         )}
         {item.status === 'none' && (
-          detectedPattern ? (
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30">
-              <Sparkles size={12} className="animate-pulse text-amber-400" />
-              <span>{detectedPattern.name}</span>
-            </span>
-          ) : (
+          <div className="flex flex-col items-start gap-0.5" title={selectedPatternTitle}>
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-muted-bg text-muted border border-card-border">
               Normal
             </span>
-          )
+            {selectedPatternNames.length > 0 && (
+              <span className="text-[10px] text-muted">
+                {selectedPatternNames.length} {selectedPatternNames.length === 1 ? 'pattern' : 'patterns'} checked
+              </span>
+            )}
+          </div>
         )}
         {item.status === 'no-data' && (
           <span

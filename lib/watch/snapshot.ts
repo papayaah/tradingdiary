@@ -12,9 +12,9 @@ import {
   watchEvent,
 } from '@/lib/db/server/schema';
 import { scannerTimestampToUtcIso } from '@/lib/watch/timestamps';
+import { MAX_ALERT_HISTORY_ITEMS } from '@/lib/watch/alert-history';
 
 const HEARTBEAT_STALE_MS = 60_000;
-const RECENT_ALERTS_LIMIT = 200;
 
 export interface WatchSnapshot {
   watches: unknown[];
@@ -32,6 +32,7 @@ export async function buildSnapshot(userId: string): Promise<WatchSnapshot> {
     .select({
       watchId: serverWatchState.watchId,
       status: serverWatchState.status,
+      matchedPatternIds: serverWatchState.matchedPatternIds,
       lastPrice: serverWatchState.lastPrice,
       lastCandleTime: serverWatchState.lastCandleTime,
       lastScannedAt: serverWatchState.lastScannedAt,
@@ -51,7 +52,7 @@ export async function buildSnapshot(userId: string): Promise<WatchSnapshot> {
     .from(serverWatchAlert)
     .where(eq(serverWatchAlert.userId, userId))
     .orderBy(desc(serverWatchAlert.createdAt))
-    .limit(RECENT_ALERTS_LIMIT);
+    .limit(MAX_ALERT_HISTORY_ITEMS);
 
   const workers = await db.select().from(scannerHeartbeat);
   const now = Date.now();

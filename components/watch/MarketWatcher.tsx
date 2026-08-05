@@ -63,6 +63,7 @@ import {
   type IntradayChange,
 } from '@/lib/market/intraday-change';
 import { buildScannerSyncWatchlist } from '@/lib/watch/sync-settings';
+import { limitAlertHistory } from '@/lib/watch/alert-history';
 
 interface WatchItem {
   symbol: string;
@@ -73,6 +74,10 @@ interface WatchItem {
   lastPrice?: number;
   lastError?: string;
   candles?: Candle[];
+  selectedPatternIds?: PatternId[];
+  matchedPatternIds?: PatternId[];
+  intradayChange?: number | null;
+  intradayChangePercent?: number | null;
   lastAlertedCandleTime?: number;
   lastAlertedType?: 'bullish' | 'bearish';
   lastAlertedPatternId?: PatternId;
@@ -123,8 +128,6 @@ interface ServerSnapshotState {
   recentCandles?: Candle[] | null;
 }
 
-const ALERT_HISTORY_TTL_MS = 24 * 60 * 60 * 1000; // keep alerts visible for 24h
-const MAX_ALERT_HISTORY_ITEMS = 200;
 type WatchlistCategory = 'stocks' | 'crypto' | 'futures' | 'all';
 // Categories that can be switched off for background scanning/alerts. Mapped to
 // the server's asset-class names for the sync payload.
@@ -137,6 +140,11 @@ const CATEGORY_TO_ASSET_CLASS: Record<ScanCategory, string> = {
 
 const isFuturesSymbol = (symbol: string) => symbol.toUpperCase().includes('=F');
 const isCryptoSymbol = (symbol: string) => symbol.toUpperCase().endsWith('-USD');
+const formatLastCheckTime = (value: string | number | Date = Date.now()) =>
+  new Date(value).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 
 const PRIMARY_FUTURES_PRESETS = [
   { label: 'GC (Gold)', symbol: 'GC=F' },
@@ -158,11 +166,6 @@ const SECONDARY_FUTURES_PRESETS = [
   { label: 'BTC (CME BTC)', symbol: 'BTC=F' },
 ] as const;
 
-const pruneAlertHistory = (logs: AlertLog[], now = Date.now()) =>
-  logs
-    .filter((log) => Number.isFinite(log.createdAt) && now - log.createdAt < ALERT_HISTORY_TTL_MS)
-    .slice(0, MAX_ALERT_HISTORY_ITEMS);
-
 const mapSnapshotAlerts = (snapshot: {
   alerts?: ServerSnapshotAlert[];
   states?: ServerSnapshotState[];
@@ -174,7 +177,7 @@ const mapSnapshotAlerts = (snapshot: {
     ]),
   );
 
-  return pruneAlertHistory(
+  return limitAlertHistory(
     (snapshot.alerts ?? []).map((alert) => ({
       id: alert.id,
       createdAt: alert.createdAt ? new Date(alert.createdAt).getTime() : Date.now(),
@@ -466,14 +469,20 @@ export default function MarketWatcher() {
             status: mappedStatus,
             lastPrice: data.lastPrice ?? item.lastPrice,
             lastChecked: data.lastScannedAt
-              ? new Date(data.lastScannedAt).toLocaleTimeString()
-              : new Date().toLocaleTimeString(),
+              ? formatLastCheckTime(data.lastScannedAt)
+              : formatLastCheckTime(),
             candles:
               data.recentCandles && data.recentCandles.length > 0
                 ? data.recentCandles
                 : item.candles,
             provider: data.lastProvider ?? item.provider,
             lastError: data.lastError ?? item.lastError,
+            selectedPatternIds: Array.isArray(data.patternIds)
+              ? data.patternIds.filter(isPatternId)
+              : item.selectedPatternIds,
+            matchedPatternIds: Array.isArray(data.matchedPatternIds)
+              ? data.matchedPatternIds.filter(isPatternId)
+              : item.matchedPatternIds,
             intradayChange: data.intradayChange ?? null,
             intradayChangePercent: data.intradayChangePercent ?? null,
           };
@@ -555,7 +564,7 @@ export default function MarketWatcher() {
       // replayed stream event do not appear twice (spec B6c).
       setAlertLogs((prev) => {
         if (prev.some((a) => a.id === alertId)) return prev;
-        return [newAlert, ...prev].slice(0, MAX_ALERT_HISTORY_ITEMS);
+        return limitAlertHistory([newAlert, ...prev]);
       });
 
       // Only alert (sound + banner) for genuinely fresh events. A reconnect after
@@ -991,6 +1000,13 @@ export default function MarketWatcher() {
     if (next.length === 0) return;
     selectedPatternIdsRef.current = next;
     setSelectedPatternIds(next);
+    setWatchlist((current) => current.map((item) => ({
+      ...item,
+      selectedPatternIds: next,
+      // A changed detector set has not been evaluated yet.
+      matchedPatternIds: [],
+      status: item.status === 'bullish' || item.status === 'bearish' ? 'none' : item.status,
+    })));
     localStorage.setItem('watcher-selected-patterns', JSON.stringify(next));
     void syncScannerSettings(watchlist, selectedPatternId).catch(() => {});
   }, [selectedPatternId, syncScannerSettings, watchlist]);
@@ -1223,7 +1239,7 @@ export default function MarketWatcher() {
     if (savedLogs) {
       try {
         const parsedLogs: AlertLog[] = JSON.parse(savedLogs);
-        const activeLogs = pruneAlertHistory(parsedLogs);
+        const activeLogs = limitAlertHistory(parsedLogs);
         setAlertLogs(activeLogs);
         localStorage.setItem('watcher-alerts', JSON.stringify(activeLogs));
       } catch (e) {
@@ -1310,18 +1326,6 @@ export default function MarketWatcher() {
     if (typeof window !== 'undefined' && 'Notification' in window) {
       setIsNotificationsEnabled(Notification.permission === 'granted');
     }
-  }, []);
-
-  useEffect(() => {
-    const cleanupTimer = window.setInterval(() => {
-      setAlertLogs((currentLogs) => {
-        const activeLogs = pruneAlertHistory(currentLogs);
-        if (activeLogs.length === currentLogs.length) return currentLogs;
-        localStorage.setItem('watcher-alerts', JSON.stringify(activeLogs));
-        return activeLogs;
-      });
-    }, 30_000);
-    return () => window.clearInterval(cleanupTimer);
   }, []);
 
   useEffect(() => () => {
@@ -1652,8 +1656,7 @@ export default function MarketWatcher() {
   const publishAlerts = (candidates: PendingAlert[]) => {
     if (candidates.length === 0) return;
 
-    const now = Date.now();
-    const activeLogs = pruneAlertHistory(alertLogsRef.current, now);
+    const activeLogs = limitAlertHistory(alertLogsRef.current);
     const additions: AlertLog[] = [];
 
     for (const candidate of candidates) {
@@ -1684,9 +1687,9 @@ export default function MarketWatcher() {
       return;
     }
 
-    const updatedLogs = [...additions, ...activeLogs]
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .slice(0, MAX_ALERT_HISTORY_ITEMS);
+    const updatedLogs = limitAlertHistory(
+      [...additions, ...activeLogs].sort((a, b) => b.createdAt - a.createdAt),
+    );
     alertLogsRef.current = updatedLogs;
     setAlertLogs(updatedLogs);
     persistAlertHistorySoon(updatedLogs);
@@ -1845,7 +1848,7 @@ export default function MarketWatcher() {
 
       return {
         ...item,
-        lastChecked: new Date().toLocaleTimeString(),
+        lastChecked: formatLastCheckTime(),
         status,
         candles,
         provider: providerName,
@@ -1854,12 +1857,14 @@ export default function MarketWatcher() {
         lastAlertedType: primaryMatch?.matched ?? item.lastAlertedType,
         lastAlertedPatternId: primaryMatch?.patternId ?? item.lastAlertedPatternId,
         lastAlertedPatternKeys,
+        selectedPatternIds: selectedPatternIdsRef.current,
+        matchedPatternIds: currentMatches.map((result) => result.patternId),
       };
     } catch (err) {
       console.error(`Error scanning ${item.symbol}:`, err);
       return {
         ...item,
-        lastChecked: new Date().toLocaleTimeString(),
+        lastChecked: formatLastCheckTime(),
         status: 'error',
         lastError: err instanceof Error ? err.message : 'Network error'
       };
@@ -1978,28 +1983,47 @@ export default function MarketWatcher() {
     const res = await fetch(`${baseUrl}/api/watch/state`);
     if (!res.ok) return;
     const snapshot = await res.json();
-    const watchById = new Map<string, { symbol: string; interval: string }>(
-      (snapshot.watches || []).map((w: { id: string; symbol: string; interval: string }) => [w.id, w]),
+    const watchById = new Map<string, {
+      symbol: string;
+      interval: string;
+      patternIds?: unknown;
+    }>(
+      (snapshot.watches || []).map((w: {
+        id: string;
+        symbol: string;
+        interval: string;
+        patternIds?: unknown;
+      }) => [w.id, w]),
     );
-    const stateByKey = new Map<string, Record<string, unknown>>();
+    const stateByKey = new Map<string, {
+      state: Record<string, unknown>;
+      watch: { symbol: string; interval: string; patternIds?: unknown };
+    }>();
     for (const s of (snapshot.states || []) as Array<Record<string, unknown>>) {
       const w = watchById.get(s.watchId as string);
-      if (w) stateByKey.set(`${w.symbol.toUpperCase()}\u0000${w.interval}`, s);
+      if (w) stateByKey.set(`${w.symbol.toUpperCase()}\u0000${w.interval}`, { state: s, watch: w });
     }
     setWatchlist((prev) =>
       prev.map((item) => {
-        const s = stateByKey.get(`${item.symbol.toUpperCase()}\u0000${item.interval}`);
-        if (!s) return item;
+        const entry = stateByKey.get(`${item.symbol.toUpperCase()}\u0000${item.interval}`);
+        if (!entry) return item;
+        const { state: s, watch } = entry;
         const status = s.status as string;
         const mapped = status === 'bullish' || status === 'bearish' || status === 'no-data' || status === 'error' ? status : 'none';
         return {
           ...item,
           status: mapped,
           lastPrice: (s.lastPrice as number) ?? item.lastPrice,
-          lastChecked: s.lastScannedAt ? new Date(s.lastScannedAt as string).toLocaleTimeString() : item.lastChecked,
+          lastChecked: s.lastScannedAt ? formatLastCheckTime(s.lastScannedAt as string) : item.lastChecked,
           candles: Array.isArray(s.recentCandles) && s.recentCandles.length > 0 ? (s.recentCandles as Candle[]) : item.candles,
           provider: (s.lastProvider as string) ?? item.provider,
           lastError: (s.lastError as string) ?? item.lastError,
+          selectedPatternIds: Array.isArray(watch.patternIds)
+            ? watch.patternIds.filter(isPatternId)
+            : item.selectedPatternIds,
+          matchedPatternIds: Array.isArray(s.matchedPatternIds)
+            ? s.matchedPatternIds.filter(isPatternId)
+            : item.matchedPatternIds,
           intradayChange: (s.intradayChange as number | null) ?? null,
           intradayChangePercent: (s.intradayChangePercent as number | null) ?? null,
         };
@@ -2524,13 +2548,15 @@ export default function MarketWatcher() {
                   provider: providerName,
                   status,
                   lastError: sessionCandles.length === 0 ? 'No candles available for today’s selected ET session' : undefined,
-                  lastChecked: new Date().toLocaleTimeString(),
+                  lastChecked: formatLastCheckTime(),
                   lastAlertedCandleTime: alertMatches[0]?.time ?? updated[index].lastAlertedCandleTime,
                   lastAlertedType: alertMatches[0]?.matched ?? updated[index].lastAlertedType,
                   lastAlertedPatternId: alertMatches[0]?.patternId
                     ? alertMatches[0].patternId
                     : updated[index].lastAlertedPatternId,
                   lastAlertedPatternKeys,
+                  selectedPatternIds: selectedPatternIdsRef.current,
+                  matchedPatternIds: alertMatches.map((result) => result.patternId),
                 };
               }
               persistWatchlist(updated);

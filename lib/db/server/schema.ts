@@ -131,6 +131,9 @@ export const serverWatch = pgTable("server_watch", {
 export const serverWatchState = pgTable("server_watch_state", {
     watchId: uuid("watch_id").primaryKey().references(() => serverWatch.id, { onDelete: 'cascade' }),
     status: text("status").notNull(), // idle | normal | bullish | bearish | no-data | error
+    // Detectors that matched the latest candle. Empty means the selected
+    // detectors were checked and none matched.
+    matchedPatternIds: jsonb("matched_pattern_ids").notNull().default('[]'),
     lastPrice: doublePrecision("last_price"),
     lastCandleTime: timestamp("last_candle_time", { mode: 'string' }),
     lastScannedAt: timestamp("last_scanned_at", { mode: 'string' }),

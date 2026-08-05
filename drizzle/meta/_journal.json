@@ -71,6 +71,13 @@
       "when": 1785903600000,
       "tag": "0009_add_per_pattern_minimum_moves",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785907200000,
+      "tag": "0010_add_matched_pattern_state",
+      "breakpoints": true
     }
   ]
 }
