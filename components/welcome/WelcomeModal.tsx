@@ -69,20 +69,20 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
       role="dialog"
       aria-modal="true"
     >
-      <div className="relative w-full sm:w-[98vw] max-w-[1650px] 2xl:max-w-[1850px] bg-card-bg border border-card-border sm:rounded-2xl shadow-2xl overflow-hidden h-[96vh] max-h-[96vh] flex flex-col transition-all">
+      <div className="relative w-full sm:w-[96vw] max-w-[1650px] 2xl:max-w-[1850px] bg-card-bg border border-card-border rounded-xl sm:rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col transition-all my-auto">
         {/* Sleek Floating Close Button */}
         <button
           onClick={handleClose}
-          className="absolute top-3 right-3 sm:top-4 sm:right-4 z-30 p-2.5 text-white bg-black/70 hover:bg-black/90 rounded-full backdrop-blur-md transition-all shadow-xl border border-white/20"
+          className="absolute top-3 right-3 sm:top-4 sm:right-4 z-30 p-2 text-white bg-black/70 hover:bg-black/90 rounded-full backdrop-blur-md transition-all shadow-xl border border-white/20"
           aria-label="Close modal"
         >
-          <X size={18} />
+          <X size={16} className="sm:w-[18px] sm:h-[18px]" />
         </button>
 
         {/* Modal Body — Full Screen Flex Layout: Main Video Showcase + Fully Visible 4 Shorts Grid */}
-        <div className="p-0 m-0 overflow-y-auto lg:overflow-hidden flex-1 flex flex-col min-h-0">
+        <div className="p-0 m-0 overflow-y-auto flex-1 flex flex-col min-h-0">
           {/* Main Video Showcase Section */}
-          <div className="relative flex-1 min-h-0 w-full overflow-hidden bg-card-bg group shadow-inner border-b border-card-border flex items-center justify-center">
+          <div className="relative flex-1 min-h-[160px] sm:min-h-[220px] max-h-[50vh] w-full overflow-hidden bg-card-bg group shadow-inner border-b border-card-border flex items-center justify-center">
             {isMp4 ? (
               <video
                 key={`main-video-${isDarkMode}`}
@@ -92,7 +92,7 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
                 muted
                 playsInline
                 controls
-                className="w-full h-full object-cover"
+                className="w-full h-full object-contain"
               />
             ) : (
               <iframe
@@ -105,10 +105,10 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
             )}
           </div>
 
-          {/* Key Value Proposition Grid — 4 Prominent Vertical Shorts (100% Fully Visible Above Footer) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-0 border-b border-card-border flex-shrink-0">
+          {/* Key Value Proposition Grid — 4 Responsive Vertical Shorts */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-0 border-b border-card-border flex-shrink-0">
             {/* 1. Visual Analytics Short */}
-            <div className="relative overflow-hidden group h-[150px] sm:h-[170px] lg:h-[195px] flex flex-col justify-between bg-card-bg border-b sm:border-b-0 sm:border-r border-card-border">
+            <div className="relative overflow-hidden group h-24 sm:h-36 lg:h-44 max-h-[20vh] flex flex-col justify-between bg-card-bg border-b sm:border-b-0 border-r border-card-border">
               <video
                 key={`analytics-${isDarkMode}`}
                 src={`/analytics-promo${themeSuffix}.mp4`}
@@ -121,7 +121,7 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
             </div>
 
             {/* 2. Market Pattern Watch Short */}
-            <div className="relative overflow-hidden group h-[150px] sm:h-[170px] lg:h-[195px] flex flex-col justify-between bg-card-bg border-b sm:border-b-0 lg:border-r border-card-border">
+            <div className="relative overflow-hidden group h-24 sm:h-36 lg:h-44 max-h-[20vh] flex flex-col justify-between bg-card-bg border-b sm:border-b-0 lg:border-r border-card-border">
               <video
                 key={`pattern-${isDarkMode}`}
                 src={`/pattern-promo${themeSuffix}.mp4`}
@@ -134,7 +134,7 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
             </div>
 
             {/* 3. Bar-by-Bar Replay Short */}
-            <div className="relative overflow-hidden group h-[150px] sm:h-[170px] lg:h-[195px] flex flex-col justify-between bg-card-bg border-b sm:border-b-0 sm:border-r border-card-border">
+            <div className="relative overflow-hidden group h-24 sm:h-36 lg:h-44 max-h-[20vh] flex flex-col justify-between bg-card-bg border-r lg:border-r border-card-border">
               <video
                 key={`replay-${isDarkMode}`}
                 src={`/replay-promo${themeSuffix}.mp4`}
@@ -147,7 +147,7 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
             </div>
 
             {/* 4. Auto Pattern Detector Short */}
-            <div className="relative overflow-hidden group h-[150px] sm:h-[170px] lg:h-[195px] flex flex-col justify-between bg-card-bg">
+            <div className="relative overflow-hidden group h-24 sm:h-36 lg:h-44 max-h-[20vh] flex flex-col justify-between bg-card-bg">
               <video
                 key={`autoscan-${isDarkMode}`}
                 src={`/auto-scan-promo${themeSuffix}.mp4`}
