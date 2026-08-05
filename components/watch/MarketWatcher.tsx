@@ -153,6 +153,9 @@ const PRIMARY_FUTURES_PRESETS = [
 ] as const;
 
 const SECONDARY_FUTURES_PRESETS = [
+  { label: 'FDAX (DAX 40)', symbol: 'FDAX=F' },
+  { label: 'FSTX (Euro Stoxx 50)', symbol: 'FSTX=F' },
+  { label: 'FGBL (Euro Bund)', symbol: 'FGBL=F' },
   { label: 'ES (S&P 500)', symbol: 'ES=F' },
   { label: 'YM (Dow)', symbol: 'YM=F' },
   { label: 'RTY (Russell)', symbol: 'RTY=F' },
