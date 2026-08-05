@@ -21,6 +21,7 @@ import {
   BarChart3,
   Radio,
   Play,
+  Clock,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -72,6 +73,39 @@ interface QueueData {
     delayed: number;
     waiting: number;
   };
+  concurrency?: {
+    workerConcurrency: number;
+    rateMax: number;
+    rateDurationMs: number;
+  };
+  activeJobs?: Array<{
+    id: string;
+    watchId: string;
+    symbol?: string;
+    interval?: string;
+    assetClass?: string;
+    mode?: string;
+    processedOn?: number;
+  }>;
+  upcomingScans?: Array<{
+    id: string;
+    symbol: string;
+    interval: string;
+    assetClass: string;
+    nextScanAt: string;
+    scanFrequencySeconds: number;
+  }>;
+  recentScans?: Array<{
+    watchId: string;
+    symbol: string;
+    interval: string;
+    assetClass: string;
+    status: string;
+    lastPrice: number | null;
+    lastProvider: string | null;
+    lastError: string | null;
+    lastScannedAt: string | null;
+  }>;
   workers: Array<{ workerId: string; lastBeatAt: string }>;
 }
 
@@ -695,7 +729,7 @@ export default function AdminDashboard() {
           </div>
 
           {queueInfo && (
-            <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="grid grid-cols-3 gap-3 text-xs">
               <div className="bg-muted-bg p-3 rounded-lg border border-card-border">
                 <span className="text-muted block mb-1">Worker Instances</span>
                 <span className="text-base font-bold text-foreground">{queueInfo.workers.length}</span>
@@ -705,6 +739,16 @@ export default function AdminDashboard() {
                 <span className="text-muted block mb-1">Queue Active / Waiting</span>
                 <span className="text-base font-bold text-foreground">
                   {queueInfo.queue.active} active <span className="text-muted text-xs font-normal">({queueInfo.queue.waiting} waiting)</span>
+                </span>
+              </div>
+
+              <div className="bg-muted-bg p-3 rounded-lg border border-card-border">
+                <span className="text-muted block mb-1">Parallel Concurrency</span>
+                <span className="text-base font-bold text-foreground">
+                  {queueInfo.concurrency?.workerConcurrency ?? 4} slots
+                  <span className="text-muted text-xs font-normal block text-[11px] font-mono mt-0.5">
+                    Rate: max {queueInfo.concurrency?.rateMax ?? 10} req/s
+                  </span>
                 </span>
               </div>
             </div>
@@ -726,6 +770,121 @@ export default function AdminDashboard() {
             </div>
           ) : (
             <p className="text-xs text-muted italic">No active scanner worker heartbeats reported.</p>
+          )}
+
+          {/* Currently Active Polling Jobs */}
+          {queueInfo && (
+            <div className="space-y-2 pt-2 border-t border-card-border">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                  <Zap size={14} className={queueInfo.activeJobs && queueInfo.activeJobs.length > 0 ? "text-accent animate-pulse" : "text-muted"} />
+                  Currently Polling ({queueInfo.activeJobs?.length ?? 0} active in-flight requests)
+                </span>
+              </div>
+              {queueInfo.activeJobs && queueInfo.activeJobs.length > 0 ? (
+                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                  {queueInfo.activeJobs.map((job) => (
+                    <div key={job.id} className="flex items-center justify-between text-xs p-2 bg-muted-bg/70 rounded-lg border border-card-border">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-foreground">{job.symbol || job.watchId}</span>
+                        {job.interval && (
+                          <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-accent/15 text-accent rounded">
+                            {job.interval}
+                          </span>
+                        )}
+                        {job.assetClass && (
+                          <span className="text-[10px] text-muted uppercase font-mono">
+                            {job.assetClass}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[11px] text-muted font-mono">
+                        {job.mode === 'evaluate' ? 'Manual scan' : 'Scheduled poll'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-2.5 bg-muted-bg/30 border border-card-border/60 rounded-lg flex items-center justify-between text-xs text-muted">
+                  <span className="flex items-center gap-2 text-foreground/80">
+                    <span className="w-2 h-2 rounded-full bg-profit/80" />
+                    Queue Idle — No active provider fetches in flight right now
+                  </span>
+                  <span className="text-[11px]">Ready for next tick</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Upcoming Scheduled Polls */}
+          {queueInfo?.upcomingScans && queueInfo.upcomingScans.length > 0 && (
+            <div className="space-y-2 pt-2 border-t border-card-border">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                  <Clock size={14} className="text-accent" />
+                  Next Due Scheduled Polls ({queueInfo.upcomingScans.length} queued next)
+                </span>
+              </div>
+              <div className="space-y-1 max-h-36 overflow-y-auto pr-1 text-xs">
+                {queueInfo.upcomingScans.map((up) => (
+                  <div key={up.id} className="flex items-center justify-between p-2 rounded-lg bg-muted-bg/30 border border-card-border/40">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-foreground">{up.symbol}</span>
+                      <span className="px-1.5 py-0.5 text-[10px] font-mono bg-muted-bg text-muted rounded">
+                        {up.interval}
+                      </span>
+                      <span className="text-[10px] text-muted uppercase font-mono">{up.assetClass}</span>
+                    </div>
+                    <span className="text-[11px] font-mono text-muted">
+                      Due {new Date(up.nextScanAt).toLocaleTimeString()} (every {up.scanFrequencySeconds}s)
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Recent Scan Feed */}
+          {queueInfo?.recentScans && queueInfo.recentScans.length > 0 && (
+            <div className="space-y-2 pt-2 border-t border-card-border">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                  <Activity size={14} className="text-accent" />
+                  Recent Polling Feed (Last 15 completed)
+                </span>
+              </div>
+              <div className="max-h-48 overflow-y-auto space-y-1 pr-1 text-xs">
+                {queueInfo.recentScans.map((scan, idx) => {
+                  const statusColor =
+                    scan.status === 'bullish'
+                      ? 'text-profit bg-profit/10'
+                      : scan.status === 'bearish'
+                      ? 'text-loss bg-loss/10'
+                      : scan.status === 'error'
+                      ? 'text-loss bg-loss/10'
+                      : 'text-foreground bg-muted-bg';
+                  return (
+                    <div key={`${scan.watchId}-${idx}`} className="flex items-center justify-between p-2 rounded-lg bg-muted-bg/40 border border-card-border/50">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-foreground">{scan.symbol}</span>
+                        <span className="text-[10px] font-mono text-muted">{scan.interval}</span>
+                        <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded uppercase ${statusColor}`}>
+                          {scan.status}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 text-[11px] text-muted">
+                        {scan.lastProvider && (
+                          <span className="font-mono text-muted">{scan.lastProvider}</span>
+                        )}
+                        <span>
+                          {scan.lastScannedAt ? new Date(scan.lastScannedAt).toLocaleTimeString() : 'Just now'}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           )}
         </div>
 

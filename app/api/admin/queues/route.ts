@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/scanner/db';
-import { scannerHeartbeat } from '@/lib/db/server/schema';
+import { scannerHeartbeat, serverWatch, serverWatchState } from '@/lib/db/server/schema';
 import { auth } from '@/lib/auth';
 import { isAdminEmail } from '@/lib/admin';
-import { SCAN_QUEUE } from '@/lib/scanner/env';
+import { SCAN_QUEUE, scannerConfig } from '@/lib/scanner/env';
 import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
+import { asc, desc, eq, inArray } from 'drizzle-orm';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,6 +20,15 @@ export async function GET(request: Request) {
     }
 
     let queueCounts = { active: 0, completed: 0, failed: 0, delayed: 0, waiting: 0 };
+    let activeJobs: Array<{
+      id: string;
+      watchId: string;
+      symbol?: string;
+      interval?: string;
+      assetClass?: string;
+      mode?: string;
+      processedOn?: number;
+    }> = [];
     let workers: Array<{ workerId: string; lastBeatAt: string }> = [];
     let redisConnected = false;
     let redisMemory = {
@@ -45,6 +55,28 @@ export async function GET(request: Request) {
           delayed: c.delayed ?? 0,
           waiting: c.waiting ?? 0,
         };
+
+        const activeList = await queue.getActive(0, 20);
+        if (activeList.length > 0) {
+          const watchIds = activeList.map((j) => j.data?.watchId).filter(Boolean) as string[];
+          const watches = watchIds.length > 0
+            ? await db.select().from(serverWatch).where(inArray(serverWatch.id, watchIds)).catch(() => [])
+            : [];
+          const watchMap = new Map(watches.map((w) => [w.id, w]));
+
+          activeJobs = activeList.map((job) => {
+            const w = job.data?.watchId ? watchMap.get(job.data.watchId) : null;
+            return {
+              id: String(job.id),
+              watchId: job.data?.watchId ?? 'unknown',
+              symbol: w?.symbol,
+              interval: w?.interval,
+              assetClass: w?.assetClass,
+              mode: job.data?.mode || 'scheduled',
+              processedOn: job.processedOn,
+            };
+          });
+        }
 
         try {
           const rawMem = await connection.info('memory');
@@ -84,12 +116,82 @@ export async function GET(request: Request) {
       workers = [];
     }
 
+    let recentScans: Array<{
+      watchId: string;
+      symbol: string;
+      interval: string;
+      assetClass: string;
+      status: string;
+      lastPrice: number | null;
+      lastProvider: string | null;
+      lastError: string | null;
+      lastScannedAt: string | null;
+    }> = [];
+
+    try {
+      const scans = await db
+        .select({
+          watchId: serverWatchState.watchId,
+          symbol: serverWatch.symbol,
+          interval: serverWatch.interval,
+          assetClass: serverWatch.assetClass,
+          status: serverWatchState.status,
+          lastPrice: serverWatchState.lastPrice,
+          lastProvider: serverWatchState.lastProvider,
+          lastError: serverWatchState.lastError,
+          lastScannedAt: serverWatchState.lastScannedAt,
+        })
+        .from(serverWatchState)
+        .innerJoin(serverWatch, eq(serverWatchState.watchId, serverWatch.id))
+        .orderBy(desc(serverWatchState.lastScannedAt))
+        .limit(15);
+      recentScans = scans;
+    } catch {
+      recentScans = [];
+    }
+
+    let upcomingScans: Array<{
+      id: string;
+      symbol: string;
+      interval: string;
+      assetClass: string;
+      nextScanAt: string;
+      scanFrequencySeconds: number;
+    }> = [];
+
+    try {
+      const upcoming = await db
+        .select({
+          id: serverWatch.id,
+          symbol: serverWatch.symbol,
+          interval: serverWatch.interval,
+          assetClass: serverWatch.assetClass,
+          nextScanAt: serverWatch.nextScanAt,
+          scanFrequencySeconds: serverWatch.scanFrequencySeconds,
+        })
+        .from(serverWatch)
+        .where(eq(serverWatch.enabled, true))
+        .orderBy(asc(serverWatch.nextScanAt))
+        .limit(10);
+      upcomingScans = upcoming;
+    } catch {
+      upcomingScans = [];
+    }
+
     return NextResponse.json({
       success: true,
       user: { id: session.user.id, email: session.user.email },
       redisConnected,
       redisMemory,
       queue: queueCounts,
+      concurrency: {
+        workerConcurrency: scannerConfig.concurrency,
+        rateMax: scannerConfig.rateMax,
+        rateDurationMs: scannerConfig.rateDurationMs,
+      },
+      activeJobs,
+      upcomingScans,
+      recentScans,
       workers,
     });
   } catch (error) {
@@ -102,3 +204,4 @@ export async function GET(request: Request) {
     );
   }
 }
+
