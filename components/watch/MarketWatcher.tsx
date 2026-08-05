@@ -153,20 +153,21 @@ const PRIMARY_FUTURES_PRESETS = [
 ] as const;
 
 const SECONDARY_FUTURES_PRESETS = [
-  { label: 'FDAX (DAX 40)', symbol: 'FDAX=F' },
-  { label: 'FSTX (Euro Stoxx 50)', symbol: 'FSTX=F' },
-  { label: 'FGBL (Euro Bund)', symbol: 'FGBL=F' },
+  { label: 'BTC (CME BTC)', symbol: 'BTC=F' },
   { label: 'ES (S&P 500)', symbol: 'ES=F' },
-  { label: 'YM (Dow)', symbol: 'YM=F' },
-  { label: 'RTY (Russell)', symbol: 'RTY=F' },
-  { label: 'NIY (Nikkei 225)', symbol: 'NIY=F' },
-  { label: 'K200 (KOSPI 200)', symbol: 'K200=F' },
+  { label: 'FDAX (DAX 40)', symbol: 'FDAX=F' },
+  { label: 'FGBL (Euro Bund)', symbol: 'FGBL=F' },
+  { label: 'FSTX (Euro Stoxx 50)', symbol: 'FSTX=F' },
   { label: 'HSI (Hang Seng)', symbol: 'HSI=F' },
+  { label: 'K200 (KOSPI 200)', symbol: 'K200=F' },
+  { label: 'NIY (Nikkei 225)', symbol: 'NIY=F' },
+  { label: 'RTY (Russell)', symbol: 'RTY=F' },
+  { label: 'SI (Silver)', symbol: 'SI=F' },
   { label: 'SPI (Australia 200)', symbol: 'SPI=F' },
   { label: 'SSG (Singapore MSCI)', symbol: 'SSG=F' },
-  { label: 'SI (Silver)', symbol: 'SI=F' },
+  { label: 'YM (Dow)', symbol: 'YM=F' },
+  { label: 'Z (FTSE 100)', symbol: 'Z=F' },
   { label: 'ZB (Bonds)', symbol: 'ZB=F' },
-  { label: 'BTC (CME BTC)', symbol: 'BTC=F' },
 ] as const;
 
 const mapSnapshotAlerts = (snapshot: {
