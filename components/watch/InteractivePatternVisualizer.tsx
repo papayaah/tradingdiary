@@ -23,6 +23,7 @@ import { EngulfingReversalControls } from './pattern-settings/EngulfingReversalC
 import { MomentumBurstControls } from './pattern-settings/MomentumBurstControls';
 import { RangeBreakoutControls } from './pattern-settings/RangeBreakoutControls';
 import { VolumeExpansionControls } from './pattern-settings/VolumeExpansionControls';
+import { buildMomentumBurstPreview } from '@/lib/watch/momentum-preview';
 
 interface InteractivePatternVisualizerProps {
   patternId: PatternId;
@@ -89,11 +90,30 @@ export function InteractivePatternVisualizer({
   };
 
   const isConsecutive = patternId === 'consecutive';
+  const isMomentumBurst = patternId === 'momentum-burst';
   const patternDefinition = getPatternDefinition(patternId);
   const ruleGuidance = DETECTOR_RULE_GUIDANCE[patternId];
-  const streak = isConsecutive ? localStreak : 3;
+  const streak = isConsecutive ? localStreak : isMomentumBurst ? 4 : 3;
   const targetThreshold = localMinMove;
   const isBullish = direction === 'bullish';
+  const momentumPreview = buildMomentumBurstPreview(
+    targetThreshold,
+    resolvedPatternSettings.momentumBurst.bodyMultiplier,
+    simScenario !== 'fail-size',
+  );
+  const displayedRules = isMomentumBurst
+    ? [
+        {
+          label: 'Baseline',
+          value: `${resolvedPatternSettings.momentumBurst.lookbackBars}-bar prior-body average`,
+        },
+        {
+          label: 'Relative size',
+          value: `${resolvedPatternSettings.momentumBurst.bodyMultiplier.toFixed(1)}× average body`,
+        },
+        { label: 'Direction', value: 'Signal follows the burst candle color' },
+      ]
+    : ruleGuidance.currentRules;
 
   React.useEffect(() => {
     setSimScenario('valid');
@@ -102,7 +122,7 @@ export function InteractivePatternVisualizer({
   // Keep every valid body above the selected threshold while varying the
   // bodies enough to resemble a real sequence instead of cloned bars.
   const validBodyMultipliers = [1.12, 1.48, 1.24, 1.62, 1.34];
-  const simulatedCandles = Array.from({ length: streak }, (_, i) => {
+  const genericSimulatedCandles = Array.from({ length: streak }, (_, i) => {
     const isFailCandle =
       simScenario === 'fail-size' && i === Math.floor(streak / 2);
     const isDirectionFail =
@@ -131,8 +151,32 @@ export function InteractivePatternVisualizer({
       passesSize,
       passesDirection,
       candleIsBullish,
+      label: `Bar #${i + 1}`,
     };
   });
+
+  const simulatedCandles = isMomentumBurst
+    ? [
+        ...momentumPreview.baselineBodies.map((bodyMove, index) => ({
+          index: index + 1,
+          bodyMove,
+          passesSize: true,
+          passesDirection: true,
+          candleIsBullish: isBullish,
+          label: `Prior ${index + 1}`,
+        })),
+        {
+          index: momentumPreview.baselineBodies.length + 1,
+          bodyMove: momentumPreview.signalBody,
+          passesSize:
+            momentumPreview.passesAbsoluteMinimum
+            && momentumPreview.passesRelativeExpansion,
+          passesDirection: true,
+          candleIsBullish: isBullish,
+          label: 'Signal',
+        },
+      ]
+    : genericSimulatedCandles;
 
   const allPass = simulatedCandles.every((c) => c.passesSize && c.passesDirection);
   const endingPrice = simulatedCandles.reduce(
@@ -142,21 +186,26 @@ export function InteractivePatternVisualizer({
     100,
   );
   const totalMove = endingPrice - 100;
+  const previewMove = isMomentumBurst
+    ? (isBullish ? momentumPreview.signalBody : -momentumPreview.signalBody)
+    : totalMove;
 
   // Build one continuous price path. Each new candle opens near the prior
   // close, so a valid streak visibly climbs or falls instead of overlapping
   // around a shared baseline. Large thresholds are scaled down only as much
   // as needed to keep the complete sequence inside the chart.
-  const referenceMove = targetThreshold *
-    Array.from(
-      { length: streak },
-      (_, index) => validBodyMultipliers[index % validBodyMultipliers.length],
-    ).reduce((sum, multiplier) => sum + multiplier, 0);
+  const referenceMove = simulatedCandles.reduce(
+    (sum, candle) => sum + candle.bodyMove,
+    0,
+  );
   const pixelsPerPercent = Math.min(45, 118 / Math.max(referenceMove, 0.01));
   const getPixelHeight = (percentMove: number) =>
     Math.max(3, percentMove * pixelsPerPercent);
 
-  const thresholdPixelHeight = getPixelHeight(targetThreshold);
+  const visualThreshold = isMomentumBurst
+    ? momentumPreview.requiredSignalBody
+    : targetThreshold;
+  const thresholdPixelHeight = getPixelHeight(visualThreshold);
   let previousCloseY: number | null = null;
   let previousBodyHeight = 0;
   const candleGeometry = simulatedCandles.map((candle, index) => {
@@ -249,33 +298,35 @@ export function InteractivePatternVisualizer({
       {/* Interactive Controls Row */}
       <div className="flex flex-wrap items-start gap-3 rounded-lg border border-card-border/60 bg-muted-bg/40 p-3">
         {/* Threshold Slider */}
-        <div className="min-w-0 basis-[220px] grow space-y-1">
-          <div className="flex items-center justify-between text-xs">
-            <label htmlFor="min-move-slider" className="font-medium text-muted flex items-center gap-1">
-              <Sliders size={12} className="text-accent" />
-              {ruleGuidance.minBodyLabel}:
-            </label>
-            <span className="font-mono font-bold text-accent text-sm">{localMinMove.toFixed(2)}%</span>
+        {!isMomentumBurst ? (
+          <div className="min-w-0 basis-[220px] grow space-y-1">
+            <div className="flex items-center justify-between text-xs">
+              <label htmlFor="min-move-slider" className="font-medium text-muted flex items-center gap-1">
+                <Sliders size={12} className="text-accent" />
+                {ruleGuidance.minBodyLabel}:
+              </label>
+              <span className="font-mono font-bold text-accent text-sm">{localMinMove.toFixed(2)}%</span>
+            </div>
+            <input
+              id="min-move-slider"
+              type="range"
+              min="0.05"
+              max="3.00"
+              step="0.05"
+              value={localMinMove}
+              onChange={(e) => handleMinMoveUpdate(parseFloat(e.target.value))}
+              className="w-full h-2 bg-card-border rounded-lg appearance-none cursor-pointer accent-accent"
+            />
+            <div className="flex justify-between text-[9px] text-muted font-mono">
+              <span>0.05% (Small/Squatty)</span>
+              <span>0.25% (Standard)</span>
+              <span>3.00% (Very Large)</span>
+            </div>
+            <p className="text-[9px] leading-relaxed text-muted">
+              {ruleGuidance.minBodyExplanation}
+            </p>
           </div>
-          <input
-            id="min-move-slider"
-            type="range"
-            min="0.05"
-            max="3.00"
-            step="0.05"
-            value={localMinMove}
-            onChange={(e) => handleMinMoveUpdate(parseFloat(e.target.value))}
-            className="w-full h-2 bg-card-border rounded-lg appearance-none cursor-pointer accent-accent"
-          />
-          <div className="flex justify-between text-[9px] text-muted font-mono">
-            <span>0.05% (Small/Squatty)</span>
-            <span>0.25% (Standard)</span>
-            <span>3.00% (Very Large)</span>
-          </div>
-          <p className="text-[9px] leading-relaxed text-muted">
-            {ruleGuidance.minBodyExplanation}
-          </p>
-        </div>
+        ) : null}
 
         {/* Streak Selector (for consecutive) */}
         {isConsecutive ? (
@@ -341,6 +392,18 @@ export function InteractivePatternVisualizer({
           </div>
         ) : null}
 
+        {isMomentumBurst ? (
+          <MomentumBurstControls
+            value={resolvedPatternSettings.momentumBurst}
+            minMovePercent={localMinMove}
+            onMinMoveChange={handleMinMoveUpdate}
+            onChange={(momentumBurst) => onPatternSettingsChange?.({
+              ...resolvedPatternSettings,
+              momentumBurst,
+            })}
+          />
+        ) : null}
+
         {/* Scenario Test Switcher */}
         <div className="min-w-0 basis-[320px] grow space-y-1">
           <span className="block text-xs font-medium text-muted">Test Scenario:</span>
@@ -393,16 +456,6 @@ export function InteractivePatternVisualizer({
           />
         ) : null}
 
-        {patternId === 'momentum-burst' ? (
-          <MomentumBurstControls
-            value={resolvedPatternSettings.momentumBurst}
-            onChange={(momentumBurst) => onPatternSettingsChange?.({
-              ...resolvedPatternSettings,
-              momentumBurst,
-            })}
-          />
-        ) : null}
-
         {patternId === 'volume-expansion' ? (
           <VolumeExpansionControls
             value={resolvedPatternSettings.volumeExpansion}
@@ -429,14 +482,19 @@ export function InteractivePatternVisualizer({
             Current detector rules
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {ruleGuidance.currentRules.map((rule) => (
+            {displayedRules.map((rule) => (
               <div key={rule.label} className="rounded-lg border border-card-border/60 bg-muted-bg/40 p-2 text-xs">
                 <span className="block font-bold text-foreground">{rule.label}</span>
                 <span className="text-muted">{rule.value}</span>
               </div>
             ))}
           </div>
-          {!isConsecutive ? (
+          {isMomentumBurst ? (
+            <p className="mt-2 text-xs leading-relaxed text-muted">
+              The three visible prior candles represent the configured {resolvedPatternSettings.momentumBurst.lookbackBars}-bar baseline.
+              The signal must clear both the {localMinMove.toFixed(2)}% absolute minimum and the {momentumPreview.relativeThreshold.toFixed(2)}% relative threshold.
+            </p>
+          ) : !isConsecutive ? (
             <p className="mt-2 text-xs leading-relaxed text-muted">
               The preview below demonstrates the adjustable signal-body threshold only.
               A real match must also pass every fixed rule listed above.
@@ -459,18 +517,28 @@ export function InteractivePatternVisualizer({
           <div className="min-w-[220px] flex-1 text-[11px] font-medium leading-relaxed text-muted">
             {isConsecutive
               ? `Trigger Preview (${simulatedCandles.length} Bars) — ${localMaxOverlap === 0 ? 'clean staircase' : `≤${localMaxOverlap}% body overlap`}, closes progress ${isBullish ? 'higher' : 'lower'}`
-              : `${patternDefinition.name} base-candle preview — ${patternDefinition.shortDescription}`}
+              : isMomentumBurst
+                ? `Momentum Burst signal preview — ${resolvedPatternSettings.momentumBurst.lookbackBars}-bar average ${momentumPreview.averageBody.toFixed(2)}% × ${resolvedPatternSettings.momentumBurst.bodyMultiplier.toFixed(1)} = ${momentumPreview.relativeThreshold.toFixed(2)}% relative threshold`
+                : `${patternDefinition.name} base-candle preview — ${patternDefinition.shortDescription}`}
           </div>
 
           {allPass ? (
             <span className="inline-flex max-w-full shrink-0 items-center justify-center gap-1 rounded-full border border-profit/30 bg-profit/10 px-3 py-1 text-center text-xs font-bold text-profit">
               <CheckCircle2 size={13} />
-              {isConsecutive ? 'PATTERN DETECTED' : 'BASE CANDLE VALID'} ({totalMove >= 0 ? '+' : ''}{totalMove.toFixed(2)}%)
+              {isConsecutive
+                ? 'PATTERN DETECTED'
+                : isMomentumBurst
+                  ? 'MOMENTUM BURST VALID'
+                  : 'BASE CANDLE VALID'} ({previewMove >= 0 ? '+' : ''}{previewMove.toFixed(2)}%)
             </span>
           ) : (
             <span className="inline-flex max-w-full shrink-0 items-center justify-center gap-1 rounded-full border border-loss/30 bg-loss/10 px-3 py-1 text-center text-xs font-bold text-loss">
               <XCircle size={13} />
-              {isConsecutive ? 'IGNORED' : 'BASE CANDLE INVALID'} (Threshold Not Met)
+              {isConsecutive
+                ? 'IGNORED'
+                : isMomentumBurst
+                  ? 'MOMENTUM BURST INVALID'
+                  : 'BASE CANDLE INVALID'} (Threshold Not Met)
             </span>
           )}
         </div>
@@ -508,7 +576,7 @@ export function InteractivePatternVisualizer({
                 y="222"
                 className="text-[9px] fill-accent font-mono font-bold"
               >
-                MIN {targetThreshold.toFixed(2)}%
+                {isMomentumBurst ? 'REQ' : 'MIN'} {visualThreshold.toFixed(2)}%
               </text>
             </g>
 
@@ -576,7 +644,7 @@ export function InteractivePatternVisualizer({
                     textAnchor="middle"
                     className="text-[9px] font-mono fill-muted"
                   >
-                    Bar #{c.index} · {c.bodyMove.toFixed(2)}%
+                    {c.label} · {c.bodyMove.toFixed(2)}%
                   </text>
                 </g>
               );
@@ -644,6 +712,36 @@ export function InteractivePatternVisualizer({
                   : `Adjacent bodies may overlap by no more than ${localMaxOverlap}%.`}
               </p>
             </div>
+            </div>
+          ) : isMomentumBurst ? (
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className={`rounded-md border p-2 ${
+                momentumPreview.passesAbsoluteMinimum
+                  ? 'border-profit/30 bg-profit/5 text-profit'
+                  : 'border-loss/30 bg-loss/5 text-loss'
+              }`}>
+                <div className="flex items-center gap-1 font-bold">
+                  {momentumPreview.passesAbsoluteMinimum ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
+                  1. Absolute Body Minimum
+                </div>
+                <p className="mt-0.5 text-[10px] text-muted">
+                  Signal {momentumPreview.signalBody.toFixed(2)}% must be at least {localMinMove.toFixed(2)}%.
+                </p>
+              </div>
+
+              <div className={`rounded-md border p-2 ${
+                momentumPreview.passesRelativeExpansion
+                  ? 'border-profit/30 bg-profit/5 text-profit'
+                  : 'border-loss/30 bg-loss/5 text-loss'
+              }`}>
+                <div className="flex items-center gap-1 font-bold">
+                  {momentumPreview.passesRelativeExpansion ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
+                  2. Relative Body Expansion
+                </div>
+                <p className="mt-0.5 text-[10px] text-muted">
+                  {momentumPreview.averageBody.toFixed(2)}% average × {resolvedPatternSettings.momentumBurst.bodyMultiplier.toFixed(1)} requires at least {momentumPreview.relativeThreshold.toFixed(2)}%.
+                </p>
+              </div>
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
