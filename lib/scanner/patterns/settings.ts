@@ -21,6 +21,7 @@ export interface EngulfingReversalSettings {
 }
 
 export interface PatternSettings {
+  minMovePercentByPattern: Record<PatternId, number>;
   rangeBreakout: RangeBreakoutSettings;
   volumeExpansion: VolumeExpansionSettings;
   momentumBurst: MomentumBurstSettings;
@@ -28,6 +29,13 @@ export interface PatternSettings {
 }
 
 export const DEFAULT_PATTERN_SETTINGS: PatternSettings = {
+  minMovePercentByPattern: {
+    consecutive: 0.25,
+    'momentum-burst': 0.25,
+    'range-breakout': 0.25,
+    'volume-expansion': 0.25,
+    'engulfing-reversal': 0.25,
+  },
   rangeBreakout: {
     lookbackBars: 10,
     minBreakoutPercent: 0,
@@ -50,7 +58,17 @@ export const DEFAULT_PATTERN_SETTINGS: PatternSettings = {
 const finiteNumber = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null;
 
-export const normalizePatternSettings = (input: unknown): PatternSettings => {
+const normalizeMinMovePercent = (value: unknown, fallback: number): number => {
+  const parsed = finiteNumber(value);
+  return parsed === null
+    ? Math.max(0.05, Math.min(3, fallback))
+    : Math.max(0.05, Math.min(3, parsed));
+};
+
+export const normalizePatternSettings = (
+  input: unknown,
+  legacyMinMovePercent: number = 0.25,
+): PatternSettings => {
   const root = input && typeof input === 'object'
     ? input as Record<string, unknown>
     : {};
@@ -66,6 +84,9 @@ export const normalizePatternSettings = (input: unknown): PatternSettings => {
   const rawEngulfing = root.engulfingReversal && typeof root.engulfingReversal === 'object'
     ? root.engulfingReversal as Record<string, unknown>
     : {};
+  const rawMinMoves = root.minMovePercentByPattern && typeof root.minMovePercentByPattern === 'object'
+    ? root.minMovePercentByPattern as Record<string, unknown>
+    : {};
   const lookback = finiteNumber(rawRange.lookbackBars);
   const breakout = finiteNumber(rawRange.minBreakoutPercent);
   const volumeMultiplier = finiteNumber(rawRange.volumeConfirmationMultiplier);
@@ -78,6 +99,13 @@ export const normalizePatternSettings = (input: unknown): PatternSettings => {
   const minBodyRatio = finiteNumber(rawEngulfing.minBodyRatio);
 
   return {
+    minMovePercentByPattern: {
+      consecutive: normalizeMinMovePercent(rawMinMoves.consecutive, legacyMinMovePercent),
+      'momentum-burst': normalizeMinMovePercent(rawMinMoves['momentum-burst'], legacyMinMovePercent),
+      'range-breakout': normalizeMinMovePercent(rawMinMoves['range-breakout'], legacyMinMovePercent),
+      'volume-expansion': normalizeMinMovePercent(rawMinMoves['volume-expansion'], legacyMinMovePercent),
+      'engulfing-reversal': normalizeMinMovePercent(rawMinMoves['engulfing-reversal'], legacyMinMovePercent),
+    },
     rangeBreakout: {
       lookbackBars: lookback === null
         ? DEFAULT_PATTERN_SETTINGS.rangeBreakout.lookbackBars
@@ -118,3 +146,10 @@ export const normalizePatternSettings = (input: unknown): PatternSettings => {
     },
   };
 };
+
+export const getPatternMinMovePercent = (
+  settings: PatternSettings,
+  patternId: PatternId,
+  fallback: number = 0.25,
+): number => normalizeMinMovePercent(settings.minMovePercentByPattern?.[patternId], fallback);
+import type { PatternId } from './registry';

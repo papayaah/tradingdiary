@@ -407,6 +407,13 @@ describe('selectable pattern presets', () => {
         minBodyRatio: 20,
       },
     })).toEqual({
+      minMovePercentByPattern: {
+        consecutive: 0.25,
+        'momentum-burst': 0.25,
+        'range-breakout': 0.25,
+        'volume-expansion': 0.25,
+        'engulfing-reversal': 0.25,
+      },
       rangeBreakout: {
         lookbackBars: 100,
         minBreakoutPercent: 0,
@@ -438,6 +445,44 @@ describe('selectable pattern presets', () => {
     expect(normalized.engulfingReversal).toEqual(
       DEFAULT_PATTERN_SETTINGS.engulfingReversal,
     );
+  });
+
+  it('copies the legacy minimum move into every pattern when per-pattern values are absent', () => {
+    expect(normalizePatternSettings({}, 0.8).minMovePercentByPattern).toEqual({
+      consecutive: 0.8,
+      'momentum-burst': 0.8,
+      'range-breakout': 0.8,
+      'volume-expansion': 0.8,
+      'engulfing-reversal': 0.8,
+    });
+  });
+
+  it('uses the selected detector minimum instead of the legacy scalar', () => {
+    const settings = {
+      ...DEFAULT_PATTERN_SETTINGS,
+      minMovePercentByPattern: {
+        ...DEFAULT_PATTERN_SETTINGS.minMovePercentByPattern,
+        consecutive: 0.75,
+      },
+    };
+
+    expect(detectPattern(
+      greenRun(3, 100, 0.5),
+      0.1,
+      3,
+      'consecutive',
+      100,
+      settings,
+    ).matched).toBe('none');
+
+    expect(detectPattern(
+      greenRun(3, 100, 0.8),
+      0.1,
+      3,
+      'consecutive',
+      100,
+      settings,
+    ).matched).toBe('bullish');
   });
 
   it('requires doubled recent volume for volume expansion', () => {

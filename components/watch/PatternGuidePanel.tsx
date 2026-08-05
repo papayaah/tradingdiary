@@ -5,6 +5,7 @@ import { ScanSearch, ChevronDown, SlidersHorizontal, Check } from 'lucide-react'
 import {
   PATTERN_PRESETS,
   DEFAULT_PATTERN_SETTINGS,
+  getPatternMinMovePercent,
   getPatternDefinition,
   normalizePatternSettings,
   type PatternId,
@@ -17,6 +18,8 @@ import FocusBackdrop from './FocusBackdrop';
 interface PatternGuidePanelProps {
   value: PatternId;
   onChange: (patternId: PatternId) => void;
+  selectedValues?: PatternId[];
+  onSelectionChange?: (patternIds: PatternId[]) => void;
   description?: string;
   minMovePercent?: number;
   requiredCount?: number;
@@ -132,6 +135,8 @@ const PatternPreview = React.memo(function PatternPreview({
 export function PatternGuidePanel({
   value,
   onChange,
+  selectedValues,
+  onSelectionChange,
   description: customDescription,
   minMovePercent = 0.25,
   requiredCount = 3,
@@ -146,6 +151,8 @@ export function PatternGuidePanel({
   const [isGuideExpanded, setIsGuideExpanded] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const selectedPreset = PATTERN_PRESETS.find((preset) => preset.id === value) ?? PATTERN_PRESETS[0];
+  const alertPatternIds = selectedValues ?? [value];
+  const isMultiSelect = !!onSelectionChange;
 
   const isFocused = isOpen || isGuideExpanded;
 
@@ -174,8 +181,15 @@ export function PatternGuidePanel({
   }, [isFocused]);
 
   const definition = getPatternDefinition(value);
-  const description = customDescription ?? definition?.shortDescription ?? selectedPreset.shortDescription;
+  const description = customDescription ?? (isMultiSelect
+    ? 'Choose one or more detectors. Alerts fire when any selected pattern matches.'
+    : definition?.shortDescription ?? selectedPreset.shortDescription);
   const resolvedPatternSettings = normalizePatternSettings(patternSettings ?? DEFAULT_PATTERN_SETTINGS);
+  const activeMinMovePercent = getPatternMinMovePercent(
+    resolvedPatternSettings,
+    value,
+    minMovePercent,
+  );
   const ruleGuidance = DETECTOR_RULE_GUIDANCE[value] ?? { minBodySummaryLabel: 'Min Body' };
 
   return (
@@ -203,7 +217,7 @@ export function PatternGuidePanel({
         <div>
           <div id="pattern-selector-title" className="flex items-center gap-1.5 text-xs font-bold text-foreground">
             <ScanSearch size={14} className="text-accent" />
-            Pattern
+            {isMultiSelect ? 'Alert Patterns' : 'Pattern'}
           </div>
           <p className="mt-0.5 text-[10px] text-muted">{description}</p>
         </div>
@@ -221,7 +235,11 @@ export function PatternGuidePanel({
             <PatternPreview patternId={selectedPreset.id} />
             <span className="min-w-0 flex-1">
               <span className="block text-xs font-bold text-foreground">{selectedPreset.name}</span>
-              <span className="mt-0.5 block truncate text-[10px] text-muted">{selectedPreset.shortDescription}</span>
+              <span className="mt-0.5 block truncate text-[10px] text-muted">
+                {isMultiSelect
+                  ? `${alertPatternIds.length} alert pattern${alertPatternIds.length === 1 ? '' : 's'} selected`
+                  : selectedPreset.shortDescription}
+              </span>
             </span>
             <ChevronDown
               size={15}
@@ -236,7 +254,7 @@ export function PatternGuidePanel({
             className="hidden lg:flex items-center gap-1.5 text-[10px] font-mono text-muted bg-muted-bg/50 border border-card-border/60 px-2.5 py-1.5 rounded-lg hover:border-accent/40 hover:text-foreground transition-all cursor-pointer shadow-sm"
             title="Click to expand Pattern Settings & Visualizer"
           >
-            <span>{ruleGuidance.minBodySummaryLabel}: <strong className="text-foreground">{minMovePercent}%</strong></span>
+            <span>{ruleGuidance.minBodySummaryLabel}: <strong className="text-foreground">{activeMinMovePercent}%</strong></span>
             {value === 'consecutive' && (
               <span>• Streak: <strong className="text-foreground">{requiredCount} bars</strong></span>
             )}
@@ -286,43 +304,96 @@ export function PatternGuidePanel({
         <div
           id="pattern-selector-options"
           className="relative z-50 w-full rounded-xl border border-card-border bg-card-bg p-2.5 shadow-2xl space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-150"
-          role="listbox"
-          aria-label="Pattern"
+          role={isMultiSelect ? 'group' : 'listbox'}
+          aria-label={isMultiSelect ? 'Alert patterns and active pattern settings' : 'Pattern'}
         >
-          <div className="px-1 text-[9px] font-bold uppercase tracking-wider text-muted">
-            SELECT A PATTERN
+          <div className="flex items-center justify-between gap-3 px-1">
+            <div>
+              <div className="text-[9px] font-bold uppercase tracking-wider text-muted">
+                {isMultiSelect ? 'SELECT ALERT PATTERNS' : 'SELECT A PATTERN'}
+              </div>
+              {isMultiSelect ? (
+                <p className="mt-0.5 text-[10px] text-muted">Alert when any checked pattern matches. Click a card to edit its settings.</p>
+              ) : null}
+            </div>
+            {isMultiSelect ? (
+              <button
+                type="button"
+                onClick={() => onSelectionChange(
+                  alertPatternIds.length === PATTERN_PRESETS.length
+                    ? [value]
+                    : PATTERN_PRESETS.map((preset) => preset.id),
+                )}
+                className="shrink-0 rounded-lg border border-card-border bg-muted-bg/50 px-2 py-1 text-[10px] font-semibold text-foreground transition-colors hover:border-accent/50"
+              >
+                {alertPatternIds.length === PATTERN_PRESETS.length ? 'Only active' : 'Select all'}
+              </button>
+            ) : null}
           </div>
 
           <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
             {PATTERN_PRESETS.map((preset) => {
-              const selected = preset.id === value;
+              const active = preset.id === value;
+              const checked = alertPatternIds.includes(preset.id);
+              const toggleAlertPattern = () => {
+                if (!onSelectionChange || (checked && alertPatternIds.length === 1)) return;
+                const next = checked
+                  ? alertPatternIds.filter((patternId) => patternId !== preset.id)
+                  : [...alertPatternIds, preset.id];
+                onSelectionChange(next);
+              };
               return (
-                <button
+                <div
                   key={preset.id}
-                  type="button"
-                  role="option"
-                  aria-selected={selected}
-                  onClick={() => {
-                    onChange(preset.id);
-                    setIsOpen(false);
-                  }}
-                  className={`relative flex min-h-[70px] items-center gap-2.5 rounded-lg border p-2 text-left transition-all ${
-                    selected
+                  className={`relative rounded-lg border transition-all ${
+                    active
                       ? 'border-accent bg-accent/10 text-foreground shadow-md ring-1 ring-accent/30'
                       : 'border-card-border/60 bg-muted-bg/30 text-muted hover:border-accent/50 hover:bg-muted-bg/60 hover:text-foreground'
                   }`}
                 >
-                  <PatternPreview patternId={preset.id} large />
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-xs font-bold leading-tight text-foreground">{preset.name}</span>
-                    <span className="mt-1 block text-[10px] leading-snug text-muted">{preset.shortDescription}</span>
-                  </span>
-                  {selected ? (
-                    <span className="absolute right-2.5 top-2.5 grid h-4.5 w-4.5 place-items-center rounded-full bg-accent text-white shadow-sm">
-                      <Check size={10} strokeWidth={3} />
+                  <button
+                    type="button"
+                    role={isMultiSelect ? undefined : 'option'}
+                    aria-selected={isMultiSelect ? undefined : checked}
+                    aria-label={isMultiSelect ? `Edit ${preset.name} settings` : undefined}
+                    onClick={() => {
+                      onChange(preset.id);
+                      if (!isMultiSelect) setIsOpen(false);
+                    }}
+                    className="flex min-h-[70px] w-full items-center gap-2.5 p-2 pr-9 text-left"
+                  >
+                    <PatternPreview patternId={preset.id} large />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-xs font-bold leading-tight text-foreground">{preset.name}</span>
+                      <span className="mt-1 block text-[10px] leading-snug text-muted">{preset.shortDescription}</span>
+                    </span>
+                  </button>
+                  {isMultiSelect ? (
+                    <button
+                      type="button"
+                      role="checkbox"
+                      aria-checked={checked}
+                      aria-label={`${checked ? 'Disable' : 'Enable'} ${preset.name} alerts`}
+                      onClick={toggleAlertPattern}
+                      disabled={checked && alertPatternIds.length === 1}
+                      title={checked && alertPatternIds.length === 1 ? 'At least one alert pattern is required' : undefined}
+                      className={`absolute right-2.5 top-2.5 grid h-5 w-5 place-items-center rounded border transition-colors disabled:cursor-not-allowed disabled:opacity-70 ${
+                        checked
+                          ? 'border-accent bg-accent text-background'
+                          : 'border-card-border bg-card-bg text-transparent'
+                      }`}
+                    >
+                      <Check size={11} strokeWidth={3} />
+                    </button>
+                  ) : active ? (
+                    <span
+                      aria-hidden="true"
+                      className="absolute right-2.5 top-2.5 grid h-5 w-5 place-items-center rounded-full bg-accent text-background shadow-sm"
+                    >
+                      <Check size={11} strokeWidth={3} />
                     </span>
                   ) : null}
-                </button>
+                </div>
               );
             })}
           </div>
@@ -334,11 +405,23 @@ export function PatternGuidePanel({
         <div className="pt-2 border-t border-card-border/40 animate-in fade-in slide-in-from-top-1 duration-200">
           <InteractivePatternVisualizer
             patternId={value}
-            minMovePercent={minMovePercent}
+            minMovePercent={activeMinMovePercent}
             requiredCount={requiredCount}
             maxBodyOverlapPercent={maxBodyOverlapPercent}
             patternSettings={patternSettings}
-            onMinMoveChange={onMinMoveChange}
+            onMinMoveChange={(nextMinMovePercent) => {
+              if (onPatternSettingsChange) {
+                onPatternSettingsChange({
+                  ...resolvedPatternSettings,
+                  minMovePercentByPattern: {
+                    ...resolvedPatternSettings.minMovePercentByPattern,
+                    [value]: nextMinMovePercent,
+                  },
+                });
+                return;
+              }
+              onMinMoveChange?.(nextMinMovePercent);
+            }}
             onRequiredCountChange={onRequiredCountChange}
             onMaxBodyOverlapChange={onMaxBodyOverlapChange}
             onPatternSettingsChange={onPatternSettingsChange}

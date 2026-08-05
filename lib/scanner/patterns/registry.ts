@@ -21,5 +21,16 @@ export const isPatternId = (value: unknown): value is PatternId =>
   typeof value === 'string'
   && PATTERN_DEFINITIONS.some((definition) => definition.id === value);
 
+export const normalizePatternIds = (
+  value: unknown,
+  fallback: PatternId = DEFAULT_PATTERN_ID,
+): PatternId[] => {
+  const candidates = Array.isArray(value) ? value : [value];
+  const unique = candidates.filter(isPatternId).filter(
+    (patternId, index, values) => values.indexOf(patternId) === index,
+  );
+  return unique.length > 0 ? unique : [fallback];
+};
+
 export const getPatternDefinition = (patternId: PatternId): PatternDefinition<PatternId> =>
   PATTERN_DEFINITIONS.find((definition) => definition.id === patternId) as PatternDefinition<PatternId>;

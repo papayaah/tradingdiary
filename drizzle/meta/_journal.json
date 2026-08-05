@@ -57,6 +57,20 @@
       "when": 1785695462000,
       "tag": "0007_add_pattern_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785900000000,
+      "tag": "0008_add_multi_pattern_alerts",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785903600000,
+      "tag": "0009_add_per_pattern_minimum_moves",
+      "breakpoints": true
     }
   ]
 }

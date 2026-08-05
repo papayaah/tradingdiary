@@ -198,7 +198,7 @@ export function InteractivePatternVisualizer({
               Pattern settings & visual guide: <span className="text-accent">{patternDefinition.name}</span>
             </h4>
             <p className="text-xs text-muted">
-              These settings apply globally to every symbol in the watchlist.
+              These settings apply to this pattern across every symbol in the watchlist.
             </p>
           </div>
         </div>

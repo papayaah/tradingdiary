@@ -37,6 +37,7 @@ import {
 import {
   detectPattern,
   DEFAULT_PATTERN_SETTINGS,
+  getPatternMinMovePercent,
   isPatternId,
   normalizePatternSettings,
   scanAllPatterns,
@@ -75,6 +76,7 @@ interface WatchItem {
   lastAlertedCandleTime?: number;
   lastAlertedType?: 'bullish' | 'bearish';
   lastAlertedPatternId?: PatternId;
+  lastAlertedPatternKeys?: Partial<Record<PatternId, string>>;
 }
 
 interface AlertLog {
@@ -195,6 +197,7 @@ const getPersistedWatchlist = (items: WatchItem[]): WatchItem[] =>
     lastAlertedCandleTime: item.lastAlertedCandleTime,
     lastAlertedType: item.lastAlertedType,
     lastAlertedPatternId: item.lastAlertedPatternId,
+    lastAlertedPatternKeys: item.lastAlertedPatternKeys,
   }));
 
 const persistWatchlist = (items: WatchItem[]) => {
@@ -371,16 +374,38 @@ export default function MarketWatcher() {
     const saved = localStorage.getItem('watcher-selected-pattern');
     return isPatternId(saved) ? saved : 'consecutive';
   });
+  const [selectedPatternIds, setSelectedPatternIds] = useState<PatternId[]>(() => {
+    if (typeof window === 'undefined') return ['consecutive'];
+    try {
+      const saved = JSON.parse(localStorage.getItem('watcher-selected-patterns') ?? 'null');
+      if (Array.isArray(saved)) {
+        const valid = saved.filter(isPatternId);
+        if (valid.length > 0) return [...new Set(valid)];
+      }
+    } catch {
+      // Fall back to the legacy single-pattern preference below.
+    }
+    const legacy = localStorage.getItem('watcher-selected-pattern');
+    return [isPatternId(legacy) ? legacy : 'consecutive'];
+  });
+  const selectedPatternIdsRef = useRef<PatternId[]>(selectedPatternIds);
+  selectedPatternIdsRef.current = selectedPatternIds;
   const [patternSettings, setPatternSettings] = useState<PatternSettings>(() => {
     if (typeof window === 'undefined') return DEFAULT_PATTERN_SETTINGS;
     try {
       return normalizePatternSettings(
         JSON.parse(localStorage.getItem('watcher-pattern-settings') ?? 'null'),
+        Number(localStorage.getItem('watcher-new-min-move')) || 0.25,
       );
     } catch {
       return DEFAULT_PATTERN_SETTINGS;
     }
   });
+  const selectedPatternMinMove = getPatternMinMovePercent(
+    patternSettings,
+    selectedPatternId,
+    newMinMove,
+  );
   // Sorting state for Watchlist table
   const [sortColumn, setSortColumn] = useState<'symbol' | 'interval' | 'status' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -644,7 +669,8 @@ export default function MarketWatcher() {
       body: JSON.stringify({
         watchlist: cleanList,
         patternId,
-        minMovePercent,
+        patternIds: selectedPatternIdsRef.current,
+        minMovePercent: getPatternMinMovePercent(settingsOverride, patternId, minMovePercent),
         requiredCandleCount: requiredCount,
         maxBodyOverlapPercent: bodyOverlapOverride,
         patternSettings: settingsOverride,
@@ -717,8 +743,15 @@ export default function MarketWatcher() {
 
   const handlePatternSettingsChange = React.useCallback((value: PatternSettings) => {
     const normalized = normalizePatternSettings(value);
+    const activeMinMove = getPatternMinMovePercent(
+      normalized,
+      selectedPatternId,
+      newMinMove,
+    );
     setPatternSettings(normalized);
+    setNewMinMove(activeMinMove);
     localStorage.setItem('watcher-pattern-settings', JSON.stringify(normalized));
+    localStorage.setItem('watcher-new-min-move', String(activeMinMove));
 
     setWatchlist((current) => current.map((item) => {
       if (!item.candles?.length) return item;
@@ -953,6 +986,15 @@ export default function MarketWatcher() {
     patternSettings,
   ]);
 
+  const handlePatternSelectionChange = React.useCallback((patternIds: PatternId[]) => {
+    const next = [...new Set(patternIds.filter(isPatternId))];
+    if (next.length === 0) return;
+    selectedPatternIdsRef.current = next;
+    setSelectedPatternIds(next);
+    localStorage.setItem('watcher-selected-patterns', JSON.stringify(next));
+    void syncScannerSettings(watchlist, selectedPatternId).catch(() => {});
+  }, [selectedPatternId, syncScannerSettings, watchlist]);
+
   const [cloudSyncNotice, setCloudSyncNotice] = useState<string | null>(null);
 
   const handleSyncToCloud = async () => {
@@ -1067,6 +1109,7 @@ export default function MarketWatcher() {
           lastAlertedCandleTime: item.lastAlertedCandleTime,
           lastAlertedType: item.lastAlertedType,
           lastAlertedPatternId: item.lastAlertedPatternId,
+          lastAlertedPatternKeys: item.lastAlertedPatternKeys,
         }));
         setWatchlist(loaded);
       } catch (e) {
@@ -1110,6 +1153,14 @@ export default function MarketWatcher() {
           setSelectedPatternId(data.patternId);
           localStorage.setItem('watcher-selected-pattern', data.patternId);
         }
+        if (Array.isArray(data?.patternIds)) {
+          const patternIds = [...new Set(data.patternIds.filter(isPatternId))] as PatternId[];
+          if (patternIds.length > 0) {
+            selectedPatternIdsRef.current = patternIds;
+            setSelectedPatternIds(patternIds);
+            localStorage.setItem('watcher-selected-patterns', JSON.stringify(patternIds));
+          }
+        }
         if (typeof data?.maxBodyOverlapPercent === 'number') {
           const overlap = Math.max(0, Math.min(100, data.maxBodyOverlapPercent));
           setMaxBodyOverlapPercent(overlap);
@@ -1119,7 +1170,10 @@ export default function MarketWatcher() {
           );
         }
         if (data?.patternSettings) {
-          const settings = normalizePatternSettings(data.patternSettings);
+          const settings = normalizePatternSettings(
+            data.patternSettings,
+            typeof data?.minMovePercent === 'number' ? data.minMovePercent : 0.25,
+          );
           setPatternSettings(settings);
           localStorage.setItem('watcher-pattern-settings', JSON.stringify(settings));
         }
@@ -1750,34 +1804,43 @@ export default function MarketWatcher() {
       const scanCandles = isFuturesOrCrypto
         ? candles
         : filterCandlesByWindow(filterCurrentDayOnly(candles), activeWindowRef.current);
-      const { matched, message, time } = detectPattern(
-        scanCandles,
-        newMinMove,
-        requiredCandleCount,
-        selectedPatternId,
-        maxBodyOverlapPercent,
-        patternSettings,
-      );
-      const status = scanCandles.length === 0 ? 'no-data' as const : matched;
+      const patternResults = selectedPatternIdsRef.current.map((patternId) => ({
+        patternId,
+        ...detectPattern(
+          scanCandles,
+          newMinMove,
+          requiredCandleCount,
+          patternId,
+          maxBodyOverlapPercent,
+          patternSettings,
+        ),
+      }));
+      const currentMatches = patternResults.filter((result) => result.matched !== 'none');
+      const primaryMatch = currentMatches[0];
+      const status = scanCandles.length === 0
+        ? 'no-data' as const
+        : primaryMatch?.matched ?? 'none';
       const dailyMove = isFuturesOrCrypto
         ? null
         : calculateEquityIntradayChange(candles);
 
-      // Trigger Alert if pattern matched and hasn't been alerted for this candle/direction yet
-      const alreadyAlerted = item.lastAlertedCandleTime === time
-        && item.lastAlertedType === matched
-        && item.lastAlertedPatternId === selectedPatternId;
-      if (scanCandles.length > 0 && matched !== 'none' && !alreadyAlerted) {
+      // Each selected detector alerts independently; the per-pattern key keeps
+      // repeat scans of the same candle/direction idempotent in local mode.
+      const lastAlertedPatternKeys = { ...item.lastAlertedPatternKeys };
+      for (const result of currentMatches) {
+        const alertKey = `${result.time}:${result.matched}`;
+        if (lastAlertedPatternKeys[result.patternId] === alertKey) continue;
         triggerAlert(
           item.symbol,
           item.interval,
-          matched,
-          message,
+          result.matched,
+          result.message,
           scanCandles[scanCandles.length - 1]?.close || 0,
           scanCandles,
           dailyMove,
           alertCollector,
         );
+        lastAlertedPatternKeys[result.patternId] = alertKey;
       }
 
       return {
@@ -1787,9 +1850,10 @@ export default function MarketWatcher() {
         candles,
         provider: providerName,
         lastError: scanCandles.length === 0 ? 'No candles available for today’s selected ET session' : undefined,
-        lastAlertedCandleTime: matched !== 'none' ? time : item.lastAlertedCandleTime,
-        lastAlertedType: matched !== 'none' ? matched : item.lastAlertedType,
-        lastAlertedPatternId: matched !== 'none' ? selectedPatternId : item.lastAlertedPatternId,
+        lastAlertedCandleTime: primaryMatch?.time ?? item.lastAlertedCandleTime,
+        lastAlertedType: primaryMatch?.matched ?? item.lastAlertedType,
+        lastAlertedPatternId: primaryMatch?.patternId ?? item.lastAlertedPatternId,
+        lastAlertedPatternKeys,
       };
     } catch (err) {
       console.error(`Error scanning ${item.symbol}:`, err);
@@ -2396,7 +2460,7 @@ export default function MarketWatcher() {
               maxBodyOverlapPercent,
               patternSettings,
             );
-            const { matched, message, time } = detectPattern(
+            const { matched, message } = detectPattern(
               sessionCandles,
               newMinMove,
               requiredCandleCount,
@@ -2404,24 +2468,40 @@ export default function MarketWatcher() {
               maxBodyOverlapPercent,
               patternSettings,
             );
-            const status = sessionCandles.length === 0 ? 'no-data' as const : matched;
+            const alertMatches = selectedPatternIdsRef.current
+              .map((patternId) => ({
+                patternId,
+                ...detectPattern(
+                  sessionCandles,
+                  newMinMove,
+                  requiredCandleCount,
+                  patternId,
+                  maxBodyOverlapPercent,
+                  patternSettings,
+                ),
+              }))
+              .filter((result) => result.matched !== 'none');
+            const status = sessionCandles.length === 0
+              ? 'no-data' as const
+              : alertMatches[0]?.matched ?? 'none';
             const dailyMove = isFuturesOrCrypto
               ? null
               : calculateEquityIntradayChange(freshCandles);
 
-            const alreadyAlerted = item.lastAlertedCandleTime === time
-              && item.lastAlertedType === matched
-              && item.lastAlertedPatternId === selectedPatternId;
-            if (sessionCandles.length > 0 && matched !== 'none' && !alreadyAlerted) {
+            const lastAlertedPatternKeys = { ...item.lastAlertedPatternKeys };
+            for (const result of alertMatches) {
+              const alertKey = `${result.time}:${result.matched}`;
+              if (lastAlertedPatternKeys[result.patternId] === alertKey) continue;
               triggerAlert(
                 item.symbol,
                 item.interval,
-                matched,
-                message,
+                result.matched,
+                result.message,
                 sessionCandles[sessionCandles.length - 1]?.close || 0,
                 sessionCandles,
                 dailyMove,
               );
+              lastAlertedPatternKeys[result.patternId] = alertKey;
             }
 
             setTestResult({
@@ -2445,11 +2525,12 @@ export default function MarketWatcher() {
                   status,
                   lastError: sessionCandles.length === 0 ? 'No candles available for today’s selected ET session' : undefined,
                   lastChecked: new Date().toLocaleTimeString(),
-                  lastAlertedCandleTime: matched !== 'none' ? time : updated[index].lastAlertedCandleTime,
-                  lastAlertedType: matched !== 'none' ? matched : updated[index].lastAlertedType,
-                  lastAlertedPatternId: matched !== 'none'
-                    ? selectedPatternId
+                  lastAlertedCandleTime: alertMatches[0]?.time ?? updated[index].lastAlertedCandleTime,
+                  lastAlertedType: alertMatches[0]?.matched ?? updated[index].lastAlertedType,
+                  lastAlertedPatternId: alertMatches[0]?.patternId
+                    ? alertMatches[0].patternId
                     : updated[index].lastAlertedPatternId,
+                  lastAlertedPatternKeys,
                 };
               }
               persistWatchlist(updated);
@@ -2801,9 +2882,8 @@ export default function MarketWatcher() {
     [testResult, activeTab, expandedRowIndex, watchlist, activeWindow, watchlistCategory, testCurrentDayOnly, testSessionFilter],
   );
 
-  // The Pattern Tester previews the same global minimum used by live scans.
-  // Expanded watchlist charts keep their row-specific minimum for inspection.
-  const analysisMinMove = activeTab === 'tester' ? newMinMove : testMinMove;
+  // Charts and the tester use the active detector's own minimum-body threshold.
+  const analysisMinMove = selectedPatternMinMove;
   const testerHistoryPanningEnabled =
     testInterval === '1h' ||
     testInterval === '1d' ||
@@ -3159,7 +3239,9 @@ export default function MarketWatcher() {
               <PatternGuidePanel
                 value={selectedPatternId}
                 onChange={handlePatternChange}
-                minMovePercent={newMinMove}
+                selectedValues={selectedPatternIds}
+                onSelectionChange={handlePatternSelectionChange}
+                minMovePercent={selectedPatternMinMove}
                 requiredCount={requiredCandleCount}
                 maxBodyOverlapPercent={maxBodyOverlapPercent}
                 onMinMoveChange={handleNewMinMoveChange}
@@ -3433,7 +3515,7 @@ export default function MarketWatcher() {
             }}
             testSessionFilter={testSessionFilter}
             onSessionFilterChange={setTestSessionFilter}
-            testMinMove={newMinMove}
+            testMinMove={selectedPatternMinMove}
             onMinMoveChange={handleNewMinMoveChange}
             isTesting={isTesting}
             onRunTest={handleRunTest}

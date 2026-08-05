@@ -16,7 +16,9 @@ import {
 } from '@/lib/db/server/schema';
 import {
   DEFAULT_PATTERN_ID,
+  getPatternMinMovePercent,
   isPatternId,
+  normalizePatternIds,
   normalizePatternSettings,
   scanAllPatterns,
   PATTERN_VERSION,
@@ -157,20 +159,23 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
   const last = candles[candles.length - 1];
   const hasData = candles.length > 0 && !!last;
   const patternId = isPatternId(watch.patternId) ? watch.patternId : DEFAULT_PATTERN_ID;
-
-  const matches = hasData
-    ? scanAllPatterns(
-        candles,
-        watch.minMovePercent,
-        watch.requiredCandleCount,
-        patternId,
-        watch.maxBodyOverlapPercent,
-        normalizePatternSettings(watch.patternSettings),
-      )
+  const patternIds = normalizePatternIds(watch.patternIds, patternId);
+  const normalizedSettings = normalizePatternSettings(watch.patternSettings, watch.minMovePercent);
+  const latestMatches = hasData && last
+    ? patternIds.flatMap((selectedPatternId) => {
+        const matches = scanAllPatterns(
+          candles,
+          getPatternMinMovePercent(normalizedSettings, selectedPatternId, watch.minMovePercent),
+          watch.requiredCandleCount,
+          selectedPatternId,
+          watch.maxBodyOverlapPercent,
+          normalizedSettings,
+        );
+        const latest = matches.length ? matches[matches.length - 1] : null;
+        return latest?.time === last.time ? [latest] : [];
+      })
     : [];
-  const latest = matches.length ? matches[matches.length - 1] : null;
-  const isCurrent = !!latest && !!last && latest.time === last.time;
-  const matched = isCurrent ? latest.type : null;
+  const matched = latestMatches[0]?.type ?? null;
 
   const status: ScanOutcome['status'] = !hasData ? 'no-data' : matched ?? 'normal';
   const willAlert = !!matched && !scannerConfig.shadow;
@@ -189,7 +194,7 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
       intradayChange = null;
     }
   }
-  let createdAlertId: string | null = null;
+  const createdAlerts: Array<{ id: string; match: (typeof latestMatches)[number] }> = [];
 
   await db.transaction(async (tx) => {
     await tx
@@ -223,42 +228,44 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
         },
       });
 
-    if (willAlert && latest && last) {
+    if (willAlert && last) {
       // Dedup is enforced by the unique index; a repeat scan of the same candle
-      // no-ops here. Non-qualifying scans insert no alert row at all.
-      const [alertRow] = await tx
-        .insert(serverWatchAlert)
-        .values({
-          userId: watch.userId,
-          watchId: watch.id,
-          symbol: watch.symbol,
-          interval: watch.interval,
-          direction: latest.type,
-          candleTime: new Date(latest.time * 1000).toISOString(),
-          price: last.close,
-          changePercent: latest.change,
-          intradayChange: intradayChange?.amount,
-          intradayChangePercent: intradayChange?.percent,
-          message: latest.message,
-          patternId: latest.patternId,
-          patternVersion: PATTERN_VERSION,
-        })
-        .onConflictDoNothing()
-        .returning();
+      // no-ops here. Each qualifying detector creates its own alert.
+      for (const latest of latestMatches) {
+        const [alertRow] = await tx
+          .insert(serverWatchAlert)
+          .values({
+            userId: watch.userId,
+            watchId: watch.id,
+            symbol: watch.symbol,
+            interval: watch.interval,
+            direction: latest.type,
+            candleTime: new Date(latest.time * 1000).toISOString(),
+            price: last.close,
+            changePercent: latest.change,
+            intradayChange: intradayChange?.amount,
+            intradayChangePercent: intradayChange?.percent,
+            message: latest.message,
+            patternId: latest.patternId,
+            patternVersion: PATTERN_VERSION,
+          })
+          .onConflictDoNothing()
+          .returning();
 
-      if (alertRow) {
-        createdAlertId = alertRow.id;
-        // Send Web Push notification to all user devices (closed browser alerts)
-        const { sendWebPushToUser } = await import('@/lib/scanner/push');
-        void sendWebPushToUser(watch.userId, {
-          symbol: watch.symbol,
-          interval: watch.interval,
-          matchedPattern: latest.type,
-          message: latest.message,
-          price: last.close,
-          alertId: createdAlertId,
-          createdAt: nowIso,
-        });
+        if (alertRow) {
+          createdAlerts.push({ id: alertRow.id, match: latest });
+          // Send Web Push notification to all user devices (closed browser alerts)
+          const { sendWebPushToUser } = await import('@/lib/scanner/push');
+          void sendWebPushToUser(watch.userId, {
+            symbol: watch.symbol,
+            interval: watch.interval,
+            matchedPattern: latest.type,
+            message: latest.message,
+            price: last.close,
+            alertId: alertRow.id,
+            createdAt: nowIso,
+          });
+        }
       }
     }
 
@@ -271,6 +278,7 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
       symbol: watch.symbol,
       interval: watch.interval,
       patternId,
+      patternIds,
       maxBodyOverlapPercent: watch.maxBodyOverlapPercent,
       status,
       lastPrice: last?.close,
@@ -284,11 +292,12 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
     };
 
     const events: Array<{ type: string; payload: unknown }> = [];
-    if (createdAlertId && latest) {
+    for (const createdAlert of createdAlerts) {
+      const latest = createdAlert.match;
       events.push({
         type: 'alert.created',
         payload: {
-          alertId: createdAlertId,
+          alertId: createdAlert.id,
           watchId: watch.id,
           symbol: watch.symbol,
           interval: watch.interval,
@@ -320,7 +329,7 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
     }
   });
 
-  return { status, alerted: createdAlertId !== null };
+  return { status, alerted: createdAlerts.length > 0 };
 }
 
 export async function writeHeartbeat(status = 'ok', detail?: unknown): Promise<void> {

@@ -81,6 +81,7 @@ export const userWatchlists = pgTable("user_watchlists", {
     userId: text("user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
     watchlist: jsonb("watchlist").notNull(),
     patternId: text("pattern_id").notNull().default('consecutive'),
+    patternIds: jsonb("pattern_ids").notNull().default(['consecutive']),
     minMovePercent: doublePrecision("min_move_percent").notNull().default(0.25),
     requiredCandleCount: integer("required_candle_count").notNull().default(3),
     maxBodyOverlapPercent: doublePrecision("max_body_overlap_percent").notNull().default(100),
@@ -106,6 +107,7 @@ export const serverWatch = pgTable("server_watch", {
     assetClass: text("asset_class").notNull(), // 'equity' | 'futures' | 'crypto'
     interval: text("interval").notNull(),
     patternId: text("pattern_id").notNull().default('consecutive'),
+    patternIds: jsonb("pattern_ids").notNull().default(['consecutive']),
     minMovePercent: doublePrecision("min_move_percent").notNull(),
     requiredCandleCount: integer("required_candle_count").notNull().default(3),
     maxBodyOverlapPercent: doublePrecision("max_body_overlap_percent").notNull().default(100),

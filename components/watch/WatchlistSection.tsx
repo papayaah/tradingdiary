@@ -19,6 +19,7 @@ export interface WatchItem {
   lastAlertedCandleTime?: number;
   lastAlertedType?: 'bullish' | 'bearish';
   lastAlertedPatternId?: PatternId;
+  lastAlertedPatternKeys?: Partial<Record<PatternId, string>>;
 }
 
 export interface WatchlistSectionProps {

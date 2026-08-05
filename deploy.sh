@@ -97,17 +97,16 @@ run "rsync -az --delete \
 echo "Ensuring shared IBKR network exists..."
 run "ssh_cmd \"docker network create tradingdiary-ibkr-net 2>/dev/null || true\""
 
-# 5. Build images, apply the DB schema, then start. The schema push runs BEFORE
-#    the app starts so a newly-added column can't crash the scanner (as happened
-#    when migration 0007's pattern_settings column was missing on prod). It is
-#    guarded: `timeout` prevents a hang, and it is non-fatal so a change that
-#    needs manual review won't block the deploy — it warns instead. Only the app
-#    project is touched; the IBKR gateway project keeps its authenticated session.
+# 5. Build images, apply committed DB migrations, then start. Migrations run
+#    BEFORE the app starts so schema and data changes are both complete before
+#    the web/scanner processes load. This is deliberately fail-fast: starting a
+#    new image against an old schema is less safe than stopping the deployment.
+#    Only the app project is touched; the IBKR gateway keeps its session.
 echo "Building images on server..."
 run "ssh_cmd \"cd '$REMOTE_BASE' && docker compose build\""
 
-echo "Applying database schema (drizzle-kit push)..."
-run "ssh_cmd \"cd '$REMOTE_BASE' && timeout 120 docker compose run --rm -T --no-deps scanner npx drizzle-kit push || echo 'WARN: schema push did not auto-apply (destructive change needs review, or transient). If the scanner logs \\\"Failed query\\\", run: docker compose run --rm scanner npm run db:schema:push'\""
+echo "Applying database migrations (drizzle-kit migrate)..."
+run "ssh_cmd \"cd '$REMOTE_BASE' && timeout 120 docker compose run --rm -T --no-deps scanner npm run db:migrate\""
 
 echo "Starting containers on server (docker compose up -d)..."
 run "ssh_cmd \"cd '$REMOTE_BASE' && docker compose up -d\""

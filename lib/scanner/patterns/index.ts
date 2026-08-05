@@ -5,12 +5,14 @@ import {
   DEFAULT_PATTERN_ID,
   getPatternDefinition,
   isPatternId,
+  normalizePatternIds,
   PATTERN_DEFINITIONS,
   type PatternId,
 } from './registry';
 import type { Candle, PatternContext, PatternMatch } from './types';
 import {
   DEFAULT_PATTERN_SETTINGS,
+  getPatternMinMovePercent,
   normalizePatternSettings,
   type PatternSettings,
 } from './settings';
@@ -19,7 +21,7 @@ import {
  * Algorithm version stored alongside every alert. Bump this whenever detector
  * behavior changes in a way that could alter which candles match.
  */
-export const PATTERN_VERSION = 9;
+export const PATTERN_VERSION = 10;
 
 export const PATTERN_PRESETS = PATTERN_DEFINITIONS.map(
   ({ id, name, shortDescription }) => ({ id, name, shortDescription }),
@@ -43,14 +45,17 @@ export const scanAllPatterns = (
   requiredCount: number = 3,
   patternId: PatternId = DEFAULT_PATTERN_ID,
   maxBodyOverlapPercent: number = 100,
-  patternSettings: PatternSettings = DEFAULT_PATTERN_SETTINGS,
+  patternSettings?: PatternSettings,
 ): PatternMatch<PatternId>[] => {
   const definition = getPatternDefinition(patternId);
+  const normalizedSettings = normalizePatternSettings(patternSettings, minMovePercent);
   const context = createContext(
-    minMovePercent,
+    patternSettings
+      ? getPatternMinMovePercent(normalizedSettings, patternId, minMovePercent)
+      : minMovePercent,
     requiredCount,
     maxBodyOverlapPercent,
-    normalizePatternSettings(patternSettings),
+    normalizedSettings,
   );
   const minimumCandles = definition.minimumCandles(context);
   const matches: PatternMatch<PatternId>[] = [];
@@ -69,14 +74,17 @@ export const detectPattern = (
   requiredCount: number = 3,
   patternId: PatternId = DEFAULT_PATTERN_ID,
   maxBodyOverlapPercent: number = 100,
-  patternSettings: PatternSettings = DEFAULT_PATTERN_SETTINGS,
+  patternSettings?: PatternSettings,
 ) => {
   const definition = getPatternDefinition(patternId);
+  const normalizedSettings = normalizePatternSettings(patternSettings, minMovePercent);
   const context = createContext(
-    minMovePercent,
+    patternSettings
+      ? getPatternMinMovePercent(normalizedSettings, patternId, minMovePercent)
+      : minMovePercent,
     requiredCount,
     maxBodyOverlapPercent,
-    normalizePatternSettings(patternSettings),
+    normalizedSettings,
   );
   const minimumCandles = definition.minimumCandles(context);
   if (candles.length < minimumCandles) {
@@ -114,12 +122,14 @@ export {
   DEFAULT_PATTERN_ID,
   getPatternDefinition,
   isPatternId,
+  normalizePatternIds,
   PATTERN_DEFINITIONS,
 };
 export type { Candle, PatternContext, PatternDefinition, PatternMatch } from './types';
 export type { PatternId } from './registry';
 export {
   DEFAULT_PATTERN_SETTINGS,
+  getPatternMinMovePercent,
   normalizePatternSettings,
 };
 export type {

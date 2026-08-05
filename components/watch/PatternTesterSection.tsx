@@ -5,6 +5,7 @@ import { Search, Play, RefreshCw, Sparkles } from 'lucide-react';
 import LightweightPatternChart from '@/components/chart/LightweightPatternChart';
 import {
   getPatternDefinition,
+  getPatternMinMovePercent,
   scanAllPatterns,
   DEFAULT_PATTERN_SETTINGS,
   type PatternId,
@@ -82,10 +83,15 @@ export function PatternTesterSection({
   onPatternSettingsChange,
 }: PatternTesterSectionProps) {
   const chartCandles = testerCandles;
+  const selectedMinMove = getPatternMinMovePercent(
+    patternSettings,
+    selectedPatternId,
+    testMinMove,
+  );
   const detectorMatches = React.useMemo(
     () => scanAllPatterns(
       chartCandles,
-      testMinMove,
+      selectedMinMove,
       requiredCount,
       selectedPatternId,
       maxBodyOverlapPercent,
@@ -96,7 +102,7 @@ export function PatternTesterSection({
       maxBodyOverlapPercent,
       requiredCount,
       selectedPatternId,
-      testMinMove,
+      selectedMinMove,
       patternSettings,
     ],
   );
@@ -114,7 +120,7 @@ export function PatternTesterSection({
           value={selectedPatternId}
           onChange={onPatternChange}
           description="Test the same detector settings used by live Market Watch and backend alerts."
-          minMovePercent={testMinMove}
+          minMovePercent={selectedMinMove}
           requiredCount={requiredCount}
           maxBodyOverlapPercent={maxBodyOverlapPercent}
           onMinMoveChange={onMinMoveChange}
@@ -280,7 +286,7 @@ export function PatternTesterSection({
               onToggleCurrentDayOnly={onToggleCurrentDayOnly}
               providerBadge={testResult.provider}
               selectedPatternId={selectedPatternId}
-              minMovePercent={testMinMove}
+              minMovePercent={selectedMinMove}
               requiredCount={requiredCount}
               maxBodyOverlapPercent={maxBodyOverlapPercent}
               patternSettings={patternSettings}
