@@ -105,8 +105,13 @@ run "ssh_cmd \"docker network create tradingdiary-ibkr-net 2>/dev/null || true\"
 echo "Building images on server..."
 run "ssh_cmd \"cd '$REMOTE_BASE' && docker compose build\""
 
-echo "Applying database migrations (drizzle-kit migrate)..."
-run "ssh_cmd \"cd '$REMOTE_BASE' && timeout 120 docker compose run --rm -T --no-deps scanner npm run db:migrate\""
+# This DB is push-managed: schema.ts is the source of truth and drizzle-kit push
+# reconciles the live DB to it idempotently (a no-op when already in sync). Do NOT
+# use `drizzle-kit migrate` here — the migration files re-ADD columns that push
+# already created, which errors out ("column ... already exists") and aborts the
+# deploy. See the migration-conflict incident and the "DB is push-managed" note.
+echo "Applying database schema (drizzle-kit push)..."
+run "ssh_cmd \"cd '$REMOTE_BASE' && timeout 120 docker compose run --rm -T --no-deps scanner npx drizzle-kit push || echo 'WARN: schema push did not auto-apply (destructive change needs review, or transient). Review with: docker compose run --rm scanner npx drizzle-kit push'\""
 
 echo "Starting containers on server (docker compose up -d)..."
 run "ssh_cmd \"cd '$REMOTE_BASE' && docker compose up -d\""
