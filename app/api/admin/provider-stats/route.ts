@@ -34,11 +34,21 @@ export async function GET(request: Request) {
     }
   > = {};
 
-  const knownScopes = ['tiingo:us', 'tiingo:crypto', 'polygon:us', 'ibkr:local'];
+  const knownScopes = ['tiingo:us', 'tiingo:crypto', 'polygon:us', 'ibkr:local', 'yahoo:us'];
   for (const scope of knownScopes) {
     const budget = getProviderBudget(scope);
-    const providerName = scope.split(':')[0];
-    const todayRows = stats.filter((s) => s.day === todayStr && s.provider === providerName);
+    const scopePrefix = scope.split(':')[0].toLowerCase();
+
+    const todayRows = stats.filter((s) => {
+      if (s.day !== todayStr) return false;
+      const p = s.provider.toLowerCase();
+      if (scopePrefix === 'tiingo') return p.includes('tiingo');
+      if (scopePrefix === 'polygon') return p.includes('polygon');
+      if (scopePrefix === 'ibkr') return p.includes('ibkr');
+      if (scopePrefix === 'yahoo') return p.includes('yahoo');
+      return p.includes(scopePrefix);
+    });
+
     const todayCount = todayRows.reduce((acc, r) => acc + r.count, 0);
     const projectedDaily = Math.round(todayCount / hourFraction);
     const utilizationPct = budget.dailyCap > 0 ? Math.min(100, Math.round((todayCount / budget.dailyCap) * 100)) : 0;
