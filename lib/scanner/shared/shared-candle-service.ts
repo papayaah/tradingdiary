@@ -43,7 +43,7 @@ import { buildFetchScope, canonicalizeSymbol, classifyAssetClass } from './canon
 import { aggregateCandles, parseIntervalMinutes, BASE_INTERVAL } from './aggregate';
 import { getSharedCacheStore, type CacheStore } from './cache-store';
 import { getProviderBudget } from './provider-budget';
-import { checkQuota, readUsage, recordRequest } from './request-quota';
+import { recordRequest, reserveRequest } from './request-quota';
 
 /** Bounded, disposable snapshot persisted in Redis (see spec). */
 export interface SharedCandleSnapshot {
@@ -123,6 +123,7 @@ interface ServiceDeps {
 
 interface StorageKeys {
   snapshot: string;
+  latest: string;
   lock: string;
   error: string;
 }
@@ -132,8 +133,16 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 /** Fixed-length, credential-free Redis keys derived from the acquisition key. */
 export function storageKeysFor(acquisitionKey: string): StorageKeys {
   const hash = createHash('sha256').update(acquisitionKey).digest('hex').slice(0, 32);
+  const bucketSeparator = acquisitionKey.lastIndexOf(':');
+  const stableSeriesKey = bucketSeparator >= 0
+    ? acquisitionKey.slice(0, bucketSeparator)
+    : acquisitionKey;
   return {
     snapshot: `market-data:snapshot:${hash}`,
+    latest: `market-data:latest:${createHash('sha256')
+      .update(stableSeriesKey)
+      .digest('hex')
+      .slice(0, 32)}`,
     lock: `market-data:lock:${hash}`,
     error: `market-data:error:${hash}`,
   };
@@ -156,6 +165,7 @@ export class SharedCandleService {
   private readonly fetchFn: (symbol: string, interval: string, assetClass?: AssetClass) => Promise<FetchResult>;
   private readonly now: () => number;
   private readonly config: ServiceConfig;
+  private readonly quotaAtProviderBoundary: boolean;
   private cadenceProvider?: (providerScope: string) => number;
 
   // In-process coalescing: concurrent getCandles for the same acquisition key
@@ -165,6 +175,7 @@ export class SharedCandleService {
   constructor(deps: ServiceDeps = {}) {
     this.store = deps.store ?? getSharedCacheStore();
     this.fetchFn = deps.fetchFn ?? defaultFetchCandles;
+    this.quotaAtProviderBoundary = !deps.fetchFn;
     this.now = deps.now ?? (() => Date.now());
     this.config = {
       acquisitionBucketMs: deps.config?.acquisitionBucketMs ?? scannerConfig.acquisitionBucketMs,
@@ -201,8 +212,18 @@ export class SharedCandleService {
   }
 
   /** Snapshot TTL (ms) for a scope: never shorter than the cadence window. */
-  private snapshotTtlMsFor(providerScope: string): number {
-    return Math.max(this.config.snapshotTtlMs, this.bucketMsFor(providerScope));
+  private snapshotTtlMsFor(providerScope: string, interval?: string): number {
+    const dailyFloor = interval?.toLowerCase() === '1d' || interval?.toLowerCase() === 'd'
+      ? 7 * 60 * 60 * 1000
+      : 0;
+    return Math.max(this.config.snapshotTtlMs, this.bucketMsFor(providerScope), dailyFloor);
+  }
+
+  private latestSnapshotTtlMsFor(providerScope: string, interval?: string): number {
+    return Math.max(
+      this.snapshotTtlMsFor(providerScope, interval),
+      this.bucketMsFor(providerScope) * 3,
+    );
   }
 
   /**
@@ -273,7 +294,8 @@ export class SharedCandleService {
         // Reuse the base snapshot's provenance; only the candle array is derived.
         return { ...base, candles: derived.candles };
       }
-      // Inconsistent/insufficient base bars: fall back to a native fetch.
+      // Never silently bypass the one-base-series budget with a native fetch.
+      throw new Error(`unable to derive ${interval} candles from the shared 1m series: ${derived.reason}`);
     }
 
     return this.getCandles(this.requestFor(ctx, interval), assetClass);
@@ -301,7 +323,7 @@ export class SharedCandleService {
       minutes > 1;
 
     if (canAggregate) {
-      const base = await this.readSnapshotOnly(this.requestFor(ctx, BASE_INTERVAL));
+      const base = await this.readLatestSnapshotOnly(this.requestFor(ctx, BASE_INTERVAL));
       if (!base) return null;
       const derived = aggregateCandles(base.candles, interval);
       if (derived.ok && derived.candles.length > 0) {
@@ -310,7 +332,7 @@ export class SharedCandleService {
       return null; // no native fallback in cache-only mode — that would fetch
     }
 
-    return this.readSnapshotOnly(this.requestFor(ctx, interval));
+    return this.readLatestSnapshotOnly(this.requestFor(ctx, interval));
   }
 
   /**
@@ -320,7 +342,17 @@ export class SharedCandleService {
   private async readSnapshotOnly(request: MarketDataRequest): Promise<AcquireResult | null> {
     const acquisitionKey = buildAcquisitionKey(request);
     const keys = storageKeysFor(acquisitionKey);
-    const snapshot = await this.readFreshSnapshot(keys.snapshot, request.providerScope);
+    const snapshot = await this.readFreshSnapshot(keys.snapshot, request.providerScope, request.interval);
+    if (!snapshot) return null;
+    this.emitMetric('hits');
+    return this.hitResult(snapshot, acquisitionKey);
+  }
+
+  /** Read the provider-owned latest series independent of acquisition buckets. */
+  private async readLatestSnapshotOnly(request: MarketDataRequest): Promise<AcquireResult | null> {
+    const acquisitionKey = buildAcquisitionKey(request);
+    const keys = storageKeysFor(acquisitionKey);
+    const snapshot = await this.readFreshSnapshot(keys.latest, request.providerScope, request.interval);
     if (!snapshot) return null;
     this.emitMetric('hits');
     return this.hitResult(snapshot, acquisitionKey);
@@ -369,18 +401,28 @@ export class SharedCandleService {
    * instead of piling onto the exhausted provider, then throws. No-op when
    * quota counting is disabled.
    */
-  private async enforceQuota(providerScope: string, errorKey: string): Promise<void> {
-    if (!this.config.quotaEnabled) return;
+  private async enforceQuota(providerScope: string, errorKey: string): Promise<boolean> {
+    if (!this.config.quotaEnabled) return false;
     const budget = getProviderBudget(providerScope);
-    const usage = await readUsage(this.store, providerScope, this.now());
-    const decision = checkQuota(usage, budget);
-    if (decision.allowed) return;
+    let decision;
+    try {
+      decision = await reserveRequest(this.store, providerScope, this.now(), budget);
+    } catch {
+      if (!this.config.quotaEnforce) {
+        console.warn(`[scanner] quota coordination unavailable for ${providerScope}; observe mode allows request`);
+        return false;
+      }
+      await this.writeNegativeCache(errorKey, 'quota coordination unavailable');
+      throw new QuotaExceededError(`quota coordination unavailable for ${providerScope}`);
+    }
+    if (decision.allowed) return true; // permit already reserved atomically
 
     this.emitMetric('quotaBlocked');
     if (!this.config.quotaEnforce) {
       // Observe mode: surface what enforcement WOULD block, then allow the fetch.
       console.warn(`[scanner] quota (observe) would block ${providerScope}: ${decision.reason}`);
-      return;
+      // Observe mode still counts the physical attempt after the fetch.
+      return false;
     }
     await this.writeNegativeCache(errorKey, `quota: ${decision.reason}`);
     throw new QuotaExceededError(`upstream quota exceeded for ${providerScope}: ${decision.reason}`);
@@ -394,7 +436,7 @@ export class SharedCandleService {
     const keys = storageKeysFor(acquisitionKey);
 
     // 1. Fresh snapshot already present?
-    const cached = await this.readFreshSnapshot(keys.snapshot, request.providerScope);
+    const cached = await this.readFreshSnapshot(keys.snapshot, request.providerScope, request.interval);
     if (cached) {
       this.emitMetric('hits');
       return this.hitResult(cached, acquisitionKey);
@@ -440,7 +482,9 @@ export class SharedCandleService {
     try {
       // Physical-request quota gate: this is the one place a real upstream fetch
       // happens on the owner path, so it is the choke point for the hard ceiling.
-      await this.enforceQuota(request.providerScope, keys.error);
+      const quotaReserved = this.quotaAtProviderBoundary
+        ? false
+        : await this.enforceQuota(request.providerScope, keys.error);
 
       // The one upstream request (records exactly one provider request).
       this.emitMetric('upstream');
@@ -448,10 +492,12 @@ export class SharedCandleService {
       const result = await this.fetchFn(request.canonicalSymbol, request.interval, assetClass);
       // Count the physical request against the scope's fast Redis counters
       // (the durable Postgres audit is recorded separately by trackProvider).
-      if (this.config.quotaEnabled) {
+      // In enforce mode the atomic permit was already counted. In observe mode,
+      // a denied permit was not incremented, so retain best-effort accounting.
+      if (this.config.quotaEnabled && !this.quotaAtProviderBoundary && !quotaReserved) {
         void recordRequest(this.store, request.providerScope, this.now());
       }
-      await this.writeSnapshot(keys.snapshot, request, result);
+      await this.writeSnapshot(keys, request, result);
       return {
         candles: result.candles,
         provider: result.provider,
@@ -496,7 +542,7 @@ export class SharedCandleService {
     while (Date.now() < deadline) {
       await sleep(this.jitteredPoll());
 
-      const snapshot = await this.readFreshSnapshot(keys.snapshot, request.providerScope);
+      const snapshot = await this.readFreshSnapshot(keys.snapshot, request.providerScope, request.interval);
       if (snapshot) return this.hitResult(snapshot, acquisitionKey);
 
       const negative = await this.readNegativeCache(keys.error);
@@ -526,7 +572,7 @@ export class SharedCandleService {
   }
 
   private async writeSnapshot(
-    storageKey: string,
+    keys: Pick<StorageKeys, 'snapshot' | 'latest'>,
     request: MarketDataRequest,
     result: FetchResult,
   ): Promise<void> {
@@ -539,20 +585,29 @@ export class SharedCandleService {
       candles: this.boundSnapshot(result.candles),
     };
     try {
-      await this.store.set(
-        storageKey,
-        JSON.stringify(snapshot),
-        this.snapshotTtlMsFor(request.providerScope),
-      );
+      await Promise.all([
+        this.store.set(
+          keys.snapshot,
+          JSON.stringify(snapshot),
+          this.snapshotTtlMsFor(request.providerScope, request.interval),
+        ),
+        this.store.set(
+          keys.latest,
+          JSON.stringify(snapshot),
+          this.latestSnapshotTtlMsFor(request.providerScope, request.interval),
+        ),
+      ]);
     } catch {
       // Disposable: worst case the next equivalent request fetches again.
     }
   }
 
   private async writeNegativeCache(errorKey: string, message: string): Promise<void> {
-    const record = JSON.stringify({ message, at: new Date(this.now()).toISOString() });
+    const is404 = message.includes('404') || message.toLowerCase().includes('not found');
+    const ttlMs = is404 ? 86_400_000 : this.config.negativeCacheTtlMs; // 24 hours for non-existent symbols
+    const record = JSON.stringify({ message, is404, at: new Date(this.now()).toISOString() });
     try {
-      await this.store.set(errorKey, record, this.config.negativeCacheTtlMs);
+      await this.store.set(errorKey, record, ttlMs);
     } catch {
       // Best-effort; absence just means the next request retries the provider.
     }
@@ -577,6 +632,7 @@ export class SharedCandleService {
   private async readFreshSnapshot(
     storageKey: string,
     providerScope: string,
+    interval?: string,
   ): Promise<SharedCandleSnapshot | null> {
     let raw: string | null;
     try {
@@ -598,7 +654,10 @@ export class SharedCandleService {
     // sufficient metadata). Reject anything older than one TTL as a guard.
     const fetchedAtMs = Date.parse(snapshot.fetchedAt);
     if (Number.isNaN(fetchedAtMs)) return null;
-    if (this.now() - fetchedAtMs > this.snapshotTtlMsFor(providerScope)) return null;
+    const ttl = storageKey.startsWith('market-data:latest:')
+      ? this.latestSnapshotTtlMsFor(providerScope, interval)
+      : this.snapshotTtlMsFor(providerScope, interval);
+    if (this.now() - fetchedAtMs > ttl) return null;
 
     return snapshot;
   }
