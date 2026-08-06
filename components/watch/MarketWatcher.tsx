@@ -23,6 +23,7 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
+import { getPatternDefinition } from '@/lib/scanner/patterns';
 import { getChartDB } from '@/lib/chart/cache';
 import AlertHistoryPanel from './AlertHistoryPanel';
 import LightweightPatternChart from '@/components/chart/LightweightPatternChart';
@@ -84,6 +85,12 @@ interface WatchItem {
   lastAlertedPatternKeys?: Partial<Record<PatternId, string>>;
 }
 
+export interface PatternMatchedTag {
+  patternId?: string;
+  name: string;
+  message: string;
+}
+
 interface AlertLog {
   id: string;
   createdAt: number;
@@ -91,6 +98,7 @@ interface AlertLog {
   interval: string;
   type: 'bullish' | 'bearish';
   details: string;
+  patterns?: PatternMatchedTag[];
   price: number;
   intradayChange?: number | null;
   intradayChangePercent?: number | null;
@@ -103,6 +111,7 @@ interface PendingAlert {
   interval: string;
   type: 'bullish' | 'bearish';
   details: string;
+  patterns?: PatternMatchedTag[];
   price: number;
   intradayChange?: number | null;
   intradayChangePercent?: number | null;
@@ -169,6 +178,8 @@ const SECONDARY_FUTURES_PRESETS = [
   { label: 'Z (FTSE 100)', symbol: 'Z=F' },
   { label: 'ZB (Bonds)', symbol: 'ZB=F' },
 ] as const;
+
+
 
 const mapSnapshotAlerts = (snapshot: {
   alerts?: ServerSnapshotAlert[];
@@ -627,6 +638,41 @@ export default function MarketWatcher() {
   }, []);
   const [filterMode, setFilterMode] = useState<'all' | 'alerts' | 'errors'>('all');
   const [watchlistCategory, setWatchlistCategory] = useState<WatchlistCategory>('stocks');
+
+  // Auto-switch category tab when searching if current category has no matches but another category does
+  useEffect(() => {
+    const term = searchTerm.trim().toUpperCase();
+    if (!term) return;
+
+    const matchesCategory = (symbol: string, cat: WatchlistCategory) => {
+      if (cat === 'stocks') return !isFuturesSymbol(symbol) && !isCryptoSymbol(symbol);
+      if (cat === 'crypto') return isCryptoSymbol(symbol);
+      if (cat === 'futures') return isFuturesSymbol(symbol);
+      return true;
+    };
+
+    const currentMatches = watchlist.filter(
+      (w) => w.symbol.toUpperCase().includes(term) && matchesCategory(w.symbol, watchlistCategory)
+    );
+
+    if (currentMatches.length === 0) {
+      const allMatches = watchlist.filter((w) => w.symbol.toUpperCase().includes(term));
+      if (allMatches.length > 0) {
+        const hasStocks = allMatches.some((w) => !isFuturesSymbol(w.symbol) && !isCryptoSymbol(w.symbol));
+        const hasCrypto = allMatches.some((w) => isCryptoSymbol(w.symbol));
+        const hasFutures = allMatches.some((w) => isFuturesSymbol(w.symbol));
+
+        const categoryCount = [hasStocks, hasCrypto, hasFutures].filter(Boolean).length;
+        let targetCat: WatchlistCategory = 'all';
+        if (categoryCount === 1) {
+          targetCat = hasStocks ? 'stocks' : hasCrypto ? 'crypto' : 'futures';
+        }
+
+        setWatchlistCategory(targetCat);
+        localStorage.setItem('watcher-watchlist-category', targetCat);
+      }
+    }
+  }, [searchTerm, watchlistCategory, watchlist]);
   // Asset classes the user has switched off. Synced to the server so the scanner
   // skips them entirely (no scans/alerts/push); a ref mirrors it so every
   // syncScannerSettings call includes the current value without a signature change.
@@ -1665,30 +1711,94 @@ export default function MarketWatcher() {
 
     for (const candidate of candidates) {
       const symbol = candidate.symbol.toUpperCase();
-      const isDuplicate = [...additions, ...activeLogs].some((log) => {
-        const elapsed = candidate.createdAt - log.createdAt;
+      const existingIndex = activeLogs.findIndex((log) => {
+        const elapsed = Math.abs(candidate.createdAt - log.createdAt);
         return log.symbol === symbol
           && log.type === candidate.type
           && log.interval === candidate.interval
-          && elapsed >= 0
-          && elapsed < 60_000;
+          && elapsed < 90_000;
       });
-      if (isDuplicate) continue;
 
-      additions.push({
-        id: Math.random().toString(36).slice(2, 11),
-        ...candidate,
-        symbol,
-      });
-    }
+      if (existingIndex !== -1) {
+        // Merge pattern into existing alert card for this ticker
+        const existing = activeLogs[existingIndex];
+        const existingPatterns: PatternMatchedTag[] = existing.patterns && existing.patterns.length > 0
+          ? existing.patterns
+          : [{ message: existing.details, name: 'Pattern' }];
 
-    if (additions.length === 0) {
-      if (activeLogs.length !== alertLogsRef.current.length) {
-        alertLogsRef.current = activeLogs;
-        setAlertLogs(activeLogs);
-        persistAlertHistorySoon(activeLogs);
+        const candidatePatterns: PatternMatchedTag[] = candidate.patterns && candidate.patterns.length > 0
+          ? candidate.patterns
+          : [{ message: candidate.details, name: 'Pattern' }];
+
+        const mergedPatterns = [...existingPatterns];
+        for (const cp of candidatePatterns) {
+          const isDup = mergedPatterns.some(
+            (ep) => (cp.patternId && ep.patternId === cp.patternId) || ep.message === cp.message
+          );
+          if (!isDup) {
+            mergedPatterns.push(cp);
+          }
+        }
+
+        const mergedDetails = mergedPatterns.length === 1
+          ? mergedPatterns[0].message
+          : `Matched ${mergedPatterns.length} patterns: ${mergedPatterns.map((p) => p.name).join(', ')}`;
+
+        activeLogs[existingIndex] = {
+          ...existing,
+          details: mergedDetails,
+          patterns: mergedPatterns,
+          price: candidate.price,
+          candles: candidate.candles || existing.candles,
+        };
+      } else {
+        const additionIndex = additions.findIndex((log) => {
+          const elapsed = Math.abs(candidate.createdAt - log.createdAt);
+          return log.symbol === symbol
+            && log.type === candidate.type
+            && log.interval === candidate.interval
+            && elapsed < 90_000;
+        });
+
+        if (additionIndex !== -1) {
+          const existing = additions[additionIndex];
+          const existingPatterns: PatternMatchedTag[] = existing.patterns && existing.patterns.length > 0
+            ? existing.patterns
+            : [{ message: existing.details, name: 'Pattern' }];
+
+          const candidatePatterns: PatternMatchedTag[] = candidate.patterns && candidate.patterns.length > 0
+            ? candidate.patterns
+            : [{ message: candidate.details, name: 'Pattern' }];
+
+          const mergedPatterns = [...existingPatterns];
+          for (const cp of candidatePatterns) {
+            const isDup = mergedPatterns.some(
+              (ep) => (cp.patternId && ep.patternId === cp.patternId) || ep.message === cp.message
+            );
+            if (!isDup) {
+              mergedPatterns.push(cp);
+            }
+          }
+
+          const mergedDetails = mergedPatterns.length === 1
+            ? mergedPatterns[0].message
+            : `Matched ${mergedPatterns.length} patterns: ${mergedPatterns.map((p) => p.name).join(', ')}`;
+
+          additions[additionIndex] = {
+            ...existing,
+            details: mergedDetails,
+            patterns: mergedPatterns,
+            price: candidate.price,
+            candles: candidate.candles || existing.candles,
+          };
+        } else {
+          additions.push({
+            id: Math.random().toString(36).slice(2, 11),
+            ...candidate,
+            symbol,
+          });
+        }
       }
-      return;
     }
 
     const updatedLogs = limitAlertHistory(
@@ -1726,6 +1836,7 @@ export default function MarketWatcher() {
     candles?: Candle[],
     dailyMove?: IntradayChange | null,
     collector?: (alert: PendingAlert) => void,
+    patterns?: PatternMatchedTag[],
   ) => {
     const alert: PendingAlert = {
       createdAt: Date.now(),
@@ -1733,6 +1844,7 @@ export default function MarketWatcher() {
       interval,
       type,
       details: message,
+      patterns,
       price,
       intradayChange: dailyMove?.amount,
       intradayChangePercent: dailyMove?.percent,
@@ -1831,23 +1943,50 @@ export default function MarketWatcher() {
         ? null
         : calculateEquityIntradayChange(candles);
 
-      // Each selected detector alerts independently; the per-pattern key keeps
-      // repeat scans of the same candle/direction idempotent in local mode.
+      // Group multiple pattern matches for this symbol scan into a single alert card
       const lastAlertedPatternKeys = { ...item.lastAlertedPatternKeys };
-      for (const result of currentMatches) {
+      const newMatches = currentMatches.filter((result) => {
         const alertKey = `${result.time}:${result.matched}`;
-        if (lastAlertedPatternKeys[result.patternId] === alertKey) continue;
-        triggerAlert(
-          item.symbol,
-          item.interval,
-          result.matched,
-          result.message,
-          scanCandles[scanCandles.length - 1]?.close || 0,
-          scanCandles,
-          dailyMove,
-          alertCollector,
-        );
-        lastAlertedPatternKeys[result.patternId] = alertKey;
+        return lastAlertedPatternKeys[result.patternId] !== alertKey;
+      });
+
+      if (newMatches.length > 0) {
+        const bullishMatches = newMatches.filter((m) => m.matched === 'bullish');
+        const bearishMatches = newMatches.filter((m) => m.matched === 'bearish');
+
+        const emitGroupedAlert = (matches: typeof newMatches, type: 'bullish' | 'bearish') => {
+          const patterns: PatternMatchedTag[] = matches.map((m) => {
+            const def = getPatternDefinition(m.patternId);
+            return {
+              patternId: m.patternId,
+              name: def?.name || m.patternId,
+              message: m.message,
+            };
+          });
+
+          const mainMsg = matches.length === 1
+            ? matches[0].message
+            : `Matched ${matches.length} patterns: ${matches.map((m) => getPatternDefinition(m.patternId)?.name || m.patternId).join(', ')}`;
+
+          triggerAlert(
+            item.symbol,
+            item.interval,
+            type,
+            mainMsg,
+            scanCandles[scanCandles.length - 1]?.close || 0,
+            scanCandles,
+            dailyMove,
+            alertCollector,
+            patterns,
+          );
+
+          matches.forEach((m) => {
+            lastAlertedPatternKeys[m.patternId] = `${m.time}:${m.matched}`;
+          });
+        };
+
+        if (bullishMatches.length > 0) emitGroupedAlert(bullishMatches, 'bullish');
+        if (bearishMatches.length > 0) emitGroupedAlert(bearishMatches, 'bearish');
       }
 
       return {
@@ -2332,25 +2471,37 @@ export default function MarketWatcher() {
   const handleAddSymbol = async (input: string): Promise<boolean> => {
     let symbol = input.trim().toUpperCase();
     if (!symbol) return false;
-    if (watchlistCategory === 'futures' && !symbol.includes('=F')) {
+
+    let targetCat: WatchlistCategory = 'stocks';
+    if (symbol.endsWith('=F') || isFuturesSymbol(symbol)) {
+      targetCat = 'futures';
+    } else if (symbol.endsWith('-USD') || isCryptoSymbol(symbol)) {
+      targetCat = 'crypto';
+    } else if (
+      PRIMARY_FUTURES_PRESETS.some(p => p.symbol.replace('=F', '') === symbol) ||
+      SECONDARY_FUTURES_PRESETS.some(p => p.symbol.replace('=F', '') === symbol)
+    ) {
       symbol = `${symbol}=F`;
-    } else if (watchlistCategory === 'crypto') {
+      targetCat = 'futures';
+    } else if (watchlistCategory === 'crypto' && !symbol.includes('-USD')) {
       const compactSymbol = symbol.replace(/[-/]/g, '');
       symbol = compactSymbol.endsWith('USD')
         ? `${compactSymbol.slice(0, -3)}-USD`
         : `${compactSymbol}-USD`;
+      targetCat = 'crypto';
     }
+
     if (watchlist.some(w => w.symbol === symbol && w.interval === newInterval)) {
       showAddNotice('duplicate', `${symbol} (${newInterval}) is already in your watchlist.`);
+      if (watchlistCategory !== targetCat) {
+        setWatchlistCategory(targetCat);
+        localStorage.setItem('watcher-watchlist-category', targetCat);
+      }
       return false;
     }
 
-    // Validate that an equity ticker actually exists before adding it, so typos
-    // (e.g. "CROS") don't get silently added and scanned forever. Futures/crypto
-    // pass through — they come from presets / the normalized =F,-USD forms, and
-    // Yahoo's search is unreliable for them. If the search itself fails (network),
-    // we don't block the add — only a definitive "no match" rejects.
-    if (watchlistCategory !== 'futures' && watchlistCategory !== 'crypto') {
+    // Validate that an equity ticker actually exists before adding it
+    if (targetCat === 'stocks') {
       try {
         const base = process.env.NEXT_PUBLIC_SERVER_URL || '';
         const params = new URLSearchParams({ q: symbol, category: 'stocks' });
@@ -2377,6 +2528,11 @@ export default function MarketWatcher() {
     const updated = [...watchlist, newItem];
     saveWatchlist(updated);
     showAddNotice('success', `${symbol} (${newInterval}) was added to your watchlist.`);
+
+    if (watchlistCategory !== targetCat) {
+      setWatchlistCategory(targetCat);
+      localStorage.setItem('watcher-watchlist-category', targetCat);
+    }
 
     // Immediately scan the newly added symbol
     scanSymbol(newItem).then((scanned) => {
@@ -3303,7 +3459,7 @@ export default function MarketWatcher() {
                 )}
                 <TickerInput
                   ref={tickerInputRef}
-                  category={watchlistCategory}
+                  category="all"
                   placeholder={
                     watchlistCategory === 'futures'
                       ? 'e.g. NQ, ES, CL'

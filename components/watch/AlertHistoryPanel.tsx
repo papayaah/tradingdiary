@@ -23,6 +23,12 @@ interface AlertCandle {
   volume: number;
 }
 
+export interface PatternMatchedTag {
+  patternId?: string;
+  name: string;
+  message: string;
+}
+
 export interface AlertHistoryItem {
   id: string;
   createdAt: number;
@@ -30,6 +36,7 @@ export interface AlertHistoryItem {
   interval: string;
   type: 'bullish' | 'bearish';
   details: string;
+  patterns?: PatternMatchedTag[];
   price: number;
   intradayChange?: number | null;
   intradayChangePercent?: number | null;
@@ -317,7 +324,39 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
               </div>
             )}
           </div>
-          <p className="mt-1 text-xs font-medium leading-relaxed text-foreground/85">{alert.details}</p>
+
+          {alert.patterns && alert.patterns.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 mt-2">
+              {alert.patterns.map((p, idx) => (
+                <span
+                  key={p.patternId || idx}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
+                    alert.type === 'bullish'
+                      ? 'bg-profit/15 text-profit border-profit/30'
+                      : 'bg-loss/15 text-loss border-loss/30'
+                  }`}
+                >
+                  <span>{p.name}</span>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {alert.patterns && alert.patterns.length > 1 ? (
+            <div className="mt-2 space-y-1 text-xs border-t border-card-border/30 pt-1.5">
+              {alert.patterns.map((p, idx) => (
+                <div key={p.patternId || idx} className="flex items-start gap-1.5 leading-snug text-foreground/90 font-mono text-[11px]">
+                  <span className={`shrink-0 text-[10px] mt-0.5 font-bold ${alert.type === 'bullish' ? 'text-profit' : 'text-loss'}`}>•</span>
+                  <div>
+                    <span className="font-bold text-foreground mr-1">{p.name}:</span>
+                    <span className="text-foreground/80">{p.message}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-1 text-xs font-medium leading-relaxed text-foreground/85">{alert.details}</p>
+          )}
         </div>
 
         <div className="flex w-full flex-wrap items-center justify-between gap-3 border-t border-card-border/60 pt-2 font-mono text-xs text-foreground/80">
