@@ -4,9 +4,10 @@ import { scannerHeartbeat, serverWatch, serverWatchState } from '@/lib/db/server
 import { auth } from '@/lib/auth';
 import { isAdminEmail } from '@/lib/admin';
 import { SCAN_QUEUE, scannerConfig } from '@/lib/scanner/env';
+import { isSessionActive, type WatchSession } from '@/lib/scanner/sessions';
 import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
-import { asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, ne, or } from 'drizzle-orm';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -160,6 +161,19 @@ export async function GET(request: Request) {
     }> = [];
 
     try {
+      // This panel represents work that can actually be enqueued now. The
+      // durable schedule contains out-of-session equities too, but the scanner
+      // only advances those rows without creating a job or provider request.
+      const now = new Date();
+      const activeEquitySessions = (['rth', 'pre', 'ext', 'all'] as const)
+        .filter((watchSession) => isSessionActive(watchSession, 'equity', now));
+      const eligibleNow = activeEquitySessions.length > 0
+        ? or(
+            ne(serverWatch.assetClass, 'equity'),
+            inArray(serverWatch.session, activeEquitySessions as WatchSession[]),
+          )
+        : ne(serverWatch.assetClass, 'equity');
+
       const upcoming = await db
         .select({
           id: serverWatch.id,
@@ -170,7 +184,7 @@ export async function GET(request: Request) {
           scanFrequencySeconds: serverWatch.scanFrequencySeconds,
         })
         .from(serverWatch)
-        .where(eq(serverWatch.enabled, true))
+        .where(and(eq(serverWatch.enabled, true), eligibleNow))
         .orderBy(asc(serverWatch.nextScanAt))
         .limit(10);
       upcomingScans = upcoming;
@@ -204,4 +218,3 @@ export async function GET(request: Request) {
     );
   }
 }
-

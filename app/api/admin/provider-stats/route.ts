@@ -34,19 +34,25 @@ export async function GET(request: Request) {
     }
   > = {};
 
-  const knownScopes = ['tiingo:us', 'tiingo:crypto', 'polygon:us', 'ibkr:local', 'yahoo:us'];
+  const knownScopes = [
+    'tiingo:server',
+    'polygon-io:server',
+    'ibkr-cme:server',
+    'yahoo-finance:server',
+  ] as const;
   for (const scope of knownScopes) {
     const budget = getProviderBudget(scope);
-    const scopePrefix = scope.split(':')[0].toLowerCase();
+    const expectedProviders: Record<(typeof knownScopes)[number], readonly string[]> = {
+      'tiingo:server': ['tiingo', 'tiingo crypto'],
+      'polygon-io:server': ['polygon.io'],
+      'ibkr-cme:server': ['ibkr (cme)'],
+      'yahoo-finance:server': ['yahoo finance'],
+    };
 
     const todayRows = stats.filter((s) => {
-      if (s.day !== todayStr) return false;
-      const p = s.provider.toLowerCase();
-      if (scopePrefix === 'tiingo') return p.includes('tiingo');
-      if (scopePrefix === 'polygon') return p.includes('polygon');
-      if (scopePrefix === 'ibkr') return p.includes('ibkr');
-      if (scopePrefix === 'yahoo') return p.includes('yahoo');
-      return p.includes(scopePrefix);
+      return s.day === todayStr
+        && s.keyOwner === 'owner'
+        && expectedProviders[scope].includes(s.provider.trim().toLowerCase());
     });
 
     const todayCount = todayRows.reduce((acc, r) => acc + r.count, 0);

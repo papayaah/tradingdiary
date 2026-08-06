@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Users,
   Eye,
@@ -32,6 +32,7 @@ import {
   Tooltip,
   CartesianGrid,
 } from 'recharts';
+import { DueCountdown } from './DueCountdown';
 
 interface OverviewData {
   users: {
@@ -192,6 +193,19 @@ export default function AdminDashboard() {
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [controlActionMsg, setControlActionMsg] = useState<string | null>(null);
+  const queueRefreshInFlight = useRef(false);
+
+  const fetchLiveQueue = useCallback(async () => {
+    if (queueRefreshInFlight.current || document.hidden) return;
+    queueRefreshInFlight.current = true;
+    try {
+      const response = await fetch('/api/admin/queues');
+      const data = await response.json().catch(() => null);
+      if (data?.success) setQueueInfo(data);
+    } finally {
+      queueRefreshInFlight.current = false;
+    }
+  }, []);
 
   const fetchAllData = useCallback(async () => {
     setIsRefreshing(true);
@@ -252,6 +266,14 @@ export default function AdminDashboard() {
 
     return () => clearInterval(interval);
   }, [fetchAllData]);
+
+  useEffect(() => {
+    // Queue state changes much faster than the analytics panels. Keep this
+    // authoritative list close to the scanner's 5s scheduler tick without
+    // reloading every admin metric on the same cadence.
+    const interval = window.setInterval(fetchLiveQueue, 2_000);
+    return () => window.clearInterval(interval);
+  }, [fetchLiveQueue]);
 
   const handleExportDiagnostics = () => {
     const payload = {
@@ -772,13 +794,13 @@ export default function AdminDashboard() {
             <p className="text-xs text-muted italic">No active scanner worker heartbeats reported.</p>
           )}
 
-          {/* Currently Active Polling Jobs */}
+          {/* Currently Active Evaluation Jobs */}
           {queueInfo && (
             <div className="space-y-2 pt-2 border-t border-card-border">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-foreground flex items-center gap-1.5">
                   <Zap size={14} className={queueInfo.activeJobs && queueInfo.activeJobs.length > 0 ? "text-accent animate-pulse" : "text-muted"} />
-                  Currently Polling ({queueInfo.activeJobs?.length ?? 0} active in-flight requests)
+                  Currently Evaluating ({queueInfo.activeJobs?.length ?? 0} watch jobs)
                 </span>
               </div>
               {queueInfo.activeJobs && queueInfo.activeJobs.length > 0 ? (
@@ -799,7 +821,7 @@ export default function AdminDashboard() {
                         )}
                       </div>
                       <span className="text-[11px] text-muted font-mono">
-                        {job.mode === 'evaluate' ? 'Manual scan' : 'Scheduled poll'}
+                        {job.mode === 'evaluate' ? 'Cache-only evaluation' : 'Legacy scan'}
                       </span>
                     </div>
                   ))}
@@ -808,7 +830,7 @@ export default function AdminDashboard() {
                 <div className="p-2.5 bg-muted-bg/30 border border-card-border/60 rounded-lg flex items-center justify-between text-xs text-muted">
                   <span className="flex items-center gap-2 text-foreground/80">
                     <span className="w-2 h-2 rounded-full bg-profit/80" />
-                    Queue Idle — No active provider fetches in flight right now
+                    Evaluation Queue Idle — No active watch jobs right now
                   </span>
                   <span className="text-[11px]">Ready for next tick</span>
                 </div>
@@ -822,9 +844,16 @@ export default function AdminDashboard() {
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-foreground flex items-center gap-1.5">
                   <Clock size={14} className="text-accent" />
-                  Next Due Scheduled Polls ({queueInfo.upcomingScans.length} queued next)
+                  Next Eligible Watch Schedules ({queueInfo.upcomingScans.length} upcoming)
+                </span>
+                <span className="text-[10px] text-profit flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-profit" />
+                  Live · 2s refresh
                 </span>
               </div>
+              <p className="text-[11px] text-muted">
+                Out-of-session equities are omitted. Eligible watches may reuse shared cache instead of calling a provider.
+              </p>
               <div className="space-y-1 max-h-36 overflow-y-auto pr-1 text-xs">
                 {queueInfo.upcomingScans.map((up) => (
                   <div key={up.id} className="flex items-center justify-between p-2 rounded-lg bg-muted-bg/30 border border-card-border/40">
@@ -835,22 +864,23 @@ export default function AdminDashboard() {
                       </span>
                       <span className="text-[10px] text-muted uppercase font-mono">{up.assetClass}</span>
                     </div>
-                    <span className="text-[11px] font-mono text-muted">
-                      Due {new Date(up.nextScanAt).toLocaleTimeString()} (every {up.scanFrequencySeconds}s)
-                    </span>
+                    <DueCountdown
+                      dueAt={up.nextScanAt}
+                      cadenceSeconds={up.scanFrequencySeconds}
+                    />
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Recent Scan Feed */}
+          {/* Recent Evaluation Feed */}
           {queueInfo?.recentScans && queueInfo.recentScans.length > 0 && (
             <div className="space-y-2 pt-2 border-t border-card-border">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-foreground flex items-center gap-1.5">
                   <Activity size={14} className="text-accent" />
-                  Recent Polling Feed (Last 15 completed)
+                  Recent Watch Evaluations (Last 15 completed)
                 </span>
               </div>
               <div className="max-h-48 overflow-y-auto space-y-1 pr-1 text-xs">

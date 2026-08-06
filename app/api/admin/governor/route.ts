@@ -18,7 +18,12 @@ export async function GET(request: Request) {
     const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null, lazyConnect: true });
     await redis.connect().catch(() => {});
 
-    const scopes = ['tiingo:us', 'tiingo:crypto', 'polygon:us', 'ibkr:local'];
+    const scopes = [
+      'tiingo:server',
+      'polygon-io:server',
+      'ibkr-cme:server',
+      'yahoo-finance:server',
+    ];
     const governorStates: Array<{
       providerScope: string;
       cadenceSeconds: number;
