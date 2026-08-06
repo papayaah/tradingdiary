@@ -12,6 +12,7 @@ import {
   type PatternSettings,
 } from '@/lib/scanner/patterns';
 import PatternGuidePanel from './PatternGuidePanel';
+import { formatCandlesTimespan } from '@/lib/utils/format';
 import type { Candle, PatternMatch } from './watchAnalysis';
 
 interface PatternTestResult {
@@ -291,7 +292,7 @@ export function PatternTesterSection({
               maxBodyOverlapPercent={maxBodyOverlapPercent}
               patternSettings={patternSettings}
               scannerPatternMarkersEnabled
-              subtitle={`${chartCandles.length} candles loaded (${testInterval})`}
+              subtitle={formatCandlesTimespan(chartCandles, testInterval)}
               onLoadMoreHistory={onLoadMoreHistory}
               loadingMore={loadingMore}
               hasMore={hasMore}

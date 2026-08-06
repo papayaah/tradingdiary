@@ -49,6 +49,7 @@ import {
 } from './watchAnalysis';
 import PatternGuidePanel from './PatternGuidePanel';
 import PatternTesterSection from './PatternTesterSection';
+import { formatCandlesTimespan } from '@/lib/utils/format';
 import WatchlistRow from './WatchlistRow';
 import CompactWatchlist, {
   type CompactWatchlistEntry,
@@ -3099,7 +3100,7 @@ export default function MarketWatcher() {
         onTogglePatterns={handleToggleAutoPatterns}
         interval={testInterval}
         providerBadge={expandedProvider || testResult.provider}
-        subtitle={`${testerCandles.length} candles loaded (${testInterval})`}
+        subtitle={formatCandlesTimespan(testerCandles, testInterval)}
         selectedPatternId={selectedPatternId}
         minMovePercent={analysisMinMove}
         requiredCount={requiredCandleCount}
