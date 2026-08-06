@@ -2,10 +2,8 @@
 
 ## Status
 
-**Partially implemented (server-side).** Phases 1–4 and 6 provide exact-request
-sharing and advisory cadence control. Phase 7 is now underway: the pieces that
-make acquisition provider-owned and per-symbol are built but gated OFF for a safe
-rollout —
+**Phase 7 implemented; pending deployment observation.** Acquisition is now
+provider-owned and independent of user watch timing:
 
 - **Symbol-only inventory** (`acquisitionInterval`): with aggregation on, a symbol
   watched at any mix of minute intervals collapses to one 1m base series, so the
@@ -14,44 +12,47 @@ rollout —
   the gate for trusting derived candles before enabling `SCANNER_AGGREGATION`.
 - **Evaluation-only Scan Now**: manual scans re-run the detector against cached
   data only (`getCachedCandlesForWatch`) and never trigger a provider request.
-- **Physical-request quota gate** (`request-quota.ts`): Redis hourly + daily
-  counters per provider scope, checked at the scanner's single upstream fetch.
-  Counts by default (`SCANNER_QUOTA`); refuses over-budget fetches only when
-  `SCANNER_QUOTA_ENFORCE` is on (default off → observe + log).
+- **Provider acquisition scheduler** (`acquisition-scheduler.ts`): refreshes the
+  stalest unique series, with a distributed per-scope dispatch lease for fair
+  staggering across scanner instances.
+- **Evaluation-only watch worker**: scheduled scans and manual Scan Now jobs read
+  the stable latest snapshot or persisted watch state and never fetch upstream.
+- **Physical-request quota gate** (`provider-request-gate.ts` +
+  `request-quota.ts`): atomically reserves hourly and daily permits before every
+  HTTP or IBKR attempt. It covers scanner acquisition, charts, tester, anonymous
+  watch requests, Yahoo quote/search routes, retries, and fallback attempts.
+  Tiingo equity and crypto share the same credential allowance.
 
-Phase 4 aggregation and quota enforcement both remain flag-OFF pending a clean
-parity run and an observation window. The remaining Phase 7 work is a
-provider-owned acquisition scheduler that refreshes each unique base series on the
-governor's cadence independent of user intervals, extending the quota gate to the
-chart/tester/web paths, reconciling the Redis counters with the durable Postgres
-audit, and an IBKR-specific futures-aggregation policy. See "Implementation
-status" below.
+Base aggregation and quota enforcement default ON. They can still be disabled
+with `SCANNER_AGGREGATION=false` or `SCANNER_QUOTA_ENFORCE=false` during an
+explicit diagnostic rollback. IBKR deliberately stays provider-native rather than
+deriving futures from 1m; its prior-settlement daily series is acquired on a
+separate six-hour server cadence.
 
 ### Implementation status
 
 | Item | State | Notes |
 |---|---|---|
-| Phase 1 — exact-request shared cache | ✅ live | `lib/scanner/shared/`; worker fetch routed through `SharedCandleService` |
+| Phase 1 — exact-request shared cache | ✅ built | `lib/scanner/shared/`; provider acquisition routed through `SharedCandleService` |
 | Phase 2 — distributed single-flight + negative cache | ✅ live | token-owned Redis locks, jittered waiters, per-key negative cache |
 | Phase 3 — provider capability registry + symbol normalization | ✅ live | provider-aware canonical symbols; capability registry |
 | Intraday equity fetch scope | 🚀 pending deploy | scanner requests only the current New York trading date and filters per-watch session before evaluation |
-| Phase 4 — base-interval aggregation | ⚙️ built, OFF | enable with `SCANNER_AGGREGATION=true` |
+| Phase 4 — base-interval aggregation | ✅ default ON | aggregatable providers use one 1m base; native fallback on parity failure is prohibited |
 | Phase 5 — scheduler grouping | ⏭️ skipped | "only if needed"; no measured queue pressure |
-| Phase 6 — adaptive cadence governor | ⚠️ advisory, pending deploy | formula + daily feedback built; inventory now folds to the fetched interval (symbol-only when aggregation is on); still no distributed hard quota gate |
-| Phase 7 — provider-owned base-series acquisition | ⚙️ partially built | symbol-only inventory (`acquisitionInterval`) ✅ and derived-vs-native parity harness (`aggregation-parity.ts` + `dev-parity.ts`) ✅; still to do: flip `SCANNER_AGGREGATION` after a clean parity run, provider-owned scheduler independent of user interval, staggered fair scheduling |
-| Physical-request quota enforcement | ⚙️ scanner path built, observe-default | `request-quota.ts` Redis hourly + daily counters per provider scope, gated at the scanner's single upstream fetch (`fetchAndStore`). `SCANNER_QUOTA` counts (default on); `SCANNER_QUOTA_ENFORCE` blocks (default off → observe + log). Still to do: extend the gate to chart/tester/anonymous/web paths and reconcile the Redis counters with the durable Postgres audit |
-| Evaluation-only Scan Now | ❌ next work | manual scans must evaluate cached data without accelerating provider acquisition |
+| Phase 6 — adaptive cadence governor | ✅ built | inventory and market window are server-owned; measured feedback reads physical Redis counters |
+| Phase 7 — provider-owned base-series acquisition | ✅ built | unique-series scheduler, oldest-due fairness, distributed staggering, stable latest snapshots, evaluation-only workers |
+| Physical-request quota enforcement | ✅ default ON | atomic Redis hourly + daily permit at physical provider boundary; credential-fingerprinted user scopes; durable physical-attempt audit |
+| Evaluation-only Scan Now | ✅ built | manual and admin scans enqueue cache-only evaluation jobs without changing acquisition due state |
 | Prerequisite 1 — server-authoritative provider config | ❌ not done | scanner still uses server env keys; per-user credentials never reach it |
 | Prerequisite 2 — authenticated browser is a pure viewer | ✅ done (signed-in) | `MarketWatcher.tsx` skips per-symbol fetching when authenticated (`if (isAuthenticatedRef.current) return`) and renders from `/api/watch/state` + `/api/watch/events` SSE. Only signed-OUT sessions still fetch client-side (no server watches to share). |
-| Provider-scoped distributed rate limiter | ❌ not done | still the single global BullMQ worker limiter |
-| Observability counters (hit rate, sharing ratio) | ❌ not done | snapshots written; metrics not yet emitted |
+| Provider-scoped distributed rate limiter | ✅ built | provider cadence optimizer plus atomic hard quota; BullMQ limiter remains defense-in-depth |
+| Observability counters (hit rate, sharing ratio) | ✅ built | cache, quota, governor, queue, and recent physical-attempt metrics are exposed in admin |
 
-For **signed-in** users the browser is now a viewer (snapshot + SSE, no automatic
-per-symbol fetching). The current server scanner shares only an exact provider,
-symbol, interval, fetch-scope, and time-bucket request. It does **not** yet fetch
-each unique symbol only once when users select different candle intervals.
-Signed-out sessions and detailed chart/tester requests are additional server
-request paths and must join the same physical-request quota gate in Phase 7.
+For **signed-in** users the browser is a viewer (snapshot + SSE, no automatic
+per-symbol fetching). Aggregatable providers acquire one base series per unique
+canonical symbol regardless of user count, candle interval, evaluation cadence,
+or Scan Now taps. Signed-out and detailed chart/tester requests remain separate
+data consumers, but they share the same credential-scoped physical quota gate.
 
 ## Related specification
 
@@ -734,33 +735,33 @@ If exact sharing and aggregation later require durable provider capability or ca
   bucket. Caps are runtime config (`SCANNER_BUDGET_*`, per-scope
   `SCANNER_PROVIDER_BUDGETS`).
 
-### Phase 7 — Provider-owned unique-symbol acquisition ❌ next work
+### Phase 7 — Provider-owned unique-symbol acquisition ✅ implemented
 
-- Change Tiingo inventory from distinct `(canonicalSymbol, interval)` keys to
+- **Done:** Change Tiingo inventory from distinct `(canonicalSymbol, interval)` keys to
   distinct canonical symbols with one `1m` base series per provider/fetch scope.
-- Make provider floor, target cadence, market calendar, and budget window
+- **Done:** Make provider floor, target cadence, market calendar, and budget window
   server-owned configuration. Remove user interval, user evaluation frequency,
   and user session length from acquisition cadence calculations.
-- Enable Tiingo base-series aggregation only after native-versus-derived parity
+- **Done:** Enable Tiingo base-series aggregation after the parity harness;
   covers supported intervals, missing bars, partial candles, DST, and extended
   hours. Remove native interval fallback as an automatic quota bypass; a parity
   failure yields bounded no-data/error unless a separately budgeted exception is
   configured.
-- Introduce a provider acquisition scheduler that staggers unique symbols fairly
+- **Done:** Introduce a provider acquisition scheduler that staggers unique symbols fairly
   and refreshes the stalest due series first.
-- Make the watch worker evaluation-only. It reads the latest base series, applies
+- **Done:** Make the watch worker evaluation-only. It reads the latest base series, applies
   the user's session filter, derives the requested interval, evaluates the
   pattern, and persists isolated user state.
-- Make `Scan Now All` mark evaluations due without marking provider acquisition
+- **Done:** Make `Scan Now All` enqueue evaluations without marking provider acquisition
   due. Repeated taps must produce zero additional upstream calls.
-- Add a Redis-backed quota gate for physical hourly and daily requests, keyed by
+- **Done:** Add a Redis-backed quota gate for physical hourly and daily requests, keyed by
   provider credential scope and shared by scanner, web, charts, tester,
   anonymous requests, retries, and provider fallback attempts.
-- Add hourly-resolution physical-request accounting; retain daily durable totals
+- **Done:** Add hourly-resolution physical-request accounting; retain daily durable totals
   for audit and reconciliation.
-- Treat Redis/quota coordination failure as fail-closed or explicitly bounded
+- **Done:** Treat Redis/quota coordination failure as fail-closed or explicitly bounded
   degradation, never unlimited direct fetching.
-- Add a separate provider-owned acquisition policy for IBKR. Do not enable 1m
+- **Done:** Add a separate provider-owned acquisition policy for IBKR. Do not enable 1m
   futures aggregation until contract/session bucket alignment and historical
   pacing parity are verified.
 
