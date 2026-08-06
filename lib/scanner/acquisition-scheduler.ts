@@ -6,6 +6,7 @@ import {
   type AcquisitionEntry,
 } from '@/lib/scanner/shared/acquisition-inventory';
 import { getSharedCandleService, type SharedCandleService } from '@/lib/scanner/shared/shared-candle-service';
+import { blacklistSymbol, isSymbolBlacklistedSync } from '@/lib/scanner/shared/invalid-symbol-blacklist';
 
 const STATE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const FAILED_RETRY_MS = 10_000;
@@ -100,6 +101,9 @@ export class AcquisitionScheduler {
         }));
         const due = scored
           .filter(({ entry, last, retryAt }) => {
+            if (isSymbolBlacklistedSync(entry.sourceSymbol) || isSymbolBlacklistedSync(entry.canonicalSymbol)) {
+              return false;
+            }
             const required = Math.max(cadenceMs, (entry.minimumCadenceSeconds ?? 0) * 1000);
             return retryAt <= now && now - last >= required;
           })
@@ -130,10 +134,14 @@ export class AcquisitionScheduler {
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
           const is404 = msg.includes('404') || msg.toLowerCase().includes('not found');
-          const retryTtlMs = is404 ? 86_400_000 : FAILED_RETRY_MS; // Blacklist non-existent 404 symbols for 24 hours
+          if (is404) {
+            void blacklistSymbol(candidate.sourceSymbol, msg, scope);
+            void blacklistSymbol(candidate.canonicalSymbol, msg, scope);
+          }
+          const retryTtlMs = is404 ? 86_400_000 : FAILED_RETRY_MS;
           await this.store.set(retryKey(candidate), String(this.now() + retryTtlMs), retryTtlMs);
           console.error(
-            `[scanner] acquisition ${candidate.canonicalSymbol} (${candidate.interval}) failed${is404 ? ' [blacklisted 24h]' : ''}:`,
+            `[scanner] acquisition ${candidate.canonicalSymbol} (${candidate.interval}) failed${is404 ? ' [PERMANENTLY BLACKLISTED IN DB]' : ''}:`,
             msg,
           );
         }
