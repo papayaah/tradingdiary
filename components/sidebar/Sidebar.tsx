@@ -30,7 +30,6 @@ interface SidebarProps {
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/portfolio', label: 'Portfolio', icon: PieChart },
   { href: '/journal', label: 'Journal', icon: BookOpen },
   { href: '/watch', label: 'Market Watch', icon: Bell },
   { href: '/media', label: 'Library', icon: ImageIcon },

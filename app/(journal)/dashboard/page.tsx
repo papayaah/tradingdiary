@@ -14,6 +14,7 @@ import WinLossDonut from '@/components/dashboard/WinLossDonut';
 import ComparisonBar from '@/components/dashboard/ComparisonBar';
 import LargestGainLossDonut from '@/components/dashboard/LargestGainLossDonut';
 import ReplayTimeline from '@/components/replay/ReplayTimeline';
+import OpenPositionsCard from '@/components/dashboard/OpenPositionsCard';
 import { useAccount } from '@/contexts/AccountContext';
 import { getTransactionsByAccount } from '@/lib/db/trades';
 import { formatCurrency } from '@/lib/currency';
@@ -48,6 +49,7 @@ export default function DashboardPage() {
   const [latestDay, setLatestDay] = useState<LatestDayTimeline | null>(null);
   const [empty, setEmpty] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     async function load() {
@@ -108,7 +110,7 @@ export default function DashboardPage() {
       }
     }
     load();
-  }, [selectedAccountId]);
+  }, [selectedAccountId, refreshKey]);
 
   const filteredData = useMemo(() => {
     if (!allSummaries.length) return null;
@@ -151,21 +153,30 @@ export default function DashboardPage() {
 
   if (empty) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-full gap-4 text-center p-8">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-muted-bg">
-          <LayoutDashboard size={32} className="text-muted" />
+      <div className="p-4 sm:p-6 space-y-8 w-full">
+        <div>
+          <h1 className="text-3xl font-black text-foreground tracking-tight mb-1">Trading Dashboard</h1>
+          <p className="text-sm text-muted font-medium">Analyze your performance and trading patterns.</p>
         </div>
-        <h2 className="text-xl font-semibold text-foreground">No trading data</h2>
-        <p className="text-sm text-muted max-w-sm">
-          Import your trading data to see dashboard analytics.
-        </p>
-        <Link
-          href="/import"
-          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-accent text-white hover:bg-accent/90 transition-colors"
-        >
-          <Upload size={16} />
-          Import Trades
-        </Link>
+
+        <OpenPositionsCard onTradeAdded={() => setRefreshKey((k) => k + 1)} />
+
+        <div className="flex flex-col items-center justify-center py-12 gap-4 text-center border border-dashed border-card-border rounded-2xl bg-card-bg/50">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-muted-bg">
+            <LayoutDashboard size={28} className="text-muted" />
+          </div>
+          <h2 className="text-lg font-bold text-foreground">No historical trades found</h2>
+          <p className="text-xs text-muted max-w-sm">
+            Import your broker trade history to populate your calendar, analytics, and win-rate charts.
+          </p>
+          <Link
+            href="/import"
+            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl bg-accent text-white hover:bg-accent/90 transition-colors"
+          >
+            <Upload size={14} />
+            Import Trades
+          </Link>
+        </div>
       </div>
     );
   }
@@ -267,6 +278,9 @@ export default function DashboardPage() {
       })()}
 
       <MonthlyCalendar summaries={summaries} />
+
+      {/* Open Positions & Manual Entry Card */}
+      <OpenPositionsCard onTradeAdded={() => setRefreshKey((k) => k + 1)} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
