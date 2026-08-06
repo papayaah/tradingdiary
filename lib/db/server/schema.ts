@@ -227,8 +227,8 @@ export const providerRequestStats = pgTable("provider_request_stats", {
     primaryKey({ columns: [t.day, t.provider, t.keyOwner] }),
 ]);
 
-// Permanent database blacklist for invalid / non-existent ticker symbols (404s).
-export const invalidSymbolBlacklist = pgTable("invalid_symbol_blacklist", {
+// Permanent database table for invalid / non-existent ticker symbols (404s).
+export const invalidSymbols = pgTable("invalid_symbols", {
     symbol: text("symbol").primaryKey(), // Uppercase canonical symbol (e.g. 'ASDFGHJK')
     reason: text("reason").notNull(),     // e.g. '404 Not Found from Tiingo'
     provider: text("provider"),          // e.g. 'Tiingo' or 'all'

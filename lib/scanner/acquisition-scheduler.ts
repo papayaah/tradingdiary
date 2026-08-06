@@ -6,7 +6,7 @@ import {
   type AcquisitionEntry,
 } from '@/lib/scanner/shared/acquisition-inventory';
 import { getSharedCandleService, type SharedCandleService } from '@/lib/scanner/shared/shared-candle-service';
-import { blacklistSymbol, isSymbolBlacklistedSync } from '@/lib/scanner/shared/invalid-symbol-blacklist';
+import { blacklistSymbol, isSymbolBlacklistedSync } from '@/lib/scanner/shared/invalid-symbols';
 
 const STATE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const FAILED_RETRY_MS = 10_000;
