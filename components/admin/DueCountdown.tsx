@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { parseServerTimestampMs } from '@/lib/utils/serverTime';
 
 function formatDuration(totalSeconds: number): string {
   if (totalSeconds < 60) return `${totalSeconds}s`;
@@ -36,7 +37,7 @@ export function DueCountdown({
     return () => window.clearInterval(timer);
   }, []);
 
-  const dueAtMs = Date.parse(dueAt);
+  const dueAtMs = parseServerTimestampMs(dueAt);
   const secondsRemaining = Number.isFinite(dueAtMs)
     ? Math.max(0, Math.ceil((dueAtMs - now) / 1_000))
     : 0;

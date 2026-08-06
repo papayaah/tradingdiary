@@ -33,6 +33,7 @@ import {
   CartesianGrid,
 } from 'recharts';
 import { DueCountdown } from './DueCountdown';
+import { parseServerTimestampMs } from '@/lib/utils/serverTime';
 
 interface OverviewData {
   users: {
@@ -784,7 +785,7 @@ export default function AdminDashboard() {
                   <div key={w.workerId} className="flex items-center justify-between text-xs p-2 bg-muted-bg/50 rounded-lg">
                     <span className="font-mono text-foreground">{w.workerId}</span>
                     <span className="text-muted text-[11px]">
-                      Beat {new Date(w.lastBeatAt).toLocaleTimeString()}
+                      Beat {new Date(parseServerTimestampMs(w.lastBeatAt)).toLocaleTimeString()}
                     </span>
                   </div>
                 ))}
@@ -907,7 +908,7 @@ export default function AdminDashboard() {
                           <span className="font-mono text-muted">{scan.lastProvider}</span>
                         )}
                         <span>
-                          {scan.lastScannedAt ? new Date(scan.lastScannedAt).toLocaleTimeString() : 'Just now'}
+                          {scan.lastScannedAt ? new Date(parseServerTimestampMs(scan.lastScannedAt)).toLocaleTimeString() : 'Just now'}
                         </span>
                       </div>
                     </div>
