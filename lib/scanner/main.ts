@@ -8,8 +8,7 @@ import { scheduleDueWatches } from '@/lib/scanner/scheduler';
 import { createScanWorker, writeHeartbeat } from '@/lib/scanner/worker';
 import { getSharedCandleService } from '@/lib/scanner/shared/shared-candle-service';
 import { createGovernor, recomputeGovernor } from '@/lib/scanner/shared/governor-runtime';
-import { resolveProviderScope } from '@/lib/scanner/shared/provider-scope';
-import type { AssetClass } from '@/lib/scanner/sessions';
+import { AcquisitionScheduler } from '@/lib/scanner/acquisition-scheduler';
 
 async function main() {
   console.log(
@@ -63,13 +62,18 @@ async function main() {
     );
   }
 
-  const governedCadenceForWatch = governor
-    ? (watch: { symbol: string; assetClass?: string }) =>
-        governor.getCadenceSeconds(resolveProviderScope(watch.symbol, watch.assetClass as AssetClass | undefined))
-    : undefined;
+  const acquisitionScheduler = new AcquisitionScheduler({
+    cadenceForScope: (scope) => governor
+      ? governor.getCadenceSeconds(scope)
+      : Math.max(1, scannerConfig.acquisitionBucketMs / 1000),
+  });
 
   const worker = createScanWorker();
-  worker.on('failed', (job, err) => console.error(`[scanner] job ${job?.id} failed:`, err.message));
+  worker.on('failed', (job, err) => {
+    const symbol = (job?.data as any)?.symbol || (job?.data as any)?.watchId || job?.id;
+    const interval = (job?.data as any)?.interval ? ` (${(job?.data as any).interval})` : '';
+    console.error(`[scanner] job ${symbol}${interval} failed:`, err?.message);
+  });
   worker.on('error', (err) => console.error('[scanner] worker error:', err.message));
 
   await writeHeartbeat('ok', { event: 'startup' });
@@ -79,7 +83,8 @@ async function main() {
   // from PostgreSQL every tick and enqueues with deterministic job ids, a Redis
   // flush self-heals here and on subsequent ticks without creating duplicates.
   try {
-    const r = await scheduleDueWatches(new Date(), governedCadenceForWatch);
+    await acquisitionScheduler.tick();
+    const r = await scheduleDueWatches(new Date());
     console.log(`[scanner] startup reconcile due=${r.due} enqueued=${r.enqueued} deferred=${r.deferred}`);
   } catch (err) {
     console.error('[scanner] startup reconcile error:', err instanceof Error ? err.message : err);
@@ -87,7 +92,7 @@ async function main() {
 
   const scheduleTimer = setInterval(async () => {
     try {
-      const r = await scheduleDueWatches(new Date(), governedCadenceForWatch);
+      const r = await scheduleDueWatches(new Date());
       if (r.enqueued || r.deferred) {
         console.log(`[scanner] tick due=${r.due} enqueued=${r.enqueued} deferred=${r.deferred}`);
       }
@@ -96,6 +101,12 @@ async function main() {
     }
   }, scannerConfig.schedulerTickMs);
 
+  const acquisitionTimer = setInterval(() => {
+    acquisitionScheduler.tick().catch((err) =>
+      console.error('[scanner] acquisition tick error:', err instanceof Error ? err.message : err),
+    );
+  }, scannerConfig.acquisitionTickMs);
+
   const heartbeatTimer = setInterval(() => {
     writeHeartbeat('ok').catch((err) => console.error('[scanner] heartbeat error:', err.message));
   }, 15000);
@@ -103,6 +114,7 @@ async function main() {
   const shutdown = async (signal: string) => {
     console.log(`[scanner] ${signal} received, shutting down...`);
     clearInterval(scheduleTimer);
+    clearInterval(acquisitionTimer);
     clearInterval(heartbeatTimer);
     if (governorTimer) clearInterval(governorTimer);
     await writeHeartbeat('offline', { event: 'shutdown' }).catch(() => {});

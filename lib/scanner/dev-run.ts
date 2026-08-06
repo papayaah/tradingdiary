@@ -52,7 +52,9 @@ async function main() {
       resolve();
     });
     worker.on('failed', (job: any, err: any) => {
-      console.error(`[dev] job ${job?.id} failed:`, err?.message);
+      const symbol = job?.data?.symbol || job?.data?.watchId || job?.id;
+      const interval = job?.data?.interval ? ` (${job.data.interval})` : '';
+      console.error(`[dev] job ${symbol}${interval} failed:`, err?.message);
       resolve(); // resolve anyway so we can inspect the error state row
     });
     setTimeout(() => reject(new Error('timed out waiting for job')), 30_000);
