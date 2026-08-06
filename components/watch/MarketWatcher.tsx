@@ -104,6 +104,67 @@ interface AlertLog {
   intradayChange?: number | null;
   intradayChangePercent?: number | null;
   candles?: Candle[];
+  // Source alert ids folded into this card, so a reconnect replay of an already
+  // merged per-pattern alert is not counted twice.
+  sourceIds?: string[];
+}
+
+// One watchlist scan can match several patterns on the same candle, and the
+// server emits one alert row (and one SSE event) per matched pattern. Merge
+// those into a single card per symbol/interval/direction within a short window,
+// listing every matched pattern — instead of showing a separate card each.
+const ALERT_MERGE_WINDOW_MS = 90_000;
+
+function mergeAlertLog(logs: AlertLog[], incoming: AlertLog): AlertLog[] {
+  // Reconnect replay: this exact source alert already contributed to a card.
+  if (incoming.id && logs.some((l) => l.id === incoming.id || l.sourceIds?.includes(incoming.id))) {
+    return logs;
+  }
+  const symbol = incoming.symbol.toUpperCase();
+  const incomingPatterns: PatternMatchedTag[] = incoming.patterns?.length
+    ? incoming.patterns
+    : [{ message: incoming.details, name: 'Pattern' }];
+
+  const idx = logs.findIndex(
+    (l) =>
+      l.symbol === symbol &&
+      l.type === incoming.type &&
+      l.interval === incoming.interval &&
+      Math.abs(incoming.createdAt - l.createdAt) < ALERT_MERGE_WINDOW_MS,
+  );
+
+  if (idx === -1) {
+    return [{ ...incoming, symbol, sourceIds: incoming.id ? [incoming.id] : [] }, ...logs];
+  }
+
+  const existing = logs[idx];
+  const existingPatterns: PatternMatchedTag[] = existing.patterns?.length
+    ? existing.patterns
+    : [{ message: existing.details, name: 'Pattern' }];
+  const mergedPatterns = [...existingPatterns];
+  for (const cp of incomingPatterns) {
+    const dup = mergedPatterns.some(
+      (ep) => (cp.patternId && ep.patternId === cp.patternId) || ep.message === cp.message,
+    );
+    if (!dup) mergedPatterns.push(cp);
+  }
+  const mergedDetails =
+    mergedPatterns.length === 1
+      ? mergedPatterns[0].message
+      : `Matched ${mergedPatterns.length} patterns: ${mergedPatterns.map((p) => p.name).join(', ')}`;
+
+  const next = [...logs];
+  next[idx] = {
+    ...existing,
+    details: mergedDetails,
+    patterns: mergedPatterns,
+    price: incoming.price ?? existing.price,
+    candles: incoming.candles?.length ? incoming.candles : existing.candles,
+    intradayChange: incoming.intradayChange ?? existing.intradayChange,
+    intradayChangePercent: incoming.intradayChangePercent ?? existing.intradayChangePercent,
+    sourceIds: [...(existing.sourceIds ?? [existing.id]), ...(incoming.id ? [incoming.id] : [])],
+  };
+  return next;
 }
 
 interface PendingAlert {
@@ -193,20 +254,27 @@ const mapSnapshotAlerts = (snapshot: {
     ]),
   );
 
-  return limitAlertHistory(
-    (snapshot.alerts ?? []).map((alert) => ({
-      id: alert.id,
-      createdAt: alert.createdAt ? new Date(alert.createdAt).getTime() : Date.now(),
-      symbol: alert.symbol,
-      interval: alert.interval,
-      type: alert.direction === 'bearish' ? 'bearish' : 'bullish',
-      details: alert.message || `${alert.patternId || 'Pattern'} on ${alert.symbol} (${alert.interval})`,
-      price: alert.price ?? 0,
-      intradayChange: alert.intradayChange,
-      intradayChangePercent: alert.intradayChangePercent,
-      candles: candlesByWatchId.get(alert.watchId) ?? [],
-    })),
-  );
+  const mapped: AlertLog[] = (snapshot.alerts ?? []).map((alert) => ({
+    id: alert.id,
+    createdAt: alert.createdAt ? new Date(alert.createdAt).getTime() : Date.now(),
+    symbol: alert.symbol,
+    interval: alert.interval,
+    type: alert.direction === 'bearish' ? 'bearish' : 'bullish',
+    details: alert.message || `${alert.patternId || 'Pattern'} on ${alert.symbol} (${alert.interval})`,
+    patterns: [{
+      patternId: alert.patternId ?? undefined,
+      name: isPatternId(alert.patternId) ? getPatternDefinition(alert.patternId).name : 'Pattern',
+      message: alert.message || '',
+    }],
+    price: alert.price ?? 0,
+    intradayChange: alert.intradayChange,
+    intradayChangePercent: alert.intradayChangePercent,
+    candles: candlesByWatchId.get(alert.watchId) ?? [],
+  }));
+  // Collapse per-pattern alert rows for the same symbol/interval/direction into
+  // one card, so loaded history matches the merged live view.
+  const merged = mapped.reduce<AlertLog[]>((acc, a) => mergeAlertLog(acc, a), []);
+  return limitAlertHistory(merged.sort((a, b) => b.createdAt - a.createdAt));
 };
 
 const getPersistedWatchlist = (items: WatchItem[]): WatchItem[] =>
@@ -563,25 +631,28 @@ export default function MarketWatcher() {
 
       const alertId = data.alertId || `alert-${Date.now()}-${Math.random()}`;
       const createdAtMs = data.createdAt ? new Date(data.createdAt).getTime() : Date.now();
-      const newAlert: AlertLog = {
+      const incoming: AlertLog = {
         id: alertId,
         createdAt: createdAtMs,
         symbol: data.symbol,
         interval: data.interval,
         type,
-        details: msg,
+        details: data.matchedPattern || msg,
+        patterns: [{
+          patternId: data.patternId ?? undefined,
+          name: isPatternId(data.patternId) ? getPatternDefinition(data.patternId).name : 'Pattern',
+          message: data.matchedPattern || msg,
+        }],
         price: data.price ?? data.candles?.[data.candles.length - 1]?.close ?? 0,
         intradayChange: data.intradayChange,
         intradayChangePercent: data.intradayChangePercent,
         candles: data.candles || [],
       };
 
-      // Always record in the log, but merge by id so a snapshot entry and its
-      // replayed stream event do not appear twice (spec B6c).
-      setAlertLogs((prev) => {
-        if (prev.some((a) => a.id === alertId)) return prev;
-        return limitAlertHistory([newAlert, ...prev]);
-      });
+      // Merge per-pattern alerts for the same symbol/interval/direction into one
+      // card (the server emits one alert event per matched pattern); mergeAlertLog
+      // also skips a reconnect replay of an already-folded alert (spec B6c).
+      setAlertLogs((prev) => limitAlertHistory(mergeAlertLog(prev, incoming)));
 
       // Only alert (sound + banner) for genuinely fresh events. A reconnect after
       // a long offline period legitimately replays a backlog; firing a banner per
