@@ -76,4 +76,22 @@ export class MemoryCacheStore implements CacheStore {
       return {};
     }
   }
+
+  async reserveQuota(
+    hourKey: string,
+    dayKey: string,
+    hourlyCap: number,
+    dailyCap: number,
+    hourTtlMs: number,
+    dayTtlMs: number,
+  ): Promise<{ allowed: boolean; hourly: number; daily: number }> {
+    const hourly = Number.parseInt(this.live(hourKey)?.value ?? '0', 10) || 0;
+    const daily = Number.parseInt(this.live(dayKey)?.value ?? '0', 10) || 0;
+    if ((hourlyCap > 0 && hourly >= hourlyCap) || (dailyCap > 0 && daily >= dailyCap)) {
+      return { allowed: false, hourly, daily };
+    }
+    const nextHourly = await this.incr(hourKey, hourTtlMs);
+    const nextDaily = await this.incr(dayKey, dayTtlMs);
+    return { allowed: true, hourly: nextHourly, daily: nextDaily };
+  }
 }

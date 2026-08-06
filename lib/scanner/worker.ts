@@ -1,4 +1,4 @@
-// Scan worker: fetches candles, runs the shared detector, and commits watch
+// Evaluation worker: reads provider-owned candle snapshots, runs the detector, and commits watch
 // state (+ a qualifying alert, unless in shadow mode) and a durable event row
 // in one transaction, then emits a lightweight NOTIFY. Handlers are idempotent
 // and alert inserts rely on the DB unique constraint for deduplication, so
@@ -25,7 +25,7 @@ import {
   type Candle,
 } from '@/lib/scanner/patterns';
 import { boundRecent, filterCandlesForSession, type CandleSnapshot } from '@/lib/scanner/candles';
-import { getSharedCandleService, QuotaExceededError } from '@/lib/scanner/shared/shared-candle-service';
+import { getSharedCandleService } from '@/lib/scanner/shared/shared-candle-service';
 import { isSessionActive, type AssetClass, type WatchSession } from '@/lib/scanner/sessions';
 import { SCAN_QUEUE, scannerConfig } from '@/lib/scanner/env';
 import { createConnection, type ScanJob } from '@/lib/scanner/queue';
@@ -50,9 +50,10 @@ async function getFuturesDailyBars(symbol: string): Promise<Array<{ time: number
   const day = newYorkDateKey();
   const cached = futuresDailyCache.get(symbol);
   if (cached && cached.day === day) return cached.candles;
-  const res = await getSharedCandleService().getCandlesForWatch(symbol, '1d', 'futures');
-  futuresDailyCache.set(symbol, { day, candles: res.candles });
-  return res.candles;
+  const res = await getSharedCandleService().getCachedCandlesForWatch(symbol, '1d', 'futures');
+  const candles = res?.candles ?? [];
+  if (candles.length) futuresDailyCache.set(symbol, { day, candles });
+  return candles;
 }
 
 export interface ScanOutcome {
@@ -66,101 +67,47 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
   const [watch] = await db.select().from(serverWatch).where(eq(serverWatch.id, job.watchId));
   if (!watch || !watch.enabled) return { status: 'idle', alerted: false, skipped: 'missing-or-disabled' };
 
-  // Revalidate session immediately before fetching (it may have closed since
-  // enqueue). Out-of-session => no provider request; the scheduler already
+  // Revalidate session immediately before evaluating (it may have closed since
+  // enqueue). Out-of-session => no evaluation; the scheduler already
   // advanced nextScanAt.
   if (!isSessionActive(watch.session as WatchSession, watch.assetClass as AssetClass)) {
     return { status: 'idle', alerted: false, skipped: 'out-of-session' };
   }
 
   const nowIso = new Date().toISOString();
-  const evaluateOnly = job.mode === 'evaluate';
-
   let candles: Candle[];
   let providerName: string;
-  if (evaluateOnly) {
-    // Manual Scan Now: re-run the detector against ALREADY-CACHED data, never a
-    // provider fetch. Repeated taps therefore cost zero upstream calls.
-    const cached = await getSharedCandleService().getCachedCandlesForWatch(
-      watch.symbol,
-      watch.interval,
+  // Every watch job is evaluation-only. The independent acquisition scheduler
+  // owns all provider requests; scheduled scans and Scan Now only consume its
+  // latest base snapshot (or the watch's persisted prior snapshot at startup).
+  const cached = await getSharedCandleService().getCachedCandlesForWatch(
+    watch.symbol,
+    watch.interval,
+    watch.assetClass as AssetClass,
+  );
+  if (cached && cached.candles.length > 0) {
+    candles = filterCandlesForSession(
+      cached.candles,
+      watch.session as WatchSession,
       watch.assetClass as AssetClass,
     );
-    if (cached && cached.candles.length > 0) {
-      candles = filterCandlesForSession(
-        cached.candles,
-        watch.session as WatchSession,
-        watch.assetClass as AssetClass,
-      );
-      providerName = cached.provider;
-    } else {
-      // Shared cache empty (e.g. the acquisition bucket just rolled): fall back to
-      // this watch's last persisted candles — still zero upstream calls. They were
-      // already session-filtered and sanitized when persisted, so use them as-is.
-      const [prev] = await db
-        .select({
-          recentCandles: serverWatchState.recentCandles,
-          lastProvider: serverWatchState.lastProvider,
-        })
-        .from(serverWatchState)
-        .where(eq(serverWatchState.watchId, watch.id));
-      const prevCandles = Array.isArray(prev?.recentCandles)
-        ? (prev!.recentCandles as CandleSnapshot[])
-        : [];
-      if (prevCandles.length === 0) {
-        return { status: 'idle', alerted: false, skipped: 'no-cache' };
-      }
-      candles = prevCandles.map((c) => ({ ...c, volume: c.volume ?? 0 }));
-      providerName = prev?.lastProvider ?? 'cache';
-    }
+    providerName = cached.provider;
   } else {
-    try {
-      // Shared acquisition: equivalent watches (any user/device) needing the same
-      // provider/symbol/interval/scope/bucket collapse to one upstream fetch. Only
-      // the fetch is shared — evaluation, state, alerts, events, and push below
-      // remain per-watch and unchanged.
-      const res = await getSharedCandleService().getCandlesForWatch(
-        watch.symbol,
-        watch.interval,
-        watch.assetClass as AssetClass,
-      );
-      candles = filterCandlesForSession(
-        res.candles,
-        watch.session as WatchSession,
-        watch.assetClass as AssetClass,
-      );
-      providerName = res.provider;
-    } catch (err) {
-      // Quota ceiling hit: this is a deliberate, expected refusal, not a fault.
-      // Skip cleanly — keep the last state, don't mark the row errored, and don't
-      // let BullMQ retry (a retry would just hit the same exhausted budget).
-      if (err instanceof QuotaExceededError) {
-        return { status: 'idle', alerted: false, skipped: 'quota' };
-      }
-      const message = err instanceof Error ? err.message : 'fetch failed';
-      await db
-        .insert(serverWatchState)
-        .values({
-          watchId: watch.id,
-          status: 'error',
-          matchedPatternIds: [],
-          lastError: message,
-          lastScannedAt: nowIso,
-          recentCandles: [],
-          updatedAt: nowIso,
-        })
-        .onConflictDoUpdate({
-          target: serverWatchState.watchId,
-          set: {
-            status: 'error',
-            matchedPatternIds: [],
-            lastError: message,
-            lastScannedAt: nowIso,
-            updatedAt: nowIso,
-          },
-        });
-      throw err; // let BullMQ retry with backoff
+    const [prev] = await db
+      .select({
+        recentCandles: serverWatchState.recentCandles,
+        lastProvider: serverWatchState.lastProvider,
+      })
+      .from(serverWatchState)
+      .where(eq(serverWatchState.watchId, watch.id));
+    const prevCandles = Array.isArray(prev?.recentCandles)
+      ? (prev!.recentCandles as CandleSnapshot[])
+      : [];
+    if (prevCandles.length === 0) {
+      return { status: 'idle', alerted: false, skipped: 'no-cache' };
     }
+    candles = prevCandles.map((c) => ({ ...c, volume: c.volume ?? 0 }));
+    providerName = prev?.lastProvider ?? 'cache';
   }
 
   const last = candles[candles.length - 1];

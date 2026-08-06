@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getActiveProvider, YahooProvider, effectiveProviderName } from '@/lib/chart/providers';
-import { recordProviderRequest } from '@/lib/metrics/provider-usage';
 import { newYorkTradingDate } from '@/lib/scanner/candles';
 
 const newYorkDate = (timestampMs: number) =>
@@ -68,7 +67,6 @@ export async function GET(request: NextRequest) {
         historyCandles = await provider.fetchRecentCandles(symbol, interval).catch(() => []);
         if (historyCandles.length === 0) {
           const fallback = new YahooProvider();
-          void recordProviderRequest(fallback.name, 'owner');
           historyCandles = await fallback.fetchRecentCandles(symbol, interval).catch(() => []);
           if (historyCandles.length > 0) {
             historyProvider = `${fallback.name} (fallback from ${provider.name})`;
@@ -105,7 +103,6 @@ export async function GET(request: NextRequest) {
     if (!isFutures && !isCrypto && provider.name !== 'Yahoo Finance' && !hasCurrentNewYorkCandles(candles)) {
       const fallback = new YahooProvider();
       // Constructed directly, so it bypasses the factory's tracking wrapper.
-      void recordProviderRequest(fallback.name, 'owner');
       const fallbackCandles = await fallback.fetchCandles(
         symbol,
         tradingDate,

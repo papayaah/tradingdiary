@@ -1,6 +1,6 @@
 // Scheduler: PostgreSQL is the source of scheduling truth. Each tick selects
 // due, enabled watches, enqueues a deterministic one-shot BullMQ job for the
-// eligible ones, and advances nextScanAt for all of them so nothing is scanned
+// eligible evaluation jobs, and advances nextScanAt for all of them so nothing is evaluated
 // twice or silently dropped.
 
 import { and, eq, lte } from 'drizzle-orm';
@@ -24,19 +24,21 @@ export interface TickResult {
 
 type ScheduledWatch = typeof serverWatch.$inferSelect;
 
-/** User cadence is a ceiling on frequency; the provider governor may slow it. */
+/** Evaluation cadence is user-owned and intentionally independent of acquisition. */
 export function effectiveScanFrequencySeconds(
   requestedSeconds: number,
-  governedSeconds = 0,
+  _governedSeconds = 0,
 ): number {
-  return Math.max(requestedSeconds, governedSeconds);
+  void _governedSeconds;
+  return requestedSeconds;
 }
 
 /** Run one scheduling pass. Returns counts for observability. */
 export async function scheduleDueWatches(
   now: Date = new Date(),
-  governedCadenceSeconds?: (watch: ScheduledWatch) => number,
+  _governedCadenceSeconds?: (watch: ScheduledWatch) => number,
 ): Promise<TickResult> {
+  void _governedCadenceSeconds;
   const nowIso = now.toISOString();
   const dueWatches = await db
     .select()
@@ -57,31 +59,22 @@ export async function scheduleDueWatches(
     if (eligible) {
       const scheduledFor = Math.floor(Date.parse(w.nextScanAt) / 1000);
       const jobId = scanJobId(w.id, scheduledFor);
-      const job: ScanJob = { watchId: w.id, scheduledFor };
+      const job: ScanJob = { watchId: w.id, scheduledFor, mode: 'evaluate' };
       await queue.add('scan', job, {
         jobId,
         removeOnComplete: 1000,
         removeOnFail: 5000,
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 2000 },
+        attempts: 1,
       });
       enqueued += 1;
     } else {
       deferred += 1; // no provider request; just re-evaluated next tick
     }
 
-    // Adaptive mode may slow a watch below its requested ceiling so scheduling
-    // and shared-cache refresh use the same provider-safe cadence.
-    const governedCadence = governedCadenceSeconds?.(w) ?? 0;
-    const effectiveFrequencySeconds = effectiveScanFrequencySeconds(
-      w.scanFrequencySeconds,
-      governedCadence,
-    );
-
     // Advance the canonical schedule regardless of eligibility.
     await db
       .update(serverWatch)
-      .set({ nextScanAt: advance(w.nextScanAt, effectiveFrequencySeconds), updatedAt: nowIso })
+      .set({ nextScanAt: advance(w.nextScanAt, w.scanFrequencySeconds), updatedAt: nowIso })
       .where(eq(serverWatch.id, w.id));
   }
 

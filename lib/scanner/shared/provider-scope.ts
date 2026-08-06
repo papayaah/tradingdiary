@@ -19,7 +19,11 @@ import type { AssetClass } from '@/lib/scanner/sessions';
 
 /** Lowercase, punctuation-collapsed provider label safe for a Redis key. */
 function slugifyProvider(name: string): string {
-  return name
+  // Tiingo equity and crypto endpoints consume the same server API key/plan,
+  // so they share one entitlement/quota scope. Fetch scope still keeps their
+  // snapshots technically isolated.
+  const quotaOwner = name === 'Tiingo Crypto' ? 'Tiingo' : name;
+  return quotaOwner
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');

@@ -1,34 +1,13 @@
 import { OHLCCandle } from "./types";
-import { recordProviderRequest, type KeyOwner } from "@/lib/metrics/provider-usage";
+import type { KeyOwner } from "@/lib/metrics/provider-usage";
+import { fetchWithProviderQuota, providerCredentialScope, reserveProviderRequest } from '@/lib/market-data/provider-request-gate';
 
-/**
- * Wrap a provider so every outbound request is counted (by provider name and
- * whose API key it uses). Recording is fire-and-forget and never affects the
- * fetch. This is the single choke point for the factory below; direct
- * provider construction elsewhere (e.g. the /api/watch Yahoo fallback and
- * /api/quotes) records explicitly instead.
- */
-function trackProvider(provider: ChartProvider, keyOwner: KeyOwner): ChartProvider {
-    return {
-        name: provider.name,
-        fetchCandles: (symbol: string, date: string, interval: string) => {
-            void recordProviderRequest(provider.name, keyOwner);
-            return provider.fetchCandles(symbol, date, interval);
-        },
-        fetchRecentCandles: (symbol: string, interval: string) => {
-            void recordProviderRequest(provider.name, keyOwner);
-            return provider.fetchRecentCandles(symbol, interval);
-        },
-        // Optional deep-history fetch (used by the manual pattern tester). Only
-        // forwarded when the underlying provider actually implements it, so the
-        // /api/watch route can feature-detect it and fall back otherwise.
-        fetchRangeCandles: provider.fetchRangeCandles
-            ? (symbol: string, interval: string, days: number, endTimeMs?: number) => {
-                  void recordProviderRequest(provider.name, keyOwner);
-                  return provider.fetchRangeCandles!(symbol, interval, days, endTimeMs);
-              }
-            : undefined,
-    };
+/** Compatibility hook retained around factory results. Physical request quota
+ * and audit accounting now live below providers in provider-request-gate.ts so
+ * direct construction, internal fallbacks, and retries are covered too. */
+function trackProvider(provider: ChartProvider, _keyOwner: KeyOwner): ChartProvider {
+    void _keyOwner;
+    return provider;
 }
 
 interface PolygonAggregate {
@@ -123,7 +102,7 @@ class PolygonProvider implements ChartProvider {
         
         const url = `https://api.polygon.io/v2/aggs/ticker/${symbol.toUpperCase()}/range/${multiplier}/${timescale}/${formattedDate}/${formattedDate}?adjusted=true&sort=asc&limit=50000&extended_hours=true&apiKey=${apiKey}`;
 
-        const res = await fetch(url);
+        const res = await fetchWithProviderQuota(this.name, url);
         if (!res.ok) throw new Error(`Polygon API error: ${res.status}`);
 
         const data = await res.json();
@@ -156,7 +135,7 @@ class PolygonProvider implements ChartProvider {
         
         const url = `https://api.polygon.io/v2/aggs/ticker/${symbol.toUpperCase()}/range/${multiplier}/${timescale}/${formattedStart}/${formattedEnd}?adjusted=true&sort=asc&limit=50000&extended_hours=true&apiKey=${apiKey}`;
 
-        const res = await fetch(url);
+        const res = await fetchWithProviderQuota(this.name, url);
         if (!res.ok) throw new Error(`Polygon API error: ${res.status}`);
 
         const data = await res.json();
@@ -203,7 +182,7 @@ class PolygonProvider implements ChartProvider {
 
         const url = `https://api.polygon.io/v2/aggs/ticker/${symbol.toUpperCase()}/range/${multiplier}/${timescale}/${formattedStart}/${formattedEnd}?adjusted=true&sort=asc&limit=50000&extended_hours=true&apiKey=${apiKey}`;
 
-        const res = await fetch(url);
+        const res = await fetchWithProviderQuota(this.name, url);
         if (!res.ok) throw new Error(`Polygon API error: ${res.status}`);
 
         const data = await res.json();
@@ -283,7 +262,7 @@ export class YahooProvider implements ChartProvider {
 
         const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(cleanSymbol)}?period1=${period1}&period2=${period2}&interval=${fetchInterval}&includePrePost=true`;
 
-        const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const res = await fetchWithProviderQuota(this.name, url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
         if (!res.ok) throw new Error(`Yahoo Finance error: ${res.status}`);
 
         const data = await res.json();
@@ -324,7 +303,7 @@ export class YahooProvider implements ChartProvider {
 
         const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(cleanSymbol)}?interval=${fetchInterval}&range=2d&includePrePost=true`;
 
-        const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const res = await fetchWithProviderQuota(this.name, url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
         if (!res.ok) throw new Error(`Yahoo Finance error: ${res.status}`);
 
         const data = await res.json();
@@ -379,7 +358,7 @@ class TwelveDataProvider implements ChartProvider {
         const cleanSymbol = symbol.toUpperCase();
         const url = `https://api.twelvedata.com/time_series?symbol=${cleanSymbol}&interval=${fetchInterval}&outputsize=250&apikey=${apiKey}`;
 
-        const res = await fetch(url);
+        const res = await fetchWithProviderQuota(this.name, url);
         if (!res.ok) throw new Error(`Twelve Data API error: ${res.status}`);
 
         const data = await res.json();
@@ -412,9 +391,11 @@ class TwelveDataProvider implements ChartProvider {
 class TiingoProvider implements ChartProvider {
     name = "Tiingo";
     apiKey: string;
+    private readonly quotaScope: string;
 
-    constructor(apiKey: string) {
+    constructor(apiKey: string, private readonly keyOwner: KeyOwner = 'owner') {
         this.apiKey = apiKey;
+        this.quotaScope = providerCredentialScope(this.name, apiKey, keyOwner);
     }
 
     private mapInterval(interval: string): string {
@@ -452,7 +433,7 @@ class TiingoProvider implements ChartProvider {
 
         let lastStatus = 500;
         for (const url of urls) {
-            const res = await fetch(url);
+            const res = await fetchWithProviderQuota(this.name, url, undefined, this.keyOwner, this.quotaScope);
             lastStatus = res.status;
             if (!res.ok) continue;
 
@@ -489,7 +470,7 @@ class TiingoProvider implements ChartProvider {
         const cleanSymbol = symbol.toUpperCase();
         const dateParams = `startDate=${startDate}${endDate ? `&endDate=${endDate}` : ''}`;
         const url = `https://api.tiingo.com/tiingo/daily/${cleanSymbol}/prices?${dateParams}&resampleFreq=daily&token=${this.apiKey}`;
-        const res = await fetch(url);
+        const res = await fetchWithProviderQuota(this.name, url, undefined, this.keyOwner, this.quotaScope);
         if (!res.ok) throw new Error(`Tiingo daily API error: ${res.status}`);
 
         const data = await res.json();
@@ -527,9 +508,11 @@ class TiingoProvider implements ChartProvider {
 class TiingoCryptoProvider implements ChartProvider {
     name = "Tiingo Crypto";
     private apiKey: string;
+    private readonly quotaScope: string;
 
-    constructor(apiKey: string) {
+    constructor(apiKey: string, private readonly keyOwner: KeyOwner = 'owner') {
         this.apiKey = apiKey;
+        this.quotaScope = providerCredentialScope(this.name, apiKey, keyOwner);
     }
 
     private mapSymbol(symbol: string): string {
@@ -556,7 +539,13 @@ class TiingoCryptoProvider implements ChartProvider {
         });
         if (endDate) params.set('endDate', endDate);
 
-        const res = await fetch(`https://api.tiingo.com/tiingo/crypto/prices?${params.toString()}`);
+        const res = await fetchWithProviderQuota(
+            this.name,
+            `https://api.tiingo.com/tiingo/crypto/prices?${params.toString()}`,
+            undefined,
+            this.keyOwner,
+            this.quotaScope,
+        );
         if (!res.ok) {
             throw new Error(`Tiingo Crypto API error: ${res.status}`);
         }
@@ -623,6 +612,7 @@ export class IBKRProvider implements ChartProvider {
     }
 
     async fetchRecentCandles(symbol: string, interval: string): Promise<OHLCCandle[]> {
+        await reserveProviderRequest(this.name);
         const { getIbkrClient } = await import('./ibkr-client');
         return getIbkrClient().fetchRecentCandles(symbol, interval);
     }
@@ -723,7 +713,9 @@ export function getActiveProvider(
     // Trust an explicit futures asset class (e.g. a watch storing the bare root
     // "MES") in addition to symbol-notation sniffing ("MNQU6", "NQ=F").
     const isFutures = assetClass === 'futures' || (symbol ? isFuturesSymbol(symbol) : false);
-    const isCrypto = upperSymbol.endsWith('-USD');
+    // Canonical shared-acquisition symbols may be concatenated (BTCUSD), so the
+    // explicit persisted asset class must take precedence over notation sniffing.
+    const isCrypto = assetClass === 'crypto' || upperSymbol.endsWith('-USD');
 
     // 'user' when the request will use a user-supplied key (their quota), else
     // 'owner' (the app's env key — this is what costs the owner). Yahoo has no
@@ -759,7 +751,7 @@ export function getActiveProvider(
         if (pref === 'yahoo') return trackProvider(new YahooProvider(), 'owner');
         if (pref === 'tiingo' || pref === 'auto') {
             const key = userConfig?.tiingoKey || process.env.TIINGO_API_KEY;
-            if (key) return trackProvider(new TiingoCryptoProvider(key), owner(userConfig?.tiingoKey));
+            if (key) return trackProvider(new TiingoCryptoProvider(key, owner(userConfig?.tiingoKey)), owner(userConfig?.tiingoKey));
         }
         return trackProvider(new YahooProvider(), 'owner');
     }
@@ -782,7 +774,7 @@ export function getActiveProvider(
 
     if (pref === 'tiingo') {
         const key = userConfig?.tiingoKey || process.env.TIINGO_API_KEY;
-        if (key) return trackProvider(new TiingoProvider(key), owner(userConfig?.tiingoKey));
+        if (key) return trackProvider(new TiingoProvider(key, owner(userConfig?.tiingoKey)), owner(userConfig?.tiingoKey));
     }
 
     if (pref === 'yahoo') {
@@ -791,7 +783,7 @@ export function getActiveProvider(
 
     // Default 'auto' fallback chain for Equities:
     if (userConfig?.tiingoKey || process.env.TIINGO_API_KEY) {
-        return trackProvider(new TiingoProvider(userConfig?.tiingoKey || process.env.TIINGO_API_KEY || ''), owner(userConfig?.tiingoKey));
+        return trackProvider(new TiingoProvider(userConfig?.tiingoKey || process.env.TIINGO_API_KEY || '', owner(userConfig?.tiingoKey)), owner(userConfig?.tiingoKey));
     }
 
     if (userConfig?.polygonKey || process.env.POLYGON_API_KEY) {

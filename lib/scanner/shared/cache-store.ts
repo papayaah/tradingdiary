@@ -6,7 +6,6 @@
 // loss only forces the next scan to repopulate from the provider (PostgreSQL
 // remains authoritative for watch state and alerts).
 
-// @ts-ignore - no bundled types in this project's setup
 import IORedis from 'ioredis';
 import { scannerConfig } from '@/lib/scanner/env';
 
@@ -31,6 +30,18 @@ export interface CacheStore {
   hset(key: string, fieldValues: Record<string, string>): Promise<void>;
   /** Retrieve all fields and values from a hash. */
   hgetall(key: string): Promise<Record<string, string>>;
+  /**
+   * Atomically reserve one request against hourly and daily counters. Neither
+   * counter is changed when either cap is exhausted.
+   */
+  reserveQuota(
+    hourKey: string,
+    dayKey: string,
+    hourlyCap: number,
+    dailyCap: number,
+    hourTtlMs: number,
+    dayTtlMs: number,
+  ): Promise<{ allowed: boolean; hourly: number; daily: number }>;
 }
 
 // Compare-and-delete: only remove the lock if we still own it. Runs atomically
@@ -41,6 +52,20 @@ if redis.call('get', KEYS[1]) == ARGV[1] then
   return redis.call('del', KEYS[1])
 end
 return 0`;
+
+const RESERVE_QUOTA_LUA = `
+local hourly = tonumber(redis.call('get', KEYS[1]) or '0')
+local daily = tonumber(redis.call('get', KEYS[2]) or '0')
+local hourlyCap = tonumber(ARGV[1])
+local dailyCap = tonumber(ARGV[2])
+if (hourlyCap > 0 and hourly >= hourlyCap) or (dailyCap > 0 and daily >= dailyCap) then
+  return {0, hourly, daily}
+end
+hourly = redis.call('incr', KEYS[1])
+daily = redis.call('incr', KEYS[2])
+if hourly == 1 then redis.call('pexpire', KEYS[1], ARGV[3]) end
+if daily == 1 then redis.call('pexpire', KEYS[2], ARGV[4]) end
+return {1, hourly, daily}`;
 
 /** Redis-backed store using PX (millisecond) expiry. */
 export class RedisCacheStore implements CacheStore {
@@ -77,6 +102,31 @@ export class RedisCacheStore implements CacheStore {
 
   async hgetall(key: string): Promise<Record<string, string>> {
     return this.redis.hgetall(key);
+  }
+
+  async reserveQuota(
+    hourKey: string,
+    dayKey: string,
+    hourlyCap: number,
+    dailyCap: number,
+    hourTtlMs: number,
+    dayTtlMs: number,
+  ): Promise<{ allowed: boolean; hourly: number; daily: number }> {
+    const raw = (await this.redis.eval(
+      RESERVE_QUOTA_LUA,
+      2,
+      hourKey,
+      dayKey,
+      hourlyCap,
+      dailyCap,
+      Math.max(1, Math.floor(hourTtlMs)),
+      Math.max(1, Math.floor(dayTtlMs)),
+    )) as Array<number | string>;
+    return {
+      allowed: Number(raw[0]) === 1,
+      hourly: Number(raw[1]) || 0,
+      daily: Number(raw[2]) || 0,
+    };
   }
 }
 

@@ -5,10 +5,10 @@
 // unit-testable without a database.
 
 import { scannerConfig } from '@/lib/scanner/env';
-import { getProviderStats } from '@/lib/metrics/provider-usage';
 import { loadScopeInventory } from './acquisition-inventory';
 import { getProviderBudget } from './provider-budget';
 import { CadenceGovernor, computeCadenceSeconds, measuredCadenceSeconds } from './governor';
+import { readUsage } from './request-quota';
 
 /** A governor sized so that, before any recompute, cadence equals today's fixed bucket. */
 export function createGovernor(): CadenceGovernor {
@@ -16,18 +16,6 @@ export function createGovernor(): CadenceGovernor {
     hysteresisRatio: scannerConfig.governorHysteresisRatio,
     defaultCadenceSeconds: Math.max(1, Math.round(scannerConfig.acquisitionBucketMs / 1000)),
   });
-}
-
-/** Sum today's recorded upstream requests per provider name (measured guardrail input). */
-async function usedTodayByProvider(now: Date): Promise<Map<string, number>> {
-  const rows = await getProviderStats(1); // today (+ yesterday cutoff); filter to today
-  const today = now.toISOString().slice(0, 10);
-  const map = new Map<string, number>();
-  for (const row of rows) {
-    if (row.day !== today) continue;
-    map.set(row.provider, (map.get(row.provider) ?? 0) + row.count);
-  }
-  return map;
 }
 
 export interface GovernorRecomputeResult {
@@ -49,25 +37,25 @@ export async function recomputeGovernor(
   now: Date = new Date(),
 ): Promise<GovernorRecomputeResult[]> {
   const inventory = await loadScopeInventory(now);
-  const usage = await usedTodayByProvider(now);
 
   const results: GovernorRecomputeResult[] = [];
   const store = getSharedCacheStore();
 
   for (const inv of inventory) {
     const budget = getProviderBudget(inv.providerScope);
+    const usage = await readUsage(store, inv.providerScope, now.getTime());
     const formula = computeCadenceSeconds({
       uniqueKeys: inv.uniqueKeys,
       windowSeconds: inv.windowSeconds,
       monthlyBarSeconds: inv.monthlyBarSeconds,
-      fastestRequestedSeconds: inv.fastestRequestedSeconds,
+      providerTargetSeconds: inv.providerTargetSeconds,
       budget,
     });
     const measured = measuredCadenceSeconds({
       uniqueKeys: inv.uniqueKeys,
       windowSeconds: inv.windowSeconds,
       usableDaily: budget.dailyCap * budget.headroom,
-      usedToday: usage.get(inv.providerName) ?? 0,
+      usedToday: usage.daily,
       floorSeconds: budget.floorSeconds,
     });
     const cadenceSeconds = Math.max(formula, measured);

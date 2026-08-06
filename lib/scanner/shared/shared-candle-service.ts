@@ -8,11 +8,10 @@
 // NOT own pattern detection, watch state, alerts, SSE, or push — those stay
 // per-watch in the evaluator (worker.ts).
 //
-// Provider-usage accounting is preserved by construction: the only upstream call
-// path is `fetchCandles`, which routes through `getActiveProvider`/`trackProvider`
-// and records exactly one `provider_request_stats` request per invocation. Cache
-// hits, coalesced waiters, single-flight waiters, and negative-cache hits never
-// call `fetchCandles`, so they record zero requests; a miss calls it once.
+// Provider-usage accounting is enforced at the physical request boundary in
+// provider-request-gate.ts. Cache hits, coalesced waiters, single-flight waiters,
+// and negative-cache hits never enter that boundary; provider fallbacks do, once
+// per actual attempt.
 //
 // Concurrency collapse happens at two levels:
 //   - In-process: concurrent getCandles for one key await a single shared promise

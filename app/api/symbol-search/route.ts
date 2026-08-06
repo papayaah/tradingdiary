@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { recordProviderRequest } from '@/lib/metrics/provider-usage';
+import { fetchWithProviderQuota } from '@/lib/market-data/provider-request-gate';
 import {
   isSupportedSymbolSearchCandidate,
   parseSymbolSearchCategory,
@@ -43,8 +43,7 @@ export async function GET(request: NextRequest) {
     const url =
       `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}` +
       `&quotesCount=20&newsCount=0&listsCount=0&enableFuzzyQuery=false`;
-    void recordProviderRequest('Yahoo Finance', 'owner');
-    const res = await fetch(url, {
+    const res = await fetchWithProviderQuota('Yahoo Finance', url, {
       headers: { 'User-Agent': 'Mozilla/5.0' },
       next: { revalidate: 3600 }, // symbol metadata is stable; cache to cut outbound calls
     });

@@ -52,8 +52,8 @@ const SAMPLE = [
 
 const T = 1_700_001_500_000; // fixed freshness clock (ms)
 
-// Small single-flight timings keep waiter tests fast; aggregation off by default
-// (matches production) so tests opt in explicitly.
+// Small single-flight timings keep waiter tests fast; most unit tests opt out of
+// aggregation so they can exercise native exact-request behavior independently.
 const FAST = {
   lockPollMs: 5,
   lockWaitMs: 1000,
@@ -330,7 +330,7 @@ describe('SharedCandleService — base-interval aggregation (Phase 4, flag-gated
     expect(intervals).toEqual(['10m', '1m']);
   });
 
-  it('falls back to a native fetch when base bars are inconsistent', async () => {
+  it('fails boundedly without a native quota-bypass when base bars are inconsistent', async () => {
     const store = new MemoryCacheStore(() => T);
     const bad = [...oneMinCandles(3)].reverse(); // out of order -> aggregation fails
     const fetchFn = vi.fn(async (_s: string, interval: string): Promise<FetchResult> => ({
@@ -344,12 +344,12 @@ describe('SharedCandleService — base-interval aggregation (Phase 4, flag-gated
       config: { ...FAST, aggregationEnabled: true },
     });
 
-    const res = await svc.getCandlesForWatch('AAPL', '10m', 'equity');
+    await expect(svc.getCandlesForWatch('AAPL', '10m', 'equity')).rejects.toThrow(
+      'unable to derive 10m candles',
+    );
 
-    // Tried the 1m base, then fell back to a native 10m fetch.
     const intervals = fetchFn.mock.calls.map((c) => c[1]);
-    expect(intervals).toEqual(['1m', '10m']);
-    expect(res.candles.length).toBe(30); // native series returned as-is
+    expect(intervals).toEqual(['1m']);
   });
 });
 
@@ -428,6 +428,25 @@ describe('SharedCandleService — cache-only read (evaluate/Scan Now)', () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
     expect(cached?.cacheHit).toBe(true);
     expect(cached?.candles).toHaveLength(SAMPLE.length);
+  });
+
+  it('serves the stable latest snapshot after the acquisition bucket rolls', async () => {
+    let clock = T;
+    const store = new MemoryCacheStore(() => clock);
+    const fetchFn = okFetch();
+    const svc = new SharedCandleService({
+      store,
+      fetchFn,
+      now: () => clock,
+      config: { ...FAST, acquisitionBucketMs: 60_000, snapshotTtlMs: 75_000 },
+    });
+
+    await svc.getCandlesForWatch('AAPL', '10m', 'equity');
+    clock += 61_000;
+    const cached = await svc.getCachedCandlesForWatch('AAPL', '10m', 'equity');
+
+    expect(cached?.candles).toHaveLength(SAMPLE.length);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 });
 

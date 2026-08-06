@@ -6,8 +6,8 @@ describe('effectiveScanFrequencySeconds', () => {
     expect(effectiveScanFrequencySeconds(600, 72)).toBe(600);
   });
 
-  it('slows an adaptive watch when the provider budget requires it', () => {
-    expect(effectiveScanFrequencySeconds(15, 72)).toBe(72);
+  it('does not let provider cadence change evaluation cadence', () => {
+    expect(effectiveScanFrequencySeconds(15, 72)).toBe(15);
   });
 
   it('uses the requested cadence when the governor is disabled', () => {

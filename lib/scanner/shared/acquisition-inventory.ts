@@ -11,7 +11,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/lib/scanner/db';
 import { serverWatch } from '@/lib/db/server/schema';
 import { scannerConfig } from '@/lib/scanner/env';
-import { isSessionActive, type AssetClass, type WatchSession } from '@/lib/scanner/sessions';
+import type { AssetClass, WatchSession } from '@/lib/scanner/sessions';
 import { resolveProviderIdentity } from './provider-scope';
 import { getProviderCapability, type ProviderCapability } from './provider-capabilities';
 import { canonicalizeSymbol } from './canonical-symbol';
@@ -41,18 +41,27 @@ export function acquisitionInterval(
 }
 
 /** Active session window length (seconds) — a longer window forces a slower per-fetch cadence. */
-export function sessionWindowSeconds(session: WatchSession, assetClass: AssetClass): number {
+export function sessionWindowSeconds(_session: WatchSession, assetClass: AssetClass): number {
   if (assetClass !== 'equity') return 24 * HOUR; // futures/crypto: treated as always-on
-  switch (session) {
-    case 'rth':
-      return 6.5 * HOUR; // 09:30–16:00 ET
-    case 'pre':
-      return 12 * HOUR; // 04:00–16:00 ET (UI "pre" = pre + regular)
-    case 'ext':
-      return 16 * HOUR; // 04:00–20:00 ET
-    default:
-      return 16 * HOUR; // equity 'all' = every available intraday hour
-  }
+  return 16 * HOUR; // provider-owned 04:00–20:00 ET, independent of user session
+}
+
+/** Server-owned acquisition calendar; user watch sessions never affect it. */
+export function isProviderAcquisitionActive(assetClass: AssetClass, now = new Date()): boolean {
+  if (assetClass !== 'equity') return true;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(now);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? '';
+  const weekday = value('weekday');
+  if (weekday === 'Sat' || weekday === 'Sun') return false;
+  const minutes = Number(value('hour')) * 60 + Number(value('minute'));
+  return minutes >= 4 * 60 && minutes < 20 * 60;
 }
 
 export interface AcquisitionEntry {
@@ -63,13 +72,16 @@ export interface AcquisitionEntry {
   scanFrequencySeconds: number;
   windowSeconds: number;
   monthlyBarSeconds: number;
+  sourceSymbol: string;
+  assetClass: AssetClass;
+  minimumCadenceSeconds?: number;
 }
 
 export interface ScopeInventory {
   providerScope: string;
   providerName: string;
   uniqueKeys: number;
-  fastestRequestedSeconds: number;
+  providerTargetSeconds: number;
   windowSeconds: number;
   monthlyBarSeconds: number;
 }
@@ -88,7 +100,7 @@ export function entryForWatch(
   const assetClass = watch.assetClass as AssetClass;
   const { providerName, providerScope } = resolveProviderIdentity(watch.symbol, assetClass);
   const capability = getProviderCapability(providerName, assetClass);
-  const windowSeconds = sessionWindowSeconds(watch.session as WatchSession, assetClass);
+  const windowSeconds = sessionWindowSeconds('all', assetClass);
   // Count and size the entry by the interval actually fetched (the 1m base when
   // aggregation collapses this symbol), not the user's display interval.
   const interval = acquisitionInterval(watch.interval, capability, aggregationEnabled);
@@ -103,12 +115,15 @@ export function entryForWatch(
     scanFrequencySeconds: watch.scanFrequencySeconds,
     windowSeconds,
     monthlyBarSeconds: estimatedBars * windowSeconds * activeDaysPerMonth,
+    sourceSymbol: watch.symbol,
+    assetClass,
   };
 }
 
 /**
  * Fold acquisition entries into per-scope inventory: N = distinct
- * (canonicalSymbol, interval); fastest requested cadence = min scanFrequency;
+ * (canonicalSymbol, interval); cadence demand is server-owned and therefore
+ * does not inspect a user's scan frequency;
  * window = the longest active session window in the scope (most conservative for
  * the daily-budget term).
  */
@@ -126,7 +141,7 @@ export function computeInventory(entries: AcquisitionEntry[]): ScopeInventory[] 
     }
     const key = `${e.canonicalSymbol}\u0000${e.interval}`;
     s.keys.set(key, Math.max(s.keys.get(key) ?? 0, e.monthlyBarSeconds));
-    if (e.scanFrequencySeconds < s.fastest) s.fastest = e.scanFrequencySeconds;
+    s.fastest = 0;
     if (e.windowSeconds > s.window) s.window = e.windowSeconds;
   }
 
@@ -134,7 +149,7 @@ export function computeInventory(entries: AcquisitionEntry[]): ScopeInventory[] 
     providerScope,
     providerName: s.providerName,
     uniqueKeys: s.keys.size,
-    fastestRequestedSeconds: Number.isFinite(s.fastest) ? s.fastest : 0,
+    providerTargetSeconds: Number.isFinite(s.fastest) ? s.fastest : 0,
     windowSeconds: s.window,
     monthlyBarSeconds: [...s.keys.values()].reduce((total, value) => total + value, 0),
   }));
@@ -151,8 +166,33 @@ export async function loadScopeInventory(
   const rows = await db.select().from(serverWatch).where(eq(serverWatch.enabled, true));
   const entries: AcquisitionEntry[] = [];
   for (const w of rows) {
-    if (!isSessionActive(w.session as WatchSession, w.assetClass as AssetClass, now)) continue;
+    if (!isProviderAcquisitionActive(w.assetClass as AssetClass, now)) continue;
     entries.push(entryForWatch(w, aggregationEnabled));
   }
   return computeInventory(entries);
+}
+
+/** Unique provider-owned series acquired by the scanner, oldest-first later. */
+export async function loadAcquisitionSeries(
+  now: Date = new Date(),
+  aggregationEnabled: boolean = scannerConfig.aggregationEnabled,
+): Promise<AcquisitionEntry[]> {
+  const rows = await db.select().from(serverWatch).where(eq(serverWatch.enabled, true));
+  const unique = new Map<string, AcquisitionEntry>();
+  for (const watch of rows) {
+    const assetClass = watch.assetClass as AssetClass;
+    if (!isProviderAcquisitionActive(assetClass, now)) continue;
+    const entry = entryForWatch(watch, aggregationEnabled);
+    const key = `${entry.providerScope}\u0000${entry.canonicalSymbol}\u0000${entry.interval}`;
+    if (!unique.has(key)) unique.set(key, entry);
+
+    // Prior settlement is an independent, slow-moving provider series used for
+    // futures change. It is acquired every six hours and never by an evaluator.
+    if (assetClass === 'futures') {
+      const daily = { ...entry, interval: '1d', minimumCadenceSeconds: 6 * HOUR };
+      const dailyKey = `${daily.providerScope}\u0000${daily.canonicalSymbol}\u0000${daily.interval}`;
+      if (!unique.has(dailyKey)) unique.set(dailyKey, daily);
+    }
+  }
+  return [...unique.values()];
 }

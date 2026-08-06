@@ -18,13 +18,13 @@ const BUDGET: ProviderBudget = {
 const WINDOW_12H = 12 * 3600;
 
 describe('computeCadenceSeconds — budget formula (spec table)', () => {
-  // fastestRequested tiny so the budget terms bind and we can check them directly.
+  // Provider target tiny so the budget terms bind and we can check them directly.
   const at = (N: number) =>
     computeCadenceSeconds({
       uniqueKeys: N,
       windowSeconds: WINDOW_12H,
       monthlyBarSeconds: 0,
-      fastestRequestedSeconds: 1,
+      providerTargetSeconds: 1,
       budget: BUDGET,
     });
 
@@ -35,14 +35,13 @@ describe('computeCadenceSeconds — budget formula (spec table)', () => {
     expect(at(1000)).toBe(540);
   });
 
-  it('lets the user-requested cadence dominate when the budget is slack', () => {
-    // Few symbols, slow ask -> the ask wins.
+  it('lets the server-owned provider target dominate when the budget is slack', () => {
     expect(
       computeCadenceSeconds({
         uniqueKeys: 10,
         windowSeconds: WINDOW_12H,
         monthlyBarSeconds: 0,
-        fastestRequestedSeconds: 600,
+        providerTargetSeconds: 600,
         budget: BUDGET,
       }),
     ).toBe(600);
@@ -50,13 +49,13 @@ describe('computeCadenceSeconds — budget formula (spec table)', () => {
 
   it('never returns below the floor', () => {
     expect(
-      computeCadenceSeconds({ uniqueKeys: 1, windowSeconds: WINDOW_12H, monthlyBarSeconds: 0, fastestRequestedSeconds: 1, budget: BUDGET }),
+      computeCadenceSeconds({ uniqueKeys: 1, windowSeconds: WINDOW_12H, monthlyBarSeconds: 0, providerTargetSeconds: 1, budget: BUDGET }),
     ).toBe(15);
   });
 
   it('returns the floor/ask when there are no keys', () => {
     expect(
-      computeCadenceSeconds({ uniqueKeys: 0, windowSeconds: WINDOW_12H, monthlyBarSeconds: 0, fastestRequestedSeconds: 5, budget: BUDGET }),
+      computeCadenceSeconds({ uniqueKeys: 0, windowSeconds: WINDOW_12H, monthlyBarSeconds: 0, providerTargetSeconds: 5, budget: BUDGET }),
     ).toBe(15);
   });
 });
@@ -68,7 +67,7 @@ describe('computeCadenceSeconds — monthly bandwidth budget', () => {
       uniqueKeys: 300,
       windowSeconds: 16 * 3600,
       monthlyBarSeconds,
-      fastestRequestedSeconds: 15,
+      providerTargetSeconds: 15,
       budget: BUDGET,
     });
     expect(cadence).toBe(216); // daily requests bind; bandwidth estimate is lower.
@@ -79,7 +78,7 @@ describe('computeCadenceSeconds — monthly bandwidth budget', () => {
       uniqueKeys: 1,
       windowSeconds: 3600,
       monthlyBarSeconds: 1_000_000_000,
-      fastestRequestedSeconds: 1,
+      providerTargetSeconds: 1,
       budget: { ...BUDGET, monthlyBandwidthBytes: 1_000_000 },
     });
     expect(cadence).toBe(137_500);
@@ -91,7 +90,7 @@ describe('computeCadenceSeconds — adaptive Tiingo intraday scale', () => {
     uniqueKeys: symbols,
     windowSeconds: 16 * 3600,
     monthlyBarSeconds: symbols * 96 * (16 * 3600) * 22,
-    fastestRequestedSeconds: 15,
+    providerTargetSeconds: 15,
     budget: BUDGET,
   });
 

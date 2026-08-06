@@ -4,6 +4,7 @@ import {
   entryForWatch,
   acquisitionInterval,
   sessionWindowSeconds,
+  isProviderAcquisitionActive,
   type AcquisitionEntry,
 } from './acquisition-inventory';
 import { getProviderCapability } from './provider-capabilities';
@@ -16,13 +17,29 @@ const entry = (over: Partial<AcquisitionEntry> = {}): AcquisitionEntry => ({
   scanFrequencySeconds: 600,
   windowSeconds: 12 * 3600,
   monthlyBarSeconds: 1_000,
+  sourceSymbol: 'AAPL',
+  assetClass: 'equity',
   ...over,
 });
 
+describe('isProviderAcquisitionActive', () => {
+  it('uses the server-owned 04:00-20:00 New York equity window', () => {
+    expect(isProviderAcquisitionActive('equity', new Date('2026-08-06T07:59:00Z'))).toBe(false);
+    expect(isProviderAcquisitionActive('equity', new Date('2026-08-06T08:00:00Z'))).toBe(true);
+    expect(isProviderAcquisitionActive('equity', new Date('2026-08-07T00:00:00Z'))).toBe(false);
+  });
+
+  it('keeps crypto and futures independent of user sessions', () => {
+    const saturday = new Date('2026-08-08T12:00:00Z');
+    expect(isProviderAcquisitionActive('crypto', saturday)).toBe(true);
+    expect(isProviderAcquisitionActive('futures', saturday)).toBe(true);
+  });
+});
+
 describe('sessionWindowSeconds', () => {
-  it('maps equity sessions and treats non-equity as always-on', () => {
-    expect(sessionWindowSeconds('rth', 'equity')).toBe(6.5 * 3600);
-    expect(sessionWindowSeconds('pre', 'equity')).toBe(12 * 3600);
+  it('uses the provider-owned equity window and treats non-equity as always-on', () => {
+    expect(sessionWindowSeconds('rth', 'equity')).toBe(16 * 3600);
+    expect(sessionWindowSeconds('pre', 'equity')).toBe(16 * 3600);
     expect(sessionWindowSeconds('ext', 'equity')).toBe(16 * 3600);
     expect(sessionWindowSeconds('all', 'equity')).toBe(16 * 3600);
     expect(sessionWindowSeconds('rth', 'crypto')).toBe(24 * 3600);
@@ -42,12 +59,12 @@ describe('computeInventory', () => {
     expect(inv[0].uniqueKeys).toBe(3);
   });
 
-  it('takes the fastest requested cadence and the longest window per scope', () => {
+  it('ignores user cadence and keeps the provider-owned window per scope', () => {
     const inv = computeInventory([
       entry({ canonicalSymbol: 'AAPL', scanFrequencySeconds: 600, windowSeconds: 12 * 3600 }),
       entry({ canonicalSymbol: 'MSFT', scanFrequencySeconds: 60, windowSeconds: 16 * 3600 }),
     ]);
-    expect(inv[0].fastestRequestedSeconds).toBe(60);
+    expect(inv[0].providerTargetSeconds).toBe(0);
     expect(inv[0].windowSeconds).toBe(16 * 3600);
   });
 

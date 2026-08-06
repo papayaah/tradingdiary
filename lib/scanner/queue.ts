@@ -2,9 +2,7 @@
 // queue; the worker creates its own (BullMQ requires a dedicated connection for
 // blocking commands).
 
-// @ts-ignore
 import { Queue } from 'bullmq';
-// @ts-ignore
 import IORedis from 'ioredis';
 import { SCAN_QUEUE, scannerConfig } from '@/lib/scanner/env';
 
@@ -13,9 +11,10 @@ export interface ScanJob {
   watchId: string;
   scheduledFor: number; // epoch seconds of the scan window this job represents
   /**
-   * 'scan' (default) may fetch upstream when the shared cache is cold; 'evaluate'
-   * is a manual Scan Now — it re-runs the detector against already-cached data
-   * only and never triggers a provider request, so repeated taps cost nothing.
+   * New jobs are always 'evaluate': they run the detector against already-cached
+   * data and never trigger a provider request. 'scan' remains only for decoding
+   * an old queued payload during a rolling deployment; the worker is still
+   * evaluation-only for that payload.
    */
   mode?: 'scan' | 'evaluate';
 }

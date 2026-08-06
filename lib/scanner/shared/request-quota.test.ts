@@ -7,6 +7,7 @@ import {
   readUsage,
   recordRequest,
   checkQuota,
+  reserveRequest,
 } from './request-quota';
 
 const budget = (over: Partial<ProviderBudget> = {}): ProviderBudget => ({
@@ -76,5 +77,18 @@ describe('checkQuota', () => {
 
   it('treats a zero/absent cap as unlimited for that term', () => {
     expect(checkQuota({ hourly: 9_999, daily: 5 }, budget({ hourlyCap: 0 })).allowed).toBe(true);
+  });
+});
+
+describe('reserveRequest', () => {
+  it('atomically grants only the remaining permits under concurrency', async () => {
+    const store = new MemoryCacheStore(() => T);
+    const decisions = await Promise.all(
+      Array.from({ length: 20 }, () =>
+        reserveRequest(store, 'tiingo:server', T, budget({ hourlyCap: 5, dailyCap: 50 })),
+      ),
+    );
+    expect(decisions.filter((decision) => decision.allowed)).toHaveLength(5);
+    expect(await readUsage(store, 'tiingo:server', T)).toEqual({ hourly: 5, daily: 5 });
   });
 });

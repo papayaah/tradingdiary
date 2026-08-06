@@ -2,6 +2,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FallbackProvider, getActiveProvider, type ChartProvider } from './providers';
 import type { OHLCCandle } from './types';
 
+vi.mock('@/lib/market-data/provider-request-gate', () => ({
+  fetchWithProviderQuota: (_provider: string, input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
+    fetch(input, init),
+  reserveProviderRequest: vi.fn(async () => {}),
+  providerCredentialScope: (provider: string) => `${provider}:test`,
+}));
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
@@ -58,6 +65,15 @@ describe('Tiingo crypto provider routing', () => {
     });
 
     expect(provider.name).toBe('Tiingo');
+  });
+
+  it('trusts explicit crypto asset class for a concatenated canonical symbol', () => {
+    const provider = getActiveProvider('APTUSD', {
+      preferredProvider: 'tiingo',
+      tiingoKey: 'test-token',
+    }, 'crypto');
+
+    expect(provider.name).toBe('Tiingo Crypto');
   });
 
   it('explicitly requests and maps equity intraday volume', async () => {

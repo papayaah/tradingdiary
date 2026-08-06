@@ -9,10 +9,9 @@
 // normal operation — this gate is the hard ceiling for when cadence estimation
 // is wrong (retries, fallback, manual bursts, another process on the same key).
 //
-// Keys are bucketed by wall-clock hour/day (UTC), so they roll on their own; the
-// TTLs only need to outlive their bucket. Counting and checking are split:
-// checkQuota() reads and decides before the fetch, recordRequest() increments
-// after a fetch actually happens, so denied attempts never inflate the counter.
+// Keys are bucketed by wall-clock hour/day (UTC), so they roll on their own. A
+// permit reserves both counters in one Redis Lua operation before the physical
+// attempt, preventing concurrent processes from overshooting either cap.
 
 import type { CacheStore } from './cache-store';
 import type { ProviderBudget } from './governor';
@@ -106,4 +105,35 @@ export async function recordRequest(store: CacheStore, scope: string, nowMs: num
   } catch {
     // Fire-and-forget: the durable Postgres audit still records the request.
   }
+}
+
+/** Atomically reserve one physical request before starting it. */
+export async function reserveRequest(
+  store: CacheStore,
+  scope: string,
+  nowMs: number,
+  budget: ProviderBudget,
+): Promise<QuotaDecision> {
+  const result = await store.reserveQuota(
+    hourKey(scope, nowMs),
+    dayKey(scope, nowMs),
+    budget.hourlyCap,
+    budget.dailyCap,
+    2 * HOUR_MS,
+    2 * DAY_MS,
+  );
+  const usage = { hourly: result.hourly, daily: result.daily };
+  if (result.allowed) return { allowed: true, usage };
+  if (budget.hourlyCap > 0 && result.hourly >= budget.hourlyCap) {
+    return {
+      allowed: false,
+      reason: `hourly cap reached (${result.hourly}/${budget.hourlyCap})`,
+      usage,
+    };
+  }
+  return {
+    allowed: false,
+    reason: `daily cap reached (${result.daily}/${budget.dailyCap})`,
+    usage,
+  };
 }

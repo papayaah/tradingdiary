@@ -1,8 +1,8 @@
 // Adaptive acquisition-cadence governor (Phase 6 of shared-market-data-scanning).
 //
 // The demand rule ("refresh at the fastest cadence any watch requests") answers
-// how fast users WANT data; the governor answers how fast the provider budget
-// can AFFORD it. Per provider scope it derives an effective acquisition cadence
+// how fast the server provider policy targets; the governor answers how fast the
+// provider budget can afford it. Per provider scope it derives an effective cadence
 // from the remaining budget: near real-time when symbols are few, automatically
 // slower as the unique-key count N grows, so the provider's rate cap is never
 // crossed and cadence degrades smoothly instead of failing with 429s.
@@ -26,13 +26,13 @@ export interface CadenceInputs {
   uniqueKeys: number; // N: unique enabled, in-session acquisition keys in the scope
   windowSeconds: number; // active session window length for the scope
   monthlyBarSeconds: number; // sum(bars/response * active seconds/day * active days/month)
-  fastestRequestedSeconds: number; // min scanFrequency among the scope's watches
+  providerTargetSeconds: number; // server-owned target; never a user watch frequency
   budget: ProviderBudget;
 }
 
 /**
  * Target cadence from the budget formula (see spec). Whichever constraint binds
- * wins: with few symbols the user-requested cadence dominates (budget is slack);
+ * wins: with few symbols the server provider target dominates (budget is slack);
  * as N grows the hourly/daily budget terms dominate and the whole scope slows
  * uniformly. Returns seconds.
  */
@@ -40,10 +40,10 @@ export function computeCadenceSeconds({
   uniqueKeys: N,
   windowSeconds,
   monthlyBarSeconds,
-  fastestRequestedSeconds,
+  providerTargetSeconds,
   budget,
 }: CadenceInputs): number {
-  const floor = Math.max(budget.floorSeconds, fastestRequestedSeconds || 0);
+  const floor = Math.max(budget.floorSeconds, providerTargetSeconds || 0);
   if (N <= 0) return Math.max(floor, budget.floorSeconds);
 
   const usableHourly = Math.max(1, budget.hourlyCap * budget.headroom);
@@ -60,7 +60,7 @@ export function computeCadenceSeconds({
 
   return Math.max(
     budget.floorSeconds,
-    fastestRequestedSeconds,
+    providerTargetSeconds,
     hourlyTerm,
     dailyTerm,
     bandwidthTerm,

@@ -13,6 +13,7 @@ export const scannerConfig = {
 
   // How often the scheduler looks for due watches.
   schedulerTickMs: Number(process.env.SCANNER_TICK_MS ?? 5000),
+  acquisitionTickMs: Number(process.env.SCANNER_ACQUISITION_TICK_MS ?? 250),
 
   // Per-request provider timeout.
   fetchTimeoutMs: Number(process.env.SCANNER_FETCH_TIMEOUT_MS ?? 15000),
@@ -58,7 +59,7 @@ export const scannerConfig = {
   // SCANNER_AGGREGATION=true the scanner fetches each interval natively, exactly
   // as before, so derived candles never change evaluation without an explicit
   // opt-in and parity check.
-  aggregationEnabled: (process.env.SCANNER_AGGREGATION ?? 'false').toLowerCase() === 'true',
+  aggregationEnabled: (process.env.SCANNER_AGGREGATION ?? 'true').toLowerCase() === 'true',
 
   // Phase 6 adaptive cadence governor. Enabled by default: the effective
   // per-scope cadence is derived from hourly requests, daily requests, and an
@@ -88,7 +89,7 @@ export const scannerConfig = {
   // crossed. The governor's cadence keeps us under the cap in normal operation;
   // this gate is the hard ceiling when cadence estimation is wrong.
   quotaEnabled: (process.env.SCANNER_QUOTA ?? 'true').toLowerCase() === 'true',
-  quotaEnforce: (process.env.SCANNER_QUOTA_ENFORCE ?? 'false').toLowerCase() === 'true',
+  quotaEnforce: (process.env.SCANNER_QUOTA_ENFORCE ?? 'true').toLowerCase() === 'true',
 } as const;
 
 export const SCAN_QUEUE = 'market-scan';
