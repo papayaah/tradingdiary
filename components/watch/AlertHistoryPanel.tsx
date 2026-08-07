@@ -11,7 +11,7 @@ import {
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
-import { calculateCandleWindowChange, candleCountForHours } from '@/lib/market/intraday-change';
+import { calculateWatchPriceChange, candleCountForHours } from '@/lib/market/intraday-change';
 import { MAX_ALERT_HISTORY_ITEMS } from '@/lib/watch/alert-history';
 
 interface AlertCandle {
@@ -249,19 +249,32 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
   onToggle,
   onAlertClick,
 }: AlertHistoryCardProps) {
-  const effectiveChangePercent = React.useMemo(() => {
-    if (Number.isFinite(alert.intradayChangePercent)) {
-      return alert.intradayChangePercent!;
+  const effectiveChange = React.useMemo(() => {
+    if (
+      Number.isFinite(alert.intradayChange)
+      && Number.isFinite(alert.intradayChangePercent)
+    ) {
+      return {
+        amount: alert.intradayChange!,
+        percent: alert.intradayChangePercent!,
+      };
     }
-    return calculateCandleWindowChange(alert.candles ?? [])?.percent ?? null;
-  }, [alert.intradayChangePercent, alert.candles]);
 
-  const effectiveChangeAmount = React.useMemo(() => {
-    if (Number.isFinite(alert.intradayChange)) {
-      return alert.intradayChange!;
-    }
-    return calculateCandleWindowChange(alert.candles ?? [])?.amount ?? null;
-  }, [alert.intradayChange, alert.candles]);
+    // Equities must compare against the previous official close. A saved
+    // intraday preview is not a valid substitute because a gap can make its
+    // short-window direction opposite to the market-day move. Continuous
+    // markets retain their documented candle-window calculation.
+    return calculateWatchPriceChange(alert.symbol, alert.interval, alert.candles ?? []);
+  }, [
+    alert.intradayChange,
+    alert.intradayChangePercent,
+    alert.symbol,
+    alert.interval,
+    alert.candles,
+  ]);
+
+  const effectiveChangePercent = effectiveChange?.percent ?? null;
+  const effectiveChangeAmount = effectiveChange?.amount ?? null;
 
   const hasIntradayChange = effectiveChangePercent !== null;
   const intradayDirection = (effectiveChangeAmount ?? 0) > 0
@@ -371,7 +384,9 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
                       ? 'text-loss'
                       : 'text-muted'
                 }`}
-                title="Price change over session window"
+                title={alert.symbol.includes('=F') || alert.symbol.includes('-USD')
+                  ? 'Price change over the displayed session window'
+                  : 'Price change from the previous official close'}
               >
                 ({formattedIntradayAmount ? `${formattedIntradayAmount} / ` : ''}{formattedIntradayPercent})
               </span>
