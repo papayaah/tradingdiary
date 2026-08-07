@@ -36,6 +36,7 @@ interface WatchlistRowProps {
   item: WatchlistRowItem;
   index: number;
   miniCandles: Candle[];
+  isExpanded?: boolean;
   onToggle: (index: number) => void;
   onRemove: (symbol: string, interval: string) => void;
   onRefresh: (symbol: string, interval: string) => Promise<void> | void;
@@ -45,6 +46,7 @@ function WatchlistRow({
   item,
   index,
   miniCandles,
+  isExpanded = false,
   onToggle,
   onRemove,
   onRefresh,
@@ -52,9 +54,6 @@ function WatchlistRow({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const latestPrice = miniCandles.at(-1)?.close;
   const priceChange = React.useMemo(() => {
-    // Prefer the server-computed change: it uses the correct baseline (equity
-    // prior RTH close, futures prior settlement). Fall back to a client window
-    // calc only when the server value is absent (e.g. a signed-out session).
     if (item.intradayChangePercent != null && Number.isFinite(item.intradayChangePercent)) {
       return { amount: item.intradayChange ?? 0, percent: item.intradayChangePercent };
     }
@@ -79,7 +78,8 @@ function WatchlistRow({
     ? `Checked: ${selectedPatternNames.join(', ')}`
     : 'No selected-pattern details are available yet';
 
-  const handleRefresh = async () => {
+  const handleRefresh = async (e: React.MouseEvent) => {
+    e.stopPropagation();
     if (isRefreshing) return;
     setIsRefreshing(true);
     try {
@@ -89,20 +89,27 @@ function WatchlistRow({
     }
   };
 
+  const handleRemove = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onRemove(item.symbol, item.interval);
+  };
+
   return (
     <tr
       id={`row-${item.symbol.toUpperCase()}-${item.interval}`}
       className={`group transition-colors ${
-        item.status === 'bullish'
-          ? 'bg-emerald-500/10 dark:bg-emerald-500/5 hover:bg-emerald-500/15 dark:hover:bg-emerald-500/10'
-          : item.status === 'bearish'
-            ? 'bg-rose-500/10 dark:bg-rose-500/5 hover:bg-rose-500/15 dark:hover:bg-rose-500/10'
-            : 'hover:bg-table-row-hover'
+        isExpanded
+          ? 'bg-accent/15 dark:bg-accent/10 ring-1 ring-accent/40'
+          : item.status === 'bullish'
+            ? 'bg-emerald-500/10 dark:bg-emerald-500/5 hover:bg-emerald-500/15 dark:hover:bg-emerald-500/10'
+            : item.status === 'bearish'
+              ? 'bg-rose-500/10 dark:bg-rose-500/5 hover:bg-rose-500/15 dark:hover:bg-rose-500/10'
+              : 'hover:bg-table-row-hover'
       }`}
     >
       <td
         onClick={() => onToggle(index)}
-        className="py-4 px-4 font-bold text-foreground cursor-pointer hover:text-accent transition-colors"
+        className="py-4 px-4 font-bold text-foreground cursor-pointer hover:text-accent transition-colors select-none"
         title="Click to expand inline session chart"
       >
         {displaySymbol(item.symbol)}
@@ -131,7 +138,7 @@ function WatchlistRow({
       </td>
       <td
         onClick={() => onToggle(index)}
-        className="py-4 px-4 cursor-pointer hover:opacity-80 transition-opacity"
+        className="py-4 px-4 cursor-pointer hover:opacity-80 transition-opacity select-none"
         title="Click to expand inline session chart"
       >
         {miniCandles.length > 0 ? (
@@ -152,8 +159,18 @@ function WatchlistRow({
           <span className="block text-center text-muted text-xs font-normal">—</span>
         )}
       </td>
-      <td className="py-4 px-4 text-xs text-muted">{item.lastChecked || 'Never'}</td>
-      <td className="py-4 px-4">
+      <td
+        onClick={() => onToggle(index)}
+        className="py-4 px-4 text-xs text-muted cursor-pointer hover:text-foreground transition-colors select-none"
+        title="Click to expand inline session chart"
+      >
+        {item.lastChecked || 'Never'}
+      </td>
+      <td
+        onClick={() => onToggle(index)}
+        className="py-4 px-4 cursor-pointer hover:opacity-90 transition-opacity select-none"
+        title="Click to expand inline session chart"
+      >
         {item.status === 'bullish' && (
           <div className="flex flex-wrap items-center gap-1" title={matchedPatternNames.join(', ') || 'Bullish alert'}>
             <span className="inline-flex items-center gap-1 rounded-full border border-profit/25 bg-profit/10 px-2.5 py-0.5 text-xs font-semibold text-profit animate-pulse">
@@ -229,7 +246,7 @@ function WatchlistRow({
             <RefreshCw size={15} className={isRefreshing ? 'animate-spin' : ''} />
           </button>
           <button
-            onClick={() => onRemove(item.symbol, item.interval)}
+            onClick={handleRemove}
             className="p-1.5 rounded-lg text-muted hover:bg-muted-bg hover:text-rose-500 transition-all"
             title="Remove ticker"
           >

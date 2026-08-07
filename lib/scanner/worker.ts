@@ -29,13 +29,15 @@ import { getSharedCandleService } from '@/lib/scanner/shared/shared-candle-servi
 import { isSessionActive, type AssetClass, type WatchSession } from '@/lib/scanner/sessions';
 import { SCAN_QUEUE, scannerConfig } from '@/lib/scanner/env';
 import { createConnection, type ScanJob } from '@/lib/scanner/queue';
-import { calculateEquityIntradayChange, calculateFuturesDailyChange } from '@/lib/market/intraday-change';
+import {
+  calculateEquityChangeFromDailyBars,
+  calculateFuturesDailyChange,
+} from '@/lib/market/intraday-change';
 
-// Prior futures settlement (= prior daily bar close) changes only once per
-// trading day, so cache the daily bars per symbol per New York date. Fetching
-// them on every scan would roughly double IBKR request volume and trip the
-// gateway's pacing guard.
-const futuresDailyCache = new Map<string, { day: string; candles: Array<{ time: number; close: number }> }>();
+// The prior equity close / futures settlement changes only once per trading
+// day, so cache daily bars per asset and symbol. The acquisition scheduler owns
+// the slow-moving upstream series; evaluators remain cache-only.
+const dailyBarsCache = new Map<string, { day: string; candles: Array<{ time: number; close: number }> }>();
 
 function newYorkDateKey(): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -46,13 +48,17 @@ function newYorkDateKey(): string {
   }).format(new Date());
 }
 
-async function getFuturesDailyBars(symbol: string): Promise<Array<{ time: number; close: number }>> {
+async function getDailyBars(
+  symbol: string,
+  assetClass: Extract<AssetClass, 'equity' | 'futures'>,
+): Promise<Array<{ time: number; close: number }>> {
   const day = newYorkDateKey();
-  const cached = futuresDailyCache.get(symbol);
+  const cacheKey = `${assetClass}:${symbol}`;
+  const cached = dailyBarsCache.get(cacheKey);
   if (cached && cached.day === day) return cached.candles;
-  const res = await getSharedCandleService().getCachedCandlesForWatch(symbol, '1d', 'futures');
+  const res = await getSharedCandleService().getCachedCandlesForWatch(symbol, '1d', assetClass);
   const candles = res?.candles ?? [];
-  if (candles.length) futuresDailyCache.set(symbol, { day, candles });
+  if (candles.length) dailyBarsCache.set(cacheKey, { day, candles });
   return candles;
 }
 
@@ -135,15 +141,20 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
   const status: ScanOutcome['status'] = !hasData ? 'no-data' : matched ?? 'normal';
   const willAlert = !!matched && !scannerConfig.shadow;
   let intradayChange: { amount: number; percent: number } | null = null;
-  if (watch.assetClass === 'equity') {
-    intradayChange = calculateEquityIntradayChange(candles);
+  if (watch.assetClass === 'equity' && last) {
+    try {
+      const daily = await getDailyBars(watch.symbol, 'equity');
+      intradayChange = calculateEquityChangeFromDailyBars(daily, last.close, last.time);
+    } catch {
+      intradayChange = null;
+    }
   } else if (watch.assetClass === 'futures' && last) {
     // Futures "change" is vs the prior session settlement (what IBKR shows), i.e.
     // the close of the prior daily bar — not an arbitrary point in the intraday
     // window. Fetch daily bars through the shared cache (deduped/cached) and
     // compare the current price to the prior settlement.
     try {
-      const daily = await getFuturesDailyBars(watch.symbol);
+      const daily = await getDailyBars(watch.symbol, 'futures');
       intradayChange = calculateFuturesDailyChange(daily, last.close);
     } catch {
       intradayChange = null;

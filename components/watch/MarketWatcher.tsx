@@ -21,7 +21,8 @@ import {
   Sparkles,
   Settings,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Loader2
 } from 'lucide-react';
 import { getPatternDefinition } from '@/lib/scanner/patterns';
 import { getChartDB } from '@/lib/chart/cache';
@@ -216,6 +217,22 @@ const formatLastCheckTime = (value: string | number | Date = Date.now()) =>
     hour: 'numeric',
     minute: '2-digit',
   });
+
+const PRIMARY_STOCKS_PRESETS = [
+  { label: 'AAPL (Apple)', symbol: 'AAPL' },
+  { label: 'NVDA (Nvidia)', symbol: 'NVDA' },
+  { label: 'TSLA (Tesla)', symbol: 'TSLA' },
+  { label: 'SPY (S&P 500 ETF)', symbol: 'SPY' },
+  { label: 'QQQ (Nasdaq ETF)', symbol: 'QQQ' },
+] as const;
+
+const PRIMARY_CRYPTO_PRESETS = [
+  { label: 'BTC (Bitcoin)', symbol: 'BTC-USD' },
+  { label: 'ETH (Ethereum)', symbol: 'ETH-USD' },
+  { label: 'SOL (Solana)', symbol: 'SOL-USD' },
+  { label: 'DOGE (Dogecoin)', symbol: 'DOGE-USD' },
+  { label: 'XRP (Ripple)', symbol: 'XRP-USD' },
+] as const;
 
 const PRIMARY_FUTURES_PRESETS = [
   { label: 'GC (Gold)', symbol: 'GC=F' },
@@ -3441,39 +3458,103 @@ export default function MarketWatcher() {
                       {notificationFeedback.message}
                     </div>
                   )}
+
+                  <div className="pt-3 border-t border-card-border/40">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                      <div>
+                        <span className="font-semibold text-foreground block">Stock Session Scanning Hours</span>
+                        <span className="text-[11px] text-muted block">Controls session boundaries for stock background scans</span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5 bg-card-bg/60 p-1 rounded-xl border border-card-border">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveWindow('rth');
+                            localStorage.setItem('watcher-active-window', 'rth');
+                            void syncScannerSettings(watchlist, selectedPatternId, 'rth', scanIntervalMinutes).catch(() => {});
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                            activeWindow === 'rth'
+                              ? 'bg-accent text-white shadow-sm'
+                              : 'text-muted hover:text-foreground'
+                          }`}
+                          title="Regular Trading Hours: 9:30 AM - 4:00 PM ET"
+                        >
+                          Regular (9:30a–4p ET)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveWindow('pre');
+                            localStorage.setItem('watcher-active-window', 'pre');
+                            void syncScannerSettings(watchlist, selectedPatternId, 'pre', scanIntervalMinutes).catch(() => {});
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                            activeWindow === 'pre'
+                              ? 'bg-accent text-white shadow-sm'
+                              : 'text-muted hover:text-foreground'
+                          }`}
+                          title="Pre-Market + Regular: 4:00 AM - 4:00 PM ET"
+                        >
+                          Pre + Regular (4a–4p ET)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveWindow('ext');
+                            localStorage.setItem('watcher-active-window', 'ext');
+                            void syncScannerSettings(watchlist, selectedPatternId, 'ext', scanIntervalMinutes).catch(() => {});
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                            activeWindow === 'ext'
+                              ? 'bg-accent text-white shadow-sm'
+                              : 'text-muted hover:text-foreground'
+                          }`}
+                          title="Pre + Regular + Extended After-Hours: 4:00 AM - 8:00 PM ET"
+                        >
+                          Extended (4a–8p ET)
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
-              {/* FUTURES QUICK PRESETS TOOLBAR */}
-              {watchlistCategory === 'futures' && (
-                <div className="flex flex-wrap items-center gap-1.5 mb-6 text-xs bg-muted-bg/10 p-3 rounded-xl border border-card-border/30">
-                  <span className="text-muted font-bold mr-1 flex items-center gap-1">
-                    <Zap size={13} />
-                    Quick Presets:
-                  </span>
-                  {(showAllPresets
-                    ? [...PRIMARY_FUTURES_PRESETS, ...SECONDARY_FUTURES_PRESETS]
-                    : PRIMARY_FUTURES_PRESETS
-                  ).map((preset) => {
-                    const exists = watchlist.some((w) => w.symbol === preset.symbol && w.interval === newInterval);
-                    return (
-                      <button
-                        key={preset.symbol}
-                        onClick={() => handleAddPreset(preset.symbol)}
-                        disabled={exists}
-                        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
-                          exists
-                            ? 'bg-muted-bg/30 text-muted/40 border-card-border/20 cursor-not-allowed'
-                            : 'bg-card-bg border-card-border hover:border-accent text-foreground hover:text-accent cursor-pointer shadow-sm'
-                        }`}
-                        title={exists ? `${preset.symbol} (${newInterval}) is already in your watchlist` : `Click to add ${preset.symbol} (${newInterval})`}
-                      >
-                        <Plus size={12} />
-                        <span>{preset.label}</span>
-                      </button>
-                    );
-                  })}
+              {/* QUICK PRESETS TOOLBAR */}
+              <div className="flex flex-wrap items-center gap-1.5 mb-6 text-xs bg-muted-bg/10 p-3 rounded-xl border border-card-border/30">
+                <span className="text-muted font-bold mr-1 flex items-center gap-1">
+                  <Zap size={13} className="text-amber-400" />
+                  Top 5 Popular Presets ({watchlistCategory.toUpperCase()}):
+                </span>
+                {(
+                  watchlistCategory === 'crypto'
+                    ? PRIMARY_CRYPTO_PRESETS
+                    : watchlistCategory === 'stocks'
+                      ? PRIMARY_STOCKS_PRESETS
+                      : showAllPresets
+                        ? [...PRIMARY_FUTURES_PRESETS, ...SECONDARY_FUTURES_PRESETS]
+                        : PRIMARY_FUTURES_PRESETS
+                ).map((preset) => {
+                  const exists = watchlist.some((w) => w.symbol === preset.symbol && w.interval === newInterval);
+                  return (
+                    <button
+                      key={preset.symbol}
+                      onClick={() => handleAddPreset(preset.symbol)}
+                      disabled={exists}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
+                        exists
+                          ? 'bg-muted-bg/30 text-muted/40 border-card-border/20 cursor-not-allowed'
+                          : 'bg-card-bg border-card-border hover:border-accent text-foreground hover:text-accent cursor-pointer shadow-sm'
+                      }`}
+                      title={exists ? `${preset.symbol} (${newInterval}) is already in your watchlist` : `Click to add ${preset.symbol} (${newInterval})`}
+                    >
+                      <Plus size={12} />
+                      <span>{preset.label}</span>
+                    </button>
+                  );
+                })}
 
+                {watchlistCategory === 'futures' && (
                   <button
                     type="button"
                     onClick={() => setShowAllPresets(!showAllPresets)}
@@ -3491,8 +3572,8 @@ export default function MarketWatcher() {
                       </>
                     )}
                   </button>
-                </div>
-              )}
+                )}
+              </div>
 
               <PatternGuidePanel
                 value={selectedPatternId}
@@ -3554,36 +3635,41 @@ export default function MarketWatcher() {
                 </div>
               </div>
 
-              {/* FUTURES QUICK PRESETS TOOLBAR */}
-              {watchlistCategory === 'futures' && (
-                <div className="flex flex-wrap items-center gap-1.5 mb-6 text-xs bg-muted-bg/10 p-3 rounded-xl border border-card-border/30">
-                  <span className="text-muted font-bold mr-1 flex items-center gap-1">
-                    <Zap size={13} />
-                    Quick Presets:
-                  </span>
-                  {(showAllPresets
-                    ? [...PRIMARY_FUTURES_PRESETS, ...SECONDARY_FUTURES_PRESETS]
-                    : PRIMARY_FUTURES_PRESETS
-                  ).map((preset) => {
-                    const exists = watchlist.some((w) => w.symbol === preset.symbol && w.interval === newInterval);
-                    return (
-                      <button
-                        key={preset.symbol}
-                        onClick={() => handleAddPreset(preset.symbol)}
-                        disabled={exists}
-                        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
-                          exists
-                            ? 'bg-muted-bg/30 text-muted/40 border-card-border/20 cursor-not-allowed'
-                            : 'bg-card-bg border-card-border hover:border-accent text-foreground hover:text-accent cursor-pointer shadow-sm'
-                        }`}
-                        title={exists ? `${preset.symbol} (${newInterval}) is already in your watchlist` : `Click to add ${preset.symbol} (${newInterval})`}
-                      >
-                        <Plus size={12} />
-                        <span>{preset.label}</span>
-                      </button>
-                    );
-                  })}
+              {/* QUICK PRESETS TOOLBAR */}
+              <div className="flex flex-wrap items-center gap-1.5 mb-6 text-xs bg-muted-bg/10 p-3 rounded-xl border border-card-border/30">
+                <span className="text-muted font-bold mr-1 flex items-center gap-1">
+                  <Zap size={13} className="text-amber-400" />
+                  Top 5 Popular Presets ({watchlistCategory.toUpperCase()}):
+                </span>
+                {(
+                  watchlistCategory === 'crypto'
+                    ? PRIMARY_CRYPTO_PRESETS
+                    : watchlistCategory === 'stocks'
+                      ? PRIMARY_STOCKS_PRESETS
+                      : showAllPresets
+                        ? [...PRIMARY_FUTURES_PRESETS, ...SECONDARY_FUTURES_PRESETS]
+                        : PRIMARY_FUTURES_PRESETS
+                ).map((preset) => {
+                  const exists = watchlist.some((w) => w.symbol === preset.symbol && w.interval === newInterval);
+                  return (
+                    <button
+                      key={preset.symbol}
+                      onClick={() => handleAddPreset(preset.symbol)}
+                      disabled={exists}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
+                        exists
+                          ? 'bg-muted-bg/30 text-muted/40 border-card-border/20 cursor-not-allowed'
+                          : 'bg-card-bg border-card-border hover:border-accent text-foreground hover:text-accent cursor-pointer shadow-sm'
+                      }`}
+                      title={exists ? `${preset.symbol} (${newInterval}) is already in your watchlist` : `Click to add ${preset.symbol} (${newInterval})`}
+                    >
+                      <Plus size={12} />
+                      <span>{preset.label}</span>
+                    </button>
+                  );
+                })}
 
+                {watchlistCategory === 'futures' && (
                   <button
                     type="button"
                     onClick={() => setShowAllPresets(!showAllPresets)}
@@ -3601,8 +3687,8 @@ export default function MarketWatcher() {
                       </>
                     )}
                   </button>
-                </div>
-              )}
+                )}
+              </div>
 
               {/* WATCHLIST ITEMS LIST */}
               {watchlist.length === 0 ? (
@@ -3725,16 +3811,25 @@ export default function MarketWatcher() {
                               item={item}
                               index={idx}
                               miniCandles={miniCandles}
+                              isExpanded={expandedRowIndex === idx}
                               onToggle={stableToggleRow}
                               onRemove={stableRemoveSymbol}
                               onRefresh={stableRefreshSymbol}
                             />
                             
                             {/* Expanded sub-row containing the chart */}
-                            {expandedRowIndex === idx && testResult && testResult.success && testResult.candles.length > 0 && (
-                              <tr className="bg-slate-900/10 border-t border-b border-card-border/30">
+                            {expandedRowIndex === idx && (
+                              <tr className="bg-muted-bg/30 border-t border-b border-accent/40 animate-in fade-in duration-150">
                                 <td colSpan={5} className="p-0">
-                                  {renderJustChartCanvas()}
+                                  {testResult && testResult.success && testResult.candles && testResult.candles.length > 0 ? (
+                                    renderJustChartCanvas()
+                                  ) : (
+                                    <div className="py-10 px-6 flex flex-col items-center justify-center gap-2.5 bg-background/30 text-xs font-mono text-accent">
+                                      <Loader2 size={20} className="animate-spin text-accent" />
+                                      <span className="font-semibold text-foreground">Loading {item.symbol} ({item.interval}) intraday chart...</span>
+                                      <span className="text-[10px] text-muted font-normal">Fetching session candles and preparing visualizer</span>
+                                    </div>
+                                  )}
                                 </td>
                               </tr>
                             )}

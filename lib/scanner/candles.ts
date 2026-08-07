@@ -120,7 +120,9 @@ export async function fetchCandles(
   const timeout = new Promise<never>((_, reject) =>
     setTimeout(() => reject(new Error('provider fetch timeout')), scannerConfig.fetchTimeoutMs),
   );
-  const request = assetClass === 'equity'
+  const normalizedInterval = interval.toLowerCase();
+  const isDaily = normalizedInterval === '1d' || normalizedInterval === 'd';
+  const request = assetClass === 'equity' && !isDaily
     ? provider.fetchCandles(symbol, newYorkTradingDate(), interval)
     : provider.fetchRecentCandles(symbol, interval);
   const raw = await Promise.race([request, timeout]);

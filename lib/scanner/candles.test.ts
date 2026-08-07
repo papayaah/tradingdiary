@@ -80,6 +80,12 @@ describe('intraday equity boundaries', () => {
 
     await fetchCandles('NQ=F', '10m', 'futures');
     expect(providerSpies.fetchRecentCandles).toHaveBeenCalledWith('NQ=F', '10m');
+
+    providerSpies.fetchCandles.mockClear();
+    providerSpies.fetchRecentCandles.mockClear();
+    await fetchCandles('AAPL', '1d', 'equity');
+    expect(providerSpies.fetchRecentCandles).toHaveBeenCalledWith('AAPL', '1d');
+    expect(providerSpies.fetchCandles).not.toHaveBeenCalled();
   });
 
   it('filters equity candles to the selected ET session', () => {

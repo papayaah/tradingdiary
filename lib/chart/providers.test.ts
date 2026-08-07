@@ -101,6 +101,59 @@ describe('Tiingo crypto provider routing', () => {
     expect(requestUrl).toContain('columns=open,high,low,close,volume');
     expect(candles[0].volume).toBe(42_500);
   });
+
+  it('falls through to IEX when the consolidated endpoint returns an empty 200', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [{
+          date: '2026-08-07T15:30:00Z',
+          open: 7.25,
+          high: 7.3,
+          low: 7.24,
+          close: 7.285,
+          volume: 12_000,
+        }],
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const provider = getActiveProvider('VNET', {
+      preferredProvider: 'tiingo',
+      tiingoKey: 'test-token',
+    });
+    const candles = await provider.fetchCandles('VNET', '20260807', '10m');
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1][0])).toContain('/iex/VNET/prices?');
+    expect(candles.at(-1)?.close).toBe(7.285);
+  });
+
+  it('uses the Tiingo daily endpoint for the previous-close series', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => [{
+        date: '2026-08-06T00:00:00Z',
+        open: 18.5,
+        high: 18.8,
+        low: 18.4,
+        close: 18.65,
+        volume: 1_000,
+      }],
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const provider = getActiveProvider('BILI', {
+      preferredProvider: 'tiingo',
+      tiingoKey: 'test-token',
+    });
+    const candles = await provider.fetchRecentCandles('BILI', '1d');
+
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/tiingo/daily/BILI/prices?');
+    expect(candles.at(-1)?.close).toBe(18.65);
+  });
 });
 
 describe('regional futures fallback', () => {

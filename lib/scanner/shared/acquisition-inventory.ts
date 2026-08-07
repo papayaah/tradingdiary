@@ -186,9 +186,10 @@ export async function loadAcquisitionSeries(
     const key = `${entry.providerScope}\u0000${entry.canonicalSymbol}\u0000${entry.interval}`;
     if (!unique.has(key)) unique.set(key, entry);
 
-    // Prior settlement is an independent, slow-moving provider series used for
-    // futures change. It is acquired every six hours and never by an evaluator.
-    if (assetClass === 'futures') {
+    // The prior official close/settlement is an independent, slow-moving daily
+    // series used for the displayed market-day change. It is acquired every six
+    // hours and shared by every watch for the same symbol.
+    if (assetClass === 'equity' || assetClass === 'futures') {
       const daily = { ...entry, interval: '1d', minimumCadenceSeconds: 6 * HOUR };
       const dailyKey = `${daily.providerScope}\u0000${daily.canonicalSymbol}\u0000${daily.interval}`;
       if (!unique.has(dailyKey)) unique.set(dailyKey, daily);

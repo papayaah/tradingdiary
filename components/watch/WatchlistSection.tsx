@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Sparkles, Plus } from 'lucide-react';
+import { Sparkles, Plus, Loader2 } from 'lucide-react';
 import { WatchlistViewToggle, type WatchlistView } from './WatchControls';
 import WatchlistRow from './WatchlistRow';
 import CompactWatchlist, { type CompactWatchlistEntry } from './CompactWatchlist';
@@ -232,14 +232,23 @@ export function WatchlistSection({
                     item={item}
                     index={idx}
                     miniCandles={getMiniCandles(item)}
+                    isExpanded={expandedRowIndex === idx}
                     onToggle={onToggleRowExpansion}
                     onRefresh={onRefreshItem}
                     onRemove={onRemoveSymbol}
                   />
-                  {expandedRowIndex === idx && testResult && testResult.success && (
-                    <tr>
-                      <td colSpan={5} className="p-0 border-t border-b border-card-border/40">
-                        {renderJustChartCanvas()}
+                  {expandedRowIndex === idx && (
+                    <tr className="bg-muted-bg/30 border-t border-b border-accent/40 animate-in fade-in duration-150">
+                      <td colSpan={5} className="p-0">
+                        {testResult && testResult.success ? (
+                          renderJustChartCanvas()
+                        ) : (
+                          <div className="py-10 px-6 flex flex-col items-center justify-center gap-2.5 bg-background/30 text-xs font-mono text-accent">
+                            <Loader2 size={20} className="animate-spin text-accent" />
+                            <span className="font-semibold text-foreground">Loading {item.symbol} ({item.interval}) intraday chart...</span>
+                            <span className="text-[10px] text-muted font-normal">Fetching session candles and preparing visualizer</span>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )}

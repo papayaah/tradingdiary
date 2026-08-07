@@ -432,6 +432,7 @@ class TiingoProvider implements ChartProvider {
         ];
 
         let lastStatus = 500;
+        let receivedSuccessfulResponse = false;
         for (const url of urls) {
             const res = await fetchWithProviderQuota(this.name, url, undefined, this.keyOwner, this.quotaScope);
             lastStatus = res.status;
@@ -439,6 +440,11 @@ class TiingoProvider implements ChartProvider {
 
             const data = await res.json();
             if (!Array.isArray(data)) continue;
+            receivedSuccessfulResponse = true;
+            // A 200 with an empty array means this endpoint has no bars for the
+            // request. Continue to the compatibility endpoint instead of
+            // caching an empty snapshot and making evaluators reuse stale state.
+            if (data.length === 0) continue;
             return data.map((r: IntradayPriceRecord) => ({
                 time: Math.floor(new Date(r.date || r.datetime || '').getTime() / 1000),
                 open: Number(r.open),
@@ -449,6 +455,7 @@ class TiingoProvider implements ChartProvider {
             }));
         }
 
+        if (receivedSuccessfulResponse) return [];
         throw new Error(`Tiingo API error: ${lastStatus}`);
     }
 
@@ -461,6 +468,12 @@ class TiingoProvider implements ChartProvider {
         const start = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
         const formatDate = (d: Date) => d.toISOString().split('T')[0];
         const formattedStart = formatDate(start);
+        const normalizedInterval = interval.toLowerCase();
+        if (normalizedInterval === '1d' || normalizedInterval === 'd') {
+            // Include enough completed sessions to survive weekends/holidays.
+            const dailyStart = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+            return this.fetchDaily(symbol, formatDate(dailyStart));
+        }
         // Omitting endDate asks Tiingo for all data through the current moment.
         return this.fetchIntraday(symbol, formattedStart, interval);
     }

@@ -44,7 +44,7 @@ export function calculateWatchPriceChange(
   const isContinuousMarket = symbol.includes('=F') || symbol.includes('-USD');
   return isContinuousMarket
     ? calculateCandleWindowChange(windowCandles)
-    : calculateEquityIntradayChange(candles) ?? calculateCandleWindowChange(windowCandles);
+    : calculateEquityIntradayChange(candles);
 }
 
 const easternPartsFormatter = new Intl.DateTimeFormat('en-CA', {
@@ -104,6 +104,32 @@ export function calculateEquityIntradayChange(
     amount,
     percent: (amount / previousClose.close) * 100,
   };
+}
+
+/**
+ * Calculate an equity's market-day change from Tiingo-style daily bars. Daily
+ * bars are stamped with their trading date at midnight UTC, while the latest
+ * intraday candle is stamped in real time. Select the most recent completed
+ * daily bar before the current New York trading date as the official baseline.
+ */
+export function calculateEquityChangeFromDailyBars(
+  dailyCandles: PriceCandle[],
+  lastPrice: number,
+  latestIntradayTime: number,
+): IntradayChange | null {
+  if (!Number.isFinite(lastPrice) || !Number.isFinite(latestIntradayTime)) return null;
+  const currentTradingDate = getEasternDateAndMinute(latestIntradayTime).date;
+  let previousClose: number | null = null;
+
+  for (const candle of dailyCandles) {
+    if (!Number.isFinite(candle.time) || !Number.isFinite(candle.close)) continue;
+    const dailyTradingDate = new Date(candle.time * 1000).toISOString().slice(0, 10);
+    if (dailyTradingDate < currentTradingDate) previousClose = candle.close;
+  }
+
+  if (previousClose == null || previousClose === 0) return null;
+  const amount = lastPrice - previousClose;
+  return { amount, percent: (amount / previousClose) * 100 };
 }
 
 /**

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   calculateCandleWindowChange,
+  calculateEquityChangeFromDailyBars,
   calculateEquityIntradayChange,
   calculateFuturesDailyChange,
   calculateWatchPriceChange,
@@ -62,6 +63,35 @@ describe('calculateEquityIntradayChange', () => {
   });
 });
 
+describe('calculateEquityChangeFromDailyBars', () => {
+  it('uses the previous official daily close rather than the intraday window open', () => {
+    const result = calculateEquityChangeFromDailyBars(
+      [
+        { time: Date.parse('2026-08-05T00:00:00Z') / 1000, close: 18.58 },
+        { time: Date.parse('2026-08-06T00:00:00Z') / 1000, close: 18.65 },
+      ],
+      18.78,
+      Date.parse('2026-08-07T15:30:00Z') / 1000,
+    );
+
+    expect(result?.amount).toBeCloseTo(0.13, 6);
+    expect(result?.percent).toBeCloseTo(0.697, 3);
+  });
+
+  it('ignores a daily bar stamped for the current trading date', () => {
+    const result = calculateEquityChangeFromDailyBars(
+      [
+        { time: Date.parse('2026-08-06T00:00:00Z') / 1000, close: 18.65 },
+        { time: Date.parse('2026-08-07T00:00:00Z') / 1000, close: 18.9 },
+      ],
+      18.78,
+      Date.parse('2026-08-07T15:30:00Z') / 1000,
+    );
+
+    expect(result?.amount).toBeCloseTo(0.13, 6);
+  });
+});
+
 describe('candle-window change', () => {
   it('calculates a signed move from the first open to the latest close', () => {
     expect(calculateCandleWindowChange([
@@ -80,5 +110,12 @@ describe('candle-window change', () => {
       { time: 1, open: 100, close: 101 },
       { time: 2, open: 101, close: 98 },
     ])).toEqual({ amount: -2, percent: -2 });
+  });
+
+  it('does not label an arbitrary equity candle window as the market-day change', () => {
+    expect(calculateWatchPriceChange('BILI', '10m', [
+      { time: Date.parse('2026-08-07T13:30:00Z') / 1000, open: 18.43, close: 18.5 },
+      { time: Date.parse('2026-08-07T15:30:00Z') / 1000, open: 18.75, close: 18.8 },
+    ])).toBeNull();
   });
 });
