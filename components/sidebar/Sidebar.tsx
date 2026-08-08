@@ -13,7 +13,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  PieChart,
   Bell,
   Sparkles,
   ShieldAlert
@@ -22,6 +21,7 @@ import { useImport } from '@/contexts/ImportContext';
 import { useAccount } from '@/contexts/AccountContext';
 import { useWelcome } from '@/components/welcome/WelcomeContext';
 import LoginButton from '@/components/auth/LoginButton';
+import GlobalSearch from '@/components/global-search/GlobalSearch';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -116,6 +116,8 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
       </div>
 
       <nav className="flex-1 py-2 px-2 space-y-0.5">
+        <GlobalSearch collapsed={collapsed} />
+
         {navItems.map((item) => {
           const isActive = pathname === item.href;
           const isImporting = item.href === '/media' && isProcessing;
@@ -178,4 +180,3 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
     </aside>
   );
 }
-

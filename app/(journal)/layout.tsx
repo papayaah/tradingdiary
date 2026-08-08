@@ -10,7 +10,6 @@ import { ImportProvider } from '@/contexts/ImportContext';
 import { AccountProvider } from '@/contexts/AccountContext';
 import { WelcomeProvider } from '@/components/welcome/WelcomeContext';
 import WelcomeModal from '@/components/welcome/WelcomeModal';
-import GlobalSearch from '@/components/global-search/GlobalSearch';
 
 export default function JournalLayout({
   children,
@@ -59,7 +58,6 @@ export default function JournalLayout({
                 <div className="flex h-screen overflow-hidden">
                   {!isDirectReplay && <Sidebar collapsed={collapsed} onToggle={toggle} />}
                   <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
-                    {!isDirectReplay && <GlobalSearch />}
                     <main className="min-h-0 flex-1 overflow-y-auto bg-background">
                       {children}
                     </main>

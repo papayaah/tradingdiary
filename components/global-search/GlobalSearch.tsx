@@ -37,7 +37,7 @@ function groupResults(results: SearchResult[]) {
   })).filter((section) => section.results.length > 0);
 }
 
-export default function GlobalSearch() {
+export default function GlobalSearch({ collapsed }: { collapsed: boolean }) {
   const router = useRouter();
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -102,51 +102,67 @@ export default function GlobalSearch() {
   }
 
   return (
-    <header className="relative z-40 shrink-0 border-b border-card-border bg-background px-3 py-2.5 sm:px-6">
-      <div ref={rootRef} className="relative mx-auto max-w-2xl">
-        {isOpen ? (
-          <div className="flex h-11 items-center gap-3 rounded-xl border border-accent bg-card-bg px-3 shadow-sm ring-2 ring-accent/15">
-            <Search size={18} className="shrink-0 text-accent" />
-            <input
-              ref={inputRef}
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setActiveIndex(0);
-              }}
-              onKeyDown={onInputKeyDown}
-              role="combobox"
-              aria-expanded="true"
-              aria-controls="global-search-results"
-              aria-activedescendant={orderedResults[safeActiveIndex] ? `search-result-${orderedResults[safeActiveIndex].id}` : undefined}
-              placeholder="Try AAPL losses, tag:revenge, or open positions"
-              className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted"
-            />
-            {isLoading ? <LoaderCircle size={16} className="animate-spin text-muted" /> : null}
-            <button type="button" onClick={close} className="rounded-md border border-card-border bg-muted-bg px-2 py-1 text-[10px] font-semibold text-muted hover:text-foreground">
-              ESC
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={open}
-            className="flex h-11 w-full items-center gap-3 rounded-xl border border-card-border bg-card-bg px-3 text-left shadow-sm transition hover:border-accent/40 hover:bg-muted-bg/40"
-            aria-label="Open global search"
-          >
-            <Search size={18} className="shrink-0 text-muted" />
-            <span className="min-w-0 flex-1 truncate text-sm text-muted">Search trades, notes, or actions…</span>
-            <span className="hidden items-center gap-0.5 rounded-md border border-card-border bg-muted-bg px-2 py-1 text-[10px] font-semibold text-muted sm:flex">
-              <span className="text-xs">⌘</span>K
+    <div ref={rootRef} className="relative z-50">
+      <button
+        type="button"
+        onClick={isOpen ? close : open}
+        className={`flex h-10 w-full items-center gap-3 rounded-lg text-sm transition-colors ${
+          isOpen
+            ? 'bg-accent/10 text-accent'
+            : 'text-muted hover:bg-sidebar-hover hover:text-foreground'
+        } ${collapsed ? 'justify-center px-0' : 'px-3'}`}
+        aria-label={isOpen ? 'Close global search' : 'Open global search'}
+        aria-expanded={isOpen}
+        title={collapsed ? 'Search (⌘K / Ctrl+K)' : undefined}
+      >
+        <Search size={18} className="shrink-0" />
+        {!collapsed && (
+          <>
+            <span className="min-w-0 flex-1 truncate text-left font-medium">Search</span>
+            <span className="flex items-center gap-0.5 rounded-md border border-sidebar-border bg-sidebar-bg px-1.5 py-0.5 text-[9px] font-semibold text-muted">
+              <span className="text-[11px]">⌘</span>K
             </span>
-          </button>
+          </>
         )}
+      </button>
 
-        {isOpen && (
+      {isOpen && (
+        <div
+          className={`absolute left-[calc(100%+0.75rem)] top-0 flex max-h-[min(78vh,620px)] flex-col overflow-hidden rounded-2xl border border-card-border bg-card-bg shadow-2xl ${
+            collapsed
+              ? 'w-[min(42rem,calc(100vw-4.75rem))]'
+              : 'w-[min(42rem,calc(100vw-14.75rem))]'
+          }`}
+        >
+          <div className="border-b border-card-border p-3">
+            <div className="flex h-11 items-center gap-3 rounded-xl border border-accent bg-card-bg px-3 ring-2 ring-accent/15">
+              <Search size={18} className="shrink-0 text-accent" />
+              <input
+                ref={inputRef}
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setActiveIndex(0);
+                }}
+                onKeyDown={onInputKeyDown}
+                role="combobox"
+                aria-expanded="true"
+                aria-controls="global-search-results"
+                aria-activedescendant={orderedResults[safeActiveIndex] ? `search-result-${orderedResults[safeActiveIndex].id}` : undefined}
+                placeholder="Try AAPL losses, tag:revenge, or open positions"
+                className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted"
+              />
+              {isLoading ? <LoaderCircle size={16} className="animate-spin text-muted" /> : null}
+              <button type="button" onClick={close} className="rounded-md border border-card-border bg-muted-bg px-2 py-1 text-[10px] font-semibold text-muted hover:text-foreground">
+                ESC
+              </button>
+            </div>
+          </div>
+
           <div
             id="global-search-results"
             role="listbox"
-            className="absolute left-0 right-0 top-[calc(100%+0.5rem)] max-h-[min(68vh,560px)] overflow-y-auto rounded-2xl border border-card-border bg-card-bg p-2 shadow-2xl"
+            className="min-h-0 flex-1 overflow-y-auto p-2"
           >
             {sections.map((section) => (
               <section key={section.group} className="py-1">
@@ -200,8 +216,8 @@ export default function GlobalSearch() {
               <span className="ml-auto flex items-center gap-1"><CornerDownLeft size={11} /> Open</span>
             </footer>
           </div>
-        )}
-      </div>
-    </header>
+        </div>
+      )}
+    </div>
   );
 }
