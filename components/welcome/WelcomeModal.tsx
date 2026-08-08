@@ -108,7 +108,7 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
           {/* Key Value Proposition Grid — 4 Responsive Vertical Shorts */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-0 border-b border-card-border flex-shrink-0">
             {/* 1. Visual Analytics Short */}
-            <div className="relative overflow-hidden group h-24 sm:h-36 lg:h-44 max-h-[20vh] flex flex-col justify-between bg-card-bg border-b sm:border-b-0 border-r border-card-border">
+            <div className="relative overflow-hidden group h-48 sm:h-64 lg:h-72 flex flex-col justify-between bg-black/40 border-b lg:border-b-0 border-r border-card-border">
               <video
                 key={`analytics-${isDarkMode}`}
                 src={`/analytics-promo${themeSuffix}.mp4`}
@@ -116,12 +116,12 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
                 loop
                 muted
                 playsInline
-                className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300"
+                className="w-full h-full object-contain group-hover:scale-102 transition-transform duration-300"
               />
             </div>
 
             {/* 2. Market Pattern Watch Short */}
-            <div className="relative overflow-hidden group h-24 sm:h-36 lg:h-44 max-h-[20vh] flex flex-col justify-between bg-card-bg border-b sm:border-b-0 lg:border-r border-card-border">
+            <div className="relative overflow-hidden group h-48 sm:h-64 lg:h-72 flex flex-col justify-between bg-black/40 border-b lg:border-b-0 lg:border-r border-card-border">
               <video
                 key={`pattern-${isDarkMode}`}
                 src={`/pattern-promo${themeSuffix}.mp4`}
@@ -129,12 +129,12 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
                 loop
                 muted
                 playsInline
-                className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300"
+                className="w-full h-full object-contain group-hover:scale-102 transition-transform duration-300"
               />
             </div>
 
             {/* 3. Bar-by-Bar Replay Short */}
-            <div className="relative overflow-hidden group h-24 sm:h-36 lg:h-44 max-h-[20vh] flex flex-col justify-between bg-card-bg border-r lg:border-r border-card-border">
+            <div className="relative overflow-hidden group h-48 sm:h-64 lg:h-72 flex flex-col justify-between bg-black/40 border-r lg:border-r border-card-border">
               <video
                 key={`replay-${isDarkMode}`}
                 src={`/replay-promo${themeSuffix}.mp4`}
@@ -142,12 +142,12 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
                 loop
                 muted
                 playsInline
-                className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300"
+                className="w-full h-full object-contain group-hover:scale-102 transition-transform duration-300"
               />
             </div>
 
             {/* 4. Auto Pattern Detector Short */}
-            <div className="relative overflow-hidden group h-24 sm:h-36 lg:h-44 max-h-[20vh] flex flex-col justify-between bg-card-bg">
+            <div className="relative overflow-hidden group h-48 sm:h-64 lg:h-72 flex flex-col justify-between bg-black/40">
               <video
                 key={`autoscan-${isDarkMode}`}
                 src={`/auto-scan-promo${themeSuffix}.mp4`}
@@ -155,7 +155,7 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
                 loop
                 muted
                 playsInline
-                className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300"
+                className="w-full h-full object-contain group-hover:scale-102 transition-transform duration-300"
               />
             </div>
           </div>

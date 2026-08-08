@@ -15,7 +15,6 @@ export function detectCurrency(headers: string[], rows: any[]): string | undefin
     if (sampleValues.includes('HK$')) return 'HKD';
     if (sampleValues.includes('£')) return 'GBP';
     if (sampleValues.includes('€')) return 'EUR';
-    // Note: '$' is too generic, many currencies use it.
 
     return undefined;
 }

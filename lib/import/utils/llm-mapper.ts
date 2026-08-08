@@ -1,4 +1,4 @@
-import { ColumnMapping, SideValueMapping } from './types';
+import { ColumnMapping, SideValueMapping } from '../types';
 
 interface LLMConfig {
     apiKey: string;
@@ -19,7 +19,6 @@ export async function mapColumnsWithLLM(
         totalTokens: number;
     };
 }> {
-    // Support passing just an apiKey string for backwards compat
     const { apiKey, provider, model } = typeof config === 'string'
         ? { apiKey: config, provider: undefined, model: undefined }
         : config;

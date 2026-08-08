@@ -249,8 +249,8 @@ const result = await generateText({ model, prompt: '...', temperature: 0 });
 
 ```ts
 // Client-side — thin fetch wrappers, no direct LLM calls
-import { mapColumnsWithLLM } from '@/lib/import/llm-mapper';
-import { extractFromImage } from '@/lib/import/image-extractor';
+import { mapColumnsWithLLM } from '@/lib/import/utils/llm-mapper';
+import { extractFromImage } from '@/lib/import/utils/image-extractor';
 
 // CSV column mapping:
 const { mapping, sideValues } = await mapColumnsWithLLM(headers, sampleRows, userApiKey);
@@ -273,6 +273,11 @@ If present, users don't need to enter their own key. But most deployments should
 ---
 
 ## 3. Extractors
+
+Broker-specific adapters run before the generic mapper. The registry detects formats from
+their contents and currently recognizes IBKR TLG/Flex XML/Flex CSV, Schwab transaction CSV,
+Fidelity account-history CSV, Robinhood account-activity CSV, Webull order-history CSV, and
+eSignal trade logs. Unknown delimited files continue through the generic mapping workflow.
 
 ### 3a. CSV / Text Extractor
 
@@ -346,9 +351,12 @@ Implementation via ai-connect's vision support:
 - Can also filter out noise (cancelled orders, UI chrome)
 - Trade-off: requires API key + network, but the accuracy difference is massive
 
-### 3d. TLG Extractor (existing)
+### 3d. Broker adapters and TLG extraction
 
-The existing `parseTLGFile()` already works. We wrap it to output `NormalizedTransaction[]` directly, bypassing the mapper since TLG fields map 1:1.
+Each adapter owns detection, broker-specific filtering, field semantics, and normalization.
+The IBKR adapter wraps `parseTLGFile()` for supported stock and futures TLG records and also
+handles Flex Query XML and CSV trades. Unsupported or incomplete rows are skipped with a
+warning rather than silently coerced into trades.
 
 ### 3e. Clipboard Detection Logic
 
@@ -524,7 +532,7 @@ Return JSON only, no markdown fences.` },
 Thin wrappers that call the API routes:
 
 ```ts
-// lib/import/llm-mapper.ts
+// lib/import/utils/llm-mapper.ts
 export async function mapColumnsWithLLM(
   headers: string[],
   sampleRows: Record<string, string>[],
@@ -543,7 +551,7 @@ export async function mapColumnsWithLLM(
   return res.json();
 }
 
-// lib/import/image-extractor.ts
+// lib/import/utils/image-extractor.ts
 export async function extractFromImage(
   imageBase64: string,
   apiKey?: string
@@ -845,15 +853,22 @@ app/api/ai/                             # Server-side LLM proxy routes
 
 lib/
   import/
-    types.ts              # NormalizedTransaction, ExtractedData, ColumnMapping
-    csv-extractor.ts      # Parse CSV/TSV/pasted text → { headers, rows } (client-side)
-    llm-mapper.ts         # Client helper: calls POST /api/ai/map-columns
-    alias-mapper.ts       # Offline alias-based column mapping (English, client-side)
-    image-extractor.ts    # Client helper: calls POST /api/ai/extract-image
-    date-parser.ts        # Flexible date parsing → YYYYMMDD
-    side-inferrer.ts      # BUY/SELL → BUYTOOPEN/SELLTOCLOSE with position tracking
-    normalizer.ts         # Apply mapping: rows → NormalizedTransaction[]
-    converter.ts          # NormalizedTransaction → TransactionRecord
+    registry.ts                   # Content-based broker adapter selection
+    brokers/
+      ibkr/                       # TLG and Flex Query CSV/XML
+      schwab/                     # Transaction-history CSV
+      fidelity/                   # Account-history CSV
+      robinhood/                  # Account-activity CSV
+      webull/                     # Order-history CSV
+      esignal/                    # Semicolon-delimited trade log
+    core/values.ts                # Shared header/value/date normalization
+    config/column-aliases.ts      # Generic offline mapping aliases
+    utils/csv-extractor.ts        # Generic CSV/TSV/pasted text parser
+    utils/llm-mapper.ts           # Client helper for AI mapping
+    utils/image-extractor.ts      # Client helper for image extraction
+    types.ts                      # Shared import domain types
+    alias-mapper.ts               # Generic offline column mapping
+    converter.ts                  # NormalizedTransaction → TransactionRecord
 
 components/
   import/

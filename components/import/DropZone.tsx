@@ -13,19 +13,18 @@ export default function DropZone({ onData, isProcessing }: DropZoneProps) {
   const [isDragActive, setIsDragActive] = useState(false);
   const [pasteDetected, setPasteDetected] = useState(false);
   const [pasteError, setPasteError] = useState('');
-  const dropzoneRef = useRef<HTMLDivElement>(null);
+  const pasteResetTimer = useRef<number | undefined>(undefined);
 
-  // Auto-focus the dropzone on mount so paste works immediately
-  useEffect(() => {
-    dropzoneRef.current?.focus();
+  const markPasteDetected = useCallback(() => {
+    setPasteDetected(true);
+    window.clearTimeout(pasteResetTimer.current);
+    pasteResetTimer.current = window.setTimeout(() => setPasteDetected(false), 1500);
   }, []);
 
-  // Reset paste detected when isProcessing finishes
+  // Clear a pending paste acknowledgement when the component unmounts.
   useEffect(() => {
-    if (!isProcessing) {
-      setPasteDetected(false);
-    }
-  }, [isProcessing]);
+    return () => window.clearTimeout(pasteResetTimer.current);
+  }, []);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
@@ -39,17 +38,24 @@ export default function DropZone({ onData, isProcessing }: DropZoneProps) {
     }
   }, [onData]);
 
-  const { getRootProps, getInputProps } = useDropzone({
+  const { getRootProps, getInputProps, rootRef } = useDropzone({
     onDrop,
     onDragEnter: () => setIsDragActive(true),
     onDragLeave: () => setIsDragActive(false),
     accept: {
       'text/csv': ['.csv'],
       'text/plain': ['.txt', '.tsv'],
+      'application/xml': ['.xml'],
+      'text/xml': ['.xml'],
       'image/*': ['.png', '.jpg', '.jpeg', '.webp'],
       'application/octet-stream': ['.tlg'] // Assuming .tlg is binary or text, catch-all
     }
   });
+
+  // Auto-focus the dropzone on mount so paste works immediately.
+  useEffect(() => {
+    rootRef.current?.focus();
+  }, [rootRef]);
 
   const handlePaste = useCallback((e: ClipboardEvent | React.ClipboardEvent) => {
     // Determine clipboard data source
@@ -63,7 +69,7 @@ export default function DropZone({ onData, isProcessing }: DropZoneProps) {
     if (imageItem) {
       const blob = imageItem.getAsFile();
       if (blob) {
-        setPasteDetected(true);
+        markPasteDetected();
         onData(blob, 'image');
       }
       return;
@@ -72,10 +78,10 @@ export default function DropZone({ onData, isProcessing }: DropZoneProps) {
     // 2. Check for text
     const text = clipboardData.getData('text/plain');
     if (text && text.trim().length > 0) {
-      setPasteDetected(true);
+      markPasteDetected();
       onData(text, 'text');
     }
-  }, [onData]);
+  }, [markPasteDetected, onData]);
 
   // Global paste listener to catch pastes even if dropzone isn't perfectly focused
   useEffect(() => {
@@ -86,31 +92,22 @@ export default function DropZone({ onData, isProcessing }: DropZoneProps) {
       
       // If it's a file input (like the dropzone's internal one), we DO want to catch it if it was triggered by paste
       // But typically we want to catch global pastes when the user is just "on the page"
-      if (isInput && document.activeElement !== dropzoneRef.current) return;
+      if (isInput && document.activeElement !== rootRef.current) return;
       
       handlePaste(e);
     };
 
     window.addEventListener('paste', handleGlobalPaste);
     return () => window.removeEventListener('paste', handleGlobalPaste);
-  }, [handlePaste]);
+  }, [handlePaste, rootRef]);
 
   const rootProps = getRootProps();
 
   return (
     <div
       {...rootProps}
-      ref={(node: HTMLDivElement | null) => {
-        // react-dropzone may use a ref callback or a ref object
-        if (typeof rootProps.ref === 'function') {
-          rootProps.ref(node);
-        } else if (rootProps.ref) {
-          (rootProps.ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
-        }
-        (dropzoneRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
-      }}
       tabIndex={0}
-      onPaste={(e) => handlePaste(e as any)}
+      onPaste={handlePaste}
       className={`
         border-2 border-dashed rounded-2xl p-12 text-center transition-all cursor-pointer outline-none bg-card-bg/60
         ${(isProcessing || pasteDetected) ? 'border-accent bg-accent-light/50 shadow-sm' : isDragActive ? 'border-accent bg-accent-light/30' : 'border-card-border hover:border-accent/50 hover:bg-card-bg'}
@@ -142,7 +139,7 @@ export default function DropZone({ onData, isProcessing }: DropZoneProps) {
           <div className="space-y-2">
             <h3 className="text-xl font-bold text-foreground">Drop files here or click to browse</h3>
             <p className="text-muted text-sm max-w-sm mx-auto leading-relaxed">
-              Supports <span className="text-foreground font-semibold">CSV, TSV, TXT, TLG, eSignal</span>, URLs, and <span className="text-foreground font-semibold">Screenshots</span> (PNG/JPG).
+              Supports <span className="text-foreground font-semibold">CSV, TSV, TXT, XML, TLG, eSignal</span>, URLs, and <span className="text-foreground font-semibold">Screenshots</span> (PNG/JPG).
             </p>
           </div>
 
@@ -161,7 +158,7 @@ export default function DropZone({ onData, isProcessing }: DropZoneProps) {
                         const extension = imageType.split('/')[1] || 'png';
                         const file = new File([blob], `clipboard-image.${extension}`, { type: imageType });
                         onData(file, 'image');
-                        setPasteDetected(true);
+                        markPasteDetected();
                         return;
                       }
                     }
@@ -169,7 +166,7 @@ export default function DropZone({ onData, isProcessing }: DropZoneProps) {
                     const text = await navigator.clipboard.readText();
                     if (text) {
                       onData(text, 'text');
-                      setPasteDetected(true);
+                      markPasteDetected();
                     }
                   }).catch(err => {
                     console.error('Failed to read clipboard:', err);

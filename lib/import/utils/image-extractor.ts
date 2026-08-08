@@ -1,4 +1,4 @@
-import { ExtractedData } from './types';
+import { ExtractedData } from '../types';
 
 interface LLMConfig {
     apiKey: string;
@@ -31,7 +31,6 @@ export async function extractFromImage(
 
     if (!res.ok) {
         const errorText = await res.text();
-        // Try to parse json error if possible
         try {
             const json = JSON.parse(errorText);
             throw new Error(json.error || 'Image extraction failed');
@@ -48,11 +47,6 @@ export function fileToBase64(file: File): Promise<string> {
         const reader = new FileReader();
         reader.readAsDataURL(file);
         reader.onload = () => {
-            // Remove "data:image/xyz;base64," prefix? 
-            // Vercel AI SDK usually handles data URLs directly if passed as type:'image'.
-            // But our API route expects full data URL or stripped?
-            // Let's check API route: `const { image } = ...` -> passed to `type: 'image', image: image`.
-            // The SDK supports data URLs. So passing the full result is correct.
             resolve(reader.result as string);
         };
         reader.onerror = error => reject(error);

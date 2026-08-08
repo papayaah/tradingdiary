@@ -1,0 +1,124 @@
+import { describe, expect, it } from 'vitest';
+import { detectAndParseBroker } from './registry';
+
+describe('broker import registry', () => {
+  it('detects and parses Charles Schwab transaction CSV files', async () => {
+    const content = [
+      '"Transactions for account …208 as of 06/04/2026 10:27 ET"',
+      'Date,Action,Symbol,Description,Quantity,Price,Fees & Comm,Amount',
+      '5/28/2026,Buy,CRM,"SALESFORCE INC",2,$268.415,$0.01,($536.84)',
+      '6/03/2026,Qual Div Reinvest,HSY,"HERSHEY CO",,,,$1.63',
+      '"Transactions Total",,,,,,,"$538.47"',
+    ].join('\n');
+
+    const parsed = await detectAndParseBroker({ content, filename: 'transactions.csv' });
+    expect(parsed?.brokerId).toBe('schwab');
+    expect(parsed?.transactions).toHaveLength(1);
+    expect(parsed?.transactions[0]).toMatchObject({
+      symbol: 'CRM', side: 'BUY', quantity: 2, price: 268.415, commission: 0.01,
+    });
+    expect(parsed?.warnings).toHaveLength(1);
+  });
+
+  it('detects Fidelity history CSV and combines commission with fees', async () => {
+    const content = [
+      'Run Date,Action,Symbol,Security Description,Security Type,Quantity,Price ($),Commission ($),Fees ($),Accrued Interest ($),Amount ($),Cash Balance ($),Settlement Date',
+      '08/01/2026,YOU BOUGHT AAPL,AAPL,APPLE INC,Equity,3,200.25,1.00,0.02,,(601.77),1000.00,08/03/2026',
+    ].join('\n');
+
+    const parsed = await detectAndParseBroker({ content });
+    expect(parsed?.brokerId).toBe('fidelity');
+    expect(parsed?.transactions[0]).toMatchObject({
+      symbol: 'AAPL', side: 'BUY', quantity: 3, price: 200.25, commission: 1.02,
+    });
+  });
+
+  it('detects Robinhood account activity and ignores non-trade rows', async () => {
+    const content = [
+      'Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount',
+      '08/01/2026,08/01/2026,08/03/2026,NVDA,NVIDIA CORP,Buy,2,$175.50,($351.00)',
+      '08/02/2026,08/02/2026,08/02/2026,NVDA,NVIDIA CORP,CDIV,,,$0.25',
+    ].join('\n');
+
+    const parsed = await detectAndParseBroker({ content });
+    expect(parsed?.brokerId).toBe('robinhood');
+    expect(parsed?.transactions).toHaveLength(1);
+    expect(parsed?.transactions[0]).toMatchObject({ symbol: 'NVDA', side: 'BUY', quantity: 2 });
+  });
+
+  it('detects Webull order history and only imports filled quantities', async () => {
+    const content = [
+      'Symbol,Side,Status,Filled/Total Qty,Avg Price,Filled Time,Order ID,Type',
+      'TSLA,Sell,Filled,4/4,$250.10,2026-08-01 14:35:00,W-1,Limit',
+      'AMD,Buy,Cancelled,0/5,--,2026-08-01 14:36:00,W-2,Limit',
+    ].join('\n');
+
+    const parsed = await detectAndParseBroker({ content });
+    expect(parsed?.brokerId).toBe('webull');
+    expect(parsed?.transactions).toHaveLength(1);
+    expect(parsed?.transactions[0]).toMatchObject({
+      symbol: 'TSLA', side: 'SELL', quantity: 4, price: 250.1, orderId: 'W-1',
+    });
+  });
+
+  it('parses IBKR Flex Query XML trades', async () => {
+    const content = `<?xml version="1.0"?>
+      <FlexQueryResponse><FlexStatements><FlexStatement><Trades>
+      <Trade symbol="MSFT" description="MICROSOFT CORP" buySell="BUY" tradeDate="20260801" tradeTime="13:45:00" quantity="5" tradePrice="410.25" currency="USD" ibCommission="-1.00" transactionID="123" exchange="NASDAQ" />
+      </Trades></FlexStatement></FlexStatements></FlexQueryResponse>`;
+
+    const parsed = await detectAndParseBroker({ content, filename: 'flex.xml' });
+    expect(parsed?.brokerId).toBe('ibkr');
+    expect(parsed?.format).toBe('flex-query-xml');
+    expect(parsed?.transactions[0]).toMatchObject({
+      symbol: 'MSFT', side: 'BUY', date: '20260801', time: '13:45:00', commission: 1,
+    });
+  });
+
+  it('parses IBKR Flex Query CSV trades', async () => {
+    const content = [
+      'ClientAccountID,TradeID,Symbol,Description,Buy/Sell,Quantity,TradePrice,TradeDate,TradeTime,Currency,IBCommission,Proceeds,Exchange',
+      'U123,456,AMD,ADVANCED MICRO DEVICES,SELL,10,180.50,20260802,15:10:05,USD,-1.25,1805,NASDAQ',
+    ].join('\n');
+
+    const parsed = await detectAndParseBroker({ content, filename: 'flex.csv' });
+    expect(parsed?.brokerId).toBe('ibkr');
+    expect(parsed?.format).toBe('flex-query-csv');
+    expect(parsed?.transactions[0]).toMatchObject({
+      symbol: 'AMD', side: 'SELL', date: '20260802', time: '15:10:05', commission: 1.25,
+    });
+  });
+
+  it('parses supported IBKR TradeLog TLG records', async () => {
+    const content = [
+      'ACT_INF|U123|Main|Individual|',
+      'STK_TRD|T1|AAPL|APPLE INC|NASDAQ|BUY|MKT|20260801|13:30:00|USD|2|1|200|400|1|1',
+    ].join('\n');
+
+    const parsed = await detectAndParseBroker({ content, filename: 'activity.tlg' });
+    expect(parsed?.brokerId).toBe('ibkr');
+    expect(parsed?.format).toBe('tradelog-tlg');
+    expect(parsed?.transactions[0]).toMatchObject({
+      symbol: 'AAPL', side: 'BUY', quantity: 2, price: 200, commission: 1,
+    });
+  });
+
+  it('parses eSignal semicolon-delimited execution logs', async () => {
+    const content = [
+      '"Timestamp";"Category";"Symbol";"Buy/Sell";"Quantity";"Average Price";"Summary"',
+      '"2026-08-01 13:30:00";"Position";"TSLA";"";"";"250.25";""',
+      '"2026-08-01 13:30:00";"Execution";"TSLA";"Sell";"3";"";"Sell 3 @ 250.25 @ TSLA"',
+    ].join('\n');
+
+    const parsed = await detectAndParseBroker({ content, filename: 'esignal.csv' });
+    expect(parsed?.brokerId).toBe('esignal');
+    expect(parsed?.transactions[0]).toMatchObject({
+      symbol: 'TSLA', side: 'SELL', quantity: 3, price: 250.25,
+    });
+  });
+
+  it('leaves unknown delimited schemas for the generic mapper', async () => {
+    const parsed = await detectAndParseBroker({ content: 'Date,Ticker,Direction,Shares,Fill\n2026-08-01,IBM,Buy,1,200' });
+    expect(parsed).toBeUndefined();
+  });
+});

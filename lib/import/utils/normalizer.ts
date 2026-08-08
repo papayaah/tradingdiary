@@ -1,10 +1,5 @@
 /**
  * Normalizes various date formats to YYYYMMDD for use in the app.
- * Expected formats:
- * - "YYYY-MM-DD" -> "YYYYMMDD"
- * - "MM-DD / HH:mm" -> "YYYYMMDD" (assumes current year)
- * - "YYYY/MM/DD" -> "YYYYMMDD"
- * - "MM/DD/YYYY" -> "YYYYMMDD"
  */
 export function normalizeDate(dateStr: string): string {
     if (!dateStr) return '';

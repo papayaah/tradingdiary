@@ -1,4 +1,4 @@
-import type { AccountRecord, TransactionRecord, PositionRecord } from '../db/schema';
+import type { AccountRecord, TransactionRecord, PositionRecord } from '../../../db/schema';
 
 export interface ParsedTLGFile {
   account: AccountRecord;
@@ -23,7 +23,7 @@ export function parseTLGFile(content: string): ParsedTLGFile {
         name: parts[2],
         type: parts[3],
         address: parts[4] || '',
-        currency: 'USD', // Default to USD, will be overridden by import page if needed
+        currency: 'USD',
         importedAt: Date.now(),
       };
     } else if (line.startsWith('STK_TRD|') || line.startsWith('FUT_TRD|')) {

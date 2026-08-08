@@ -6,20 +6,19 @@ import DropZone from '@/components/import/DropZone';
 import ColumnMapper from '@/components/import/ColumnMapper';
 import ImportPreview from '@/components/import/ImportPreview';
 import { useAIManagementContextOptional } from '@/packages/ai-connect/src/components';
-import { parseCSVOrText } from '@/lib/import/csv-extractor';
-import { mapColumnsWithLLM } from '@/lib/import/llm-mapper';
+import { parseCSVOrText } from '@/lib/import/utils/csv-extractor';
+import { mapColumnsWithLLM } from '@/lib/import/utils/llm-mapper';
 import { mapColumnsOffline } from '@/lib/import/alias-mapper';
-import { parseTLGFile } from '@/lib/parser/tlg-parser';
-import { parseESignalTradeLog } from '@/lib/import/esignal-parser';
+import { detectAndParseBroker } from '@/lib/import/registry';
 import { getAccounts } from '@/lib/db/trades';
 import { NormalizedTransaction, ColumnMapping, SideValueMapping } from '@/lib/import/types';
 import { importFileToLibrary } from '@/packages/react-media-library/src/services/storage';
 import { useImport } from '@/contexts/ImportContext';
-import { detectCurrency } from '@/lib/import/currency-detector';
+import { detectCurrency } from '@/lib/import/utils/currency-detector';
 import { AccountRecord } from '@/lib/db/schema';
 import { useState, useEffect } from 'react';
 import { useAccount } from '@/contexts/AccountContext';
-import { normalizeDate, normalizeTime } from '@/lib/import/normalizer';
+import { normalizeDate, normalizeTime } from '@/lib/import/utils/normalizer';
 import { Link as LinkIcon, Cpu } from 'lucide-react';
 import { getProvider } from '@/packages/ai-connect/src/providers';
 import type { LLMProvider } from '@/packages/ai-connect/src/types';
@@ -147,57 +146,33 @@ export default function TradeImportWorkspace() {
         }
       }
 
-      // TLG Quick Path
+      // Broker-specific formats take precedence over the generic column mapper.
       if (processedType !== 'image') {
         let content = '';
         if (processedData instanceof File) content = await processedData.text();
         else content = processedData as string;
 
-        if (content.includes('ACT_INF|') && content.includes('STK_TRD|')) {
-          const parsed = parseTLGFile(content);
-          
-          // Map to NormalizedTransaction for preview consistency
-          const normalized: NormalizedTransaction[] = parsed.transactions.map(t => ({
-            symbol: t.symbol,
-            side: t.side.startsWith('BUY') ? 'BUY' : 'SELL',
-            date: t.date,
-            time: t.time,
-            quantity: Math.abs(t.quantity),
-            price: Math.abs(t.price),
-            orderId: t.tradeId,
-            companyName: t.companyName || t.symbol,
-            currency: t.currency || 'USD',
-            commission: t.commission,
-            totalValue: t.totalValue
-          }));
-
-          setPreviewTransactions(normalized);
-          setStep('preview');
-          
-          if (parsed.account.currency) setDetectedCurrency(parsed.account.currency);
-
-          const fileToSave = processedData instanceof File ? processedData : new File([content], 'pasted-import.tlg', { type: 'text/plain' });
-          importFileToLibrary(fileToSave).catch(console.error);
-          return;
-        }
-
-        // eSignal Trade Log Quick Path
-        if (content.includes('"Timestamp";"Category"') && content.includes('"Symbol"')) {
-          try {
-            const transactions = await parseESignalTradeLog(content);
-            if (transactions.length > 0) {
-              setPreviewTransactions(transactions);
-              setStep('preview');
-              
-              const fileToSave = processedData instanceof File ? processedData : new File([content], 'esignal-import.csv', { type: 'text/csv' });
-              importFileToLibrary(fileToSave).catch(console.error);
-              
-              return;
-            }
-          } catch (err) {
-            console.error("eSignal parsing failed, falling back to generic CSV:", err);
-            // Fall back to generic CSV logic below
+        const brokerImport = await detectAndParseBroker({
+          content,
+          filename: processedData instanceof File ? processedData.name : undefined,
+        });
+        if (brokerImport) {
+          if (brokerImport.transactions.length === 0) {
+            throw new Error(`${brokerImport.brokerName} format detected, but no supported completed trades were found.`);
           }
+
+          setPreviewTransactions(brokerImport.transactions);
+          setStep('preview');
+          const currency = brokerImport.transactions.find((transaction) => transaction.currency)?.currency;
+          if (currency) setDetectedCurrency(currency);
+
+          const fileToSave = processedData instanceof File
+            ? processedData
+            : new File([content], `pasted-${brokerImport.brokerId}-import.txt`, { type: 'text/plain' });
+          importFileToLibrary(fileToSave).catch(console.error);
+          toast.success(`Detected ${brokerImport.brokerName} ${brokerImport.format}.`);
+          brokerImport.warnings.forEach((warning) => toast.warning(warning));
+          return;
         }
       }
 
@@ -224,11 +199,11 @@ export default function TradeImportWorkspace() {
 
         let base64Image = '';
         if (processedData instanceof File) {
-          const { fileToBase64 } = await import('@/lib/import/image-extractor');
+          const { fileToBase64 } = await import('@/lib/import/utils/image-extractor');
           base64Image = await fileToBase64(processedData);
         } else base64Image = processedData as string;
 
-        const { extractFromImage } = await import('@/lib/import/image-extractor');
+        const { extractFromImage } = await import('@/lib/import/utils/image-extractor');
         const result = await extractFromImage(base64Image, {
           apiKey: activeKey || 'SERVER_MANAGED',
           provider: activeProvider,

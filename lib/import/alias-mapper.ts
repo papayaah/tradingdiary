@@ -1,23 +1,5 @@
 import { NormalizedTransaction, ColumnMapping } from './types';
-
-const COLUMN_ALIASES: Record<keyof NormalizedTransaction, string[]> = {
-    symbol: ['symbol', 'ticker', 'stock', 'stock name', 'instrument', 'name', 'security'],
-    side: ['side', 'action', 'b/s', 'buy/sell', 'type', 'direction', 'trade type'],
-    date: ['date', 'trade date', 'execution date', 'create date', 'create date & time', 'datetime', 'time'],
-    quantity: ['quantity', 'qty', 'shares', 'volume', 'size', 'order quantity', 'confirmed quantity', 'lots'],
-    price: ['price', 'executed price', 'exec price', 'avg price', 'fill price', 'average price', 'trade price'],
-    time: ['time', 'execution time', 'trade time'],
-    orderId: ['order id', 'trade id', 'id', 'ref', 'reference', 'order no'],
-    companyName: ['company', 'company name', 'stock name', 'name', 'description'],
-    currency: ['currency', 'ccy', 'cur'],
-    exchanges: ['exchange', 'exchanges', 'market', 'venue'],
-    orderType: ['order type', 'type', 'order kind'],
-    commission: ['commission', 'fee', 'fees', 'brokerage'],
-    stockCode: ['stock code', 'code', 'isin', 'sedol'],
-    totalValue: ['total', 'total value', 'amount', 'value', 'net amount', 'consideration'],
-    realizedPnL: ['realized pnl', 'pnl', 'profit', 'gain/loss', 'realised p&l', 'realized profit'],
-    unrealizedPnL: ['unrealized pnl', 'unrealized profit', 'mark to market', 'unrealised p&l'],
-};
+import { COLUMN_ALIASES } from './config/column-aliases';
 
 export function mapColumnsOffline(headers: string[]): ColumnMapping {
     const mapping: Partial<ColumnMapping> = {};
