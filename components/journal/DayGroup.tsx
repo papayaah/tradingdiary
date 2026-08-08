@@ -10,11 +10,13 @@ import { useAccount } from '@/contexts/AccountContext';
 interface DayGroupProps {
   summary: DailySummary;
   accountId: string;
+  focusSymbol?: string;
+  openNotes?: boolean;
 }
 
-export default function DayGroup({ summary, accountId }: DayGroupProps) {
+export default function DayGroup({ summary, accountId, focusSymbol, openNotes = false }: DayGroupProps) {
   const { accounts } = useAccount();
-  const [isNotesOpen, setIsNotesOpen] = useState(false);
+  const [isNotesOpen, setIsNotesOpen] = useState(openNotes);
   const activeAccount = accounts.find(a => a.accountId === accountId);
   const currency = activeAccount?.currency || 'USD';
 
@@ -33,7 +35,7 @@ export default function DayGroup({ summary, accountId }: DayGroupProps) {
           <NotesArea date={summary.date} accountId={accountId} />
         </div>
       )}
-      <TradeTable trades={summary.trades} accountId={accountId} currency={currency} />
+      <TradeTable trades={summary.trades} accountId={accountId} currency={currency} focusSymbol={focusSymbol} />
     </section>
   );
 }

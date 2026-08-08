@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { AggregatedTrade } from '@/lib/trading/aggregator';
 import { pnlColorClass, formatVolume } from '@/lib/utils/format';
@@ -17,10 +17,16 @@ interface TradeTableProps {
   trades: AggregatedTrade[];
   accountId: string;
   currency?: string;
+  focusSymbol?: string;
 }
 
-export default function TradeTable({ trades, accountId, currency = 'USD' }: TradeTableProps) {
-  const [expanded, setExpanded] = useState<string | null>(null);
+export default function TradeTable({ trades, accountId, currency = 'USD', focusSymbol }: TradeTableProps) {
+  const focusedTrade = focusSymbol
+    ? trades.find((item) => item.symbol.toUpperCase() === focusSymbol.toUpperCase())
+    : undefined;
+  const [expanded, setExpanded] = useState<string | null>(
+    focusedTrade ? `${focusedTrade.date}-${focusedTrade.symbol}` : null
+  );
 
   const toggle = (key: string) => {
     setExpanded((prev) => (prev === key ? null : key));
@@ -57,6 +63,7 @@ export default function TradeTable({ trades, accountId, currency = 'USD' }: Trad
                   onToggle={toggle}
                   accountId={accountId}
                   currency={currency}
+                  isFocused={Boolean(focusSymbol && trade.symbol.toUpperCase() === focusSymbol.toUpperCase())}
                 />
               );
             })}
@@ -74,6 +81,7 @@ function TradeRow({
   onToggle,
   accountId,
   currency,
+  isFocused,
 }: {
   trade: AggregatedTrade;
   rowKey: string;
@@ -81,8 +89,18 @@ function TradeRow({
   onToggle: (key: string) => void;
   accountId: string;
   currency: string;
+  isFocused: boolean;
 }) {
   const [screenshotIds, setScreenshotIds] = useState<number[]>([]);
+  const rowRef = useRef<HTMLTableRowElement>(null);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    const frame = requestAnimationFrame(() => {
+      rowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [isFocused]);
 
   useEffect(() => {
     if (!isExpanded) return;
@@ -110,7 +128,8 @@ function TradeRow({
   return (
     <>
       <tr
-        className={`group border-b border-card-border/30 hover:bg-muted-bg/40 transition-all cursor-pointer ${isExpanded ? 'bg-muted-bg/30' : ''}`}
+        ref={rowRef}
+        className={`group border-b hover:bg-muted-bg/40 transition-all cursor-pointer ${isFocused ? 'border-accent bg-accent/10 ring-1 ring-inset ring-accent/30' : 'border-card-border/30'} ${isExpanded ? 'bg-muted-bg/30' : ''}`}
         onClick={() => onToggle(rowKey)}
       >
         <td className="px-3 py-4 text-center">

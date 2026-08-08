@@ -30,6 +30,11 @@ export async function getAllDailyNotes(): Promise<DailyNoteRecord[]> {
   return db.getAll('dailyNotes');
 }
 
+export async function getAllTradeNotes(): Promise<TradeNoteRecord[]> {
+  const db = await getDB();
+  return db.getAll('tradeNotes');
+}
+
 export async function addScreenshotToDaily(
   date: string,
   accountId: string,

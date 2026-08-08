@@ -15,11 +15,24 @@ export default function JournalPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const filterDate = searchParams.get('date');
+  const focusSymbol = searchParams.get('symbol')?.toUpperCase();
+  const openDailyNotes = searchParams.get('notes') === 'open';
   const { selectedAccountId } = useAccount();
 
   const [summaries, setSummaries] = useState<DailySummary[] | null>(null);
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  const manualEntryVisible = showManualEntry || searchParams.get('action') === 'add-trade';
+
+  const closeManualEntry = useCallback(() => {
+    setShowManualEntry(false);
+    if (searchParams.get('action') !== 'add-trade') return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('action');
+    const query = params.toString();
+    router.replace(query ? `/journal?${query}` : '/journal', { scroll: false });
+  }, [router, searchParams]);
 
   useEffect(() => {
     async function load() {
@@ -173,7 +186,7 @@ export default function JournalPage() {
         </div>
         <button
           type="button"
-          onClick={() => setShowManualEntry((visible) => !visible)}
+          onClick={() => manualEntryVisible ? closeManualEntry() : setShowManualEntry(true)}
           className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 text-sm font-bold text-white transition hover:bg-accent/90"
         >
           <Plus size={16} />
@@ -181,12 +194,12 @@ export default function JournalPage() {
         </button>
       </div>
 
-      {showManualEntry && (
+      {manualEntryVisible && (
         <ManualTradePanel
-          onClose={() => setShowManualEntry(false)}
+          onClose={closeManualEntry}
           onSaved={() => {
             setRefreshKey((key) => key + 1);
-            setShowManualEntry(false);
+            closeManualEntry();
           }}
         />
       )}
@@ -240,7 +253,13 @@ export default function JournalPage() {
       )}
 
       {displaySummaries?.map((summary) => (
-        <DayGroup key={summary.date} summary={summary} accountId={selectedAccountId || ''} />
+        <DayGroup
+          key={`${summary.date}-${focusSymbol || 'all'}-${openDailyNotes ? 'notes' : 'closed'}`}
+          summary={summary}
+          accountId={selectedAccountId || ''}
+          focusSymbol={summary.date === filterDate ? focusSymbol : undefined}
+          openNotes={summary.date === filterDate && openDailyNotes}
+        />
       ))}
 
       {filterDate && displaySummaries?.length === 0 && (
