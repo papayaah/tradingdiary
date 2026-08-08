@@ -658,10 +658,12 @@ export default function SharedTradingChart({
         // sane number of bars and the user scrolls horizontally for the rest,
         // rather than cramming thousands of microscopic candles into one screen.
         minBarSpacing: 2,
-        // Don't let the user overscroll past the oldest loaded bar into empty
-        // space — the left edge locks to the first candle. As older history
-        // pages in, the edge extends left with it.
-        fixLeftEdge: true,
+        // Keep the left edge free so the user can always pan/overscroll left.
+        // Locking it (fixLeftEdge: true) hard-stops panning at the first bar —
+        // which strands single-day charts (no infinite scroll) with no way to
+        // move, and fights the infinite-scroll charts whose load-more triggers
+        // on exactly that near-edge overscroll.
+        fixLeftEdge: false,
       },
       handleScale: {
         axisPressedMouseMove: { time: true, price: true },
