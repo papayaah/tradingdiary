@@ -7,13 +7,14 @@ import { ColumnMapping, SideValueMapping, NormalizedTransaction } from '@/lib/im
 interface ImportState {
     step: 'upload' | 'mapping' | 'preview';
     headers: string[];
-    rows: any[];
+    rows: Record<string, string>[];
     mapping: ColumnMapping;
     sideMap: SideValueMapping;
     previewTransactions: NormalizedTransaction[];
     importFile: File | null;
     isProcessing: boolean;
     detectedCurrency: string | null;
+    detectedBrokerName: string | null;
     error: string | null;
 }
 
@@ -24,7 +25,8 @@ interface ImportContextType extends ImportState {
     setPreviewTransactions: (txs: NormalizedTransaction[]) => void;
     setImportFile: (file: File | null) => void;
     setDetectedCurrency: (currency: string | null) => void;
-    updateData: (headers: string[], rows: any[]) => void;
+    setDetectedBrokerName: (brokerName: string | null) => void;
+    updateData: (headers: string[], rows: Record<string, string>[]) => void;
     startProcessing: (task: () => Promise<void>) => Promise<void>;
     clearImportState: () => void;
     setError: (error: string | null) => void;
@@ -37,12 +39,13 @@ export function ImportProvider({ children }: { children: React.ReactNode }) {
         step: 'upload',
         headers: [],
         rows: [],
-        mapping: {} as any,
+        mapping: {} as ColumnMapping,
         sideMap: {},
         previewTransactions: [],
         importFile: null,
         isProcessing: false,
         detectedCurrency: null,
+        detectedBrokerName: null,
         error: null,
     });
 
@@ -52,7 +55,7 @@ export function ImportProvider({ children }: { children: React.ReactNode }) {
         const saved = localStorage.getItem('import_flow_state_v2');
         if (saved) {
             try {
-                const parsed = JSON.parse(saved);
+                const parsed = JSON.parse(saved) as Partial<ImportState>;
                 setState(prev => ({ ...prev, ...parsed, isProcessing: false }));
             } catch (e) {
                 console.error('Failed to restore import state', e);
@@ -62,7 +65,16 @@ export function ImportProvider({ children }: { children: React.ReactNode }) {
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
-        const { importFile, isProcessing, error, ...persistable } = state;
+        const persistable = {
+            step: state.step,
+            headers: state.headers,
+            rows: state.rows,
+            mapping: state.mapping,
+            sideMap: state.sideMap,
+            previewTransactions: state.previewTransactions,
+            detectedCurrency: state.detectedCurrency,
+            detectedBrokerName: state.detectedBrokerName,
+        };
         if (persistable.step === 'upload' && persistable.headers.length === 0) {
             localStorage.removeItem('import_flow_state_v2');
         } else {
@@ -76,7 +88,8 @@ export function ImportProvider({ children }: { children: React.ReactNode }) {
     const setPreviewTransactions = (txs: NormalizedTransaction[]) => setState(p => ({ ...p, previewTransactions: txs }));
     const setImportFile = (file: File | null) => setState(p => ({ ...p, importFile: file }));
     const setDetectedCurrency = (currency: string | null) => setState(p => ({ ...p, detectedCurrency: currency }));
-    const updateData = (headers: string[], rows: any[]) => setState(p => ({ ...p, headers, rows }));
+    const setDetectedBrokerName = (detectedBrokerName: string | null) => setState(p => ({ ...p, detectedBrokerName }));
+    const updateData = (headers: string[], rows: Record<string, string>[]) => setState(p => ({ ...p, headers, rows }));
     const setError = (error: string | null) => setState(p => ({ ...p, error }));
 
     const clearImportState = useCallback(() => {
@@ -84,12 +97,13 @@ export function ImportProvider({ children }: { children: React.ReactNode }) {
             step: 'upload',
             headers: [],
             rows: [],
-            mapping: {} as any,
+            mapping: {} as ColumnMapping,
             sideMap: {},
             previewTransactions: [],
             importFile: null,
             isProcessing: false,
             detectedCurrency: null,
+            detectedBrokerName: null,
             error: null,
         });
         localStorage.removeItem('import_flow_state_v2');
@@ -99,9 +113,10 @@ export function ImportProvider({ children }: { children: React.ReactNode }) {
         setState(p => ({ ...p, isProcessing: true, error: null }));
         try {
             await task();
-        } catch (err: any) {
-            setState(p => ({ ...p, error: err.message || 'Processing failed' }));
-            toast.error(`Import Error: ${err.message}`);
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'Processing failed';
+            setState(p => ({ ...p, error: message }));
+            toast.error(`Import Error: ${message}`);
             throw err; // Re-throw to caller for additional handle
         } finally {
             setState(p => ({ ...p, isProcessing: false }));
@@ -116,6 +131,7 @@ export function ImportProvider({ children }: { children: React.ReactNode }) {
         setPreviewTransactions,
         setImportFile,
         setDetectedCurrency,
+        setDetectedBrokerName,
         updateData,
         startProcessing,
         clearImportState,

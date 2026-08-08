@@ -2,6 +2,7 @@ import { Composition } from 'remotion';
 import React from 'react';
 import { AnalyticsPromo } from './compositions/AnalyticsPromo';
 import { AutoScanPromo } from './compositions/AutoScanPromo';
+import { IBKRGuidePromo } from './compositions/IBKRGuidePromo';
 import { ImportPromo } from './compositions/ImportPromo';
 import { PatternPromo } from './compositions/PatternPromo';
 import { ProductMashupPromo } from './compositions/ProductMashupPromo';
@@ -134,6 +135,26 @@ export function VideoRoot() {
         id="AutoScanPromoLight"
         component={AutoScanPromo}
         durationInFrames={330}
+        fps={FPS}
+        width={WIDTH}
+        height={HEIGHT}
+        defaultProps={{ themeMode: 'light' }}
+      />
+
+      {/* IBKR TradeLog Export Tutorial */}
+      <Composition
+        id="IBKRGuidePromo"
+        component={IBKRGuidePromo}
+        durationInFrames={360}
+        fps={FPS}
+        width={WIDTH}
+        height={HEIGHT}
+        defaultProps={{ themeMode: 'dark' }}
+      />
+      <Composition
+        id="IBKRGuidePromoLight"
+        component={IBKRGuidePromo}
+        durationInFrames={360}
         fps={FPS}
         width={WIDTH}
         height={HEIGHT}

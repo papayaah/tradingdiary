@@ -3,15 +3,17 @@
 import { useState, useMemo, useEffect } from 'react';
 import { NormalizedTransaction } from '@/lib/import/types';
 import { AccountRecord } from '@/lib/db/schema';
-import { CreditCard, Plus, Wallet, TrendingUp, TrendingDown, Activity, BarChart3, Info, Calendar, Lightbulb } from 'lucide-react';
+import { CreditCard, Plus, Wallet, TrendingUp, TrendingDown, Activity, BarChart3, Info, Lightbulb, ScanSearch } from 'lucide-react';
 import { toTransactionRecords } from '@/lib/import/converter';
 import { aggregateByDay } from '@/lib/trading/aggregator';
 import { formatCurrency } from '@/lib/currency';
+import { getImportAccountDefaults } from '@/lib/import/account-defaults';
 
 interface ImportPreviewProps {
     transactions: NormalizedTransaction[];
     accounts: AccountRecord[];
     suggestedCurrency?: string;
+    detectedBrokerName?: string | null;
     onConfirm: (selected: NormalizedTransaction[], accountData: { id?: string; name?: string; currency?: string; type?: string }) => void;
     onBack: () => void;
     onEditMapping?: () => void;
@@ -22,6 +24,7 @@ export default function ImportPreview({
     transactions,
     accounts,
     suggestedCurrency = 'USD',
+    detectedBrokerName,
     onConfirm,
     onBack,
     onEditMapping,
@@ -37,8 +40,9 @@ export default function ImportPreview({
     });
 
     // New account form state
-    const [newAccountName, setNewAccountName] = useState('Main Trading Account');
-    const [newAccountType, setNewAccountType] = useState('Custom');
+    const accountDefaults = getImportAccountDefaults(detectedBrokerName);
+    const newAccountType = accountDefaults.type;
+    const [newAccountName, setNewAccountName] = useState(accountDefaults.name);
     const [newAccountCurrency, setNewAccountCurrency] = useState(suggestedCurrency);
 
     useEffect(() => {
@@ -251,20 +255,15 @@ export default function ImportPreview({
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
                                         <label className="text-[10px] uppercase font-bold text-muted mb-1 block">Broker / Type</label>
-                                        <select
-                                            value={newAccountType}
-                                            onChange={e => setNewAccountType(e.target.value)}
-                                            className="w-full p-2.5 bg-card-bg border border-card-border rounded-xl focus:border-accent outline-none text-sm text-foreground"
-                                        >
-                                            <option>Charles Schwab</option>
-                                            <option>IBKR</option>
-                                            <option>E*TRADE</option>
-                                            <option>Fidelity</option>
-                                            <option>Robinhood</option>
-                                            <option>Webull</option>
-                                            <option>MetaTrader</option>
-                                            <option>Custom</option>
-                                        </select>
+                                        <div className="flex min-h-[42px] items-center gap-2.5 rounded-xl border border-card-border bg-muted-bg/50 px-3 py-2">
+                                            <ScanSearch size={16} className="shrink-0 text-accent" />
+                                            <div className="min-w-0">
+                                                <div className="truncate text-sm font-semibold text-foreground">{newAccountType}</div>
+                                                <div className="truncate text-[10px] text-muted">
+                                                    {accountDefaults.wasBrokerDetected ? 'Auto-detected from your file' : 'Generic format detected automatically'}
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                     <div>
                                         <label className="text-[10px] uppercase font-bold text-muted mb-1 block">Base Currency</label>

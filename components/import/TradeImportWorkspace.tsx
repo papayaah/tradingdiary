@@ -5,11 +5,13 @@ import { toast } from 'sonner';
 import DropZone from '@/components/import/DropZone';
 import ColumnMapper from '@/components/import/ColumnMapper';
 import ImportPreview from '@/components/import/ImportPreview';
+import IBKRExportGuide from '@/components/import/IBKRExportGuide';
 import { useAIManagementContextOptional } from '@/packages/ai-connect/src/components';
 import { parseCSVOrText } from '@/lib/import/utils/csv-extractor';
 import { mapColumnsWithLLM } from '@/lib/import/utils/llm-mapper';
 import { mapColumnsOffline } from '@/lib/import/alias-mapper';
 import { detectAndParseBroker } from '@/lib/import/registry';
+import { inferBrokerName } from '@/lib/import/broker-name';
 import { getAccounts } from '@/lib/db/trades';
 import { NormalizedTransaction, ColumnMapping, SideValueMapping } from '@/lib/import/types';
 import { importFileToLibrary } from '@/packages/react-media-library/src/services/storage';
@@ -39,6 +41,7 @@ export default function TradeImportWorkspace() {
     importFile, setImportFile,
     isProcessing,
     detectedCurrency, setDetectedCurrency,
+    detectedBrokerName, setDetectedBrokerName,
     error, setError,
     startProcessing,
     clearImportState
@@ -119,6 +122,8 @@ export default function TradeImportWorkspace() {
 
   const handleData = (data: File | string, type: 'file' | 'text' | 'image') => {
     startProcessing(async () => {
+      setDetectedBrokerName(null);
+      setDetectedCurrency(null);
       let processedData = data;
       let processedType = type;
 
@@ -152,16 +157,18 @@ export default function TradeImportWorkspace() {
         if (processedData instanceof File) content = await processedData.text();
         else content = processedData as string;
 
-        const brokerImport = await detectAndParseBroker({
+        const brokerSource = {
           content,
           filename: processedData instanceof File ? processedData.name : undefined,
-        });
+        };
+        const brokerImport = await detectAndParseBroker(brokerSource);
         if (brokerImport) {
           if (brokerImport.transactions.length === 0) {
             throw new Error(`${brokerImport.brokerName} format detected, but no supported completed trades were found.`);
           }
 
           setPreviewTransactions(brokerImport.transactions);
+          setDetectedBrokerName(brokerImport.brokerName);
           setStep('preview');
           const currency = brokerImport.transactions.find((transaction) => transaction.currency)?.currency;
           if (currency) setDetectedCurrency(currency);
@@ -174,6 +181,7 @@ export default function TradeImportWorkspace() {
           brokerImport.warnings.forEach((warning) => toast.warning(warning));
           return;
         }
+        setDetectedBrokerName(inferBrokerName(brokerSource));
       }
 
       let parsedHeaders: string[] = [];
@@ -418,6 +426,9 @@ export default function TradeImportWorkspace() {
               {error}
             </div>
           )}
+
+          {/* IBKR TradeLog Tutorial Video & Guide */}
+          <IBKRExportGuide />
         </div>
       )}
 
@@ -437,8 +448,9 @@ export default function TradeImportWorkspace() {
           transactions={previewTransactions}
           accounts={accounts}
           suggestedCurrency={detectedCurrency || 'USD'}
+          detectedBrokerName={detectedBrokerName}
           onConfirm={handleImport}
-          onBack={() => setStep('mapping')}
+          onBack={() => setStep(headers.length > 0 ? 'mapping' : 'upload')}
           isImporting={isProcessing}
         />
       )}

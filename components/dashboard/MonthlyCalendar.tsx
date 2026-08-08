@@ -64,16 +64,6 @@ export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
   const year = viewMonth.getFullYear();
   const month = viewMonth.getMonth();
 
-  const rangeStats = useMemo(() => {
-    let totalPnL = 0;
-    let totalDays = 0;
-    for (const s of summaries) {
-      totalPnL += s.totalPnL;
-      totalDays++;
-    }
-    return { totalPnL, totalDays };
-  }, [summaries]);
-
   // If a range is selected that spans 2-4 months, we show a single contiguous grid
   const rangeInfo = useMemo(() => {
     if (summaries.length === 0) return null;
@@ -105,81 +95,50 @@ export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
   const nextMonth = () => setViewMonth(new Date(year, month + 1, 1));
 
   return (
-    <div className="space-y-4">
-      {/* Global Header */}
-      <div className="rounded-xl border border-card-border bg-card-bg p-5 shadow-sm">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="rounded-xl border border-card-border bg-card-bg p-5 shadow-sm space-y-4">
+      {!rangeInfo && (
+        <div className="flex items-center justify-between pb-2 border-b border-card-border">
           <div className="flex items-center gap-2">
-            {!rangeInfo && (
-              <div className="flex items-center gap-1 mr-2">
-                <button
-                  onClick={prevMonth}
-                  className="p-1.5 rounded-lg text-muted hover:text-foreground hover:bg-sidebar-hover transition-colors"
-                >
-                  <ChevronLeft size={16} />
-                </button>
-                <button
-                  onClick={nextMonth}
-                  className="p-1.5 rounded-lg text-muted hover:text-foreground hover:bg-sidebar-hover transition-colors"
-                >
-                  <ChevronRight size={16} />
-                </button>
-              </div>
-            )}
-            <h3 className="text-lg font-bold text-foreground">
-              {rangeInfo ? (
-                <span className="flex items-center gap-2">
-                  <span className="text-accent underline underline-offset-4 decoration-2">Contiguous View</span>
-                  <span className="text-muted text-sm font-medium">({rangeInfo.span} months)</span>
-                </span>
-              ) : (
-                viewMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-              )}
+            <button
+              onClick={prevMonth}
+              className="p-1.5 rounded-lg text-muted hover:text-foreground hover:bg-sidebar-hover transition-colors"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <h3 className="text-base font-bold text-foreground">
+              {viewMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
             </h3>
-            {!rangeInfo && (
-              <button
-                onClick={goToThisMonth}
-                className="ml-2 px-2.5 py-1 text-xs font-semibold rounded-lg border border-card-border text-muted hover:text-foreground hover:bg-sidebar-hover transition-all"
-              >
-                Go to Today
-              </button>
-            )}
+            <button
+              onClick={nextMonth}
+              className="p-1.5 rounded-lg text-muted hover:text-foreground hover:bg-sidebar-hover transition-colors"
+            >
+              <ChevronRight size={16} />
+            </button>
           </div>
-          <div className="flex items-center gap-4 text-sm bg-muted-bg/50 px-4 py-2 rounded-xl border border-card-border/50">
-            <div className="flex flex-col items-end">
-              <span className="text-[10px] uppercase font-bold text-muted tracking-wider">Net Range P&L</span>
-              <span className={`font-bold text-lg leading-tight ${pnlColorClass(rangeStats.totalPnL)}`}>
-                {formatPnLShort(rangeStats.totalPnL)}
-              </span>
-            </div>
-            <div className="w-px h-8 bg-card-border" />
-            <div className="flex flex-col">
-              <span className="text-[10px] uppercase font-bold text-muted tracking-wider">Active Days</span>
-              <span className="font-bold text-lg leading-tight text-foreground">
-                {rangeStats.totalDays}
-              </span>
-            </div>
-          </div>
+          <button
+            onClick={goToThisMonth}
+            className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-card-border text-muted hover:text-foreground hover:bg-sidebar-hover transition-all"
+          >
+            Go to Today
+          </button>
         </div>
-      </div>
+      )}
 
-      <div className="rounded-xl border border-card-border bg-card-bg p-5 shadow-sm">
-        {rangeInfo ? (
-          <ContiguousRangeView
-            startDate={rangeInfo.firstDate}
-            endDate={rangeInfo.lastDate}
-            dataByDate={dataByDate}
-            onDayClick={(date) => router.push(`/journal?date=${date}`)}
-          />
-        ) : (
-          <MonthView
-            year={year}
-            month={month}
-            dataByDate={dataByDate}
-            onDayClick={(date) => router.push(`/journal?date=${date}`)}
-          />
-        )}
-      </div>
+      {rangeInfo ? (
+        <ContiguousRangeView
+          startDate={rangeInfo.firstDate}
+          endDate={rangeInfo.lastDate}
+          dataByDate={dataByDate}
+          onDayClick={(date) => router.push(`/journal?date=${date}`)}
+        />
+      ) : (
+        <MonthView
+          year={year}
+          month={month}
+          dataByDate={dataByDate}
+          onDayClick={(date) => router.push(`/journal?date=${date}`)}
+        />
+      )}
     </div>
   );
 }
@@ -248,11 +207,11 @@ function ContiguousRangeView({ startDate, endDate, dataByDate, onDayClick }: Con
 
       {weeks.map((week, wi) => (
         <Fragment key={`wf-${wi}`}>
-          {week.days.map((day) => (
+          {week.days.map((day, di) => (
             <DayCell
               key={day.date}
               day={day}
-              showMonthLabel={day.isFirstOfMonth}
+              showMonthLabel={day.isFirstOfMonth || (wi === 0 && di === 0)}
               onClick={() => onDayClick(day.date)}
             />
           ))}
@@ -297,8 +256,8 @@ function MonthView({ year, month, dataByDate, onDayClick }: MonthViewProps) {
           date: dateStr,
           dayNum: currentDate.getDate(),
           isCurrentMonth,
-          isFirstOfMonth: false,
-          monthName: '',
+          isFirstOfMonth: currentDate.getDate() === 1,
+          monthName: currentDate.toLocaleDateString('en-US', { month: 'short' }),
           data: data ?? null,
         });
 
@@ -333,6 +292,7 @@ function MonthView({ year, month, dataByDate, onDayClick }: MonthViewProps) {
             <DayCell
               key={day.date}
               day={day}
+              showMonthLabel={day.isCurrentMonth && day.isFirstOfMonth}
               onClick={() => onDayClick(day.date)}
             />
           ))}
@@ -378,12 +338,16 @@ function DayCell({ day, showMonthLabel, onClick }: { day: GridDay; showMonthLabe
       className={`${bgClass} min-h-[95px] p-2 flex flex-col cursor-pointer transition-colors group relative`}
     >
       <div className="flex justify-between items-start">
-        {showMonthLabel && (
-          <span className="text-[10px] font-black uppercase text-accent bg-accent/10 px-1 rounded">
+        {showMonthLabel ? (
+          <span className="text-[10px] font-black uppercase text-white bg-accent px-1.5 py-0.5 rounded shadow-xs tracking-wider">
             {day.monthName}
           </span>
+        ) : (
+          <span />
         )}
-        <span className="text-xs text-muted ml-auto group-hover:text-foreground font-medium">{day.dayNum}</span>
+        <span className={`text-xs ${showMonthLabel ? 'font-bold text-foreground' : 'text-muted'} group-hover:text-foreground font-medium`}>
+          {day.dayNum}
+        </span>
       </div>
 
       {hasData && (
