@@ -2,24 +2,29 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import {
-  X,
-  Play,
-  Upload,
-} from 'lucide-react';
+import { X, Upload } from 'lucide-react';
 import { useWelcome } from './WelcomeContext';
 
 interface WelcomeModalProps {
   /** Optional video source URL (e.g. MP4 hosted link, YouTube embed, etc.) */
   videoUrl?: string;
-  /** Optional custom title */
-  title?: string;
 }
 
-export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', title }: WelcomeModalProps) {
+interface Short {
+  key: string;
+  base: string;
+}
+
+const SHORTS: Short[] = [
+  { key: 'analytics', base: '/analytics-promo' },
+  { key: 'pattern', base: '/pattern-promo' },
+  { key: 'replay', base: '/replay-promo' },
+  { key: 'autoscan', base: '/auto-scan-promo' },
+];
+
+export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4' }: WelcomeModalProps) {
   const { isOpen, closeWelcomeModal } = useWelcome();
   const [dontShowAgain, setDontShowAgain] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
 
   // System & DOM Theme Detection
@@ -62,27 +67,39 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-3 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 md:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
       onClick={(e) => {
         if (e.target === e.currentTarget) handleClose();
       }}
       role="dialog"
       aria-modal="true"
     >
-      <div className="relative w-full sm:w-[96vw] max-w-[1650px] 2xl:max-w-[1850px] bg-card-bg border border-card-border rounded-xl sm:rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col transition-all my-auto">
-        {/* Sleek Floating Close Button */}
+      <div className="relative w-full h-full sm:h-auto sm:w-[95vw] max-w-6xl bg-card-bg border-0 sm:border border-card-border rounded-none sm:rounded-2xl shadow-2xl overflow-hidden max-h-full sm:max-h-[92vh] flex flex-col">
+        {/* Floating close button */}
         <button
           onClick={handleClose}
-          className="absolute top-3 right-3 sm:top-4 sm:right-4 z-30 p-2 text-white bg-black/70 hover:bg-black/90 rounded-full backdrop-blur-md transition-all shadow-xl border border-white/20"
-          aria-label="Close modal"
+          className="absolute top-3 right-3 sm:top-4 sm:right-4 z-30 p-2 text-white bg-black/60 hover:bg-black/80 rounded-full backdrop-blur-md transition-colors shadow-lg border border-white/20"
+          aria-label="Close welcome screen"
         >
-          <X size={16} className="sm:w-[18px] sm:h-[18px]" />
+          <X size={18} />
         </button>
 
-        {/* Modal Body — Full Screen Flex Layout: Main Video Showcase + Fully Visible 4 Shorts Grid */}
-        <div className="p-0 m-0 overflow-y-auto flex-1 flex flex-col min-h-0">
-          {/* Main Video Showcase Section */}
-          <div className="relative flex-1 min-h-[160px] sm:min-h-[220px] max-h-[50vh] w-full overflow-hidden bg-card-bg group shadow-inner border-b border-card-border flex items-center justify-center">
+        {/* Work-in-progress ribbon — pinned above the scroll area. Padded so the
+            centered text clears the floating close button on both edges. */}
+        <div className="flex-shrink-0 flex items-center justify-center gap-2 px-12 py-2.5 text-center bg-accent/10 text-accent border-b border-accent/20">
+          <span aria-hidden>🚧</span>
+          <p className="text-[11px] sm:text-xs leading-snug">
+            <span className="font-semibold">Work in progress</span>
+            <span className="hidden sm:inline"> — you&apos;re viewing an early preview. Expect rough edges, and please share feedback.</span>
+            <span className="sm:hidden"> — early preview</span>
+          </p>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="overflow-y-auto flex-1 min-h-0">
+          {/* Hero demo video (16:9), full-bleed. Its background matches the app
+              theme, so any contain-bars blend into card-bg rather than gray. */}
+          <div className="w-full flex items-center justify-center bg-card-bg border-b border-card-border">
             {isMp4 ? (
               <video
                 key={`main-video-${isDarkMode}`}
@@ -92,77 +109,40 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
                 muted
                 playsInline
                 controls
-                className="w-full h-full object-contain"
+                className="w-full max-h-[46vh] object-contain"
               />
             ) : (
               <iframe
                 src={activeDemoVideo.includes('youtube') ? `${activeDemoVideo}?autoplay=1` : activeDemoVideo}
                 title="Trading Diary Overview Video"
-                className="w-full h-full border-0"
+                className="w-full aspect-video border-0"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
               />
             )}
           </div>
 
-          {/* Key Value Proposition Grid — 4 Responsive Vertical Shorts */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-0 border-b border-card-border flex-shrink-0">
-            {/* 1. Visual Analytics Short */}
-            <div className="relative overflow-hidden group h-48 sm:h-64 lg:h-72 flex flex-col justify-between bg-black/40 border-b lg:border-b-0 border-r border-card-border">
-              <video
-                key={`analytics-${isDarkMode}`}
-                src={`/analytics-promo${themeSuffix}.mp4`}
-                autoPlay
-                loop
-                muted
-                playsInline
-                className="w-full h-full object-contain group-hover:scale-102 transition-transform duration-300"
-              />
-            </div>
-
-            {/* 2. Market Pattern Watch Short */}
-            <div className="relative overflow-hidden group h-48 sm:h-64 lg:h-72 flex flex-col justify-between bg-black/40 border-b lg:border-b-0 lg:border-r border-card-border">
-              <video
-                key={`pattern-${isDarkMode}`}
-                src={`/pattern-promo${themeSuffix}.mp4`}
-                autoPlay
-                loop
-                muted
-                playsInline
-                className="w-full h-full object-contain group-hover:scale-102 transition-transform duration-300"
-              />
-            </div>
-
-            {/* 3. Bar-by-Bar Replay Short */}
-            <div className="relative overflow-hidden group h-48 sm:h-64 lg:h-72 flex flex-col justify-between bg-black/40 border-r lg:border-r border-card-border">
-              <video
-                key={`replay-${isDarkMode}`}
-                src={`/replay-promo${themeSuffix}.mp4`}
-                autoPlay
-                loop
-                muted
-                playsInline
-                className="w-full h-full object-contain group-hover:scale-102 transition-transform duration-300"
-              />
-            </div>
-
-            {/* 4. Auto Pattern Detector Short */}
-            <div className="relative overflow-hidden group h-48 sm:h-64 lg:h-72 flex flex-col justify-between bg-black/40">
-              <video
-                key={`autoscan-${isDarkMode}`}
-                src={`/auto-scan-promo${themeSuffix}.mp4`}
-                autoPlay
-                loop
-                muted
-                playsInline
-                className="w-full h-full object-contain group-hover:scale-102 transition-transform duration-300"
-              />
-            </div>
+          {/* Portrait shorts — real 9:16 tiles, full-bleed edge to edge with 1px
+              dividers (gap-px over card-border). 2-up on mobile, 4-up on desktop. */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-card-border">
+            {SHORTS.map((short) => (
+              <div key={short.key} className="relative aspect-[9/16] overflow-hidden bg-card-bg">
+                <video
+                  key={`${short.key}-${isDarkMode}`}
+                  src={`${short.base}${themeSuffix}.mp4`}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Footer Actions */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-6 py-3.5 border-t border-card-border bg-muted-bg/30">
+        {/* Footer actions */}
+        <div className="flex flex-col-reverse sm:flex-row items-center justify-between gap-3 px-5 sm:px-6 py-3.5 border-t border-card-border bg-muted-bg/30 flex-shrink-0">
           <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-muted hover:text-foreground transition-colors">
             <input
               type="checkbox"
@@ -170,7 +150,7 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4', tit
               onChange={(e) => setDontShowAgain(e.target.checked)}
               className="rounded border-card-border bg-background text-accent focus:ring-accent"
             />
-            <span>Don't show this welcome screen again</span>
+            <span>Don&apos;t show this welcome screen again</span>
           </label>
 
           <div className="flex items-center gap-3 w-full sm:w-auto">
