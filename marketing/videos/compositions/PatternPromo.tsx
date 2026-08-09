@@ -43,7 +43,7 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
       {/* Brand Header: 170px Owl SVG Logo + "Price Action Alerts" Title (78px) */}
       <BrandHeader themeMode={themeMode} title="Price Action Alerts" logoSize={170} />
 
-      {/* MAIN GRAPHICAL CHART CONTAINER (Clean Professional UI) */}
+      {/* MAIN GRAPHICAL CHART CONTAINER */}
       <div
         style={{
           position: 'absolute',
@@ -201,30 +201,24 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
             )}
           </svg>
 
-          {/* SLEEK PROFESSIONAL FLOATING SIGNAL BADGE */}
+          {/* OVERSIZED HIGH-IMPACT SIGNAL BADGE (Zero Sub-labels) */}
           {phaseFrame >= 20 && (
             <div
               style={{
                 position: 'absolute',
                 top: 40,
-                right: 30,
+                right: 40,
                 background: phase === 1 ? videoTheme.accent : videoTheme.profit,
                 color: phase === 1 ? '#FFFFFF' : '#000000',
-                padding: '24px 42px',
-                borderRadius: 28,
+                padding: '28px 52px',
+                borderRadius: 32,
                 fontWeight: 900,
-                boxShadow: `0 24px 70px ${phase === 1 ? videoTheme.accent : videoTheme.profit}66`,
+                boxShadow: `0 24px 80px ${phase === 1 ? videoTheme.accent : videoTheme.profit}77`,
                 transform: `scale(${badgeSpring})`,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 4,
                 zIndex: 30,
               }}
             >
-              <span style={{ fontSize: 16, letterSpacing: 2.5, textTransform: 'uppercase', opacity: 0.85 }}>
-                PATTERN DETECTED
-              </span>
-              <span style={{ fontSize: 34, lineHeight: 1.1 }}>
+              <span style={{ fontSize: 46, fontWeight: 900, letterSpacing: -0.5, lineHeight: 1 }}>
                 {phase === 1
                   ? 'Bullish Consecutive Move'
                   : phase === 2
