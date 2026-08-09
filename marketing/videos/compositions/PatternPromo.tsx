@@ -41,14 +41,14 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
         overflow: 'hidden',
       }}
     >
-      {/* Brand Header with Owl SVG Logo */}
-      <BrandHeader themeMode={themeMode} />
+      {/* Brand Header — Shows Owl SVG Logo (No "TRADING DIARY" text, No "SCANNER ACTIVE" badge) */}
+      <BrandHeader themeMode={themeMode} showTitle={false} />
 
-      {/* SINGLE FANCY HEADLINE (Zero Subtitles!) */}
+      {/* SINGLE FANCY HEADLINE */}
       <div
         style={{
           position: 'absolute',
-          top: 155,
+          top: 145,
           left: 48,
           right: 48,
           textAlign: 'center',
@@ -72,14 +72,14 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
         </div>
       </div>
 
-      {/* MAIN GRAPHICAL CHART CONTAINER (Dominates 85% of Height) */}
+      {/* MAIN GRAPHICAL CHART CONTAINER (Dominates 90% of Height) */}
       <div
         style={{
           position: 'absolute',
           left: 48,
           right: 48,
-          top: 250,
-          bottom: 70,
+          top: 230,
+          bottom: 50,
           borderRadius: 44,
           background: videoTheme.card,
           border: `3px solid ${videoTheme.border}`,
@@ -91,24 +91,8 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
           justifyContent: 'space-between',
         }}
       >
-        {/* Top Ticker & Live Status Bar */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <span
-              style={{
-                fontSize: 18,
-                fontWeight: 850,
-                color: videoTheme.muted,
-                background: videoTheme.cardRaised,
-                padding: '6px 16px',
-                borderRadius: 12,
-                border: `1px solid ${videoTheme.border}`,
-              }}
-            >
-              5m Chart
-            </span>
-          </div>
-
+        {/* Top Status Bar (No "5m Chart" text, No Symbols) */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
           <div
             style={{
               display: 'flex',
@@ -254,7 +238,7 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
             )}
           </svg>
 
-          {/* DYNAMIC FLOATING PATTERN BADGE (No Emojis, No Symbols) */}
+          {/* DYNAMIC FLOATING PATTERN BADGE */}
           {phaseFrame >= 20 && (
             <div
               style={{
