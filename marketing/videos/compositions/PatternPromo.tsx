@@ -1,6 +1,7 @@
 import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
 import React from 'react';
 import { BrandHeader } from '../components/BrandHeader';
+import { ComicBadge, ComicStarburst } from '../components/ComicBurst';
 import { getVideoTheme } from '../theme';
 
 export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'dark' }) {
@@ -24,7 +25,6 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
   }
 
   const cardSpring = spring({ frame: phaseFrame, fps, config: { damping: 16, stiffness: 140 } });
-  const badgeSpring = spring({ frame: phaseFrame - 25, fps, config: { damping: 12, stiffness: 180 } });
 
   const fadeOut = interpolate(frame, [315, 329], [1, 0], {
     extrapolateLeft: 'clamp',
@@ -40,16 +40,16 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
         overflow: 'hidden',
       }}
     >
-      {/* Brand Header: Large Owl SVG Logo on Left + "CANDLE SIGNALS" Title Right Next to It */}
-      <BrandHeader themeMode={themeMode} title="Candle Signals" logoSize={110} />
+      {/* Brand Header: Massive Logo (No Glow, 170px) + "Candle Signals" Title (78px) */}
+      <BrandHeader themeMode={themeMode} title="Candle Signals" logoSize={170} />
 
-      {/* MAIN GRAPHICAL CHART CONTAINER (Maximized Height, Top: 175) */}
+      {/* MAIN GRAPHICAL CHART CONTAINER (No Green Text Badges, Full Focus on Visuals) */}
       <div
         style={{
           position: 'absolute',
-          left: 48,
-          right: 48,
-          top: 175,
+          left: 44,
+          right: 44,
+          top: 220,
           bottom: 40,
           borderRadius: 44,
           background: videoTheme.card,
@@ -62,27 +62,6 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
           justifyContent: 'space-between',
         }}
       >
-        {/* Top Status Bar (Clean Badge) */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              fontSize: 18,
-              fontWeight: 900,
-              color: videoTheme.profit,
-              background: `${videoTheme.profit}18`,
-              border: `2px solid ${videoTheme.profit}44`,
-              padding: '8px 20px',
-              borderRadius: 20,
-            }}
-          >
-            <span style={{ width: 10, height: 10, borderRadius: '50%', background: videoTheme.profit }} />
-            {phase === 1 ? '3 GREEN CANDLES' : phase === 2 ? 'VOLUME EXPLOSION' : 'ENGULFING PAIR'}
-          </div>
-        </div>
-
         {/* HIGH-IMPACT SVG CANDLESTICK GRAPHICS */}
         <div style={{ flex: 1, position: 'relative', width: '100%', marginTop: 20 }}>
           <svg
@@ -95,12 +74,12 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
               transform: `scale(${interpolate(cardSpring, [0, 1], [0.95, 1])})`,
             }}
           >
-            {/* Gridlines */}
+            {/* Horizontal Gridlines */}
             {[0.2, 0.4, 0.6, 0.8].map((r) => (
               <line key={r} x1={20} x2={940} y1={r * 1000} y2={r * 1000} stroke={videoTheme.grid} strokeDasharray="10 14" strokeWidth={3} />
             ))}
 
-            {/* PHASE 1: Bullish Consecutive Move (3 Stepping Green Candles) */}
+            {/* PHASE 1: Bullish Consecutive Move (3 Stepping Green Candles Growing UPWARDS Bottom-to-Top) */}
             {phase === 1 && (
               <>
                 {/* 3 Small Base Candles */}
@@ -115,24 +94,27 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
                   </g>
                 ))}
 
-                {/* 3 Stepping Up Green Candles (Consecutive Move) */}
+                {/* 3 Stepping Up Green Candles Growing UPWARDS from Bottom to Top */}
                 {[
-                  { x: 440, y: 580, h: 120, delay: 10 },
-                  { x: 570, y: 410, h: 150, delay: 20 },
-                  { x: 700, y: 210, h: 180, delay: 30 },
+                  { x: 440, yBase: 700, targetH: 120, delay: 10 },
+                  { x: 570, yBase: 560, targetH: 150, delay: 20 },
+                  { x: 700, yBase: 390, targetH: 180, delay: 30 },
                 ].map((c, i) => {
                   const progress = interpolate(phaseFrame - c.delay, [0, 20], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+                  const animatedH = c.targetH * progress;
+                  const animatedY = c.yBase - animatedH; // Bottom-to-top growth!
+
                   return (
                     <g key={i} style={{ opacity: progress }}>
-                      <line x1={c.x} x2={c.x} y1={c.y - 40} y2={c.y + c.h + 40} stroke={videoTheme.profit} strokeWidth={8} />
-                      <rect x={c.x - 30} y={c.y} width={60} height={c.h * progress} rx={14} fill={videoTheme.profit} />
+                      <line x1={c.x} x2={c.x} y1={animatedY - 40} y2={c.yBase + 40} stroke={videoTheme.profit} strokeWidth={8} />
+                      <rect x={c.x - 30} y={animatedY} width={60} height={animatedH} rx={14} fill={videoTheme.profit} />
                     </g>
                   );
                 })}
               </>
             )}
 
-            {/* PHASE 2: Momentum Burst (Explosive Green Candle + Volume Spike) */}
+            {/* PHASE 2: Momentum Burst (Massive Green Candle Growing UPWARDS Bottom-to-Top) */}
             {phase === 2 && (
               <>
                 {/* Consolidation Candles */}
@@ -148,17 +130,22 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
                   </g>
                 ))}
 
-                {/* Massive Explosive Momentum Candle */}
+                {/* Massive Green Momentum Candle Growing UPWARDS from Bottom to Top */}
                 {(() => {
                   const progress = interpolate(phaseFrame, [5, 30], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+                  const yBase = 700;
+                  const targetH = 540;
+                  const animatedH = targetH * progress;
+                  const animatedY = yBase - animatedH;
+
                   return (
                     <g style={{ opacity: progress }}>
-                      <line x1={650} x2={650} y1={120} y2={760} stroke={videoTheme.profit} strokeWidth={10} />
-                      <rect x={600} y={160} width={100} height={540 * progress} rx={20} fill={videoTheme.profit} />
+                      <line x1={650} x2={650} y1={animatedY - 40} y2={yBase + 60} stroke={videoTheme.profit} strokeWidth={10} />
+                      <rect x={600} y={animatedY} width={100} height={animatedH} rx={20} fill={videoTheme.profit} />
 
                       {/* Volume Spike Bar at Bottom */}
-                      <rect x={590} y={820} width={120} height={160 * progress} rx={14} fill={videoTheme.profit} opacity={0.7} />
-                      <text x={650} y={800} textAnchor="middle" fill={videoTheme.profit} fontSize={22} fontWeight="900">
+                      <rect x={590} y={820} width={120} height={160 * progress} rx={14} fill={videoTheme.profit} opacity={0.8} />
+                      <text x={650} y={800} textAnchor="middle" fill={videoTheme.profit} fontSize={24} fontWeight="900">
                         VOL SPIKE 3.8X
                       </text>
                     </g>
@@ -167,7 +154,7 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
               </>
             )}
 
-            {/* PHASE 3: Engulfing Reversal (Red Candle Swallowed by Giant Green Candle) */}
+            {/* PHASE 3: Engulfing Reversal (Giant Green Candle Growing UPWARDS Bottom-to-Top) */}
             {phase === 3 && (
               <>
                 {/* Red Bearish Candle */}
@@ -179,9 +166,14 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
                   </text>
                 </g>
 
-                {/* Giant Bullish Engulfing Green Candle */}
+                {/* Giant Bullish Engulfing Green Candle Growing UPWARDS */}
                 {(() => {
                   const progress = interpolate(phaseFrame, [5, 30], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+                  const yBase = 800;
+                  const targetH = 580;
+                  const animatedH = targetH * progress;
+                  const animatedY = yBase - animatedH;
+
                   return (
                     <g style={{ opacity: progress }}>
                       {/* Highlight Outer Ring Box */}
@@ -197,9 +189,9 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
                         strokeDasharray="14 10"
                       />
 
-                      <line x1={510} x2={510} y1={180} y2={840} stroke={videoTheme.profit} strokeWidth={10} />
-                      <rect x={450} y={220} width={120} height={580 * progress} rx={22} fill={videoTheme.profit} />
-                      <text x={510} y={170} textAnchor="middle" fill={videoTheme.profit} fontSize={24} fontWeight="900">
+                      <line x1={510} x2={510} y1={animatedY - 40} y2={yBase + 40} stroke={videoTheme.profit} strokeWidth={10} />
+                      <rect x={450} y={animatedY} width={120} height={animatedH} rx={22} fill={videoTheme.profit} />
+                      <text x={510} y={animatedY - 15} textAnchor="middle" fill={videoTheme.profit} fontSize={26} fontWeight="900">
                         ENGULFING
                       </text>
                     </g>
@@ -209,37 +201,56 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
             )}
           </svg>
 
-          {/* DYNAMIC FLOATING PATTERN BADGE */}
-          {phaseFrame >= 20 && (
-            <div
-              style={{
-                position: 'absolute',
-                top: 40,
-                right: 30,
-                background: phase === 1 ? videoTheme.accent : phase === 2 ? videoTheme.profit : videoTheme.profit,
-                color: phase === 2 || phase === 3 ? '#000000' : '#FFFFFF',
-                padding: '22px 38px',
-                borderRadius: 28,
-                fontWeight: 900,
-                boxShadow: `0 20px 60px ${phase === 1 ? videoTheme.accent : videoTheme.profit}66`,
-                transform: `scale(${badgeSpring})`,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 4,
-                zIndex: 30,
-              }}
-            >
-              <span style={{ fontSize: 16, letterSpacing: 2, textTransform: 'uppercase', opacity: 0.9 }}>
-                PATTERN DETECTED
-              </span>
-              <span style={{ fontSize: 34, lineHeight: 1.1 }}>
-                {phase === 1
-                  ? 'Bullish Consecutive Move'
-                  : phase === 2
-                  ? 'Momentum Burst'
-                  : 'Bullish Engulfing Reversal'}
-              </span>
-            </div>
+          {/* CREATIVE / COMICAL ACTION FLASHES FOR EACH PATTERN SIGNAL */}
+          {phase === 1 && (
+            <>
+              <ComicStarburst delay={15} size={360} top="25%" left="70%" color="#FFDD00" />
+              <ComicBadge
+                text="BOOM!"
+                subtext="CONSECUTIVE MOVE"
+                delay={20}
+                bgColor={videoTheme.profit}
+                color="#000000"
+                top="18%"
+                right="10%"
+                rotate={-6}
+                scale={1.2}
+              />
+            </>
+          )}
+
+          {phase === 2 && (
+            <>
+              <ComicStarburst delay={115} size={420} top="30%" left="65%" color="#34E7A0" />
+              <ComicBadge
+                text="KA-CHING!"
+                subtext="MOMENTUM BURST"
+                delay={120}
+                bgColor="#FFCC00"
+                color="#000000"
+                top="16%"
+                right="8%"
+                rotate={8}
+                scale={1.25}
+              />
+            </>
+          )}
+
+          {phase === 3 && (
+            <>
+              <ComicStarburst delay={225} size={400} top="28%" left="55%" color="#FF3B30" />
+              <ComicBadge
+                text="ZAP!"
+                subtext="BULLISH ENGULFING"
+                delay={230}
+                bgColor={videoTheme.accentBright}
+                color="#FFFFFF"
+                top="16%"
+                right="8%"
+                rotate={-8}
+                scale={1.25}
+              />
+            </>
           )}
         </div>
       </div>

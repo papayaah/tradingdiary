@@ -2,8 +2,8 @@ import { getVideoTheme } from '../theme';
 
 export function BrandHeader({
   themeMode = 'dark',
-  title = 'CANDLE SIGNALS',
-  logoSize = 110,
+  title = 'Candle Signals',
+  logoSize = 170,
 }: {
   themeMode?: 'light' | 'dark';
   title?: string;
@@ -15,15 +15,15 @@ export function BrandHeader({
     <div
       style={{
         position: 'absolute',
-        left: 48,
-        right: 48,
-        top: 44,
+        left: 44,
+        right: 44,
+        top: 36,
         display: 'flex',
         alignItems: 'center',
-        gap: 20,
+        gap: 24,
       }}
     >
-      {/* Large Owl SVG Logo (Zero Padding, High Impact Glow) */}
+      {/* Massive Owl SVG Logo (NO GLOW, Zero Padding, Maximum Scale) */}
       <div
         style={{
           width: logoSize,
@@ -31,7 +31,6 @@ export function BrandHeader({
           display: 'grid',
           placeItems: 'center',
           flexShrink: 0,
-          filter: `drop-shadow(0 8px 24px ${videoTheme.accent}aa)`,
         }}
       >
         <svg viewBox="0 0 512 512" style={{ width: '100%', height: '100%' }}>
@@ -55,18 +54,15 @@ export function BrandHeader({
         </svg>
       </div>
 
-      {/* Prominent Title Right Next to the Logo */}
+      {/* Massive Bold Title Right Next to the Logo */}
       {title && (
         <div
           style={{
-            fontSize: 56,
+            fontSize: 78,
             fontWeight: 900,
-            letterSpacing: -1,
-            background: `linear-gradient(135deg, ${videoTheme.foreground} 30%, ${videoTheme.accentBright})`,
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            textShadow: `0 8px 30px ${videoTheme.accent}44`,
-            lineHeight: 1.1,
+            letterSpacing: -1.5,
+            color: videoTheme.foreground,
+            lineHeight: 1,
           }}
         >
           {title}
