@@ -17,6 +17,13 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Trading Diary",
   description: "Your personal trading journal",
+  icons: {
+    icon: [
+      { url: '/brand/market-watcher-owl.svg', type: 'image/svg+xml' },
+      { url: '/favicon.ico', sizes: 'any' },
+    ],
+    apple: '/apple-icon.png',
+  },
 };
 
 export default function RootLayout({

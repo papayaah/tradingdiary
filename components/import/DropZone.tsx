@@ -6,10 +6,12 @@ import { FileText, Image as ImageIcon, Clipboard, ClipboardCheck, Loader2 } from
 
 interface DropZoneProps {
   onData: (data: File | string, type: 'file' | 'text' | 'image') => void;
+  /** Handles a batch of dropped/browsed files as one unified import. */
+  onFiles?: (files: File[]) => void;
   isProcessing?: boolean;
 }
 
-export default function DropZone({ onData, isProcessing }: DropZoneProps) {
+export default function DropZone({ onData, onFiles, isProcessing }: DropZoneProps) {
   const [isDragActive, setIsDragActive] = useState(false);
   const [pasteDetected, setPasteDetected] = useState(false);
   const [pasteError, setPasteError] = useState('');
@@ -27,16 +29,22 @@ export default function DropZone({ onData, isProcessing }: DropZoneProps) {
   }, []);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
-    if (acceptedFiles.length > 0) {
-      const file = acceptedFiles[0];
-      // Check if image
-      if (file.type.startsWith('image/')) {
-        onData(file, 'image');
-      } else {
-        onData(file, 'file');
-      }
+    if (acceptedFiles.length === 0) return;
+
+    // Multiple files: hand the whole batch to the unified-import handler.
+    if (acceptedFiles.length > 1 && onFiles) {
+      onFiles(acceptedFiles);
+      return;
     }
-  }, [onData]);
+
+    const file = acceptedFiles[0];
+    // Check if image
+    if (file.type.startsWith('image/')) {
+      onData(file, 'image');
+    } else {
+      onData(file, 'file');
+    }
+  }, [onData, onFiles]);
 
   const { getRootProps, getInputProps, rootRef } = useDropzone({
     onDrop,
@@ -140,6 +148,9 @@ export default function DropZone({ onData, isProcessing }: DropZoneProps) {
             <h3 className="text-xl font-bold text-foreground">Drop files here or click to browse</h3>
             <p className="text-muted text-sm max-w-sm mx-auto leading-relaxed">
               Supports <span className="text-foreground font-semibold">CSV, TSV, TXT, XML, TLG, eSignal</span>, URLs, and <span className="text-foreground font-semibold">Screenshots</span> (PNG/JPG).
+            </p>
+            <p className="text-muted text-xs max-w-sm mx-auto leading-relaxed">
+              Drop <span className="text-foreground font-semibold">multiple files at once</span> (e.g. Schwab, Vanguard &amp; IBKR) to merge them into one import.
             </p>
           </div>
 

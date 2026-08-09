@@ -7,7 +7,6 @@ import {
   BookOpen,
   Image as ImageIcon,
   LayoutDashboard,
-  TrendingUp,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -20,6 +19,7 @@ import { useAccount } from '@/contexts/AccountContext';
 import { useWelcome } from '@/components/welcome/WelcomeContext';
 import LoginButton from '@/components/auth/LoginButton';
 import GlobalSearch from '@/components/global-search/GlobalSearch';
+import BrandLogo from '@/components/brand/BrandLogo';
 import AccountSwitcher from '@/components/sidebar/AccountSwitcher';
 
 interface SidebarProps {
@@ -75,9 +75,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
       <div className={`flex flex-col border-b border-sidebar-border ${collapsed ? 'py-4' : 'p-3'}`}>
         <div className={`flex items-center gap-2 mb-4 ${collapsed ? 'justify-center' : ''}`}>
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-accent text-white shrink-0">
-            <TrendingUp size={18} />
-          </div>
+          <BrandLogo className="h-8 w-8 shrink-0" priority />
           {!collapsed && (
             <span className="text-sm font-semibold text-foreground truncate">
               Trading Diary

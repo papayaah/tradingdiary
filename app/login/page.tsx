@@ -1,11 +1,12 @@
 'use client';
 
 import { Suspense } from 'react';
-import { ArrowLeft, TrendingUp } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AuthCard } from '@/packages/better-auth-connect/src/components';
 import { tailwindPreset } from '@/packages/better-auth-connect/src/presets/tailwind';
 import { defaultIconSet } from '@/packages/better-auth-connect/src/icons';
+import BrandLogo from '@/components/brand/BrandLogo';
 
 const DEFAULT_DESTINATION = '/watch';
 
@@ -41,9 +42,7 @@ function LoginContent() {
                 Back
             </button>
             <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-600/30">
-                    <TrendingUp size={22} className="text-white" />
-                </div>
+                <BrandLogo className="h-12 w-12" priority />
                 <span className="text-xl font-black tracking-tight text-gray-900 dark:text-white">
                     Trading Diary
                 </span>

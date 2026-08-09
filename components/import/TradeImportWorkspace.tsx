@@ -25,6 +25,30 @@ import { Link as LinkIcon, Cpu } from 'lucide-react';
 import { getProvider } from '@/packages/ai-connect/src/providers';
 import type { LLMProvider } from '@/packages/ai-connect/src/types';
 
+// Drop only exact-duplicate rows (same trade appearing in two dropped files).
+// The full composite key avoids cross-broker orderId collisions dropping
+// distinct trades that happen to share an order number.
+const dedupeTransactions = (txs: NormalizedTransaction[]): NormalizedTransaction[] => {
+  const seen = new Set<string>();
+  const out: NormalizedTransaction[] = [];
+  for (const t of txs) {
+    const key = [
+      t.orderId ?? '',
+      t.date,
+      t.time ?? '',
+      t.symbol,
+      t.side,
+      t.quantity,
+      t.price,
+      t.realizedPnL ?? '',
+    ].join('|');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+  }
+  return out;
+};
+
 export default function TradeImportWorkspace() {
   const router = useRouter();
   const aiContext = useAIManagementContextOptional();
@@ -290,6 +314,172 @@ export default function TradeImportWorkspace() {
     });
   };
 
+  // Parse a single already-read file into normalized transactions, trying
+  // broker-specific adapters first and falling back to the generic column
+  // mapper. Returns null when the file can't be auto-mapped (caller warns).
+  const parseFileForMerge = async (
+    file: File,
+    content: string,
+    ai: {
+      provider?: LLMProvider;
+      apiKey?: string;
+      model?: string;
+    },
+  ): Promise<
+    | { transactions: NormalizedTransaction[]; brokerName: string; currency: string | null }
+    | { skippedReason: string }
+  > => {
+    const brokerSource = { content, filename: file.name };
+
+    // 1. Broker-specific formats (IBKR, Schwab, Fidelity, Robinhood, Webull, eSignal).
+    const brokerImport = await detectAndParseBroker(brokerSource);
+    if (brokerImport) {
+      if (brokerImport.transactions.length === 0) {
+        return { skippedReason: `${file.name} (${brokerImport.brokerName}: no completed trades found)` };
+      }
+      brokerImport.warnings.forEach((warning) => toast.warning(`${file.name}: ${warning}`));
+      return {
+        transactions: brokerImport.transactions,
+        brokerName: brokerImport.brokerName,
+        currency: brokerImport.transactions.find((t) => t.currency)?.currency ?? null,
+      };
+    }
+
+    // 2. Generic CSV/text with column mapping (covers brokers without an adapter, e.g. Vanguard).
+    const { headers: parsedHeaders, rows: parsedRows } = await parseCSVOrText(content);
+    if (parsedHeaders.length === 0 || parsedRows.length === 0) {
+      return { skippedReason: `${file.name} (no tabular data found)` };
+    }
+
+    let detectedMapping = {} as ColumnMapping;
+    let detectedSideMap: SideValueMapping = {};
+    if (ai.apiKey) {
+      try {
+        const response = await mapColumnsWithLLM(parsedHeaders, parsedRows.slice(0, 3), {
+          apiKey: ai.apiKey,
+          provider: ai.provider,
+          model: ai.model,
+        });
+        detectedMapping = response.mapping as ColumnMapping;
+        detectedSideMap = response.sideValues || {};
+        if (response.usage && aiContext?.recordUsage) {
+          aiContext.recordUsage(ai.provider || 'google', ai.model || 'gemini-1.5-flash', {
+            inputTokens: response.usage.promptTokens,
+            outputTokens: response.usage.completionTokens,
+            totalTokens: response.usage.totalTokens,
+          });
+        }
+      } catch {
+        detectedMapping = mapColumnsOffline(parsedHeaders);
+      }
+    } else {
+      detectedMapping = mapColumnsOffline(parsedHeaders);
+    }
+
+    const hasRequired =
+      (detectedMapping.symbol && detectedMapping.quantity && detectedMapping.price) ||
+      (detectedMapping.symbol && detectedMapping.realizedPnL);
+    if (!hasRequired) {
+      return { skippedReason: `${file.name} (couldn't auto-map columns — import it on its own to map manually)` };
+    }
+
+    return {
+      transactions: processRowsWithMapping(detectedMapping, detectedSideMap, parsedRows),
+      brokerName: inferBrokerName(brokerSource) || 'Generic CSV',
+      currency: detectCurrency(parsedHeaders, parsedRows) ?? null,
+    };
+  };
+
+  // Merge several files (possibly from different brokers) into one preview.
+  const handleFiles = (files: File[]) => {
+    // Single file keeps the richer existing flow (manual mapping, image vision).
+    if (files.length <= 1) {
+      const file = files[0];
+      if (file) handleData(file, file.type.startsWith('image/') ? 'image' : 'file');
+      return;
+    }
+
+    startProcessing(async () => {
+      setDetectedBrokerName(null);
+      setDetectedCurrency(null);
+
+      const config = aiContext?.config;
+      const ai = {
+        provider: config?.customLLM?.provider as LLMProvider | undefined,
+        apiKey: config?.customLLM?.apiKey,
+        model: config?.customLLM?.model,
+      };
+
+      const merged: NormalizedTransaction[] = [];
+      const brokerNames = new Set<string>();
+      const skipped: string[] = [];
+      let currency: string | null = null;
+
+      for (const file of files) {
+        // Screenshots need the single-file vision path; can't be merged in a batch.
+        if (file.type.startsWith('image/')) {
+          skipped.push(`${file.name} (screenshot — import images one at a time)`);
+          continue;
+        }
+
+        let content = '';
+        try {
+          content = await file.text();
+        } catch {
+          skipped.push(`${file.name} (unreadable)`);
+          continue;
+        }
+
+        const result = await parseFileForMerge(file, content, ai);
+        if ('skippedReason' in result) {
+          skipped.push(result.skippedReason);
+          continue;
+        }
+
+        merged.push(...result.transactions);
+        brokerNames.add(result.brokerName);
+        if (!currency && result.currency) currency = result.currency;
+      }
+
+      if (merged.length === 0) {
+        throw new Error(
+          skipped.length
+            ? `No importable trades found. Skipped: ${skipped.join('; ')}`
+            : 'No importable trades found in the dropped files.',
+        );
+      }
+
+      const deduped = dedupeTransactions(merged);
+      const duplicatesRemoved = merged.length - deduped.length;
+      const importedFileCount = files.length - skipped.length;
+
+      setPreviewTransactions(deduped);
+      if (currency) setDetectedCurrency(currency);
+      setDetectedBrokerName(
+        brokerNames.size > 1
+          ? `${brokerNames.size} sources (${[...brokerNames].join(', ')})`
+          : [...brokerNames][0] ?? null,
+      );
+
+      // Save each source file to the library (mirrors the broker single-file path).
+      files.forEach((file) => {
+        if (!file.type.startsWith('image/')) importFileToLibrary(file).catch(console.error);
+      });
+
+      setStep('preview');
+
+      toast.success(
+        `Merged ${deduped.length} trades from ${importedFileCount} file${importedFileCount === 1 ? '' : 's'}.`,
+        duplicatesRemoved > 0
+          ? { description: `Removed ${duplicatesRemoved} duplicate row${duplicatesRemoved === 1 ? '' : 's'}.` }
+          : undefined,
+      );
+      if (skipped.length) {
+        toast.warning(`Skipped ${skipped.length} file${skipped.length === 1 ? '' : 's'}: ${skipped.join('; ')}`);
+      }
+    });
+  };
+
   const handleMappingConfirm = (finalMapping: ColumnMapping, finalSideMap: SideValueMapping) => {
     try {
       const normalized = processRowsWithMapping(finalMapping, finalSideMap, rows);
@@ -381,7 +571,7 @@ export default function TradeImportWorkspace() {
 
       {step === 'upload' && (
         <div className="space-y-6">
-          <DropZone onData={handleData} isProcessing={isProcessing} />
+          <DropZone onData={handleData} onFiles={handleFiles} isProcessing={isProcessing} />
 
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
