@@ -13,13 +13,14 @@ interface WelcomeModalProps {
 interface Short {
   key: string;
   base: string;
+  offsetRatio: number;
 }
 
 const SHORTS: Short[] = [
-  { key: 'analytics', base: '/analytics-promo' },
-  { key: 'pattern', base: '/pattern-promo' },
-  { key: 'replay', base: '/replay-promo' },
-  { key: 'autoscan', base: '/auto-scan-promo' },
+  { key: 'analytics', base: '/analytics-promo', offsetRatio: 0.0 },
+  { key: 'pattern', base: '/pattern-promo', offsetRatio: 0.25 },
+  { key: 'replay', base: '/replay-promo', offsetRatio: 0.5 },
+  { key: 'autoscan', base: '/auto-scan-promo', offsetRatio: 0.75 },
 ];
 
 export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4' }: WelcomeModalProps) {
@@ -84,8 +85,7 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4' }: W
           <X size={18} />
         </button>
 
-        {/* Work-in-progress ribbon — pinned above the scroll area. Padded so the
-            centered text clears the floating close button on both edges. */}
+        {/* Work-in-progress ribbon */}
         <div className="flex-shrink-0 flex items-center justify-center gap-2 px-12 py-2.5 text-center bg-accent/10 text-accent border-b border-accent/20">
           <span aria-hidden>🚧</span>
           <p className="text-[11px] sm:text-xs leading-snug">
@@ -97,8 +97,7 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4' }: W
 
         {/* Scrollable body */}
         <div className="overflow-y-auto flex-1 min-h-0">
-          {/* Hero demo video (16:9), full-bleed. Its background matches the app
-              theme, so any contain-bars blend into card-bg rather than gray. */}
+          {/* Hero demo video (16:9), full-bleed */}
           <div className="w-full flex items-center justify-center bg-card-bg border-b border-card-border">
             {isMp4 ? (
               <video
@@ -122,11 +121,14 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4' }: W
             )}
           </div>
 
-          {/* Portrait shorts — real 9:16 tiles, full-bleed edge to edge with 1px
-              dividers (gap-px over card-border). 2-up on mobile, 4-up on desktop. */}
+          {/* Staggered portrait shorts grid (1/4th video offset per card) */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-card-border">
-            {SHORTS.map((short) => (
-              <div key={short.key} className="relative aspect-[9/16] overflow-hidden bg-card-bg">
+            {SHORTS.map((short, idx) => (
+              <div
+                key={short.key}
+                className="relative aspect-[9/16] overflow-hidden bg-card-bg transition-opacity duration-300"
+                style={{ animationDelay: `${idx * 150}ms` }}
+              >
                 <video
                   key={`${short.key}-${isDarkMode}`}
                   src={`${short.base}${themeSuffix}.mp4`}
@@ -134,6 +136,12 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4' }: W
                   loop
                   muted
                   playsInline
+                  onLoadedMetadata={(e) => {
+                    const video = e.currentTarget;
+                    if (video.duration && !isNaN(video.duration)) {
+                      video.currentTime = video.duration * short.offsetRatio;
+                    }
+                  }}
                   className="absolute inset-0 w-full h-full object-cover"
                 />
               </div>
