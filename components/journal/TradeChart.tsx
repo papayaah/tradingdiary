@@ -100,7 +100,7 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
   }, [symbol, date, interval]);
 
   return (
-    <div className="p-4 border-t border-card-border/50 bg-card-bg/30">
+    <div className="p-4">
       <SharedTradingChart
         symbol={symbol}
         date={date}

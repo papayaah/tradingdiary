@@ -124,44 +124,76 @@ function drawMetaTraderArrow(
   isBuy: boolean,
   color: string,
   barWidth: number = 8,
-  isHovered: boolean = false
+  isHovered: boolean = false,
+  isDark: boolean = true
 ) {
   const arrowWidth = Math.max(4, Math.min(11, Math.round(barWidth * 0.7)));
   const arrowHeight = Math.max(5, Math.min(13, Math.round(barWidth * 0.85)));
   const halfW = arrowWidth / 2;
   const halfH = arrowHeight / 2;
+  const notch = 2; // depth of the arrow's tail flag
+
+  // Halo contrasts the arrow against the candle behind it: light outline on the
+  // dark theme, dark outline on the light theme, so it reads in both.
+  const halo = isDark
+    ? (isHovered ? '#ffffff' : 'rgba(255, 255, 255, 0.95)')
+    : (isHovered ? '#0f172a' : 'rgba(15, 23, 42, 0.9)');
+
+  const buildPath = () => {
+    ctx.beginPath();
+    if (isBuy) {
+      ctx.moveTo(x, y - halfH);
+      ctx.lineTo(x + halfW, y + halfH);
+      ctx.lineTo(x + halfW / 2, y + halfH);
+      ctx.lineTo(x + halfW / 2, y + halfH + notch);
+      ctx.lineTo(x - halfW / 2, y + halfH + notch);
+      ctx.lineTo(x - halfW / 2, y + halfH);
+      ctx.lineTo(x - halfW, y + halfH);
+    } else {
+      ctx.moveTo(x, y + halfH);
+      ctx.lineTo(x + halfW, y - halfH);
+      ctx.lineTo(x + halfW / 2, y - halfH);
+      ctx.lineTo(x + halfW / 2, y - halfH - notch);
+      ctx.lineTo(x - halfW / 2, y - halfH - notch);
+      ctx.lineTo(x - halfW / 2, y - halfH);
+      ctx.lineTo(x - halfW, y - halfH);
+    }
+    ctx.closePath();
+  };
 
   ctx.save();
-  ctx.fillStyle = color;
-  ctx.strokeStyle = isHovered ? '#ffffff' : (isBuy ? '#047857' : '#b91c1c');
-  ctx.lineWidth = isHovered ? 2 : 1;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
 
-  ctx.beginPath();
-  if (isBuy) {
-    ctx.moveTo(x, y - halfH);
-    ctx.lineTo(x + halfW, y + halfH);
-    ctx.lineTo(x + halfW / 2, y + halfH);
-    ctx.lineTo(x + halfW / 2, y + halfH + 2);
-    ctx.lineTo(x - halfW / 2, y + halfH + 2);
-    ctx.lineTo(x - halfW / 2, y + halfH);
-    ctx.lineTo(x - halfW, y + halfH);
-  } else {
-    ctx.moveTo(x, y + halfH);
-    ctx.lineTo(x + halfW, y - halfH);
-    ctx.lineTo(x + halfW / 2, y - halfH);
-    ctx.lineTo(x + halfW / 2, y - halfH - 2);
-    ctx.lineTo(x - halfW / 2, y - halfH - 2);
-    ctx.lineTo(x - halfW / 2, y - halfH);
-    ctx.lineTo(x - halfW, y - halfH);
-  }
-  ctx.closePath();
+  // Subtle drop shadow lifts the arrow off same-colored candles behind it.
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+  ctx.shadowBlur = 3;
+  ctx.shadowOffsetY = 1;
+
+  // 1) Halo outline — high contrast against both green and red candles.
+  buildPath();
+  ctx.strokeStyle = halo;
+  ctx.lineWidth = isHovered ? 3 : 2;
+  ctx.stroke();
+
+  // 2) Solid fill (shadow already applied by the halo stroke; drop it here so
+  //    the fill sits crisp inside the outline).
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
+  buildPath();
+  ctx.fillStyle = color;
   ctx.fill();
+
+  // 3) Thin darker edge for definition.
+  ctx.strokeStyle = isBuy ? '#047857' : '#b91c1c';
+  ctx.lineWidth = 1;
   ctx.stroke();
 
   if (isHovered) {
     ctx.beginPath();
     ctx.arc(x, y, halfW + 3, 0, Math.PI * 2);
-    ctx.strokeStyle = color;
+    ctx.strokeStyle = halo;
     ctx.lineWidth = 1.5;
     ctx.stroke();
   }
@@ -294,7 +326,7 @@ class TradeExecutionPaneRenderer implements IPrimitivePaneRenderer {
           ? (this._primitive.isDark ? '#4ade80' : '#16a34a')
           : (this._primitive.isDark ? '#f87171' : '#dc2626');
 
-        drawMetaTraderArrow(ctx, x, y, isBuy, color, barWidth, false);
+        drawMetaTraderArrow(ctx, x, y, isBuy, color, barWidth, false, this._primitive.isDark);
       });
     });
   }
@@ -430,6 +462,24 @@ export default function SharedTradingChart({
     return result;
   }, [candles, formatCandleTime]);
 
+  // The candle-index span covered by the trade's executions (first fill → last
+  // fill). Used to frame the initial view on the trade rather than the whole day
+  // so a 3-candle scalp isn't lost in a 140-candle session. Null when there are
+  // no executions (e.g. the scanner chart) → falls back to the default framing.
+  const tradeExecutionSpan = useMemo(() => {
+    if (!transactions || transactions.length === 0 || sortedCandles.length === 0) return null;
+    const times = transactions
+      .map((t) => findClosestCandleTime(sortedCandles, t.time, date))
+      .filter((t): t is number => t !== null);
+    if (times.length === 0) return null;
+    const minTime = Math.min(...times);
+    const maxTime = Math.max(...times);
+    const firstIdx = sortedCandles.findIndex((c) => c.time === minTime);
+    const lastIdx = sortedCandles.findIndex((c) => c.time === maxTime);
+    if (firstIdx < 0 || lastIdx < 0) return null;
+    return { firstIdx, lastIdx };
+  }, [transactions, sortedCandles, date]);
+
   // Candles currently within the viewport. Auto-pattern detection runs on THIS
   // subset — not the full loaded history — so the overlay reflects what the user
   // is actually looking at, not a formation from years back that's off-screen.
@@ -513,7 +563,7 @@ export default function SharedTradingChart({
       const color = isBuy ? (isDark ? '#4ade80' : '#16a34a') : (isDark ? '#f87171' : '#dc2626');
       const isHovered = hoveredTrade?.trade.tradeId === t.tradeId || (hoveredTrade?.trade.time === t.time && hoveredTrade?.trade.price === t.price);
 
-      drawMetaTraderArrow(ctx, x, y, isBuy, color, barWidth, isHovered);
+      drawMetaTraderArrow(ctx, x, y, isBuy, color, barWidth, isHovered, isDark);
     });
   }, [transactions, sortedCandles, date, formatCandleTime, isDark, hoveredTrade]);
 
@@ -829,13 +879,32 @@ export default function SharedTradingChart({
       );
     }
 
-    // Preserve the user's scroll position on a prepend; on a fresh dataset open
-    // on a recent window (with room to zoom out) rather than fitting everything.
+    // Preserve the user's scroll position on a prepend; on a fresh dataset frame
+    // the trade's execution window (when present), else open on a recent window.
     if (isPrepend && savedRange) {
       const delta = sortedCandles.length - oldCount;
       chart.timeScale().setVisibleLogicalRange({
         from: savedRange.from + delta,
         to: savedRange.to + delta,
+      });
+    } else if (tradeExecutionSpan) {
+      // Frame the executions, padding proportionally to how many candles the
+      // trade spans: a tight scalp zooms in; a trade held across many bars stays
+      // zoomed out. A minimum window guarantees surrounding context either way.
+      const { firstIdx, lastIdx } = tradeExecutionSpan;
+      const span = lastIdx - firstIdx;
+      const pad = Math.max(6, Math.round(span * 0.8));
+      let from = firstIdx - pad;
+      let to = lastIdx + pad;
+      const MIN_VISIBLE_BARS = 24;
+      if (to - from < MIN_VISIBLE_BARS) {
+        const center = (firstIdx + lastIdx) / 2;
+        from = center - MIN_VISIBLE_BARS / 2;
+        to = center + MIN_VISIBLE_BARS / 2;
+      }
+      chart.timeScale().setVisibleLogicalRange({
+        from: Math.max(0, from),
+        to: Math.min(sortedCandles.length + 2, to + 2),
       });
     } else if (sortedCandles.length > DEFAULT_VISIBLE_BARS) {
       chart.timeScale().setVisibleLogicalRange({
@@ -854,7 +923,7 @@ export default function SharedTradingChart({
       programmaticRangeRef.current = false;
     });
     return () => cancelAnimationFrame(raf);
-  }, [sortedCandles, formatCandleTime]);
+  }, [sortedCandles, formatCandleTime, tradeExecutionSpan]);
 
   // ── Effect B2: draw overlays (markers, price lines, pattern geometry) ────────
   // Runs on data OR pattern changes; never touches the time scale, so the

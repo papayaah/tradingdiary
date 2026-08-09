@@ -13,6 +13,8 @@ import CumulativePnLChart from '@/components/dashboard/CumulativePnLChart';
 import WinLossDonut from '@/components/dashboard/WinLossDonut';
 import ComparisonBar from '@/components/dashboard/ComparisonBar';
 import LargestGainLossDonut from '@/components/dashboard/LargestGainLossDonut';
+import DailyWinLossChart from '@/components/dashboard/DailyWinLossChart';
+import DailyPnLChart from '@/components/dashboard/DailyPnLChart';
 import ReplayTimeline from '@/components/replay/ReplayTimeline';
 import OpenPositionsCard from '@/components/dashboard/OpenPositionsCard';
 import { useAccount } from '@/contexts/AccountContext';
@@ -310,8 +312,15 @@ export default function DashboardPage() {
 
       <MonthlyCalendar summaries={summaries} onPeriodChange={setActivePeriod} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
+        <DailyWinLossChart summaries={summaries} />
+        <DailyPnLChart summaries={summaries} currency={baseCurrency} />
+      </div>
+
+      {/* Chart + metric cards. One row on xl screens (chart spans 2 of 6);
+          folds to a full-width chart with 2×2 cards on small screens. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-4 items-stretch">
+        <div className="sm:col-span-2 h-full">
           <CumulativePnLChart
             data={stats.cumulativePnL}
             initialBalance={activeAccount?.initialBalance}
@@ -322,9 +331,6 @@ export default function DashboardPage() {
           losses={stats.totalLosses}
           title="Winning vs Losing Trades"
         />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <ComparisonBar
           title="Hold Time Winning vs Losing Trades"
           winLabel="Winning"

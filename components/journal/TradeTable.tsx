@@ -11,6 +11,7 @@ import {
   removeScreenshotFromTrade,
 } from '@/lib/db/notes';
 import TradeChart from './TradeChart';
+import TradeDetailsPanel from './TradeDetailsPanel';
 import ScreenshotAttachment from './ScreenshotAttachment';
 
 interface TradeTableProps {
@@ -183,11 +184,20 @@ function TradeRow({
         <>
           <tr>
             <td colSpan={9} className="p-0">
-              <TradeChart
-                symbol={trade.symbol}
-                date={trade.date}
-                transactions={trade.transactions}
-              />
+              <div className="flex flex-col lg:flex-row border-t border-card-border/50 bg-card-bg/30">
+                <TradeDetailsPanel
+                  trade={trade}
+                  currency={currency}
+                  className="lg:w-72 shrink-0 border-b lg:border-b-0 lg:border-r border-card-border/50"
+                />
+                <div className="flex-1 min-w-0">
+                  <TradeChart
+                    symbol={trade.symbol}
+                    date={trade.date}
+                    transactions={trade.transactions}
+                  />
+                </div>
+              </div>
             </td>
           </tr>
           <tr>

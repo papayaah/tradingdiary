@@ -56,10 +56,10 @@ export default function CumulativePnLChart({ data, initialBalance }: CumulativeP
   const isProfit = totalPnL >= 0;
 
   return (
-    <div className="rounded-2xl border border-card-border bg-card-bg/50 backdrop-blur-sm p-6 shadow-sm hover:shadow-md transition-all duration-300">
-      <div className="flex items-center justify-between mb-6">
+    <div className="h-full flex flex-col rounded-2xl border border-card-border bg-card-bg/50 backdrop-blur-sm p-4 shadow-sm hover:shadow-md transition-all duration-300">
+      <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
         <div>
-          <h3 className="text-sm font-bold text-muted uppercase tracking-widest mb-1">Cumulative Returns</h3>
+          <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-1">Cumulative Returns</h3>
           <p className={`text-2xl font-black ${isProfit ? 'text-profit' : 'text-loss'}`}>
             {displayMode === 'currency' ? (
               <>{totalPnL < 0 ? '-' : '+'}${Math.abs(totalPnL).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</>
@@ -94,7 +94,7 @@ export default function CumulativePnLChart({ data, initialBalance }: CumulativeP
         </div>
       </div>
 
-      <div className="h-[260px] w-full">
+      <div className="h-[200px] w-full flex-1 min-h-[200px]">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={data} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
             <defs>
