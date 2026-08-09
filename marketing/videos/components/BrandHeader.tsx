@@ -16,20 +16,20 @@ export function BrandHeader({ themeMode = 'dark' }: { themeMode?: 'light' | 'dar
     >
       <div
         style={{
-          width: 62,
-          height: 62,
-          borderRadius: 18,
-          background: videoTheme.accent,
+          width: 58,
+          height: 58,
           display: 'grid',
           placeItems: 'center',
-          color: 'white',
-          fontSize: 31,
-          fontWeight: 900,
+          filter: `drop-shadow(0 4px 12px ${videoTheme.accent}66)`,
         }}
       >
-        ⇧
+        <img
+          src="/brand/market-watcher-owl.svg"
+          alt="Market Watcher Owl"
+          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+        />
       </div>
-      <div style={{ color: videoTheme.foreground, fontSize: 27, fontWeight: 850, letterSpacing: 2.2, marginLeft: 20 }}>
+      <div style={{ color: videoTheme.foreground, fontSize: 27, fontWeight: 850, letterSpacing: 2.2, marginLeft: 16 }}>
         TRADING DIARY
       </div>
       <div

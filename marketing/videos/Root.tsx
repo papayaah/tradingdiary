@@ -151,10 +151,20 @@ export function VideoRoot() {
         height={HEIGHT}
         defaultProps={{ themeMode: 'dark' }}
       />
+      {/* Pattern Promo Main */}
       <Composition
-        id="IBKRGuidePromoLight"
-        component={IBKRGuidePromo}
-        durationInFrames={360}
+        id="PatternPromoMain"
+        component={PatternPromo}
+        durationInFrames={330}
+        fps={FPS}
+        width={WIDTH}
+        height={HEIGHT}
+        defaultProps={{ themeMode: 'dark' }}
+      />
+      <Composition
+        id="PatternPromoMainLight"
+        component={PatternPromo}
+        durationInFrames={330}
         fps={FPS}
         width={WIDTH}
         height={HEIGHT}
