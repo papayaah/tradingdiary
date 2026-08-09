@@ -7,7 +7,7 @@ import { CreditCard, Plus, Wallet, TrendingUp, TrendingDown, Activity, BarChart3
 import { toTransactionRecords } from '@/lib/import/converter';
 import { aggregateByDay } from '@/lib/trading/aggregator';
 import { formatCurrency } from '@/lib/currency';
-import { getImportAccountDefaults } from '@/lib/import/account-defaults';
+import { getImportAccountDefaults, getRecommendedImportAccountId } from '@/lib/import/account-defaults';
 
 interface ImportPreviewProps {
     transactions: NormalizedTransaction[];
@@ -34,10 +34,12 @@ export default function ImportPreview({
         new Set(transactions.map((_, i) => i))
     );
 
-    // Selected account state: accountId string or 'new'
-    const [selectedAccountId, setSelectedAccountId] = useState<string>(() => {
-        return accounts.length > 0 ? accounts[0].accountId : 'new';
-    });
+    const recommendedAccountId = useMemo(
+        () => getRecommendedImportAccountId(accounts, detectedBrokerName, suggestedCurrency),
+        [accounts, detectedBrokerName, suggestedCurrency]
+    );
+    const [accountSelection, setAccountSelection] = useState<string | null>(null);
+    const selectedAccountId = accountSelection ?? recommendedAccountId;
 
     // New account form state
     const accountDefaults = getImportAccountDefaults(detectedBrokerName);
@@ -209,7 +211,7 @@ export default function ImportPreview({
                             {accounts.map(acc => (
                                 <button
                                     key={acc.accountId}
-                                    onClick={() => setSelectedAccountId(acc.accountId)}
+                                    onClick={() => setAccountSelection(acc.accountId)}
                                     className={`flex items-center justify-between p-3.5 rounded-xl border text-left transition-all ${selectedAccountId === acc.accountId ? 'border-accent bg-accent/10 ring-1 ring-accent' : 'hover:border-card-border/80 border-card-border bg-card-bg/60'}`}
                                 >
                                     <div className="flex items-center gap-3">
@@ -225,7 +227,7 @@ export default function ImportPreview({
                                 </button>
                             ))}
                             <button
-                                onClick={() => setSelectedAccountId('new')}
+                                onClick={() => setAccountSelection('new')}
                                 className={`flex items-center gap-3 p-3.5 rounded-xl border text-left transition-all ${selectedAccountId === 'new' ? 'border-accent bg-accent/10 ring-1 ring-accent' : 'hover:border-card-border/80 border-card-border bg-card-bg/60'}`}
                             >
                                 <div className={`p-2.5 rounded-xl ${selectedAccountId === 'new' ? 'bg-accent text-white' : 'bg-muted-bg text-muted border border-card-border'}`}>

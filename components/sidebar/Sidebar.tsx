@@ -9,8 +9,6 @@ import {
   LayoutDashboard,
   TrendingUp,
   Settings,
-  Wallet,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Bell,
@@ -22,6 +20,7 @@ import { useAccount } from '@/contexts/AccountContext';
 import { useWelcome } from '@/components/welcome/WelcomeContext';
 import LoginButton from '@/components/auth/LoginButton';
 import GlobalSearch from '@/components/global-search/GlobalSearch';
+import AccountSwitcher from '@/components/sidebar/AccountSwitcher';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -88,30 +87,12 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
         {/* Account Switcher */}
         {accounts.length > 0 && (
-          <div className="relative group">
-            <select
-              value={selectedAccountId || ''}
-              onChange={(e) => setSelectedAccountId(e.target.value)}
-              className={`w-full appearance-none bg-muted/30 border border-sidebar-border rounded-lg text-xs font-medium cursor-pointer focus:ring-1 ring-accent outline-none transition-all hover:bg-muted/50 ${collapsed ? 'p-2 text-center' : 'py-2 pl-8 pr-6'}`}
-            >
-              {accounts.map(acc => (
-                <option key={acc.accountId} value={acc.accountId}>
-                  {collapsed ? acc.name.charAt(0) : acc.name}
-                </option>
-              ))}
-            </select>
-            {!collapsed && (
-              <>
-                <Wallet size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-              </>
-            )}
-            {collapsed && (
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <Wallet size={14} className="text-muted-foreground opacity-50 group-hover:opacity-100" />
-              </div>
-            )}
-          </div>
+          <AccountSwitcher
+            accounts={accounts}
+            selectedAccountId={selectedAccountId}
+            onSelect={setSelectedAccountId}
+            collapsed={collapsed}
+          />
         )}
       </div>
 
