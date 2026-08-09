@@ -94,21 +94,18 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
         {/* Top Ticker & Live Status Bar */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <span style={{ fontSize: 36, fontWeight: 900, color: videoTheme.foreground }}>
-              {phase === 1 ? 'NVDA' : phase === 2 ? 'TSLA' : 'AMD'}
-            </span>
             <span
               style={{
-                fontSize: 16,
+                fontSize: 18,
                 fontWeight: 850,
                 color: videoTheme.muted,
                 background: videoTheme.cardRaised,
-                padding: '6px 14px',
+                padding: '6px 16px',
                 borderRadius: 12,
                 border: `1px solid ${videoTheme.border}`,
               }}
             >
-              5m
+              5m Chart
             </span>
           </div>
 
@@ -257,7 +254,7 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
             )}
           </svg>
 
-          {/* DYNAMIC FLOATING PATTERN BADGE */}
+          {/* DYNAMIC FLOATING PATTERN BADGE (No Emojis, No Symbols) */}
           {phaseFrame >= 20 && (
             <div
               style={{
@@ -278,14 +275,14 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
               }}
             >
               <span style={{ fontSize: 16, letterSpacing: 2, textTransform: 'uppercase', opacity: 0.9 }}>
-                ⚡ PATTERN DETECTED
+                PATTERN DETECTED
               </span>
               <span style={{ fontSize: 34, lineHeight: 1.1 }}>
                 {phase === 1
                   ? 'Bullish Consecutive Move'
                   : phase === 2
-                  ? '🔥 Momentum Burst (+5.8%)'
-                  : '⚡ Bullish Engulfing Reversal'}
+                  ? 'Momentum Burst'
+                  : 'Bullish Engulfing Reversal'}
               </span>
             </div>
           )}

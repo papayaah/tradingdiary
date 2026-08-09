@@ -32,20 +32,6 @@ export function BrandHeader({ themeMode = 'dark' }: { themeMode?: 'light' | 'dar
       <div style={{ color: videoTheme.foreground, fontSize: 27, fontWeight: 850, letterSpacing: 2.2, marginLeft: 16 }}>
         TRADING DIARY
       </div>
-      <div
-        style={{
-          marginLeft: 'auto',
-          borderRadius: 24,
-          padding: '13px 22px',
-          color: videoTheme.profit,
-          background: `${videoTheme.profit}1C`,
-          fontSize: 19,
-          fontWeight: 800,
-          letterSpacing: 1,
-        }}
-      >
-        ● &nbsp; SCANNER ACTIVE
-      </div>
     </div>
   );
 }
