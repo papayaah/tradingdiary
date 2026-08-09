@@ -23,7 +23,6 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
     phaseFrame = frame - 110;
   }
 
-  const titleSpring = spring({ frame, fps, config: { damping: 18, stiffness: 130 } });
   const cardSpring = spring({ frame: phaseFrame, fps, config: { damping: 16, stiffness: 140 } });
   const badgeSpring = spring({ frame: phaseFrame - 25, fps, config: { damping: 12, stiffness: 180 } });
 
@@ -41,45 +40,17 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
         overflow: 'hidden',
       }}
     >
-      {/* Brand Header — Shows Owl SVG Logo (No "TRADING DIARY" text, No "SCANNER ACTIVE" badge) */}
-      <BrandHeader themeMode={themeMode} showTitle={false} />
+      {/* Brand Header: Large Owl SVG Logo on Left + "CANDLE SIGNALS" Title Right Next to It */}
+      <BrandHeader themeMode={themeMode} title="Candle Signals" logoSize={110} />
 
-      {/* SINGLE FANCY HEADLINE */}
-      <div
-        style={{
-          position: 'absolute',
-          top: 145,
-          left: 48,
-          right: 48,
-          textAlign: 'center',
-          opacity: titleSpring,
-          transform: `translateY(${interpolate(titleSpring, [0, 1], [25, 0])}px)`,
-        }}
-      >
-        <div
-          style={{
-            fontSize: 54,
-            fontWeight: 900,
-            letterSpacing: -1,
-            background: `linear-gradient(135deg, ${videoTheme.foreground} 30%, ${videoTheme.accentBright})`,
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            textShadow: `0 8px 30px ${videoTheme.accent}44`,
-            lineHeight: 1.1,
-          }}
-        >
-          REAL-TIME PATTERN SCANNER
-        </div>
-      </div>
-
-      {/* MAIN GRAPHICAL CHART CONTAINER (Dominates 90% of Height) */}
+      {/* MAIN GRAPHICAL CHART CONTAINER (Maximized Height, Top: 175) */}
       <div
         style={{
           position: 'absolute',
           left: 48,
           right: 48,
-          top: 230,
-          bottom: 50,
+          top: 175,
+          bottom: 40,
           borderRadius: 44,
           background: videoTheme.card,
           border: `3px solid ${videoTheme.border}`,
@@ -91,7 +62,7 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
           justifyContent: 'space-between',
         }}
       >
-        {/* Top Status Bar (No "5m Chart" text, No Symbols) */}
+        {/* Top Status Bar (Clean Badge) */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
           <div
             style={{

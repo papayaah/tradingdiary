@@ -2,10 +2,12 @@ import { getVideoTheme } from '../theme';
 
 export function BrandHeader({
   themeMode = 'dark',
-  showTitle = false,
+  title = 'CANDLE SIGNALS',
+  logoSize = 110,
 }: {
   themeMode?: 'light' | 'dark';
-  showTitle?: boolean;
+  title?: string;
+  logoSize?: number;
 }) {
   const videoTheme = getVideoTheme(themeMode);
 
@@ -13,21 +15,23 @@ export function BrandHeader({
     <div
       style={{
         position: 'absolute',
-        left: 68,
-        right: 68,
-        top: 68,
+        left: 48,
+        right: 48,
+        top: 44,
         display: 'flex',
         alignItems: 'center',
+        gap: 20,
       }}
     >
-      {/* Inline Owl SVG Logo (Guarantees zero broken image links in Remotion) */}
+      {/* Large Owl SVG Logo (Zero Padding, High Impact Glow) */}
       <div
         style={{
-          width: 68,
-          height: 68,
+          width: logoSize,
+          height: logoSize,
           display: 'grid',
           placeItems: 'center',
-          filter: `drop-shadow(0 6px 18px ${videoTheme.accent}88)`,
+          flexShrink: 0,
+          filter: `drop-shadow(0 8px 24px ${videoTheme.accent}aa)`,
         }}
       >
         <svg viewBox="0 0 512 512" style={{ width: '100%', height: '100%' }}>
@@ -51,9 +55,21 @@ export function BrandHeader({
         </svg>
       </div>
 
-      {showTitle && (
-        <div style={{ color: videoTheme.foreground, fontSize: 27, fontWeight: 850, letterSpacing: 2.2, marginLeft: 16 }}>
-          TRADING DIARY
+      {/* Prominent Title Right Next to the Logo */}
+      {title && (
+        <div
+          style={{
+            fontSize: 56,
+            fontWeight: 900,
+            letterSpacing: -1,
+            background: `linear-gradient(135deg, ${videoTheme.foreground} 30%, ${videoTheme.accentBright})`,
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            textShadow: `0 8px 30px ${videoTheme.accent}44`,
+            lineHeight: 1.1,
+          }}
+        >
+          {title}
         </div>
       )}
     </div>
