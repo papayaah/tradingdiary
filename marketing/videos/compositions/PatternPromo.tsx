@@ -1,7 +1,6 @@
 import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
 import React from 'react';
 import { BrandHeader } from '../components/BrandHeader';
-import { ComicBadge, ComicStarburst } from '../components/ComicBurst';
 import { getVideoTheme } from '../theme';
 
 export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'dark' }) {
@@ -25,6 +24,7 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
   }
 
   const cardSpring = spring({ frame: phaseFrame, fps, config: { damping: 16, stiffness: 140 } });
+  const badgeSpring = spring({ frame: phaseFrame - 20, fps, config: { damping: 12, stiffness: 180 } });
 
   const fadeOut = interpolate(frame, [315, 329], [1, 0], {
     extrapolateLeft: 'clamp',
@@ -40,10 +40,10 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
         overflow: 'hidden',
       }}
     >
-      {/* Brand Header: Massive Logo (No Glow, 170px) + "Candle Signals" Title (78px) */}
-      <BrandHeader themeMode={themeMode} title="Candle Signals" logoSize={170} />
+      {/* Brand Header: 170px Owl SVG Logo + "Price Action Alerts" Title (78px) */}
+      <BrandHeader themeMode={themeMode} title="Price Action Alerts" logoSize={170} />
 
-      {/* MAIN GRAPHICAL CHART CONTAINER (No Green Text Badges, Full Focus on Visuals) */}
+      {/* MAIN GRAPHICAL CHART CONTAINER (Clean Professional UI) */}
       <div
         style={{
           position: 'absolute',
@@ -201,56 +201,37 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
             )}
           </svg>
 
-          {/* CREATIVE / COMICAL ACTION FLASHES FOR EACH PATTERN SIGNAL */}
-          {phase === 1 && (
-            <>
-              <ComicStarburst delay={15} size={360} top="25%" left="70%" color="#FFDD00" />
-              <ComicBadge
-                text="BOOM!"
-                subtext="CONSECUTIVE MOVE"
-                delay={20}
-                bgColor={videoTheme.profit}
-                color="#000000"
-                top="18%"
-                right="10%"
-                rotate={-6}
-                scale={1.2}
-              />
-            </>
-          )}
-
-          {phase === 2 && (
-            <>
-              <ComicStarburst delay={115} size={420} top="30%" left="65%" color="#34E7A0" />
-              <ComicBadge
-                text="KA-CHING!"
-                subtext="MOMENTUM BURST"
-                delay={120}
-                bgColor="#FFCC00"
-                color="#000000"
-                top="16%"
-                right="8%"
-                rotate={8}
-                scale={1.25}
-              />
-            </>
-          )}
-
-          {phase === 3 && (
-            <>
-              <ComicStarburst delay={225} size={400} top="28%" left="55%" color="#FF3B30" />
-              <ComicBadge
-                text="ZAP!"
-                subtext="BULLISH ENGULFING"
-                delay={230}
-                bgColor={videoTheme.accentBright}
-                color="#FFFFFF"
-                top="16%"
-                right="8%"
-                rotate={-8}
-                scale={1.25}
-              />
-            </>
+          {/* SLEEK PROFESSIONAL FLOATING SIGNAL BADGE */}
+          {phaseFrame >= 20 && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 40,
+                right: 30,
+                background: phase === 1 ? videoTheme.accent : videoTheme.profit,
+                color: phase === 1 ? '#FFFFFF' : '#000000',
+                padding: '24px 42px',
+                borderRadius: 28,
+                fontWeight: 900,
+                boxShadow: `0 24px 70px ${phase === 1 ? videoTheme.accent : videoTheme.profit}66`,
+                transform: `scale(${badgeSpring})`,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4,
+                zIndex: 30,
+              }}
+            >
+              <span style={{ fontSize: 16, letterSpacing: 2.5, textTransform: 'uppercase', opacity: 0.85 }}>
+                PATTERN DETECTED
+              </span>
+              <span style={{ fontSize: 34, lineHeight: 1.1 }}>
+                {phase === 1
+                  ? 'Bullish Consecutive Move'
+                  : phase === 2
+                  ? 'Momentum Burst (+5.8%)'
+                  : 'Bullish Engulfing Reversal'}
+              </span>
+            </div>
           )}
         </div>
       </div>
