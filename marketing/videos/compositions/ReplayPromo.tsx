@@ -14,12 +14,19 @@ const REPLAY_CANDLES = [
   { open: 163.0, high: 165.2, low: 162.8, close: 164.8, time: '10:05 AM', action: 'SELL', price: 164.5 },
 ];
 
-export function ReplayPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'dark' }) {
+export function ReplayPromo({
+  themeMode = 'dark',
+  startFrameOffset = 165,
+}: {
+  themeMode?: 'light' | 'dark';
+  startFrameOffset?: number;
+}) {
   const videoTheme = getVideoTheme(themeMode);
-  const frame = useCurrentFrame();
+  const rawFrame = useCurrentFrame();
+  const frame = (rawFrame + startFrameOffset) % 330;
   const { fps } = useVideoConfig();
 
-  const windowSpring = spring({ frame: frame - 10, fps, config: { damping: 16, stiffness: 120 } });
+  const windowSpring = spring({ frame: Math.max(0, frame - 10), fps, config: { damping: 16, stiffness: 120 } });
   const fadeOut = interpolate(frame, [315, 329], [1, 0], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
@@ -65,7 +72,7 @@ export function ReplayPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'dar
       {/* Brand Header: 170px Owl SVG Logo + "Trade Replay" Title (78px) */}
       <BrandHeader themeMode={themeMode} title="Trade Replay" logoSize={170} />
 
-      {/* Main Replay Card Window (Top: 220, Bottom: 40) */}
+      {/* Main Replay Card Window */}
       <div
         style={{
           position: 'absolute',
@@ -153,7 +160,7 @@ export function ReplayPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'dar
               <line key={r} x1={30} x2={850} y1={r * 680} y2={r * 680} stroke={videoTheme.grid} strokeDasharray="8 12" strokeWidth={2} />
             ))}
 
-            {/* Candlesticks (Bottom-to-Top Growth Math) */}
+            {/* Candlesticks */}
             {REPLAY_CANDLES.slice(0, activeCandleIndex + 1).map((candle, idx) => {
               const x = 90 + idx * 100;
               const minP = 148.0;

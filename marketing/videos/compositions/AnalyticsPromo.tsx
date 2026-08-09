@@ -15,13 +15,20 @@ const PNL_POINTS = [
   { x: 840, y: 80, val: 18450, label: 'Feb 18' },
 ];
 
-export function AnalyticsPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'dark' }) {
+export function AnalyticsPromo({
+  themeMode = 'dark',
+  startFrameOffset = 0,
+}: {
+  themeMode?: 'light' | 'dark';
+  startFrameOffset?: number;
+}) {
   const videoTheme = getVideoTheme(themeMode);
-  const frame = useCurrentFrame();
+  const rawFrame = useCurrentFrame();
+  const frame = (rawFrame + startFrameOffset) % 330;
   const { fps } = useVideoConfig();
 
-  const card1Spring = spring({ frame: frame - 10, fps, config: { damping: 16, stiffness: 120 } });
-  const card2Spring = spring({ frame: frame - 24, fps, config: { damping: 16, stiffness: 120 } });
+  const card1Spring = spring({ frame: Math.max(0, frame - 10), fps, config: { damping: 16, stiffness: 120 } });
+  const card2Spring = spring({ frame: Math.max(0, frame - 24), fps, config: { damping: 16, stiffness: 120 } });
   const fadeOut = interpolate(frame, [315, 329], [1, 0], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
@@ -78,7 +85,7 @@ export function AnalyticsPromo({ themeMode = 'dark' }: { themeMode?: 'light' | '
       {/* Brand Header: 170px Owl SVG Logo + "Visual Analytics" Title (78px) */}
       <BrandHeader themeMode={themeMode} title="Visual Analytics" logoSize={170} />
 
-      {/* Main Cumulative P&L Card (Top: 175, Maximized Height) */}
+      {/* Main Cumulative P&L Card */}
       <div
         style={{
           position: 'absolute',
@@ -184,11 +191,8 @@ export function AnalyticsPromo({ themeMode = 'dark' }: { themeMode?: 'light' | '
         {/* Win Rate Donut Ring */}
         <div style={{ width: 340, height: 340, position: 'relative', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg viewBox="0 0 160 160" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
-            {/* Background Ring */}
             <circle cx="80" cy="80" r="60" fill="none" stroke={videoTheme.cardRaised} strokeWidth="18" />
-            {/* Loss Arc */}
             <circle cx="80" cy="80" r="60" fill="none" stroke={videoTheme.loss} strokeWidth="18" strokeDasharray="377" strokeDashoffset="0" opacity={0.6} />
-            {/* Animated Win Arc */}
             <circle
               cx="80"
               cy="80"
@@ -218,7 +222,6 @@ export function AnalyticsPromo({ themeMode = 'dark' }: { themeMode?: 'light' | '
             <div style={{ color: videoTheme.muted, fontSize: 20, fontWeight: 800, marginBottom: 10 }}>
               AVG HOLD TIME
             </div>
-            {/* Winning Hold Bar */}
             <div style={{ marginBottom: 18 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 20, fontWeight: 850, color: videoTheme.foreground, marginBottom: 6 }}>
                 <span>Winning Trades</span>
@@ -228,7 +231,6 @@ export function AnalyticsPromo({ themeMode = 'dark' }: { themeMode?: 'light' | '
                 <div style={{ width: `${winHoldWidth}%`, height: '100%', background: videoTheme.profit, borderRadius: 9 }} />
               </div>
             </div>
-            {/* Losing Hold Bar */}
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 20, fontWeight: 850, color: videoTheme.foreground, marginBottom: 6 }}>
                 <span>Losing Trades</span>

@@ -3,9 +3,16 @@ import React from 'react';
 import { BrandHeader } from '../components/BrandHeader';
 import { getVideoTheme } from '../theme';
 
-export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'dark' }) {
+export function PatternPromo({
+  themeMode = 'dark',
+  startFrameOffset = 82,
+}: {
+  themeMode?: 'light' | 'dark';
+  startFrameOffset?: number;
+}) {
   const videoTheme = getVideoTheme(themeMode);
-  const frame = useCurrentFrame();
+  const rawFrame = useCurrentFrame();
+  const frame = (rawFrame + startFrameOffset) % 330;
   const { fps } = useVideoConfig();
 
   // Phase calculation:
@@ -24,7 +31,7 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
   }
 
   const cardSpring = spring({ frame: phaseFrame, fps, config: { damping: 16, stiffness: 140 } });
-  const badgeSpring = spring({ frame: phaseFrame - 20, fps, config: { damping: 12, stiffness: 180 } });
+  const badgeSpring = spring({ frame: Math.max(0, phaseFrame - 20), fps, config: { damping: 12, stiffness: 180 } });
 
   const fadeOut = interpolate(frame, [315, 329], [1, 0], {
     extrapolateLeft: 'clamp',
@@ -79,7 +86,7 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
               <line key={r} x1={20} x2={940} y1={r * 1000} y2={r * 1000} stroke={videoTheme.grid} strokeDasharray="10 14" strokeWidth={3} />
             ))}
 
-            {/* PHASE 1: Bullish Consecutive Move (3 Stepping Green Candles Growing UPWARDS Bottom-to-Top) */}
+            {/* PHASE 1: Bullish Consecutive Move */}
             {phase === 1 && (
               <>
                 {/* 3 Small Base Candles */}
@@ -94,7 +101,7 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
                   </g>
                 ))}
 
-                {/* 3 Stepping Up Green Candles Growing UPWARDS from Bottom to Top */}
+                {/* 3 Stepping Up Green Candles */}
                 {[
                   { x: 440, yBase: 700, targetH: 120, delay: 10 },
                   { x: 570, yBase: 560, targetH: 150, delay: 20 },
@@ -102,7 +109,7 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
                 ].map((c, i) => {
                   const progress = interpolate(phaseFrame - c.delay, [0, 20], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
                   const animatedH = c.targetH * progress;
-                  const animatedY = c.yBase - animatedH; // Bottom-to-top growth!
+                  const animatedY = c.yBase - animatedH;
 
                   return (
                     <g key={i} style={{ opacity: progress }}>
@@ -114,7 +121,7 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
               </>
             )}
 
-            {/* PHASE 2: Momentum Burst (Massive Green Candle Growing UPWARDS Bottom-to-Top) */}
+            {/* PHASE 2: Momentum Burst */}
             {phase === 2 && (
               <>
                 {/* Consolidation Candles */}
@@ -130,7 +137,7 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
                   </g>
                 ))}
 
-                {/* Massive Green Momentum Candle Growing UPWARDS from Bottom to Top */}
+                {/* Massive Green Momentum Candle */}
                 {(() => {
                   const progress = interpolate(phaseFrame, [5, 30], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
                   const yBase = 700;
@@ -143,7 +150,7 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
                       <line x1={650} x2={650} y1={animatedY - 40} y2={yBase + 60} stroke={videoTheme.profit} strokeWidth={10} />
                       <rect x={600} y={animatedY} width={100} height={animatedH} rx={20} fill={videoTheme.profit} />
 
-                      {/* Volume Spike Bar at Bottom */}
+                      {/* Volume Spike Bar */}
                       <rect x={590} y={820} width={120} height={160 * progress} rx={14} fill={videoTheme.profit} opacity={0.8} />
                       <text x={650} y={800} textAnchor="middle" fill={videoTheme.profit} fontSize={24} fontWeight="900">
                         VOL SPIKE 3.8X
@@ -154,7 +161,7 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
               </>
             )}
 
-            {/* PHASE 3: Engulfing Reversal (Giant Green Candle Growing UPWARDS Bottom-to-Top) */}
+            {/* PHASE 3: Engulfing Reversal */}
             {phase === 3 && (
               <>
                 {/* Red Bearish Candle */}
@@ -166,7 +173,7 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
                   </text>
                 </g>
 
-                {/* Giant Bullish Engulfing Green Candle Growing UPWARDS */}
+                {/* Giant Bullish Engulfing Green Candle */}
                 {(() => {
                   const progress = interpolate(phaseFrame, [5, 30], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
                   const yBase = 800;
@@ -176,7 +183,6 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
 
                   return (
                     <g style={{ opacity: progress }}>
-                      {/* Highlight Outer Ring Box */}
                       <rect
                         x={250}
                         y={140}
@@ -201,7 +207,7 @@ export function PatternPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'da
             )}
           </svg>
 
-          {/* OVERSIZED HIGH-IMPACT SIGNAL BADGE (Zero Sub-labels) */}
+          {/* OVERSIZED HIGH-IMPACT SIGNAL BADGE */}
           {phaseFrame >= 20 && (
             <div
               style={{

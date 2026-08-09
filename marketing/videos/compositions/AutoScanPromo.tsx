@@ -20,18 +20,25 @@ const HS_CANDLES = [
   { open: 154.2, high: 154.5, low: 144.5, close: 145.0, label: 'BREAKDOWN' },
 ];
 
-export function AutoScanPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'dark' }) {
+export function AutoScanPromo({
+  themeMode = 'dark',
+  startFrameOffset = 247,
+}: {
+  themeMode?: 'light' | 'dark';
+  startFrameOffset?: number;
+}) {
   const videoTheme = getVideoTheme(themeMode);
-  const frame = useCurrentFrame();
+  const rawFrame = useCurrentFrame();
+  const frame = (rawFrame + startFrameOffset) % 330;
   const { fps } = useVideoConfig();
 
-  const chartSpring = spring({ frame: frame - 10, fps, config: { damping: 16, stiffness: 120 } });
+  const chartSpring = spring({ frame: Math.max(0, frame - 10), fps, config: { damping: 16, stiffness: 120 } });
 
   // Neckline drawing animation
   const necklineProgress = interpolate(frame, [35, 95], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
 
   // Pattern detection alert pop
-  const alertScale = spring({ frame: frame - 105, fps, config: { damping: 12, stiffness: 180 } });
+  const alertScale = spring({ frame: Math.max(0, frame - 105), fps, config: { damping: 12, stiffness: 180 } });
 
   const fadeOut = interpolate(frame, [315, 329], [1, 0], {
     extrapolateLeft: 'clamp',
@@ -50,7 +57,7 @@ export function AutoScanPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'd
       {/* Brand Header: 170px Owl SVG Logo + "Pattern Scanner" Title (78px) */}
       <BrandHeader themeMode={themeMode} title="Pattern Scanner" logoSize={170} />
 
-      {/* Full-Height Maximized Chart Container (Top: 220, Bottom: 40) */}
+      {/* Full-Height Maximized Chart Container */}
       <div
         style={{
           position: 'absolute',
@@ -79,7 +86,7 @@ export function AutoScanPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'd
               <line key={r} x1={10} x2={950} y1={r * 1000} y2={r * 1000} stroke={videoTheme.grid} strokeDasharray="10 14" strokeWidth={3} />
             ))}
 
-            {/* Neckline Dotted Path (y = 620 -> $150.00 level) */}
+            {/* Neckline Dotted Path */}
             <line
               x1={60}
               x2={60 + 860 * necklineProgress}
@@ -112,7 +119,7 @@ export function AutoScanPromo({ themeMode = 'dark' }: { themeMode?: 'light' | 'd
                   {/* Body */}
                   <rect x={cx - 30} y={animatedY} width={60} height={bodyHeight} rx={12} fill={color} />
 
-                  {/* Peak Labels (Left Shoulder, Head, Right Shoulder) */}
+                  {/* Peak Labels */}
                   {c.label && frame >= 45 && (
                     <g transform={`translate(${cx}, ${animatedY - 55})`}>
                       <rect x={-85} y={-38} width={170} height={48} rx={14} fill={videoTheme.cardRaised} stroke={videoTheme.border} strokeWidth={3} />
