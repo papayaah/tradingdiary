@@ -1,4 +1,5 @@
 import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
+import React from 'react';
 import { BrandHeader } from '../components/BrandHeader';
 import { getVideoTheme } from '../theme';
 
@@ -19,9 +20,8 @@ export function AnalyticsPromo({ themeMode = 'dark' }: { themeMode?: 'light' | '
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
-  const headerSpring = spring({ frame, fps, config: { damping: 18, stiffness: 130 } });
-  const card1Spring = spring({ frame: frame - 12, fps, config: { damping: 16, stiffness: 120 } });
-  const card2Spring = spring({ frame: frame - 28, fps, config: { damping: 16, stiffness: 120 } });
+  const card1Spring = spring({ frame: frame - 10, fps, config: { damping: 16, stiffness: 120 } });
+  const card2Spring = spring({ frame: frame - 24, fps, config: { damping: 16, stiffness: 120 } });
   const fadeOut = interpolate(frame, [315, 329], [1, 0], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
@@ -69,74 +69,55 @@ export function AnalyticsPromo({ themeMode = 'dark' }: { themeMode?: 'light' | '
   return (
     <AbsoluteFill
       style={{
-        background: `radial-gradient(circle at 50% 20%, ${videoTheme.accent}30, transparent 60%), ${videoTheme.background}`,
+        background: `radial-gradient(circle at 50% 15%, ${videoTheme.accent}35, transparent 65%), ${videoTheme.background}`,
         fontFamily: 'Inter, SF Pro Display, Helvetica, Arial, sans-serif',
         opacity: fadeOut,
         overflow: 'hidden',
       }}
     >
-      <BrandHeader themeMode={themeMode} />
+      {/* Brand Header: 170px Owl SVG Logo + "Visual Analytics" Title (78px) */}
+      <BrandHeader themeMode={themeMode} title="Visual Analytics" logoSize={170} />
 
-      {/* Header Copy */}
+      {/* Main Cumulative P&L Card (Top: 175, Maximized Height) */}
       <div
         style={{
           position: 'absolute',
-          top: 150,
-          left: 48,
-          right: 48,
-          textAlign: 'center',
-          opacity: headerSpring,
-          transform: `translateY(${interpolate(headerSpring, [0, 1], [30, 0])}px)`,
-        }}
-      >
-        <div style={{ color: videoTheme.accentBright, fontSize: 32, fontWeight: 900, letterSpacing: 4 }}>
-          VISUAL ANALYTICS
-        </div>
-        <div style={{ color: videoTheme.foreground, fontSize: 62, fontWeight: 900, marginTop: 6, lineHeight: 1.1 }}>
-          Track Your Edge Live.
-        </div>
-      </div>
-
-      {/* Main Cumulative P&L Card */}
-      <div
-        style={{
-          position: 'absolute',
-          left: 48,
-          right: 48,
-          top: 360,
-          height: 640,
+          left: 44,
+          right: 44,
+          top: 175,
+          height: 840,
           borderRadius: 44,
           background: videoTheme.card,
           border: `3px solid ${videoTheme.border}`,
-          boxShadow: '0 40px 100px rgba(0,0,0,.55)',
+          boxShadow: '0 40px 100px rgba(0,0,0,.6)',
           overflow: 'hidden',
           padding: '36px',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between',
           opacity: card1Spring,
-          transform: `scale(${interpolate(card1Spring, [0, 1], [0.94, 1])})`,
+          transform: `scale(${interpolate(card1Spring, [0, 1], [0.95, 1])})`,
         }}
       >
         {/* Card Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
-            <div style={{ color: videoTheme.muted, fontSize: 20, fontWeight: 750, letterSpacing: 1.5 }}>
-              CUMULATIVE P&L
+            <div style={{ color: videoTheme.muted, fontSize: 22, fontWeight: 800, letterSpacing: 1.5 }}>
+              CUMULATIVE EQUITIES
             </div>
-            <div style={{ color: videoTheme.profit, fontSize: 58, fontWeight: 900, marginTop: 4 }}>
+            <div style={{ color: videoTheme.profit, fontSize: 66, fontWeight: 900, marginTop: 4 }}>
               +${currentPnL.toLocaleString('en-US')}
             </div>
           </div>
           <div
             style={{
               background: `${videoTheme.profit}22`,
-              border: `2px solid ${videoTheme.profit}44`,
+              border: `2px solid ${videoTheme.profit}55`,
               color: videoTheme.profit,
-              padding: '10px 20px',
-              borderRadius: 16,
-              fontSize: 22,
-              fontWeight: 850,
+              padding: '12px 24px',
+              borderRadius: 20,
+              fontSize: 24,
+              fontWeight: 900,
             }}
           >
             +124.5% Equity
@@ -144,11 +125,11 @@ export function AnalyticsPromo({ themeMode = 'dark' }: { themeMode?: 'light' | '
         </div>
 
         {/* SVG Equity Curve */}
-        <div style={{ height: 440, width: '100%', position: 'relative' }}>
+        <div style={{ height: 600, width: '100%', position: 'relative' }}>
           <svg viewBox="0 0 880 440" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
             <defs>
               <linearGradient id="pnlGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={videoTheme.profit} stopOpacity={0.4} />
+                <stop offset="0%" stopColor={videoTheme.profit} stopOpacity={0.45} />
                 <stop offset="100%" stopColor={videoTheme.profit} stopOpacity={0.0} />
               </linearGradient>
             </defs>
@@ -162,14 +143,14 @@ export function AnalyticsPromo({ themeMode = 'dark' }: { themeMode?: 'light' | '
             {areaD && <path d={areaD} fill="url(#pnlGradient)" />}
 
             {/* Curve Line */}
-            {pathD && <path d={pathD} fill="none" stroke={videoTheme.profit} strokeWidth={8} strokeLinecap="round" strokeLinejoin="round" />}
+            {pathD && <path d={pathD} fill="none" stroke={videoTheme.profit} strokeWidth={9} strokeLinecap="round" strokeLinejoin="round" />}
 
             {/* Pulsing Active Endpoint */}
             {visiblePoints.length > 0 && (
               <circle
                 cx={visiblePoints[visiblePoints.length - 1].x}
                 cy={visiblePoints[visiblePoints.length - 1].y}
-                r={12}
+                r={14}
                 fill={videoTheme.profit}
                 stroke="#ffffff"
                 strokeWidth={4}
@@ -183,25 +164,25 @@ export function AnalyticsPromo({ themeMode = 'dark' }: { themeMode?: 'light' | '
       <div
         style={{
           position: 'absolute',
-          left: 48,
-          right: 48,
-          top: 1040,
-          bottom: 120,
+          left: 44,
+          right: 44,
+          top: 1045,
+          bottom: 40,
           borderRadius: 44,
           background: videoTheme.card,
           border: `3px solid ${videoTheme.border}`,
-          boxShadow: '0 40px 100px rgba(0,0,0,.55)',
+          boxShadow: '0 40px 100px rgba(0,0,0,.6)',
           overflow: 'hidden',
-          padding: '40px',
+          padding: '36px 40px',
           display: 'flex',
           gap: 36,
           alignItems: 'center',
           opacity: card2Spring,
-          transform: `scale(${interpolate(card2Spring, [0, 1], [0.94, 1])})`,
+          transform: `scale(${interpolate(card2Spring, [0, 1], [0.95, 1])})`,
         }}
       >
         {/* Win Rate Donut Ring */}
-        <div style={{ width: 320, height: 320, position: 'relative', flexShrink: 0, display: 'flex', alignItems: 'center', justifyCenter: 'center' }}>
+        <div style={{ width: 340, height: 340, position: 'relative', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg viewBox="0 0 160 160" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
             {/* Background Ring */}
             <circle cx="80" cy="80" r="60" fill="none" stroke={videoTheme.cardRaised} strokeWidth="18" />
@@ -221,11 +202,11 @@ export function AnalyticsPromo({ themeMode = 'dark' }: { themeMode?: 'light' | '
             />
           </svg>
           <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-            <div style={{ color: videoTheme.muted, fontSize: 18, fontWeight: 800 }}>WIN RATE</div>
-            <div style={{ color: videoTheme.foreground, fontSize: 48, fontWeight: 900, marginTop: 2 }}>
+            <div style={{ color: videoTheme.muted, fontSize: 20, fontWeight: 800 }}>WIN RATE</div>
+            <div style={{ color: videoTheme.foreground, fontSize: 54, fontWeight: 900, marginTop: 2 }}>
               {winRatePercent.toFixed(1)}%
             </div>
-            <div style={{ color: videoTheme.profit, fontSize: 18, fontWeight: 800, marginTop: 2 }}>
+            <div style={{ color: videoTheme.profit, fontSize: 20, fontWeight: 800, marginTop: 2 }}>
               48W / 22L
             </div>
           </div>
@@ -234,58 +215,42 @@ export function AnalyticsPromo({ themeMode = 'dark' }: { themeMode?: 'light' | '
         {/* Hold Time & Stats Column */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 28 }}>
           <div>
-            <div style={{ color: videoTheme.muted, fontSize: 18, fontWeight: 800, marginBottom: 8 }}>
+            <div style={{ color: videoTheme.muted, fontSize: 20, fontWeight: 800, marginBottom: 10 }}>
               AVG HOLD TIME
             </div>
             {/* Winning Hold Bar */}
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 18, fontWeight: 800, color: videoTheme.foreground, marginBottom: 4 }}>
+            <div style={{ marginBottom: 18 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 20, fontWeight: 850, color: videoTheme.foreground, marginBottom: 6 }}>
                 <span>Winning Trades</span>
                 <span style={{ color: videoTheme.profit }}>45 mins</span>
               </div>
-              <div style={{ height: 16, background: videoTheme.cardRaised, borderRadius: 8, overflow: 'hidden' }}>
-                <div style={{ width: `${winHoldWidth}%`, height: '100%', background: videoTheme.profit, borderRadius: 8 }} />
+              <div style={{ height: 18, background: videoTheme.cardRaised, borderRadius: 9, overflow: 'hidden' }}>
+                <div style={{ width: `${winHoldWidth}%`, height: '100%', background: videoTheme.profit, borderRadius: 9 }} />
               </div>
             </div>
             {/* Losing Hold Bar */}
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 18, fontWeight: 800, color: videoTheme.foreground, marginBottom: 4 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 20, fontWeight: 850, color: videoTheme.foreground, marginBottom: 6 }}>
                 <span>Losing Trades</span>
                 <span style={{ color: videoTheme.loss }}>14 mins</span>
               </div>
-              <div style={{ height: 16, background: videoTheme.cardRaised, borderRadius: 8, overflow: 'hidden' }}>
-                <div style={{ width: `${lossHoldWidth}%`, height: '100%', background: videoTheme.loss, borderRadius: 8 }} />
+              <div style={{ height: 18, background: videoTheme.cardRaised, borderRadius: 9, overflow: 'hidden' }}>
+                <div style={{ width: `${lossHoldWidth}%`, height: '100%', background: videoTheme.loss, borderRadius: 9 }} />
               </div>
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 24, borderTop: `2px solid ${videoTheme.border}`, paddingTop: 20 }}>
+          <div style={{ display: 'flex', gap: 32, borderTop: `2px solid ${videoTheme.border}`, paddingTop: 20 }}>
             <div>
-              <div style={{ color: videoTheme.muted, fontSize: 16, fontWeight: 800 }}>PROFIT FACTOR</div>
-              <div style={{ color: videoTheme.accentBright, fontSize: 32, fontWeight: 900 }}>2.64</div>
+              <div style={{ color: videoTheme.muted, fontSize: 18, fontWeight: 800 }}>PROFIT FACTOR</div>
+              <div style={{ color: videoTheme.accentBright, fontSize: 36, fontWeight: 900 }}>2.64</div>
             </div>
             <div>
-              <div style={{ color: videoTheme.muted, fontSize: 16, fontWeight: 800 }}>AVG TRADE</div>
-              <div style={{ color: videoTheme.profit, fontSize: 32, fontWeight: 900 }}>+$263.57</div>
+              <div style={{ color: videoTheme.muted, fontSize: 18, fontWeight: 800 }}>AVG WIN</div>
+              <div style={{ color: videoTheme.profit, fontSize: 36, fontWeight: 900 }}>+$263.57</div>
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Bottom Branding Footer */}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: 36,
-          width: '100%',
-          textAlign: 'center',
-          color: videoTheme.muted,
-          fontSize: 22,
-          fontWeight: 800,
-          letterSpacing: 2,
-        }}
-      >
-        TRADING DIARY — ANALYTICS ENGINE
       </div>
     </AbsoluteFill>
   );
