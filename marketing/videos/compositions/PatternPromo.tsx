@@ -161,7 +161,7 @@ export function PatternPromo({
               </>
             )}
 
-            {/* PHASE 3: Engulfing Reversal */}
+            {/* PHASE 3: Engulfing Reversal (Clean Graphics, NO Dotted Rectangle Border) */}
             {phase === 3 && (
               <>
                 {/* Red Bearish Candle */}
@@ -183,18 +183,6 @@ export function PatternPromo({
 
                   return (
                     <g style={{ opacity: progress }}>
-                      <rect
-                        x={250}
-                        y={140}
-                        width={380}
-                        height={760}
-                        rx={30}
-                        fill="none"
-                        stroke={videoTheme.profit}
-                        strokeWidth={6}
-                        strokeDasharray="14 10"
-                      />
-
                       <line x1={510} x2={510} y1={animatedY - 40} y2={yBase + 40} stroke={videoTheme.profit} strokeWidth={10} />
                       <rect x={450} y={animatedY} width={120} height={animatedH} rx={22} fill={videoTheme.profit} />
                       <text x={510} y={animatedY - 15} textAnchor="middle" fill={videoTheme.profit} fontSize={26} fontWeight="900">
@@ -207,30 +195,45 @@ export function PatternPromo({
             )}
           </svg>
 
-          {/* OVERSIZED HIGH-IMPACT SIGNAL BADGE */}
+          {/* OVERSIZED BRAND-GREEN BADGE (#20B86A Background, Pure White Text, 2-Line Format) */}
           {phaseFrame >= 20 && (
             <div
               style={{
                 position: 'absolute',
                 top: 40,
                 right: 40,
-                background: phase === 1 ? videoTheme.accent : videoTheme.profit,
-                color: phase === 1 ? '#FFFFFF' : '#000000',
-                padding: '28px 52px',
-                borderRadius: 32,
+                background: '#20B86A',
+                color: '#FFFFFF',
+                padding: '28px 56px',
+                borderRadius: 36,
                 fontWeight: 900,
-                boxShadow: `0 24px 80px ${phase === 1 ? videoTheme.accent : videoTheme.profit}77`,
+                boxShadow: '0 24px 80px rgba(32, 184, 106, 0.55)',
                 transform: `scale(${badgeSpring})`,
                 zIndex: 30,
+                textAlign: 'center',
               }}
             >
-              <span style={{ fontSize: 46, fontWeight: 900, letterSpacing: -0.5, lineHeight: 1 }}>
-                {phase === 1
-                  ? 'Bullish Consecutive Move'
-                  : phase === 2
-                  ? 'Momentum Burst (+5.8%)'
-                  : 'Bullish Engulfing Reversal'}
-              </span>
+              <div style={{ fontSize: 50, fontWeight: 900, letterSpacing: -0.5, lineHeight: 1.15 }}>
+                {phase === 1 ? (
+                  <>
+                    Bullish
+                    <br />
+                    Consecutive Move
+                  </>
+                ) : phase === 2 ? (
+                  <>
+                    Momentum
+                    <br />
+                    Burst
+                  </>
+                ) : (
+                  <>
+                    Bullish Engulfing
+                    <br />
+                    Reversal
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>
