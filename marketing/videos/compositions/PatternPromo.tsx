@@ -121,7 +121,7 @@ export function PatternPromo({
               </>
             )}
 
-            {/* PHASE 2: Momentum Burst */}
+            {/* PHASE 2: Momentum Burst (Pure Candlesticks, No Bottom Mirror Bar) */}
             {phase === 2 && (
               <>
                 {/* Consolidation Candles */}
@@ -149,19 +149,13 @@ export function PatternPromo({
                     <g style={{ opacity: progress }}>
                       <line x1={650} x2={650} y1={animatedY - 40} y2={yBase + 60} stroke={videoTheme.profit} strokeWidth={10} />
                       <rect x={600} y={animatedY} width={100} height={animatedH} rx={20} fill={videoTheme.profit} />
-
-                      {/* Volume Spike Bar */}
-                      <rect x={590} y={820} width={120} height={160 * progress} rx={14} fill={videoTheme.profit} opacity={0.8} />
-                      <text x={650} y={800} textAnchor="middle" fill={videoTheme.profit} fontSize={24} fontWeight="900">
-                        VOL SPIKE 3.8X
-                      </text>
                     </g>
                   );
                 })()}
               </>
             )}
 
-            {/* PHASE 3: Engulfing Reversal (Clean Graphics, NO Dotted Rectangle Border) */}
+            {/* PHASE 3: Engulfing Reversal */}
             {phase === 3 && (
               <>
                 {/* Red Bearish Candle */}
@@ -195,7 +189,7 @@ export function PatternPromo({
             )}
           </svg>
 
-          {/* OVERSIZED BRAND-GREEN BADGE (#20B86A Background, Pure White Text, 2-Line Format) */}
+          {/* OVERSIZED BRAND-GREEN BADGE (60px Font, #20B86A Fill, Pure White Text) */}
           {phaseFrame >= 20 && (
             <div
               style={{
@@ -204,16 +198,16 @@ export function PatternPromo({
                 right: 40,
                 background: '#20B86A',
                 color: '#FFFFFF',
-                padding: '28px 56px',
-                borderRadius: 36,
+                padding: '34px 68px',
+                borderRadius: 40,
                 fontWeight: 900,
-                boxShadow: '0 24px 80px rgba(32, 184, 106, 0.55)',
+                boxShadow: '0 28px 90px rgba(32, 184, 106, 0.55)',
                 transform: `scale(${badgeSpring})`,
                 zIndex: 30,
                 textAlign: 'center',
               }}
             >
-              <div style={{ fontSize: 50, fontWeight: 900, letterSpacing: -0.5, lineHeight: 1.15 }}>
+              <div style={{ fontSize: 60, fontWeight: 900, letterSpacing: -0.5, lineHeight: 1.15 }}>
                 {phase === 1 ? (
                   <>
                     Bullish
