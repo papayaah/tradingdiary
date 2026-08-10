@@ -34,21 +34,29 @@ export function AutoScanPromo({
 
   const chartSpring = spring({ frame: Math.max(0, frame - 10), fps, config: { damping: 16, stiffness: 140 } });
 
-  // Disjointed Arc Progress timings:
-  // 1. Left Shoulder Arc (frames 25 -> 55)
-  const lsProgress = interpolate(frame, [25, 55], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
-  // 2. Head Arc (frames 50 -> 80)
-  const headProgress = interpolate(frame, [50, 80], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
-  // 3. Right Shoulder Arc (frames 75 -> 105)
-  const rsProgress = interpolate(frame, [75, 105], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  // Arcs start completely BLANK (0% progress & 0 opacity) at playback start!
+  // 1. Left Shoulder Arc (frames 30 -> 60)
+  const lsProgress = interpolate(frame, [30, 60], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const lsOpacity = interpolate(frame, [30, 45], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+
+  // 2. Head Arc (frames 55 -> 85)
+  const headProgress = interpolate(frame, [55, 85], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const headOpacity = interpolate(frame, [55, 70], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+
+  // 3. Right Shoulder Arc (frames 80 -> 110)
+  const rsProgress = interpolate(frame, [80, 110], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const rsOpacity = interpolate(frame, [80, 95], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
 
   // Pattern detection alert pop
-  const alertSpring = spring({ frame: Math.max(0, frame - 100), fps, config: { damping: 12, stiffness: 180 } });
+  const alertSpring = spring({ frame: Math.max(0, frame - 105), fps, config: { damping: 12, stiffness: 180 } });
 
   const fadeOut = interpolate(frame, [315, 329], [1, 0], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
   });
+
+  // Sleek neutral icy-blue / silver arc stroke color
+  const neutralArcColor = themeMode === 'dark' ? '#38BDF8' : '#0284C7';
 
   return (
     <AbsoluteFill
@@ -91,47 +99,50 @@ export function AutoScanPromo({
               <line key={r} x1={10} x2={950} y1={r * 1000} y2={r * 1000} stroke={videoTheme.grid} strokeDasharray="10 14" strokeWidth={3} />
             ))}
 
-            {/* 3 DISJOINTED GLOWING RED CURVED ARCS OVER SHOULDER & HEAD TOPS */}
+            {/* 3 DISJOINTED NEUTRAL GLOWING CURVED ARCS (Floating HIGHER above high wicks) */}
 
-            {/* 1. Left Shoulder Arc */}
+            {/* 1. Left Shoulder Arc (Nudged higher above top wick) */}
             <path
-              d="M 115 500 Q 195 370 275 500"
+              d="M 115 410 Q 200 300 285 410"
               fill="none"
-              stroke="#FF3B30"
-              strokeWidth={11}
+              stroke={neutralArcColor}
+              strokeWidth={10}
               strokeLinecap="round"
               strokeDasharray="400"
               strokeDashoffset={400 - 400 * lsProgress}
+              opacity={lsOpacity}
               style={{
-                filter: 'drop-shadow(0 0 16px rgba(255, 59, 48, 0.6))',
+                filter: `drop-shadow(0 0 14px ${neutralArcColor}88)`,
               }}
             />
 
-            {/* 2. Head Arc */}
+            {/* 2. Head Arc (Nudged higher above top wick) */}
             <path
-              d="M 405 340 Q 510 130 615 340"
+              d="M 410 190 Q 515 70 620 190"
               fill="none"
-              stroke="#FF3B30"
-              strokeWidth={11}
+              stroke={neutralArcColor}
+              strokeWidth={10}
               strokeLinecap="round"
               strokeDasharray="500"
               strokeDashoffset={500 - 500 * headProgress}
+              opacity={headOpacity}
               style={{
-                filter: 'drop-shadow(0 0 16px rgba(255, 59, 48, 0.6))',
+                filter: `drop-shadow(0 0 14px ${neutralArcColor}88)`,
               }}
             />
 
-            {/* 3. Right Shoulder Arc */}
+            {/* 3. Right Shoulder Arc (Nudged higher above top wick) */}
             <path
-              d="M 635 480 Q 720 360 805 480"
+              d="M 640 390 Q 725 280 810 390"
               fill="none"
-              stroke="#FF3B30"
-              strokeWidth={11}
+              stroke={neutralArcColor}
+              strokeWidth={10}
               strokeLinecap="round"
               strokeDasharray="400"
               strokeDashoffset={400 - 400 * rsProgress}
+              opacity={rsOpacity}
               style={{
-                filter: 'drop-shadow(0 0 16px rgba(255, 59, 48, 0.6))',
+                filter: `drop-shadow(0 0 14px ${neutralArcColor}88)`,
               }}
             />
 
@@ -157,7 +168,7 @@ export function AutoScanPromo({
           </svg>
 
           {/* OVERSIZED RED BREAKDOWN BADGE (60px Font, Pure White Text, 2-Line Format) */}
-          {frame >= 100 && (
+          {frame >= 105 && (
             <div
               style={{
                 position: 'absolute',
