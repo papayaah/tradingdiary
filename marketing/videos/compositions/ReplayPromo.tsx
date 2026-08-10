@@ -4,14 +4,12 @@ import { BrandHeader } from '../components/BrandHeader';
 import { getVideoTheme } from '../theme';
 
 const REPLAY_CANDLES = [
-  { open: 150.0, high: 152.5, low: 149.2, close: 152.0, time: '09:30 AM' },
-  { open: 152.0, high: 154.1, low: 151.8, close: 153.8, time: '09:35 AM' },
-  { open: 153.8, high: 153.9, low: 151.2, close: 151.5, time: '09:40 AM' },
-  { open: 151.5, high: 155.0, low: 151.5, close: 154.6, time: '09:45 AM', action: 'BUY', price: 152.1 },
-  { open: 154.6, high: 157.8, low: 154.0, close: 157.2, time: '09:50 AM' },
-  { open: 157.2, high: 160.4, low: 156.9, close: 159.9, time: '09:55 AM' },
-  { open: 159.9, high: 163.5, low: 159.5, close: 163.0, time: '10:00 AM' },
-  { open: 163.0, high: 165.2, low: 162.8, close: 164.8, time: '10:05 AM', action: 'SELL', price: 164.5 },
+  { open: 150.0, high: 152.0, low: 149.5, close: 151.8, time: '09:30 AM', pnl: null }, // 1st Green Candle (No P&L)
+  { open: 151.8, high: 154.5, low: 151.5, close: 153.8, time: '09:35 AM', action: 'BUY', pnl: 180.0 }, // 2nd Green Candle: BUY! (+ $180.00)
+  { open: 153.8, high: 154.0, low: 149.2, close: 150.0, time: '09:40 AM', pnl: -340.0 }, // RED Candle! (Dips to RED -$340.00)
+  { open: 150.0, high: 156.0, low: 149.8, close: 155.5, time: '09:45 AM', pnl: 530.0 }, // Green Candle (+ $530.00)
+  { open: 155.5, high: 160.5, low: 155.2, close: 159.8, time: '09:50 AM', pnl: 1420.0 }, // Green Candle (+ $1,420.00)
+  { open: 159.8, high: 165.2, low: 159.5, close: 164.5, time: '09:55 AM', action: 'SELL', pnl: 2380.0 }, // Green Candle: SELL! (+ $2,380.00)
 ];
 
 export function ReplayPromo({
@@ -32,33 +30,34 @@ export function ReplayPromo({
     extrapolateRight: 'clamp',
   });
 
-  // Replay animation timeline: 8 candles revealed progressively from frame 35 to 220
+  // Replay timeline: reveal candles from frame 35 to 220
   const activeCandleIndex = Math.min(
     REPLAY_CANDLES.length - 1,
-    Math.max(0, Math.floor(interpolate(frame, [35, 220], [0, REPLAY_CANDLES.length - 1], {
-      extrapolateLeft: 'clamp',
-      extrapolateRight: 'clamp',
-    })))
+    Math.max(
+      0,
+      Math.floor(
+        interpolate(frame, [35, 220], [0, REPLAY_CANDLES.length - 1], {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+        })
+      )
+    )
   );
 
-  const progressPercent = Math.min(100, Math.max(0, interpolate(frame, [35, 220], [0, 100], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-  })));
+  const currentCandle = REPLAY_CANDLES[activeCandleIndex];
+  const pnlValue = currentCandle.pnl;
+  const pnlColor = pnlValue !== null && pnlValue < 0 ? videoTheme.loss : '#20B86A';
 
-  // Compute live P&L based on progress
-  const buyTriggered = frame >= 80;
-  const sellTriggered = frame >= 195;
-  let pnlValue = 0;
-
-  if (sellTriggered) {
-    pnlValue = 1240.00;
-  } else if (buyTriggered) {
-    const currentClose = REPLAY_CANDLES[activeCandleIndex].close;
-    pnlValue = Math.round((currentClose - 152.1) * 100);
-  }
-
-  const pnlColor = pnlValue >= 0 ? videoTheme.profit : videoTheme.loss;
+  const progressPercent = Math.min(
+    100,
+    Math.max(
+      0,
+      interpolate(frame, [35, 220], [0, 100], {
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+      })
+    )
+  );
 
   return (
     <AbsoluteFill
@@ -72,7 +71,7 @@ export function ReplayPromo({
       {/* Brand Header: 170px Owl SVG Logo + "Trade Replay" Title (78px) */}
       <BrandHeader themeMode={themeMode} title="Trade Replay" logoSize={170} />
 
-      {/* Main Replay Card Window */}
+      {/* Main Clean Card Container (NO window header bar) */}
       <div
         style={{
           position: 'absolute',
@@ -87,116 +86,88 @@ export function ReplayPromo({
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
+          justifyContent: 'space-between',
+          padding: 36,
           opacity: windowSpring,
           transform: `scale(${interpolate(windowSpring, [0, 1], [0.95, 1])})`,
         }}
       >
-        {/* Window Control Header */}
+        {/* P&L and Time Header (NO "UNREALIZED P&L" or "BAR TIME" text) */}
         <div
           style={{
-            height: 96,
-            background: videoTheme.cardRaised,
-            borderBottom: `2px solid ${videoTheme.border}`,
-            padding: '0 36px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexShrink: 0,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#FF5F56' }} />
-            <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#FFBD2E' }} />
-            <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#27C93F' }} />
-            <span style={{ color: videoTheme.foreground, fontWeight: 850, fontSize: 26, marginLeft: 16 }}>
-              5m Bar-by-Bar Replay
-            </span>
-          </div>
-
-          <div
-            style={{
-              background: videoTheme.profit,
-              color: '#000000',
-              padding: '12px 26px',
-              borderRadius: 20,
-              fontSize: 22,
-              fontWeight: 900,
-              boxShadow: `0 0 30px ${videoTheme.profit}55`,
-            }}
-          >
-            ▶ REPLAY ACTIVE
-          </div>
-        </div>
-
-        {/* Live P&L Header */}
-        <div
-          style={{
-            padding: '36px 44px 16px',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            background: `linear-gradient(180deg, ${videoTheme.cardRaised}40 0%, transparent 100%)`,
+            height: 90,
+            padding: '0 10px',
           }}
         >
+          {/* P&L Display (Appears on 2nd Green Candle, turns RED on Pullback, Green on Rallies) */}
           <div>
-            <div style={{ color: videoTheme.muted, fontSize: 22, fontWeight: 800, letterSpacing: 1.5 }}>UNREALIZED P&L</div>
-            <div style={{ color: pnlColor, fontSize: 62, fontWeight: 900, marginTop: 4 }}>
-              {pnlValue >= 0 ? `+$${pnlValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : `-$${Math.abs(pnlValue).toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
-            </div>
+            {pnlValue !== null ? (
+              <div style={{ color: pnlColor, fontSize: 64, fontWeight: 900 }}>
+                {pnlValue >= 0 ? `+$${pnlValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : `-$${Math.abs(pnlValue).toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
+              </div>
+            ) : (
+              <div style={{ color: videoTheme.muted, fontSize: 44, fontWeight: 800 }}>
+                --
+              </div>
+            )}
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ color: videoTheme.muted, fontSize: 22, fontWeight: 800, letterSpacing: 1.5 }}>BAR TIME</div>
-            <div style={{ color: videoTheme.foreground, fontSize: 36, fontWeight: 900, marginTop: 4 }}>
-              {REPLAY_CANDLES[activeCandleIndex].time}
-            </div>
+
+          {/* Time Display (Only Time, NO "BAR TIME" text) */}
+          <div style={{ color: videoTheme.foreground, fontSize: 44, fontWeight: 900 }}>
+            {currentCandle.time}
           </div>
         </div>
 
-        {/* Scaled SVG Chart Area Filling Vertical Space */}
-        <div style={{ flex: 1, padding: '20px 36px', position: 'relative' }}>
-          <svg viewBox="0 0 880 720" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
-            {/* Horizontal Grid Lines */}
+        {/* Scaled SVG Chart Area with Fat Candlesticks */}
+        <div style={{ flex: 1, position: 'relative', width: '100%', marginTop: 20 }}>
+          <svg viewBox="0 0 960 760" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+            {/* Horizontal Gridlines */}
             {[0.15, 0.35, 0.55, 0.75, 0.95].map((r) => (
-              <line key={r} x1={30} x2={850} y1={r * 680} y2={r * 680} stroke={videoTheme.grid} strokeDasharray="8 12" strokeWidth={2} />
+              <line key={r} x1={20} x2={940} y1={r * 720} y2={r * 720} stroke={videoTheme.grid} strokeDasharray="10 14" strokeWidth={3} />
             ))}
 
             {/* Candlesticks */}
             {REPLAY_CANDLES.slice(0, activeCandleIndex + 1).map((candle, idx) => {
-              const x = 90 + idx * 100;
+              const x = 110 + idx * 144;
               const minP = 148.0;
-              const maxP = 166.0;
-              const y = (p: number) => 640 - ((p - minP) / (maxP - minP)) * 580;
+              const maxP = 167.0;
+              const y = (p: number) => 700 - ((p - minP) / (maxP - minP)) * 640;
               const bullish = candle.close >= candle.open;
               const color = bullish ? videoTheme.profit : videoTheme.loss;
               const openY = y(candle.open);
               const closeY = y(candle.close);
               const topY = Math.min(openY, closeY);
-              const bodyHeight = Math.max(14, Math.abs(closeY - openY));
+              const bodyHeight = Math.max(20, Math.abs(closeY - openY));
 
               return (
                 <g key={idx}>
-                  {/* High Low Wick */}
-                  <line x1={x} x2={x} y1={y(candle.high)} y2={y(candle.low)} stroke={color} strokeWidth={8} strokeLinecap="round" />
-                  {/* Candle Body */}
-                  <rect x={x - 24} y={topY} width={48} height={bodyHeight} rx={10} fill={color} />
+                  {/* Thick Wick */}
+                  <line x1={x} x2={x} y1={y(candle.high)} y2={y(candle.low)} stroke={color} strokeWidth={10} strokeLinecap="round" />
+                  {/* Fat Body */}
+                  <rect x={x - 44} y={topY} width={88} height={bodyHeight} rx={16} fill={color} />
 
-                  {/* Buy Marker */}
+                  {/* BUY Green Up Arrow ▲ (No text badge) */}
                   {candle.action === 'BUY' && (
-                    <g transform={`translate(${x - 50}, ${y(candle.low) + 36})`}>
-                      <rect width={100} height={44} rx={12} fill={videoTheme.profit} />
-                      <text x={50} y={29} textAnchor="middle" fill="#000000" fontSize={18} fontWeight="900">
-                        BUY $152.1
-                      </text>
+                    <g transform={`translate(${x - 24}, ${y(candle.low) + 30})`}>
+                      <path
+                        d="M 24 0 L 48 38 L 0 38 Z"
+                        fill="#20B86A"
+                        style={{ filter: 'drop-shadow(0 4px 12px rgba(32, 184, 106, 0.6))' }}
+                      />
                     </g>
                   )}
 
-                  {/* Sell Marker */}
+                  {/* SELL Red Down Arrow ▼ (No text badge) */}
                   {candle.action === 'SELL' && (
-                    <g transform={`translate(${x - 52}, ${y(candle.high) - 58})`}>
-                      <rect width={104} height={44} rx={12} fill={videoTheme.profit} />
-                      <text x={52} y={29} textAnchor="middle" fill="#000000" fontSize={18} fontWeight="900">
-                        SELL $164.5
-                      </text>
+                    <g transform={`translate(${x - 24}, ${y(candle.high) - 68})`}>
+                      <path
+                        d="M 0 0 L 48 0 L 24 38 Z"
+                        fill="#EF4444"
+                        style={{ filter: 'drop-shadow(0 4px 12px rgba(239, 68, 68, 0.6))' }}
+                      />
                     </g>
                   )}
                 </g>
@@ -208,27 +179,28 @@ export function ReplayPromo({
         {/* Bottom Control Bar */}
         <div
           style={{
-            height: 96,
+            height: 80,
             background: videoTheme.cardRaised,
-            borderTop: `2px solid ${videoTheme.border}`,
-            padding: '0 40px',
+            borderRadius: 24,
+            padding: '0 32px',
             display: 'flex',
             alignItems: 'center',
             gap: 24,
             flexShrink: 0,
+            marginTop: 10,
           }}
         >
-          <div style={{ color: videoTheme.accentBright, fontSize: 26, fontWeight: 900 }}>
+          <div style={{ color: videoTheme.accentBright, fontSize: 24, fontWeight: 900 }}>
             ❚❚ 1x Speed
           </div>
 
-          <div style={{ flex: 1, height: 18, borderRadius: 9, background: videoTheme.border, overflow: 'hidden' }}>
+          <div style={{ flex: 1, height: 16, borderRadius: 8, background: videoTheme.border, overflow: 'hidden' }}>
             <div
               style={{
                 width: `${progressPercent}%`,
                 height: '100%',
-                background: videoTheme.profit,
-                borderRadius: 9,
+                background: '#20B86A',
+                borderRadius: 8,
               }}
             />
           </div>
