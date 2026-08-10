@@ -34,11 +34,13 @@ export function AutoScanPromo({
 
   const chartSpring = spring({ frame: Math.max(0, frame - 10), fps, config: { damping: 16, stiffness: 140 } });
 
-  // Smooth arc curve drawing progress (0 to 1 over frames 25 to 110)
-  const curveProgress = interpolate(frame, [25, 110], [0, 1], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-  });
+  // Disjointed Arc Progress timings:
+  // 1. Left Shoulder Arc (frames 25 -> 55)
+  const lsProgress = interpolate(frame, [25, 55], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  // 2. Head Arc (frames 50 -> 80)
+  const headProgress = interpolate(frame, [50, 80], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  // 3. Right Shoulder Arc (frames 75 -> 105)
+  const rsProgress = interpolate(frame, [75, 105], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
 
   // Pattern detection alert pop
   const alertSpring = spring({ frame: Math.max(0, frame - 100), fps, config: { damping: 12, stiffness: 180 } });
@@ -47,10 +49,6 @@ export function AutoScanPromo({
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
   });
-
-  // Smooth Head & Shoulders arc curve path tracing over peaks and troughs
-  // Left Shoulder (195, 420) -> Trough (300, 620) -> Head (510, 180) -> Trough (615, 620) -> Right Shoulder (720, 400) -> Breakdown (825, 850)
-  const arcCurvePath = `M 80 520 Q 140 400 195 420 Q 250 440 300 620 Q 400 180 510 180 Q 570 180 615 620 Q 670 400 720 400 Q 770 400 825 850`;
 
   return (
     <AbsoluteFill
@@ -93,16 +91,45 @@ export function AutoScanPromo({
               <line key={r} x1={10} x2={950} y1={r * 1000} y2={r * 1000} stroke={videoTheme.grid} strokeDasharray="10 14" strokeWidth={3} />
             ))}
 
-            {/* SMOOTH GLOWING HEAD & SHOULDERS CURVE ARC OVERLAY */}
+            {/* 3 DISJOINTED GLOWING RED CURVED ARCS OVER SHOULDER & HEAD TOPS */}
+
+            {/* 1. Left Shoulder Arc */}
             <path
-              d={arcCurvePath}
+              d="M 115 500 Q 195 370 275 500"
               fill="none"
               stroke="#FF3B30"
               strokeWidth={11}
               strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeDasharray="1600"
-              strokeDashoffset={1600 - 1600 * curveProgress}
+              strokeDasharray="400"
+              strokeDashoffset={400 - 400 * lsProgress}
+              style={{
+                filter: 'drop-shadow(0 0 16px rgba(255, 59, 48, 0.6))',
+              }}
+            />
+
+            {/* 2. Head Arc */}
+            <path
+              d="M 405 340 Q 510 130 615 340"
+              fill="none"
+              stroke="#FF3B30"
+              strokeWidth={11}
+              strokeLinecap="round"
+              strokeDasharray="500"
+              strokeDashoffset={500 - 500 * headProgress}
+              style={{
+                filter: 'drop-shadow(0 0 16px rgba(255, 59, 48, 0.6))',
+              }}
+            />
+
+            {/* 3. Right Shoulder Arc */}
+            <path
+              d="M 635 480 Q 720 360 805 480"
+              fill="none"
+              stroke="#FF3B30"
+              strokeWidth={11}
+              strokeLinecap="round"
+              strokeDasharray="400"
+              strokeDashoffset={400 - 400 * rsProgress}
               style={{
                 filter: 'drop-shadow(0 0 16px rgba(255, 59, 48, 0.6))',
               }}
@@ -129,7 +156,7 @@ export function AutoScanPromo({
             })}
           </svg>
 
-          {/* OVERSIZED BRAND-GREEN BADGE (60px Font, #20B86A Fill, Pure White Text, 2-Line Format) */}
+          {/* OVERSIZED RED BREAKDOWN BADGE (60px Font, Pure White Text, 2-Line Format) */}
           {frame >= 100 && (
             <div
               style={{
