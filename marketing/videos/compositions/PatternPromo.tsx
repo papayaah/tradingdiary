@@ -121,7 +121,7 @@ export function PatternPromo({
               </>
             )}
 
-            {/* PHASE 2: Momentum Burst (Pure Candlesticks, No Bottom Mirror Bar) */}
+            {/* PHASE 2: Momentum Burst */}
             {phase === 2 && (
               <>
                 {/* Consolidation Candles */}
@@ -155,16 +155,13 @@ export function PatternPromo({
               </>
             )}
 
-            {/* PHASE 3: Engulfing Reversal */}
+            {/* PHASE 3: Engulfing Reversal (Pure Candlestick Graphics, No Text Labels) */}
             {phase === 3 && (
               <>
                 {/* Red Bearish Candle */}
                 <g>
                   <line x1={320} x2={320} y1={360} y2={640} stroke={videoTheme.loss} strokeWidth={8} />
                   <rect x={280} y={400} width={80} height={200} rx={16} fill={videoTheme.loss} />
-                  <text x={320} y={350} textAnchor="middle" fill={videoTheme.loss} fontSize={22} fontWeight="900">
-                    BEARISH
-                  </text>
                 </g>
 
                 {/* Giant Bullish Engulfing Green Candle */}
@@ -179,9 +176,6 @@ export function PatternPromo({
                     <g style={{ opacity: progress }}>
                       <line x1={510} x2={510} y1={animatedY - 40} y2={yBase + 40} stroke={videoTheme.profit} strokeWidth={10} />
                       <rect x={450} y={animatedY} width={120} height={animatedH} rx={22} fill={videoTheme.profit} />
-                      <text x={510} y={animatedY - 15} textAnchor="middle" fill={videoTheme.profit} fontSize={26} fontWeight="900">
-                        ENGULFING
-                      </text>
                     </g>
                   );
                 })()}
@@ -189,7 +183,7 @@ export function PatternPromo({
             )}
           </svg>
 
-          {/* OVERSIZED BRAND-GREEN BADGE (60px Font, #20B86A Fill, Pure White Text) */}
+          {/* OVERSIZED BRAND-GREEN BADGE */}
           {phaseFrame >= 20 && (
             <div
               style={{
