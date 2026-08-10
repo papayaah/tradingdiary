@@ -209,6 +209,7 @@ export class TradeExecutionPrimitive implements ISeriesPrimitive<Time> {
   private _date?: string;
   private _formatCandleTime: (t: number) => Time;
   private _isDark: boolean = true;
+  private _hovered: { time: string; price: number } | null = null;
   private _paneViews: readonly IPrimitivePaneView[];
   private _requestUpdate?: () => void;
 
@@ -225,6 +226,7 @@ export class TradeExecutionPrimitive implements ISeriesPrimitive<Time> {
   get date() { return this._date; }
   get formatCandleTime() { return this._formatCandleTime; }
   get isDark() { return this._isDark; }
+  get hovered() { return this._hovered; }
 
   attached(param: SeriesAttachedParameter<Time>) {
     this._chart = param.chart;
@@ -243,6 +245,11 @@ export class TradeExecutionPrimitive implements ISeriesPrimitive<Time> {
     this._sortedCandles = sortedCandles;
     this._date = date;
     if (isDark !== undefined) this._isDark = isDark;
+    this._requestUpdate?.();
+  }
+
+  setHovered(hovered: { time: string; price: number } | null) {
+    this._hovered = hovered;
     this._requestUpdate?.();
   }
 
@@ -326,7 +333,10 @@ class TradeExecutionPaneRenderer implements IPrimitivePaneRenderer {
           ? (this._primitive.isDark ? '#4ade80' : '#16a34a')
           : (this._primitive.isDark ? '#f87171' : '#dc2626');
 
-        drawMetaTraderArrow(ctx, x, y, isBuy, color, barWidth, false, this._primitive.isDark);
+        const hv = this._primitive.hovered;
+        const isHovered = hv !== null && hv.time === t.time && hv.price === t.price;
+
+        drawMetaTraderArrow(ctx, x, y, isBuy, color, barWidth, isHovered, this._primitive.isDark);
       });
     });
   }
@@ -369,7 +379,6 @@ export default function SharedTradingChart({
   const markersRef = useRef<{ setMarkers: (markers: SeriesMarker<Time>[]) => void } | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const patternSeriesRef = useRef<ISeriesApi<'Line'>[]>([]);
-  const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const primitiveRef = useRef<TradeExecutionPrimitive | null>(null);
   const [hoveredTrade, setHoveredTrade] = useState<{
     trade: TransactionRecord;
@@ -502,74 +511,15 @@ export default function SharedTradingChart({
     return null;
   }, [visibleCandles, autoPatternsEnabled]);
 
-  const updateOverlayCanvas = useCallback(() => {
-    const canvas = overlayCanvasRef.current;
-    const chart = chartRef.current;
-    const candleSeries = candleSeriesRef.current;
-    const container = containerRef.current;
-    if (!canvas || !chart || !candleSeries || !container) return;
-
-    const width = container.clientWidth;
-    const height = container.clientHeight;
-    const dpr = window.devicePixelRatio || 1;
-
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.scale(dpr, dpr);
-    ctx.clearRect(0, 0, width, height);
-
-    if (!transactions || transactions.length === 0 || sortedCandles.length === 0) return;
-
-    const timeScale = chart.timeScale();
-
-    // Determine average candle bar spacing in pixels for dynamic scaling
-    let barWidth = 8;
-    if (sortedCandles.length >= 2) {
-      const x0 = timeScale.timeToCoordinate(formatCandleTime(sortedCandles[0].time));
-      const x1 = timeScale.timeToCoordinate(formatCandleTime(sortedCandles[1].time));
-      if (x0 !== null && x1 !== null) {
-        barWidth = Math.abs(x1 - x0);
-      }
-    }
-
-    transactions.forEach((t) => {
-      const tradeTime = findClosestCandleTime(sortedCandles, t.time, date);
-      if (tradeTime === null) return;
-
-      const timeFormatted = formatCandleTime(tradeTime);
-      const x = timeScale.timeToCoordinate(timeFormatted);
-      if (x === null || x < 0 || x > width) return;
-
-      let y: number | null = null;
-      if (typeof t.price === 'number' && isFinite(t.price) && t.price > 0) {
-        y = candleSeries.priceToCoordinate(t.price);
-      }
-
-      if (y === null) {
-        const matchedCandle = sortedCandles.find((c) => c.time === tradeTime);
-        if (matchedCandle) {
-          y = candleSeries.priceToCoordinate(matchedCandle.close);
-        }
-      }
-
-      if (y === null || y < 0 || y > height) return;
-
-      const isBuy = t.side === 'BUYTOOPEN' || t.side === 'BUYTOCLOSE';
-      const color = isBuy ? (isDark ? '#4ade80' : '#16a34a') : (isDark ? '#f87171' : '#dc2626');
-      const isHovered = hoveredTrade?.trade.tradeId === t.tradeId || (hoveredTrade?.trade.time === t.time && hoveredTrade?.trade.price === t.price);
-
-      drawMetaTraderArrow(ctx, x, y, isBuy, color, barWidth, isHovered, isDark);
-    });
-  }, [transactions, sortedCandles, date, formatCandleTime, isDark, hoveredTrade]);
-
+  // Execution arrows are drawn by the TradeExecutionPrimitive inside the chart's
+  // own render loop, so they stay pinned to their candle through any X/Y zoom or
+  // scale change — no separate overlay canvas to fall out of sync. We only feed
+  // it the hovered execution so it can highlight that one arrow.
   useEffect(() => {
-    updateOverlayCanvas();
-  }, [updateOverlayCanvas, visibleRange]);
+    primitiveRef.current?.setHovered(
+      hoveredTrade ? { time: hoveredTrade.trade.time, price: hoveredTrade.trade.price } : null
+    );
+  }, [hoveredTrade]);
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -770,7 +720,6 @@ export default function SharedTradingChart({
     const timeScale = chart.timeScale();
     const onRangeChange = (range: { from: number; to: number } | null) => {
       if (!range) return;
-      updateOverlayCanvas();
       // Lazy-load older history when the user pans near the left edge — but only
       // on genuine user pans, not our own setData/fit/restore.
       if (
@@ -796,15 +745,10 @@ export default function SharedTradingChart({
       }, 150);
     };
     timeScale.subscribeVisibleLogicalRangeChange(onRangeChange);
-    const onTimeRangeChange = () => {
-      updateOverlayCanvas();
-    };
-    timeScale.subscribeVisibleTimeRangeChange(onTimeRangeChange);
 
     const observer = new ResizeObserver(() => {
       if (containerRef.current && chartRef.current) {
         chartRef.current.applyOptions({ width: containerRef.current.clientWidth });
-        updateOverlayCanvas();
       }
     });
     observer.observe(container);
@@ -812,7 +756,6 @@ export default function SharedTradingChart({
     return () => {
       observer.disconnect();
       timeScale.unsubscribeVisibleLogicalRangeChange(onRangeChange);
-      timeScale.unsubscribeVisibleTimeRangeChange(onTimeRangeChange);
       if (primitiveRef.current && candleSeriesRef.current) {
         candleSeriesRef.current.detachPrimitive(primitiveRef.current);
         primitiveRef.current = null;
@@ -1284,10 +1227,6 @@ export default function SharedTradingChart({
             onMouseLeave={handleMouseLeave}
           >
             <div ref={containerRef} className="w-full h-full" />
-            <canvas
-              ref={overlayCanvasRef}
-              className="absolute inset-0 pointer-events-none z-10"
-            />
             {hoveredTrade && (
               <div
                 className="absolute z-30 pointer-events-none transform -translate-x-1/2 -translate-y-full mb-2 bg-card-bg/95 backdrop-blur-md border border-card-border px-2.5 py-1.5 rounded-lg shadow-xl text-xs flex flex-col gap-0.5 animate-in fade-in zoom-in-95 duration-100"
