@@ -20,6 +20,11 @@
     ],
     "paths": {
       "@/*": ["./*"],
+      "@reactkits.dev/react-engage": ["./packages/react-feedbox/src/index.ts"],
+      "@reactkits.dev/react-engage/admin": ["./packages/react-feedbox/src/admin/index.ts"],
+      "@reactkits.dev/react-engage/server": ["./packages/react-feedbox/src/server/index.ts"],
+      "@reactkits.dev/react-engage/styles.css": ["./packages/react-feedbox/src/styles.css"],
+      "@reactkits.dev/react-engage/*": ["./packages/react-feedbox/src/*"],
       "@reactkits.dev/react-feedbox": ["./packages/react-feedbox/src/index.ts"],
       "@reactkits.dev/react-feedbox/styles.css": ["./packages/react-feedbox/src/styles.css"],
       "@reactkits.dev/react-feedbox/*": ["./packages/react-feedbox/src/*"]

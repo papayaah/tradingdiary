@@ -12,7 +12,8 @@ import {
   ChevronRight,
   Bell,
   Sparkles,
-  ShieldAlert
+  ShieldAlert,
+  LifeBuoy
 } from 'lucide-react';
 import { useImport } from '@/contexts/ImportContext';
 import { useAccount } from '@/contexts/AccountContext';
@@ -124,11 +125,11 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
         })}
 
         {isAdmin && (
-          <div className="pt-2 border-t border-sidebar-border mt-2">
+          <div className="pt-2 border-t border-sidebar-border mt-2 space-y-1">
             <Link
               href="/admin"
               className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                pathname.startsWith('/admin')
+                pathname === '/admin'
                   ? 'bg-sidebar-active text-foreground font-medium'
                   : 'text-muted hover:bg-sidebar-hover hover:text-foreground'
               } ${collapsed ? 'justify-center px-0' : ''}`}
@@ -136,6 +137,19 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
             >
               <ShieldAlert size={18} className="shrink-0 text-accent" />
               {!collapsed && <span>Admin Dashboard</span>}
+            </Link>
+
+            <Link
+              href="/admin/engage"
+              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                pathname.startsWith('/admin/engage')
+                  ? 'bg-sidebar-active text-foreground font-medium'
+                  : 'text-muted hover:bg-sidebar-hover hover:text-foreground'
+              } ${collapsed ? 'justify-center px-0' : ''}`}
+              title={collapsed ? 'Engage Dashboard' : undefined}
+            >
+              <LifeBuoy size={18} className="shrink-0 text-emerald-500" />
+              {!collapsed && <span>Engage Dashboard</span>}
             </Link>
           </div>
         )}

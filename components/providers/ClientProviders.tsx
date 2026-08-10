@@ -6,8 +6,8 @@ import { AIManagementProvider } from '@/packages/ai-connect/src/components';
 import { authClient } from '@/lib/auth-client';
 import { Toaster } from 'sonner';
 import { ServiceWorkerRegistrar } from '@/components/providers/ServiceWorkerRegistrar';
-import { FeedbackWidget } from '@reactkits.dev/react-feedbox';
-import '@reactkits.dev/react-feedbox/styles.css';
+import { EngageWidget } from '@reactkits.dev/react-engage';
+import '@reactkits.dev/react-engage/styles.css';
 
 export function ClientProviders({ children }: { children: ReactNode }) {
     return (
@@ -16,11 +16,11 @@ export function ClientProviders({ children }: { children: ReactNode }) {
                 {children}
                 <Toaster richColors position="top-right" />
                 <ServiceWorkerRegistrar />
-                <FeedbackWidget
+                <EngageWidget
                     appId="trading-diary"
                     position="bottom-right"
                     theme="inherit"
-                    endpointUrl="/api/feedback"
+                    endpointUrl="/api/engage"
                 />
             </AIManagementProvider>
         </IntegrationProvider>
