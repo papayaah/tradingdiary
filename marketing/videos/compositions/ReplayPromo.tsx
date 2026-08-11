@@ -14,7 +14,7 @@ const REPLAY_CANDLES = [
 
 export function ReplayPromo({
   themeMode = 'dark',
-  startFrameOffset = 165,
+  startFrameOffset = 0,
 }: {
   themeMode?: 'light' | 'dark';
   startFrameOffset?: number;
@@ -64,7 +64,6 @@ export function ReplayPromo({
       style={{
         background: `radial-gradient(circle at 50% 15%, ${videoTheme.accent}35, transparent 65%), ${videoTheme.background}`,
         fontFamily: 'Inter, SF Pro Display, Helvetica, Arial, sans-serif',
-        opacity: fadeOut,
         overflow: 'hidden',
       }}
     >

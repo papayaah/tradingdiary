@@ -24,17 +24,11 @@ export function IBKRGuidePromo({ themeMode = 'light' }: { themeMode?: 'light' | 
   const comicBounce = Math.sin(frame / 3) * 10;
   const comicScale = 1 + Math.sin(frame / 4) * 0.06;
 
-  const fadeOut = interpolate(frame, [285, 300], [1, 0], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-  });
-
   return (
     <AbsoluteFill
       style={{
-        background: `radial-gradient(circle at 50% 40%, ${videoTheme.accent}20, transparent 65%), ${videoTheme.background}`,
+        background: `radial-gradient(circle at 50% 15%, ${videoTheme.accent}35, transparent 65%), ${videoTheme.background}`,
         fontFamily: 'Inter, SF Pro Display, Helvetica, Arial, sans-serif',
-        opacity: fadeOut,
         overflow: 'hidden',
       }}
     >

@@ -43,7 +43,6 @@ export function PatternPromo({
       style={{
         background: `radial-gradient(circle at 50% 15%, ${videoTheme.accent}35, transparent 65%), ${videoTheme.background}`,
         fontFamily: 'Inter, SF Pro Display, Helvetica, Arial, sans-serif',
-        opacity: fadeOut,
         overflow: 'hidden',
       }}
     >
