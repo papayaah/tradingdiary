@@ -150,7 +150,7 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4' }: W
           </div>
         </div>
 
-        {/* Footer actions with version, update date & copyright */}
+        {/* Footer actions with modern minimal version & update tag */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-5 sm:px-6 py-3.5 border-t border-card-border bg-muted-bg/30 flex-shrink-0">
           <div className="flex items-center gap-4">
             <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-muted hover:text-foreground transition-colors">
@@ -164,7 +164,7 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4' }: W
             </label>
 
             <span className="hidden md:inline text-[11px] font-medium text-muted/60">
-              Trading Diary v{version} • Updated Aug 2026 • © {new Date().getFullYear()}
+              Trading Diary v{version} • Updated Aug 2026
             </span>
           </div>
 

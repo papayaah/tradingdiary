@@ -171,17 +171,16 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           <LoginButton collapsed={collapsed} />
         </div>
 
-        {/* Dynamic Version, Update Date & Copyright Footer */}
+        {/* Modern Minimalist Version & Update Tag */}
         <div className="pt-2 pb-1 border-t border-sidebar-border/40 select-none text-center">
           {!collapsed ? (
-            <div className="text-[11px] font-medium text-muted/60 tracking-tight space-y-0.5">
-              <div>Trading Diary v{version}</div>
-              <div className="text-[10px] text-muted/50">Updated Aug 2026 • © {new Date().getFullYear()}</div>
+            <div className="text-[11px] font-medium text-muted/60 tracking-tight">
+              Trading Diary v{version} • Updated Aug 2026
             </div>
           ) : (
             <div
               className="text-[9px] font-mono font-medium text-muted/50"
-              title={`Trading Diary v${version}\nUpdated Aug 2026\n© ${new Date().getFullYear()} Trading Diary. All rights reserved.`}
+              title={`Trading Diary v${version}\nUpdated Aug 2026`}
             >
               v{version}
             </div>
