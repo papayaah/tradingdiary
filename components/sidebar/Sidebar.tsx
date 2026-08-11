@@ -169,6 +169,22 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
         <div className="px-1 py-1">
           <LoginButton collapsed={collapsed} />
         </div>
+
+        {/* Professional Version & Copyright Footer */}
+        <div className="pt-2 pb-1 border-t border-sidebar-border/40 select-none text-center">
+          {!collapsed ? (
+            <div className="text-[11px] font-medium text-muted/60 tracking-tight">
+              Trading Diary v1.2.0 • © {new Date().getFullYear()}
+            </div>
+          ) : (
+            <div
+              className="text-[9px] font-mono font-medium text-muted/50"
+              title={`Trading Diary v1.2.0\n© ${new Date().getFullYear()} Trading Diary. All rights reserved.`}
+            >
+              v1.2.0
+            </div>
+          )}
+        </div>
       </div>
     </aside>
   );

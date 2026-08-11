@@ -149,17 +149,23 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4' }: W
           </div>
         </div>
 
-        {/* Footer actions */}
-        <div className="flex flex-col-reverse sm:flex-row items-center justify-between gap-3 px-5 sm:px-6 py-3.5 border-t border-card-border bg-muted-bg/30 flex-shrink-0">
-          <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-muted hover:text-foreground transition-colors">
-            <input
-              type="checkbox"
-              checked={dontShowAgain}
-              onChange={(e) => setDontShowAgain(e.target.checked)}
-              className="rounded border-card-border bg-background text-accent focus:ring-accent"
-            />
-            <span>Don&apos;t show this welcome screen again</span>
-          </label>
+        {/* Footer actions with version and copyright */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-5 sm:px-6 py-3.5 border-t border-card-border bg-muted-bg/30 flex-shrink-0">
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-muted hover:text-foreground transition-colors">
+              <input
+                type="checkbox"
+                checked={dontShowAgain}
+                onChange={(e) => setDontShowAgain(e.target.checked)}
+                className="rounded border-card-border bg-background text-accent focus:ring-accent"
+              />
+              <span>Don&apos;t show this welcome screen again</span>
+            </label>
+
+            <span className="hidden md:inline text-[11px] font-medium text-muted/60">
+              Trading Diary v1.2.0 • © {new Date().getFullYear()}
+            </span>
+          </div>
 
           <div className="flex items-center gap-3 w-full sm:w-auto">
             <button
