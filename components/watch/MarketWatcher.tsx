@@ -20,7 +20,9 @@ import {
   ArrowDown,
   Sparkles,
   Settings,
-  Loader2
+  Loader2,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { getPatternDefinition } from '@/lib/scanner/patterns';
 import { getChartDB } from '@/lib/chart/cache';
@@ -395,6 +397,8 @@ export default function MarketWatcher() {
   
   const [expandedRowIndex, setExpandedRowIndex] = useState<number | null>(null);
   const [watchlistView, setWatchlistView] = useState<WatchlistView>('compact');
+  const [tablePage, setTablePage] = useState(0);
+  const TABLE_PAGE_SIZE = 15;
 
   // Settings & Notification States
   const [isNotificationsEnabled, setIsNotificationsEnabled] = useState(false);
@@ -1168,6 +1172,11 @@ export default function MarketWatcher() {
       return 0;
     });
   }, [categoryItems, sortColumn, sortDirection, searchTerm, filterMode]);
+
+  // Reset tablePage when filters/search/category/sort change
+  useEffect(() => {
+    setTablePage(0);
+  }, [searchTerm, filterMode, watchlistCategory, sortColumn, sortDirection]);
 
   // Session windows in America/New_York, as minutes-from-midnight [start, end).
   // Polygon returns equity bars 4:00 AM – 8:00 PM ET, so 'ext' covers all available data.
@@ -3074,20 +3083,41 @@ export default function MarketWatcher() {
   const compactWatchlistEntries = React.useMemo<CompactWatchlistEntry[]>(
     () => sortedWatchlist.map((item, sortedIndex) => {
       const key = `${item.symbol}\u0000${item.interval}`;
-      const originalIndex = watchlistIndexByKey.get(key) ?? sortedIndex;
+      const originalIdx = watchlistIndexByKey.get(key) ?? -1;
       return {
         key,
-        index: originalIndex,
+        index: originalIdx !== -1 ? originalIdx : sortedIndex,
         item,
         miniCandles: watchlistViewByKey.get(key) ?? [],
       };
     }),
-    [
-      sortedWatchlist,
-      watchlistIndexByKey,
-      watchlistViewByKey,
-    ],
+    [sortedWatchlist, watchlistIndexByKey, watchlistViewByKey],
   );
+
+  const expandedSortedIndex = React.useMemo(() => {
+    if (expandedRowIndex === null) return -1;
+    return sortedWatchlist.findIndex((item, sortedIdx) => {
+      const itemKey = `${item.symbol}\u0000${item.interval}`;
+      const originalIdx = watchlistIndexByKey.get(itemKey) ?? -1;
+      return (originalIdx !== -1 ? originalIdx : sortedIdx) === expandedRowIndex;
+    });
+  }, [expandedRowIndex, sortedWatchlist, watchlistIndexByKey]);
+
+  const tablePageCount = Math.max(1, Math.ceil(sortedWatchlist.length / TABLE_PAGE_SIZE));
+
+  const effectiveTablePage = React.useMemo(() => {
+    if (expandedSortedIndex !== -1) {
+      return Math.floor(expandedSortedIndex / TABLE_PAGE_SIZE);
+    }
+    return Math.min(tablePage, tablePageCount - 1);
+  }, [expandedSortedIndex, tablePage, tablePageCount]);
+
+  const paginatedTableWatchlist = React.useMemo(() => {
+    return sortedWatchlist.slice(
+      effectiveTablePage * TABLE_PAGE_SIZE,
+      (effectiveTablePage + 1) * TABLE_PAGE_SIZE,
+    );
+  }, [effectiveTablePage, sortedWatchlist]);
 
   const testerCandles = React.useMemo(
     () => getTesterCandles(),
@@ -3138,7 +3168,7 @@ export default function MarketWatcher() {
   };
 
   return (
-    <div className="p-3 sm:p-5 md:p-6 w-full space-y-5 text-foreground">
+    <div className="p-3 sm:p-5 md:p-6 w-full max-w-full overflow-x-hidden space-y-5 text-foreground">
 
       {/* COMPACT HEADER HERO */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-card-border/40">
@@ -3148,7 +3178,7 @@ export default function MarketWatcher() {
       </div>
 
       {/* TABS SELECTION */}
-      <div className="flex gap-2 p-1 bg-muted-bg/30 border border-card-border rounded-xl w-fit">
+      <div className="flex flex-wrap gap-2 p-1 bg-muted-bg/30 border border-card-border rounded-xl w-full sm:w-fit max-w-full">
         <button
           onClick={() => setActiveTab('watchlist')}
           className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-lg transition-all ${
@@ -3175,11 +3205,30 @@ export default function MarketWatcher() {
 
       {/* WATCHLIST MONITORS VIEW */}
       {activeTab === 'watchlist' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 animate-fadeIn">
-          {/* Watchlist Panel */}
-          <div className="order-2 lg:order-1 lg:col-span-8 space-y-5">
-            <div className="bg-card-bg border border-card-border shadow-xl rounded-2xl p-4 sm:p-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <div className="space-y-5 animate-fadeIn">
+          {/* Signal Alerts & Pattern Settings Guide Panel (100% Full-Width) */}
+          <div className="bg-card-bg border border-card-border shadow-xl rounded-2xl p-4 sm:p-5 w-full">
+            <PatternGuidePanel
+              value={selectedPatternId}
+              onChange={handlePatternChange}
+              selectedValues={selectedPatternIds}
+              onSelectionChange={handlePatternSelectionChange}
+              minMovePercent={selectedPatternMinMove}
+              requiredCount={requiredCandleCount}
+              maxBodyOverlapPercent={maxBodyOverlapPercent}
+              onMinMoveChange={handleNewMinMoveChange}
+              onRequiredCountChange={handleRequiredCandleCountChange}
+              onMaxBodyOverlapChange={handleMaxBodyOverlapChange}
+              patternSettings={patternSettings}
+              onPatternSettingsChange={handlePatternSettingsChange}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            {/* Watchlist Panel */}
+            <div className="order-2 lg:order-1 lg:col-span-8 space-y-5">
+              <div className="bg-card-bg border border-card-border shadow-xl rounded-2xl p-4 sm:p-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div>
                   <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
                     <Sliders size={18} className="text-accent" /> Watchlist
@@ -3198,7 +3247,7 @@ export default function MarketWatcher() {
               </div>
 
               {/* SINGLE COMPACT TOOLBAR: Timeframe on Left, Category Tabs + Mute Icons on Right */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4">
                 {/* Left: Global Timeframe Selector & Settings Icon */}
                 <div className="flex items-center gap-2">
                   <div className="flex items-center gap-2 bg-muted-bg/30 px-3 py-1.5 rounded-xl border border-card-border/50 shrink-0">
@@ -3238,7 +3287,7 @@ export default function MarketWatcher() {
                 </div>
 
                 {/* Right: Category Tabs with Integrated Category Mute (Bell) Buttons */}
-                <div className="flex flex-wrap items-center gap-1 bg-muted-bg/40 p-1 rounded-xl border border-card-border/50">
+                <div className="flex items-center gap-1.5 bg-muted-bg/40 p-1 rounded-xl border border-card-border/50 overflow-x-auto no-scrollbar w-full lg:w-auto shrink-0">
                   {(
                     [
                       { id: 'stocks', label: 'Stocks', icon: ChartCandlestick, count: watchlist.filter((w) => !isFuturesSymbol(w.symbol) && !isCryptoSymbol(w.symbol)).length },
@@ -3255,7 +3304,7 @@ export default function MarketWatcher() {
                     return (
                       <div
                         key={cat.id}
-                        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        className={`flex flex-1 sm:flex-none items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-all ${
                           active
                             ? 'bg-accent text-white shadow-sm font-bold'
                             : 'text-muted hover:text-foreground'
@@ -3458,20 +3507,7 @@ export default function MarketWatcher() {
                 </div>
               )}
 
-              <PatternGuidePanel
-                value={selectedPatternId}
-                onChange={handlePatternChange}
-                selectedValues={selectedPatternIds}
-                onSelectionChange={handlePatternSelectionChange}
-                minMovePercent={selectedPatternMinMove}
-                requiredCount={requiredCandleCount}
-                maxBodyOverlapPercent={maxBodyOverlapPercent}
-                onMinMoveChange={handleNewMinMoveChange}
-                onRequiredCountChange={handleRequiredCandleCountChange}
-                onMaxBodyOverlapChange={handleMaxBodyOverlapChange}
-                patternSettings={patternSettings}
-                onPatternSettingsChange={handlePatternSettingsChange}
-              />
+
 
               {/* WATCHLIST FORM */}
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 mb-6 bg-muted-bg/30 p-4 rounded-xl border border-card-border">
@@ -3598,90 +3634,127 @@ export default function MarketWatcher() {
                       onToggle={stableToggleRow}
                     />
                   ) : (
-                    <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="border-b border-card-border text-[10px] text-muted font-bold uppercase tracking-wider">
-                        <th onClick={() => handleSort('symbol')} className="py-3 px-4 cursor-pointer select-none hover:text-foreground transition-colors group">
-                          <div className="inline-flex items-center gap-1">
-                            <span>Symbol</span>
-                            {sortColumn === 'symbol' ? (
-                              sortDirection === 'asc' ? <ArrowUp size={12} className="text-accent" /> : <ArrowDown size={12} className="text-accent" />
-                            ) : (
-                              <ArrowUpDown size={11} className="text-muted/40 group-hover:text-muted transition-colors" />
-                            )}
-                          </div>
-                        </th>
-                        <th className="py-3 px-4 text-center">Last Candles</th>
-                        <th className="py-3 px-4">Last Check</th>
-                        <th onClick={() => handleSort('status')} className="py-3 px-4 cursor-pointer select-none hover:text-foreground transition-colors group">
-                          <div className="inline-flex items-center gap-1">
-                            <span>Status</span>
-                            {sortColumn === 'status' ? (
-                              sortDirection === 'asc' ? <ArrowUp size={12} className="text-accent" /> : <ArrowDown size={12} className="text-accent" />
-                            ) : (
-                              <ArrowUpDown size={11} className="text-muted/40 group-hover:text-muted transition-colors" />
-                            )}
-                          </div>
-                        </th>
-                        <th className="py-3 px-4 text-right">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-card-border/40">
-                      {sortedWatchlist.map((item, sortedIdx) => {
-                        const itemKey = `${item.symbol}\u0000${item.interval}`;
-                        const originalIdx = watchlistIndexByKey.get(itemKey) ?? -1;
-                        const idx = originalIdx !== -1 ? originalIdx : sortedIdx;
-                        const miniCandles = watchlistViewByKey.get(itemKey)!;
-                        return (
-                          <React.Fragment key={`${item.symbol}-${item.interval}-${idx}`}>
-                            <WatchlistRow
-                              item={item}
-                              index={idx}
-                              miniCandles={miniCandles}
-                              isExpanded={expandedRowIndex === idx}
-                              onToggle={stableToggleRow}
-                              onRemove={stableRemoveSymbol}
-                              onRefresh={stableRefreshSymbol}
-                            />
-                            
-                            {/* Expanded sub-row containing the chart */}
-                            {expandedRowIndex === idx && (
-                              <tr className="bg-muted-bg/30 border-t border-b border-accent/40 animate-in fade-in duration-150">
-                                <td colSpan={5} className="p-0">
-                                  {testResult && testResult.success && testResult.candles && testResult.candles.length > 0 ? (
-                                    renderJustChartCanvas()
+                    <>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="border-b border-card-border text-[10px] text-muted font-bold uppercase tracking-wider">
+                              <th onClick={() => handleSort('symbol')} className="py-3 px-4 cursor-pointer select-none hover:text-foreground transition-colors group">
+                                <div className="inline-flex items-center gap-1">
+                                  <span>Symbol</span>
+                                  {sortColumn === 'symbol' ? (
+                                    sortDirection === 'asc' ? <ArrowUp size={12} className="text-accent" /> : <ArrowDown size={12} className="text-accent" />
                                   ) : (
-                                    <div className="py-10 px-6 flex flex-col items-center justify-center gap-2.5 bg-background/30 text-xs font-mono text-accent">
-                                      <Loader2 size={20} className="animate-spin text-accent" />
-                                      <span className="font-semibold text-foreground">Loading {item.symbol} ({item.interval}) intraday chart...</span>
-                                      <span className="text-[10px] text-muted font-normal">Fetching session candles and preparing visualizer</span>
-                                    </div>
+                                    <ArrowUpDown size={11} className="text-muted/40 group-hover:text-muted transition-colors" />
                                   )}
-                                </td>
-                              </tr>
-                            )}
-                          </React.Fragment>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                                </div>
+                              </th>
+                              <th className="py-3 px-4 text-center">Last Candles</th>
+                              <th className="py-3 px-4">Last Check</th>
+                              <th onClick={() => handleSort('status')} className="py-3 px-4 cursor-pointer select-none hover:text-foreground transition-colors group">
+                                <div className="inline-flex items-center gap-1">
+                                  <span>Status</span>
+                                  {sortColumn === 'status' ? (
+                                    sortDirection === 'asc' ? <ArrowUp size={12} className="text-accent" /> : <ArrowDown size={12} className="text-accent" />
+                                  ) : (
+                                    <ArrowUpDown size={11} className="text-muted/40 group-hover:text-muted transition-colors" />
+                                  )}
+                                </div>
+                              </th>
+                              <th className="py-3 px-4 text-right">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-card-border/40">
+                            {paginatedTableWatchlist.map((item, pageIdx) => {
+                              const sortedIdx = effectiveTablePage * TABLE_PAGE_SIZE + pageIdx;
+                              const itemKey = `${item.symbol}\u0000${item.interval}`;
+                              const originalIdx = watchlistIndexByKey.get(itemKey) ?? -1;
+                              const idx = originalIdx !== -1 ? originalIdx : sortedIdx;
+                              const miniCandles = watchlistViewByKey.get(itemKey)!;
+                              return (
+                                <React.Fragment key={`${item.symbol}-${item.interval}-${idx}`}>
+                                  <WatchlistRow
+                                    item={item}
+                                    index={idx}
+                                    miniCandles={miniCandles}
+                                    isExpanded={expandedRowIndex === idx}
+                                    onToggle={stableToggleRow}
+                                    onRemove={stableRemoveSymbol}
+                                    onRefresh={stableRefreshSymbol}
+                                  />
+                                  
+                                  {/* Expanded sub-row containing the chart */}
+                                  {expandedRowIndex === idx && (
+                                    <tr className="bg-muted-bg/30 border-t border-b border-accent/40 animate-in fade-in duration-150">
+                                      <td colSpan={5} className="p-0">
+                                        {testResult && testResult.success && testResult.candles && testResult.candles.length > 0 ? (
+                                          renderJustChartCanvas()
+                                        ) : (
+                                          <div className="py-10 px-6 flex flex-col items-center justify-center gap-2.5 bg-background/30 text-xs font-mono text-accent">
+                                            <Loader2 size={20} className="animate-spin text-accent" />
+                                            <span className="font-semibold text-foreground">Loading {item.symbol} ({item.interval}) intraday chart...</span>
+                                            <span className="text-[10px] text-muted font-normal">Fetching session candles and preparing visualizer</span>
+                                          </div>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  )}
+                                </React.Fragment>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {sortedWatchlist.length > TABLE_PAGE_SIZE && (
+                        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 text-xs text-muted font-mono border-t border-card-border/40 mt-3">
+                          <div>
+                            Showing <span className="text-foreground font-semibold">{effectiveTablePage * TABLE_PAGE_SIZE + 1}</span>–
+                            <span className="text-foreground font-semibold">{Math.min(sortedWatchlist.length, (effectiveTablePage + 1) * TABLE_PAGE_SIZE)}</span> of{' '}
+                            <span className="text-foreground font-semibold">{sortedWatchlist.length}</span> watchlist symbols
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              className="p-1.5 rounded-lg border border-card-border bg-card-bg hover:border-accent/40 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                              onClick={() => setTablePage(Math.max(0, effectiveTablePage - 1))}
+                              disabled={effectiveTablePage === 0}
+                              title="Previous page"
+                            >
+                              <ChevronLeft size={14} />
+                            </button>
+                            <span className="px-2 font-semibold text-foreground">
+                              {effectiveTablePage + 1} / {tablePageCount}
+                            </span>
+                            <button
+                              type="button"
+                              className="p-1.5 rounded-lg border border-card-border bg-card-bg hover:border-accent/40 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                              onClick={() => setTablePage(Math.min(tablePageCount - 1, effectiveTablePage + 1))}
+                              disabled={effectiveTablePage >= tablePageCount - 1}
+                              title="Next page"
+                            >
+                              <ChevronRight size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
             </div>
           )}
         </div>
       </div>
 
-          <div className="order-1 lg:order-2 lg:col-span-4">
-            <AlertHistoryPanel
-              alerts={alertLogs}
-              onAlertClick={stableHandleAlertCardClick}
-              onClear={handleClearAlerts}
-            />
-          </div>
-        </div>
-      )}
+      <div className="order-1 lg:order-2 lg:col-span-4">
+        <AlertHistoryPanel
+          alerts={alertLogs}
+          onAlertClick={stableHandleAlertCardClick}
+          onClear={handleClearAlerts}
+        />
+      </div>
+    </div>
+  </div>
+)}
 
       {/* PATTERN TESTER VIEW */}
       {activeTab === 'tester' && (
