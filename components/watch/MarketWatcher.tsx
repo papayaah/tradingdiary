@@ -20,8 +20,6 @@ import {
   ArrowDown,
   Sparkles,
   Settings,
-  ChevronDown,
-  ChevronUp,
   Loader2
 } from 'lucide-react';
 import { getPatternDefinition } from '@/lib/scanner/patterns';
@@ -218,45 +216,10 @@ const formatLastCheckTime = (value: string | number | Date = Date.now()) =>
     minute: '2-digit',
   });
 
-const PRIMARY_STOCKS_PRESETS = [
-  { label: 'AAPL (Apple)', symbol: 'AAPL' },
-  { label: 'NVDA (Nvidia)', symbol: 'NVDA' },
-  { label: 'TSLA (Tesla)', symbol: 'TSLA' },
-  { label: 'SPY (S&P 500 ETF)', symbol: 'SPY' },
-  { label: 'QQQ (Nasdaq ETF)', symbol: 'QQQ' },
-] as const;
-
-const PRIMARY_CRYPTO_PRESETS = [
-  { label: 'BTC (Bitcoin)', symbol: 'BTC-USD' },
-  { label: 'ETH (Ethereum)', symbol: 'ETH-USD' },
-  { label: 'SOL (Solana)', symbol: 'SOL-USD' },
-  { label: 'DOGE (Dogecoin)', symbol: 'DOGE-USD' },
-  { label: 'XRP (Ripple)', symbol: 'XRP-USD' },
-] as const;
-
-const PRIMARY_FUTURES_PRESETS = [
-  { label: 'GC (Gold)', symbol: 'GC=F' },
-  { label: 'NQ (Nasdaq)', symbol: 'NQ=F' },
-  { label: 'CL (Oil)', symbol: 'CL=F' },
-] as const;
-
-const SECONDARY_FUTURES_PRESETS = [
-  { label: 'BTC (CME BTC)', symbol: 'BTC=F' },
-  { label: 'ES (S&P 500)', symbol: 'ES=F' },
-  { label: 'FDAX (DAX 40)', symbol: 'FDAX=F' },
-  { label: 'FGBL (Euro Bund)', symbol: 'FGBL=F' },
-  { label: 'FSTX (Euro Stoxx 50)', symbol: 'FSTX=F' },
-  { label: 'HSI (Hang Seng)', symbol: 'HSI=F' },
-  { label: 'K200 (KOSPI 200)', symbol: 'K200=F' },
-  { label: 'NIY (Nikkei 225)', symbol: 'NIY=F' },
-  { label: 'RTY (Russell)', symbol: 'RTY=F' },
-  { label: 'SI (Silver)', symbol: 'SI=F' },
-  { label: 'SPI (Australia 200)', symbol: 'SPI=F' },
-  { label: 'SSG (Singapore MSCI)', symbol: 'SSG=F' },
-  { label: 'YM (Dow)', symbol: 'YM=F' },
-  { label: 'Z (FTSE 100)', symbol: 'Z=F' },
-  { label: 'ZB (Bonds)', symbol: 'ZB=F' },
-] as const;
+const FUTURES_ROOT_SYMBOLS = new Set([
+  'BTC', 'CL', 'ES', 'FDAX', 'FGBL', 'FSTX', 'GC', 'HSI', 'K200',
+  'NIY', 'NQ', 'RTY', 'SI', 'SPI', 'SSG', 'YM', 'Z', 'ZB',
+]);
 
 
 
@@ -389,7 +352,6 @@ export default function MarketWatcher() {
   const serverStateFlushTimerRef = useRef<number | null>(null);
   const [newInterval, setNewInterval] = useState('10m');
   const [newMinMove, setNewMinMove] = useState(0.25);
-  const [showAllPresets, setShowAllPresets] = useState(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
 
   // Tester State
@@ -2566,10 +2528,7 @@ export default function MarketWatcher() {
       targetCat = 'futures';
     } else if (symbol.endsWith('-USD') || isCryptoSymbol(symbol)) {
       targetCat = 'crypto';
-    } else if (
-      PRIMARY_FUTURES_PRESETS.some(p => p.symbol.replace('=F', '') === symbol) ||
-      SECONDARY_FUTURES_PRESETS.some(p => p.symbol.replace('=F', '') === symbol)
-    ) {
+    } else if (FUTURES_ROOT_SYMBOLS.has(symbol)) {
       symbol = `${symbol}=F`;
       targetCat = 'futures';
     } else if (watchlistCategory === 'crypto' && !symbol.includes('-USD')) {
@@ -2640,27 +2599,6 @@ export default function MarketWatcher() {
     (input: string) => addSymbolRef.current(input),
     [],
   );
-
-  const handleAddPreset = (symbol: string) => {
-    if (watchlist.some(w => w.symbol === symbol && w.interval === newInterval)) return;
-    const newItem: WatchItem = {
-      symbol,
-      interval: newInterval,
-    };
-    const updated = [...watchlist, newItem];
-    saveWatchlist(updated);
-    scanSymbol(newItem).then((scanned) => {
-      setWatchlist((prevList) => {
-        const current = [...prevList];
-        const idx = current.findIndex(w => w.symbol === symbol && w.interval === newInterval);
-        if (idx !== -1) {
-          current[idx] = scanned;
-          saveWatchlist(current);
-        }
-        return current;
-      });
-    });
-  };
 
   const handleRemoveSymbol = (symbol: string, interval: string) => {
     const updated = watchlist.filter(w => !(w.symbol === symbol && w.interval === interval));
@@ -3520,61 +3458,6 @@ export default function MarketWatcher() {
                 </div>
               )}
 
-              {/* QUICK PRESETS TOOLBAR */}
-              <div className="flex flex-wrap items-center gap-1.5 mb-6 text-xs bg-muted-bg/10 p-3 rounded-xl border border-card-border/30">
-                <span className="text-muted font-bold mr-1 flex items-center gap-1">
-                  <Zap size={13} className="text-amber-400" />
-                  Top 5 Popular Presets ({watchlistCategory.toUpperCase()}):
-                </span>
-                {(
-                  watchlistCategory === 'crypto'
-                    ? PRIMARY_CRYPTO_PRESETS
-                    : watchlistCategory === 'stocks'
-                      ? PRIMARY_STOCKS_PRESETS
-                      : showAllPresets
-                        ? [...PRIMARY_FUTURES_PRESETS, ...SECONDARY_FUTURES_PRESETS]
-                        : PRIMARY_FUTURES_PRESETS
-                ).map((preset) => {
-                  const exists = watchlist.some((w) => w.symbol === preset.symbol && w.interval === newInterval);
-                  return (
-                    <button
-                      key={preset.symbol}
-                      onClick={() => handleAddPreset(preset.symbol)}
-                      disabled={exists}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
-                        exists
-                          ? 'bg-muted-bg/30 text-muted/40 border-card-border/20 cursor-not-allowed'
-                          : 'bg-card-bg border-card-border hover:border-accent text-foreground hover:text-accent cursor-pointer shadow-sm'
-                      }`}
-                      title={exists ? `${preset.symbol} (${newInterval}) is already in your watchlist` : `Click to add ${preset.symbol} (${newInterval})`}
-                    >
-                      <Plus size={12} />
-                      <span>{preset.label}</span>
-                    </button>
-                  );
-                })}
-
-                {watchlistCategory === 'futures' && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAllPresets(!showAllPresets)}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border bg-accent/10 border-accent/30 text-accent hover:bg-accent/20 cursor-pointer shadow-sm transition-all ml-1"
-                  >
-                    {showAllPresets ? (
-                      <>
-                        <ChevronUp size={12} />
-                        <span>Show Less</span>
-                      </>
-                    ) : (
-                      <>
-                        <ChevronDown size={12} />
-                        <span>+ More ({SECONDARY_FUTURES_PRESETS.length})</span>
-                      </>
-                    )}
-                  </button>
-                )}
-              </div>
-
               <PatternGuidePanel
                 value={selectedPatternId}
                 onChange={handlePatternChange}
@@ -3633,61 +3516,6 @@ export default function MarketWatcher() {
                     <Plus size={16} /> Add
                   </button>
                 </div>
-              </div>
-
-              {/* QUICK PRESETS TOOLBAR */}
-              <div className="flex flex-wrap items-center gap-1.5 mb-6 text-xs bg-muted-bg/10 p-3 rounded-xl border border-card-border/30">
-                <span className="text-muted font-bold mr-1 flex items-center gap-1">
-                  <Zap size={13} className="text-amber-400" />
-                  Top 5 Popular Presets ({watchlistCategory.toUpperCase()}):
-                </span>
-                {(
-                  watchlistCategory === 'crypto'
-                    ? PRIMARY_CRYPTO_PRESETS
-                    : watchlistCategory === 'stocks'
-                      ? PRIMARY_STOCKS_PRESETS
-                      : showAllPresets
-                        ? [...PRIMARY_FUTURES_PRESETS, ...SECONDARY_FUTURES_PRESETS]
-                        : PRIMARY_FUTURES_PRESETS
-                ).map((preset) => {
-                  const exists = watchlist.some((w) => w.symbol === preset.symbol && w.interval === newInterval);
-                  return (
-                    <button
-                      key={preset.symbol}
-                      onClick={() => handleAddPreset(preset.symbol)}
-                      disabled={exists}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
-                        exists
-                          ? 'bg-muted-bg/30 text-muted/40 border-card-border/20 cursor-not-allowed'
-                          : 'bg-card-bg border-card-border hover:border-accent text-foreground hover:text-accent cursor-pointer shadow-sm'
-                      }`}
-                      title={exists ? `${preset.symbol} (${newInterval}) is already in your watchlist` : `Click to add ${preset.symbol} (${newInterval})`}
-                    >
-                      <Plus size={12} />
-                      <span>{preset.label}</span>
-                    </button>
-                  );
-                })}
-
-                {watchlistCategory === 'futures' && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAllPresets(!showAllPresets)}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border bg-accent/10 border-accent/30 text-accent hover:bg-accent/20 cursor-pointer shadow-sm transition-all ml-1"
-                  >
-                    {showAllPresets ? (
-                      <>
-                        <ChevronUp size={12} />
-                        <span>Show Less</span>
-                      </>
-                    ) : (
-                      <>
-                        <ChevronDown size={12} />
-                        <span>+ More ({SECONDARY_FUTURES_PRESETS.length})</span>
-                      </>
-                    )}
-                  </button>
-                )}
               </div>
 
               {/* WATCHLIST ITEMS LIST */}

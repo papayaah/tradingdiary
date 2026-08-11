@@ -55,7 +55,7 @@ export function InteractivePatternVisualizer({
   const [localMaxOverlap, setLocalMaxOverlap] = useState<number>(
     maxBodyOverlapPercent,
   );
-  const [showExplanation, setShowExplanation] = useState<boolean>(true);
+  const [showExplanation, setShowExplanation] = useState<boolean>(false);
   const resolvedPatternSettings = React.useMemo(
     () => normalizePatternSettings(patternSettings),
     [patternSettings],
@@ -287,10 +287,12 @@ export function InteractivePatternVisualizer({
           <button
             type="button"
             onClick={() => setShowExplanation((prev) => !prev)}
+            aria-expanded={showExplanation}
+            aria-controls="detector-rule-guide"
             className="flex items-center gap-1.5 rounded-lg border border-card-border bg-muted-bg px-3 py-1.5 text-xs font-semibold text-muted hover:text-foreground transition-colors"
           >
             <HelpCircle size={14} />
-            {showExplanation ? 'Hide Guide' : 'How it works'}
+            {showExplanation ? 'Hide detector rules' : 'How this signal works'}
           </button>
         </div>
       </div>
@@ -476,39 +478,41 @@ export function InteractivePatternVisualizer({
           />
         ) : null}
 
-        <div className="basis-full rounded-xl border border-card-border bg-card-bg/70 p-3">
-          <div className="mb-2 flex items-center gap-1.5 text-xs font-bold text-foreground">
-            <Info size={14} className="shrink-0 text-accent" />
-            Current detector rules
+        {showExplanation ? (
+          <div id="detector-rule-guide" className="basis-full rounded-xl border border-card-border bg-card-bg/70 p-3">
+            <div className="mb-2 flex items-center gap-1.5 text-xs font-bold text-foreground">
+              <Info size={14} className="shrink-0 text-accent" />
+              Current detector rules
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              {displayedRules.map((rule) => (
+                <div key={rule.label} className="rounded-lg border border-card-border/60 bg-muted-bg/40 p-2 text-xs">
+                  <span className="block font-bold text-foreground">{rule.label}</span>
+                  <span className="text-muted">{rule.value}</span>
+                </div>
+              ))}
+            </div>
+            {isMomentumBurst ? (
+              <p className="mt-2 text-xs leading-relaxed text-muted">
+                The three visible prior candles represent the configured {resolvedPatternSettings.momentumBurst.lookbackBars}-bar baseline.
+                The signal must clear both the {localMinMove.toFixed(2)}% absolute minimum and the {momentumPreview.relativeThreshold.toFixed(2)}% relative threshold.
+              </p>
+            ) : !isConsecutive ? (
+              <p className="mt-2 text-xs leading-relaxed text-muted">
+                The preview below demonstrates the adjustable signal-body threshold only.
+                A real match must also pass every fixed rule listed above.
+              </p>
+            ) : null}
+            <div className="mt-2 border-t border-card-border/60 pt-2 text-xs">
+              <span className="font-bold text-foreground">
+                Recommended next controls (not active yet):
+              </span>
+              <span className="ml-1 text-muted">
+                {ruleGuidance.recommendedControls.join(' · ')}
+              </span>
+            </div>
           </div>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {displayedRules.map((rule) => (
-              <div key={rule.label} className="rounded-lg border border-card-border/60 bg-muted-bg/40 p-2 text-xs">
-                <span className="block font-bold text-foreground">{rule.label}</span>
-                <span className="text-muted">{rule.value}</span>
-              </div>
-            ))}
-          </div>
-          {isMomentumBurst ? (
-            <p className="mt-2 text-xs leading-relaxed text-muted">
-              The three visible prior candles represent the configured {resolvedPatternSettings.momentumBurst.lookbackBars}-bar baseline.
-              The signal must clear both the {localMinMove.toFixed(2)}% absolute minimum and the {momentumPreview.relativeThreshold.toFixed(2)}% relative threshold.
-            </p>
-          ) : !isConsecutive ? (
-            <p className="mt-2 text-xs leading-relaxed text-muted">
-              The preview below demonstrates the adjustable signal-body threshold only.
-              A real match must also pass every fixed rule listed above.
-            </p>
-          ) : null}
-          <div className="mt-2 border-t border-card-border/60 pt-2 text-xs">
-            <span className="font-bold text-foreground">
-              Recommended next controls (not active yet):
-            </span>
-            <span className="ml-1 text-muted">
-              {ruleGuidance.recommendedControls.join(' · ')}
-            </span>
-          </div>
-        </div>
+        ) : null}
       </div>
 
       {/* Dynamic Candlestick Diagram SVG */}

@@ -11,7 +11,6 @@ import {
   type PatternId,
   type PatternSettings,
 } from '@/lib/scanner/patterns';
-import { DETECTOR_RULE_GUIDANCE } from './pattern-settings/detectorGuidance';
 import { InteractivePatternVisualizer } from './InteractivePatternVisualizer';
 import FocusBackdrop from './FocusBackdrop';
 
@@ -190,8 +189,6 @@ export function PatternGuidePanel({
     value,
     minMovePercent,
   );
-  const ruleGuidance = DETECTOR_RULE_GUIDANCE[value] ?? { minBodySummaryLabel: 'Min Body' };
-
   return (
     <>
       {isFocused ? (
@@ -212,17 +209,16 @@ export function PatternGuidePanel({
         }`}
         aria-labelledby="pattern-selector-title"
       >
-      {/* Top Header: Left Title/Subtitle + Right Flushed Trigger Button & Parameters Toggle */}
+      {/* Compact header: label, selected signal, and an inline-details toggle. */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center justify-between">
         <div>
           <div id="pattern-selector-title" className="flex items-center gap-1.5 text-xs font-bold text-foreground">
             <ScanSearch size={14} className="text-accent" />
-            {isMultiSelect ? 'Alert Patterns' : 'Pattern'}
+            {isMultiSelect ? 'Signal Alerts' : 'Pattern'}
           </div>
-          <p className="mt-0.5 text-[10px] text-muted">{description}</p>
         </div>
 
-        {/* Flushed to Right: Trigger Button + Parameter Pills + Icon Toggle */}
+        {/* Selected signal and inline-details toggle. */}
         <div className="flex items-center gap-2 sm:ml-auto">
           <button
             type="button"
@@ -237,7 +233,7 @@ export function PatternGuidePanel({
               <span className="block text-xs font-bold text-foreground">{selectedPreset.name}</span>
               <span className="mt-0.5 block truncate text-[10px] text-muted">
                 {isMultiSelect
-                  ? `${alertPatternIds.length} alert pattern${alertPatternIds.length === 1 ? '' : 's'} selected`
+                  ? `${alertPatternIds.length} selected`
                   : selectedPreset.shortDescription}
               </span>
             </span>
@@ -247,52 +243,18 @@ export function PatternGuidePanel({
             />
           </button>
 
-          {/* Parameter summary pill (Tapping expands visualizer) */}
           <button
             type="button"
             onClick={() => setIsGuideExpanded((exp) => !exp)}
-            className="hidden lg:flex items-center gap-1.5 text-[10px] font-mono text-muted bg-muted-bg/50 border border-card-border/60 px-2.5 py-1.5 rounded-lg hover:border-accent/40 hover:text-foreground transition-all cursor-pointer shadow-sm"
-            title="Click to expand Pattern Settings & Visualizer"
-          >
-            <span>{ruleGuidance.minBodySummaryLabel}: <strong className="text-foreground">{activeMinMovePercent}%</strong></span>
-            {value === 'consecutive' && (
-              <span>• Streak: <strong className="text-foreground">{requiredCount} bars</strong></span>
-            )}
-            {value === 'momentum-burst' && (
-              <>
-                <span>• Baseline: <strong className="text-foreground">{resolvedPatternSettings.momentumBurst.lookbackBars} bars</strong></span>
-                <span>• Expansion: <strong className="text-foreground">{resolvedPatternSettings.momentumBurst.bodyMultiplier.toFixed(1)}×</strong></span>
-              </>
-            )}
-            {value === 'range-breakout' && (
-              <>
-                <span>• Range: <strong className="text-foreground">{resolvedPatternSettings.rangeBreakout.lookbackBars} bars</strong></span>
-                <span>• Buffer: <strong className="text-foreground">{resolvedPatternSettings.rangeBreakout.minBreakoutPercent.toFixed(2)}%</strong></span>
-              </>
-            )}
-            {value === 'volume-expansion' && (
-              <>
-                <span>• Baseline: <strong className="text-foreground">{resolvedPatternSettings.volumeExpansion.lookbackBars} bars</strong></span>
-                <span>• Volume: <strong className="text-foreground">{resolvedPatternSettings.volumeExpansion.volumeMultiplier.toFixed(1)}×</strong></span>
-              </>
-            )}
-            {value === 'engulfing-reversal' && (
-              <>
-                <span>• Strength: <strong className="text-foreground">{resolvedPatternSettings.engulfingReversal.minBodyRatio.toFixed(1)}×</strong></span>
-              </>
-            )}
-          </button>
-
-          {/* Minimal Icon Toggle */}
-          <button
-            type="button"
-            onClick={() => setIsGuideExpanded((exp) => !exp)}
+            aria-expanded={isGuideExpanded}
+            aria-controls="signal-alert-details"
+            aria-label={isGuideExpanded ? 'Hide signal alert details and settings' : 'Show signal alert details and settings'}
             className={`p-1.5 rounded-lg border transition-all shadow-sm ${
               isGuideExpanded
                 ? 'bg-accent/15 border-accent/50 text-accent'
                 : 'bg-card-bg border-card-border/60 text-muted hover:text-foreground hover:border-accent/40'
             }`}
-            title={isGuideExpanded ? 'Hide Settings & Visualizer' : 'Show Pattern Settings & Visualizer'}
+            title={isGuideExpanded ? 'Hide details and settings' : 'Show details and settings'}
           >
             <SlidersHorizontal size={14} />
           </button>
@@ -402,7 +364,11 @@ export function PatternGuidePanel({
 
       {/* Expandable Settings & Visualizer Drawer */}
       {isGuideExpanded && (
-        <div className="pt-2 border-t border-card-border/40 animate-in fade-in slide-in-from-top-1 duration-200">
+        <div
+          id="signal-alert-details"
+          className="space-y-2 border-t border-card-border/40 pt-2 animate-in fade-in slide-in-from-top-1 duration-200"
+        >
+          <p className="text-[10px] text-muted">{description}</p>
           <InteractivePatternVisualizer
             patternId={value}
             minMovePercent={activeMinMovePercent}

@@ -35,7 +35,6 @@ export interface WatchlistSectionProps {
   onIntervalChange: (val: string) => void;
   onAddSymbol: (e: React.FormEvent) => void;
   onRemoveSymbol: (symbol: string, interval: string) => void;
-  onQuickPresetAdd: (symbol: string) => void;
   watchlistView: WatchlistView;
   onViewChange: (view: WatchlistView) => void;
   filterMode: 'all' | 'alerts' | 'errors';
@@ -50,7 +49,6 @@ export interface WatchlistSectionProps {
   testResult: { success: boolean } | null;
   renderJustChartCanvas: () => React.ReactNode;
   categoryCounts: { all: number; stocks: number; crypto: number; futures: number };
-  quickPresets: readonly { label: string; symbol: string }[];
 }
 
 export function WatchlistSection({
@@ -64,7 +62,6 @@ export function WatchlistSection({
   onIntervalChange,
   onAddSymbol,
   onRemoveSymbol,
-  onQuickPresetAdd,
   watchlistView,
   onViewChange,
   filterMode,
@@ -79,7 +76,6 @@ export function WatchlistSection({
   testResult,
   renderJustChartCanvas,
   categoryCounts,
-  quickPresets,
 }: WatchlistSectionProps) {
   return (
     <div className="space-y-4">
@@ -132,23 +128,6 @@ export function WatchlistSection({
           </button>
         </form>
       </div>
-
-      {/* Quick Presets Bar */}
-      {watchlistCategory === 'futures' && (
-        <div className="flex flex-wrap items-center gap-1.5 px-1">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-muted mr-1">Quick Presets:</span>
-          {quickPresets.map((preset) => (
-            <button
-              key={preset.symbol}
-              onClick={() => onQuickPresetAdd(preset.symbol)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-muted-bg/40 border border-card-border/40 text-muted hover:text-foreground hover:border-accent/40 transition-all"
-            >
-              <Plus size={10} />
-              <span>{preset.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
 
       {/* Filters & View Controls Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-muted-bg/20 p-2.5 rounded-xl border border-card-border/40">
