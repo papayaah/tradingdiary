@@ -304,9 +304,9 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
         type="button"
         onClick={(event) => onToggle(alert, event)}
         aria-expanded={isExpanded}
-        aria-controls={`alert-chart-${alert.id}`}
+        aria-controls={`alert-details-${alert.id}`}
         className="w-full flex flex-col gap-2 text-left cursor-pointer touch-manipulation active:scale-[0.99] active:opacity-80 transition-transform"
-        title="Tap to toggle inline chart below"
+        title="Tap to show alert details and chart"
       >
         <div>
           <div className="flex items-center justify-between">
@@ -355,21 +355,6 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
             </div>
           )}
 
-          {alert.patterns && alert.patterns.length > 1 ? (
-            <div className="mt-2 space-y-1 text-xs border-t border-card-border/30 pt-1.5">
-              {alert.patterns.map((p, idx) => (
-                <div key={p.patternId || idx} className="flex items-start gap-1.5 leading-snug text-foreground/90 font-mono text-[11px]">
-                  <span className={`shrink-0 text-[10px] mt-0.5 font-bold ${alert.type === 'bullish' ? 'text-profit' : 'text-loss'}`}>•</span>
-                  <div>
-                    <span className="font-bold text-foreground mr-1">{p.name}:</span>
-                    <span className="text-foreground/80">{p.message}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-1 text-xs font-medium leading-relaxed text-foreground/85">{alert.details}</p>
-          )}
         </div>
 
         <div className="flex w-full flex-wrap items-center justify-between gap-3 border-t border-card-border/60 pt-2 font-mono text-xs text-foreground/80">
@@ -397,7 +382,7 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
               <TimeAgo timestamp={alert.createdAt} />
             </span>
             <span
-              className={`flex min-w-[112px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold transition-all ${
+              className={`flex min-w-[72px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold transition-all ${
                 isExpanded
                 ? 'bg-accent text-background border-accent shadow-sm'
                 : 'bg-accent/10 text-accent border-accent/30 hover:bg-accent/20'
@@ -411,12 +396,11 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
               ) : isExpanded ? (
                 <>
                   <ChevronUp size={13} className="shrink-0" />
-                  <span>Hide Chart</span>
+                  <span>Less</span>
                 </>
               ) : (
                 <>
-                  <BarChart2 size={13} className="shrink-0" />
-                  <span>Show Chart</span>
+                  <span>More</span>
                   <ChevronDown size={13} className="shrink-0 opacity-70" />
                 </>
               )}
@@ -427,11 +411,32 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
 
       {isExpanded && (
         <div
-          id={`alert-chart-${alert.id}`}
+          id={`alert-details-${alert.id}`}
           className="mt-2 pt-2 border-t border-card-border/40 space-y-2 animate-in fade-in zoom-in-95 duration-150"
           onClick={(event) => event.stopPropagation()}
           aria-live="polite"
         >
+          {alert.patterns && alert.patterns.length > 1 ? (
+            <div className="space-y-1 rounded-lg bg-muted-bg p-2 text-xs">
+              {alert.patterns.map((pattern, index) => (
+                <div
+                  key={pattern.patternId || index}
+                  className="flex items-start gap-1.5 font-mono text-[11px] leading-snug text-foreground/90"
+                >
+                  <span className={`mt-0.5 shrink-0 text-[10px] font-bold ${alert.type === 'bullish' ? 'text-profit' : 'text-loss'}`}>•</span>
+                  <div>
+                    <span className="mr-1 font-bold text-foreground">{pattern.name}:</span>
+                    <span className="text-foreground/80">{pattern.message}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-lg bg-muted-bg p-2 text-xs font-medium leading-relaxed text-foreground/85">
+              {alert.details}
+            </p>
+          )}
+
           <div className="flex items-center justify-between text-[10px] text-muted font-mono">
             <span className="flex items-center gap-1 text-accent font-semibold">
               <BarChart2 size={11} />
