@@ -1,6 +1,6 @@
 import { createEngageRouteHandler } from '@reactkits.dev/react-engage/server';
 import { db } from '@/lib/db/server';
-import { engageTickets, engageSubscribers, engageTemplates } from '@/lib/db/server/schema';
+import { engageTickets, engageSubscribers, engageTemplates, engageBroadcasts } from '@/lib/db/server/schema';
 
 export const { GET, POST } = createEngageRouteHandler({
   db,
@@ -8,5 +8,6 @@ export const { GET, POST } = createEngageRouteHandler({
     tickets: engageTickets,
     subscribers: engageSubscribers,
     templates: engageTemplates,
+    broadcasts: engageBroadcasts,
   },
 });

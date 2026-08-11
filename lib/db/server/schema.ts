@@ -271,3 +271,13 @@ export const engageTemplates = pgTable("engage_templates", {
     updatedAt: timestamp("updated_at", { mode: 'string' }).notNull().defaultNow(),
 });
 
+export const engageBroadcasts = pgTable("engage_broadcasts", {
+    id: text("id").primaryKey(),
+    appId: text("app_id").notNull().default("app"),
+    subject: text("subject").notNull(),
+    content: text("content").notNull(),
+    recipientCount: integer("recipient_count").notNull().default(0),
+    sentAt: timestamp("sent_at", { mode: 'string' }).notNull().defaultNow(),
+});
+
+
