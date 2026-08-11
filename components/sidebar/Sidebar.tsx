@@ -22,6 +22,7 @@ import LoginButton from '@/components/auth/LoginButton';
 import GlobalSearch from '@/components/global-search/GlobalSearch';
 import BrandLogo from '@/components/brand/BrandLogo';
 import AccountSwitcher from '@/components/sidebar/AccountSwitcher';
+import { version } from '@/package.json';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -170,18 +171,19 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           <LoginButton collapsed={collapsed} />
         </div>
 
-        {/* Professional Version & Copyright Footer */}
+        {/* Dynamic Version, Update Date & Copyright Footer */}
         <div className="pt-2 pb-1 border-t border-sidebar-border/40 select-none text-center">
           {!collapsed ? (
-            <div className="text-[11px] font-medium text-muted/60 tracking-tight">
-              Trading Diary v1.2.0 • © {new Date().getFullYear()}
+            <div className="text-[11px] font-medium text-muted/60 tracking-tight space-y-0.5">
+              <div>Trading Diary v{version}</div>
+              <div className="text-[10px] text-muted/50">Updated Aug 2026 • © {new Date().getFullYear()}</div>
             </div>
           ) : (
             <div
               className="text-[9px] font-mono font-medium text-muted/50"
-              title={`Trading Diary v1.2.0\n© ${new Date().getFullYear()} Trading Diary. All rights reserved.`}
+              title={`Trading Diary v${version}\nUpdated Aug 2026\n© ${new Date().getFullYear()} Trading Diary. All rights reserved.`}
             >
-              v1.2.0
+              v{version}
             </div>
           )}
         </div>
