@@ -46,7 +46,7 @@
     "@ai-sdk/google": "^3.0.36",
     "@ai-sdk/openai": "^3.0.39",
     "@reactkits.dev/better-auth-connect": "file:packages/better-auth-connect",
-    "@reactkits.dev/react-engage": "file:packages/react-feedbox",
+    "@reactkits.dev/react-engage": "file:packages/react-engage",
     "@stoqey/ib": "^1.6.5",
     "@types/papaparse": "^5.5.2",
     "ai": "^6.0.108",
