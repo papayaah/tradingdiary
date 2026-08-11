@@ -20,6 +20,27 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Refresh the production IBKR Gateway
+
+The production Gateway runs separately from the Trading Diary application. To open its desktop, create an SSH tunnel and leave the terminal running:
+
+```bash
+ssh -i ~/.ssh/id_rsa -N \
+  -L 5900:127.0.0.1:5900 \
+  root@5.223.53.140
+```
+
+Open `vnc://localhost:5900` in a VNC client, enter the Gateway VNC password, and approve the IBKR Mobile/IB Key prompt if requested.
+
+If the Gateway is stuck, restart only its independent container:
+
+```bash
+ssh -i ~/.ssh/id_rsa root@5.223.53.140 \
+  'cd /srv/tradingdiary && docker compose -p tradingdiary-ibkr -f docker-compose.ibkr.server.yml restart ib-gateway'
+```
+
+Reconnect through VNC and complete 2FA. This command does not restart the Trading Diary web application or scanner. For the complete deployment and authentication notes, see [`docs/specs/hybrid-futures-provider-setup.md`](docs/specs/hybrid-futures-provider-setup.md).
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
