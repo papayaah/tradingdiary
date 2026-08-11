@@ -64,6 +64,39 @@ export interface TradeNoteRecord {
   updatedAt: number;
 }
 
+export interface ObservationEvidence {
+  metric: string;
+  value: string;
+  source?: 'METRIC' | 'EVENT' | 'STRATEGY_RULE';
+}
+
+export interface TradeAIReviewObservation {
+  label: string;
+  detail: string;
+  evidence?: ObservationEvidence[];
+}
+
+export interface TradeAIReviewRecord {
+  id: string; // keyPath
+  date: string;
+  symbol: string;
+  accountId: string;
+  tradeGroupId: string; // `${date}:${symbol}:${accountId}` — indexed
+  summary: string;
+  observations: TradeAIReviewObservation[];
+  executionReview?: string;
+  riskReview?: string;
+  questionsForTrader?: string[];
+  takeaway?: string;
+  evidenceConfidence: 'low' | 'medium' | 'high';
+  // Provenance for reproducibility / cross-model comparison
+  provider: string;
+  model: string;
+  promptVersion: string;
+  contextHash: string;
+  createdAt: number;
+}
+
 export interface TradingDiaryDB extends DBSchema {
   accounts: {
     key: string;
@@ -94,5 +127,12 @@ export interface TradingDiaryDB extends DBSchema {
   tradeNotes: {
     key: [string, string, string];
     value: TradeNoteRecord;
+  };
+  tradeAIReviews: {
+    key: string;
+    value: TradeAIReviewRecord;
+    indexes: {
+      'by-tradeGroup': string;
+    };
   };
 }

@@ -13,6 +13,8 @@ import {
 import TradeChart from './TradeChart';
 import TradeDetailsPanel from './TradeDetailsPanel';
 import ScreenshotAttachment from './ScreenshotAttachment';
+import TradeNotesEditor from './TradeNotesEditor';
+import TradeAIReviewCard from './TradeAIReviewCard';
 
 interface TradeTableProps {
   trades: AggregatedTrade[];
@@ -208,6 +210,20 @@ function TradeRow({
                 onAdd={handleAddScreenshot}
                 onRemove={handleRemoveScreenshot}
               />
+            </td>
+          </tr>
+          <tr>
+            <td colSpan={9} className="px-5 py-4 border-t border-card-border">
+              <TradeNotesEditor
+                date={trade.date}
+                symbol={trade.symbol}
+                accountId={accountId}
+              />
+            </td>
+          </tr>
+          <tr>
+            <td colSpan={9} className="px-5 py-4 border-t border-card-border">
+              <TradeAIReviewCard trade={trade} accountId={accountId} currency={currency} />
             </td>
           </tr>
         </>
