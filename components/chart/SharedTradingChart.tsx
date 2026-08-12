@@ -29,6 +29,7 @@ import {
   DoubleTopBottomResult,
   CupAndHandleResult,
   HeadAndShouldersResult,
+  detectMarketStructure,
 } from '@/lib/chart/patterns';
 import {
   DEFAULT_PATTERN_SETTINGS,
@@ -511,6 +512,11 @@ export default function SharedTradingChart({
     return null;
   }, [visibleCandles, autoPatternsEnabled]);
 
+  const marketStructure = useMemo(
+    () => autoPatternsEnabled ? detectMarketStructure(visibleCandles) : { levels: [], trendlines: [] },
+    [visibleCandles, autoPatternsEnabled],
+  );
+
   // Execution arrows are drawn by the TradeExecutionPrimitive inside the chart's
   // own render loop, so they stay pinned to their candle through any X/Y zoom or
   // scale change — no separate overlay canvas to fall out of sync. We only feed
@@ -588,7 +594,7 @@ export default function SharedTradingChart({
         background: { type: ColorType.Solid, color: bgColor },
         textColor,
         fontFamily: 'var(--font-geist-sans), system-ui, -apple-system, sans-serif',
-        fontSize: 11,
+        fontSize: 13,
       },
       localization: {
         timeFormatter: (time: Time) => {
@@ -797,7 +803,12 @@ export default function SharedTradingChart({
       sortedCandles.length > oldCount &&
       oldFirst !== null &&
       newFirst < oldFirst;
-    const savedRange = isPrepend ? chart.timeScale().getVisibleLogicalRange() : null;
+    // Any refresh of the current dataset must preserve the user's chosen zoom.
+    // Parent polling often supplies a new array even when its candles are
+    // unchanged; treating that as a fresh dataset causes fitContent() to snap
+    // the chart back shortly after a zoom or pan. Genuine symbol/interval
+    // changes rebuild the chart and reset oldCount to zero.
+    const savedRange = oldCount > 0 ? chart.timeScale().getVisibleLogicalRange() : null;
 
     candleSeries.setData(
       sortedCandles.map((c) => ({
@@ -822,10 +833,11 @@ export default function SharedTradingChart({
       );
     }
 
-    // Preserve the user's scroll position on a prepend; on a fresh dataset frame
-    // the trade's execution window (when present), else open on a recent window.
-    if (isPrepend && savedRange) {
-      const delta = sortedCandles.length - oldCount;
+    // Preserve zoom/pan on ordinary refreshes and appends. A history prepend
+    // shifts existing logical indexes, so offset the saved range by its delta.
+    // Only a genuinely fresh chart gets the initial framing below.
+    if (savedRange) {
+      const delta = isPrepend ? sortedCandles.length - oldCount : 0;
       chart.timeScale().setVisibleLogicalRange({
         from: savedRange.from + delta,
         to: savedRange.to + delta,
@@ -918,7 +930,37 @@ export default function SharedTradingChart({
       });
     }
 
-    // 2. Auto Pattern Overlay Geometry Lines & Breakout / Target Lines
+    // 2. Viewport-scoped wick support/resistance and diagonal trendlines.
+    if (autoPatternsEnabled) {
+      marketStructure.levels.forEach((level) => {
+        priceLinesRef.current.push(candleSeries.createPriceLine({
+          price: level.price,
+          color: level.type === 'support' ? '#64748b' : '#78716c',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dotted,
+          axisLabelVisible: true,
+          title: `${level.type === 'support' ? 'Support' : 'Resistance'} · ${level.touches} touches`,
+        }));
+      });
+
+      marketStructure.trendlines.forEach((trendline) => {
+        const lineSeries = chart.addSeries(LineSeries, {
+          color: trendline.type === 'rising-support' ? '#3b82f6' : '#8b5cf6',
+          lineWidth: 2,
+          lineStyle: LineStyle.Solid,
+          lastValueVisible: false,
+          priceLineVisible: false,
+          title: `${trendline.type === 'rising-support' ? 'Rising support' : 'Falling resistance'} · ${trendline.touches} touches`,
+        });
+        lineSeries.setData([
+          { time: formatCandleTime(visibleCandles[trendline.startIndex].time), value: trendline.startPrice },
+          { time: formatCandleTime(visibleCandles[visibleCandles.length - 1].time), value: trendline.projectedPrice },
+        ]);
+        patternSeriesRef.current.push(lineSeries);
+      });
+    }
+
+    // 3. Auto Pattern Overlay Geometry Lines & Breakout / Target Lines
     if (autoPatternsEnabled && activePattern) {
       priceLinesRef.current.push(
         candleSeries.createPriceLine({
@@ -1092,6 +1134,8 @@ export default function SharedTradingChart({
   }, [
     sortedCandles,
     activePattern,
+    marketStructure,
+    visibleCandles,
     autoPatternsEnabled,
     transactions,
     date,
@@ -1114,15 +1158,15 @@ export default function SharedTradingChart({
           </div>
           <div className="flex flex-col">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-black text-foreground tracking-tight">{title || displaySymbol(symbol)}</span>
+              <span className="text-base font-black text-foreground tracking-tight">{title || displaySymbol(symbol)}</span>
               {providerBadge && (
-                <span className="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-card-bg text-muted border border-card-border rounded-md">
+                <span className="px-2 py-0.5 text-xs font-bold uppercase tracking-wider bg-card-bg text-muted border border-card-border rounded-md">
                   {providerBadge}
                 </span>
               )}
             </div>
             {subtitle && (
-              <span className="text-[10px] font-medium text-muted">{subtitle}</span>
+              <span className="text-xs font-medium text-muted">{subtitle}</span>
             )}
           </div>
         </div>
@@ -1130,7 +1174,7 @@ export default function SharedTradingChart({
         <div className="flex flex-wrap items-center gap-2">
           {/* Current Day Filter Toggle */}
           {onToggleCurrentDayOnly && (
-            <label className="flex items-center gap-1.5 text-xs text-muted cursor-pointer hover:text-foreground transition-colors mr-1">
+            <label className="flex items-center gap-1.5 text-sm text-muted cursor-pointer hover:text-foreground transition-colors mr-1">
               <input
                 type="checkbox"
                 checked={currentDayOnly}
@@ -1149,9 +1193,9 @@ export default function SharedTradingChart({
                 event.stopPropagation();
                 onReplayTrade();
               }}
-              className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider bg-accent/10 text-accent hover:bg-accent hover:text-white rounded-lg transition-all"
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold uppercase tracking-wider bg-accent/10 text-accent hover:bg-accent hover:text-white rounded-lg transition-all"
             >
-              <Play size={10} fill="currentColor" />
+              <Play size={11} fill="currentColor" />
               Replay
             </button>
           )}
@@ -1170,7 +1214,7 @@ export default function SharedTradingChart({
                     e.stopPropagation();
                     onIntervalChange(iv);
                   }}
-                  className={`px-2 py-0.5 text-[10px] font-black uppercase rounded-lg transition-all ${
+                  className={`px-2.5 py-1 text-xs font-black uppercase rounded-lg transition-all ${
                     interval === iv
                       ? 'bg-accent text-white shadow-sm'
                       : 'text-muted hover:text-foreground hover:bg-card-bg/60'
@@ -1203,12 +1247,12 @@ export default function SharedTradingChart({
         {onLoadMoreHistory && (loadingMore || !hasMore) && (
           <div className="absolute left-2 top-2 z-20">
             {loadingMore ? (
-              <span className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-semibold text-muted bg-[#0c121e]/90 border border-card-border rounded-lg backdrop-blur-sm">
-                <Loader2 className="w-3 h-3 animate-spin" />
+              <span className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-muted bg-[#0c121e]/90 border border-card-border rounded-lg backdrop-blur-sm">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 Loading older history…
               </span>
             ) : (
-              <span className="px-2 py-1 text-[10px] font-semibold text-muted/70 bg-[#0c121e]/80 border border-card-border/60 rounded-lg backdrop-blur-sm">
+              <span className="px-2.5 py-1 text-xs font-semibold text-muted/70 bg-[#0c121e]/80 border border-card-border/60 rounded-lg backdrop-blur-sm">
                 Earliest loaded · scroll to view
               </span>
             )}
@@ -1217,7 +1261,7 @@ export default function SharedTradingChart({
 
         {error ? (
           <div className="flex items-center justify-center w-full" style={{ height }}>
-            <span className="text-xs text-rose-400 font-medium">{error}</span>
+            <span className="text-sm text-rose-400 font-medium">{error}</span>
           </div>
         ) : (
           <div
@@ -1232,13 +1276,13 @@ export default function SharedTradingChart({
                 className="absolute z-30 pointer-events-none transform -translate-x-1/2 -translate-y-full mb-2 bg-card-bg/95 backdrop-blur-md border border-card-border px-2.5 py-1.5 rounded-lg shadow-xl text-xs flex flex-col gap-0.5 animate-in fade-in zoom-in-95 duration-100"
                 style={{ left: hoveredTrade.x, top: hoveredTrade.y - 8 }}
               >
-                <div className="flex items-center gap-1.5 font-bold">
+                <div className="flex items-center gap-1.5 font-bold text-sm">
                   <span className={hoveredTrade.isBuy ? 'text-profit' : 'text-loss'}>
                     {hoveredTrade.isBuy ? 'BUY' : 'SELL'}
                   </span>
                   <span className="text-foreground">${hoveredTrade.trade.price.toFixed(2)}</span>
                 </div>
-                <div className="text-[10px] text-muted flex items-center gap-2 font-mono">
+                <div className="text-xs text-muted flex items-center gap-2 font-mono">
                   <span>Qty: {Math.abs(hoveredTrade.trade.quantity)}</span>
                   <span>{hoveredTrade.trade.time}</span>
                 </div>

@@ -107,7 +107,7 @@ export default function ReplayChart({
                 background: { type: ColorType.Solid, color: 'transparent' },
                 textColor: isDark ? '#9ca3af' : '#6b7280',
                 fontFamily: 'var(--font-geist-sans), system-ui, sans-serif',
-                fontSize: 11,
+                fontSize: 13,
             },
             grid: {
                 vertLines: { color: isDark ? '#1e293b' : '#f0f0f0' },
