@@ -122,7 +122,7 @@ function WatchlistRow({
           </span>
         )}
         {latestPrice !== undefined && (
-          <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] font-normal text-muted">
+          <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs font-normal text-muted">
             <span>Last Price: ${latestPrice.toFixed(2)}</span>
             {priceChange ? (
               <span
@@ -177,7 +177,7 @@ function WatchlistRow({
               <TrendingUp size={12} /> {primaryPatternName ? `${primaryPatternName} · Bullish` : 'Bullish Alert'}
             </span>
             {additionalMatchCount > 0 && (
-              <span className="text-[10px] font-semibold text-muted">+{additionalMatchCount}</span>
+              <span className="text-xs font-semibold text-muted">+{additionalMatchCount}</span>
             )}
           </div>
         )}
@@ -187,7 +187,7 @@ function WatchlistRow({
               <TrendingDown size={12} /> {primaryPatternName ? `${primaryPatternName} · Bearish` : 'Bearish Alert'}
             </span>
             {additionalMatchCount > 0 && (
-              <span className="text-[10px] font-semibold text-muted">+{additionalMatchCount}</span>
+              <span className="text-xs font-semibold text-muted">+{additionalMatchCount}</span>
             )}
           </div>
         )}
@@ -197,7 +197,7 @@ function WatchlistRow({
               Normal
             </span>
             {selectedPatternNames.length > 0 && (
-              <span className="text-[10px] text-muted">
+              <span className="text-xs text-muted">
                 {selectedPatternNames.length} {selectedPatternNames.length === 1 ? 'pattern' : 'patterns'} checked
               </span>
             )}
@@ -221,7 +221,7 @@ function WatchlistRow({
             </span>
             {item.lastError && (
               <span
-                className="text-[10px] text-amber-500/80 font-medium block max-w-[150px] truncate leading-normal"
+                className="text-xs text-amber-500/80 font-medium block max-w-[150px] truncate leading-normal"
                 title={item.lastError}
               >
                 {item.lastError}

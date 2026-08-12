@@ -117,14 +117,14 @@ const CompactCard = React.memo(function CompactCard({
             <span className="truncate text-sm font-bold text-foreground">{displaySymbol(item.symbol)}</span>
             {item.provider && (
               <span
-                className="rounded bg-accent/10 px-1.5 py-0.5 text-[9px] font-semibold text-accent"
+                className="rounded bg-accent/10 px-1.5 py-0.5 text-xs font-semibold text-accent"
                 title={`Data source: ${item.provider}`}
               >
                 {shortProviderLabel(item.provider)}
               </span>
             )}
           </div>
-          <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] text-muted">
+          <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted">
             <span>{latestPrice === undefined ? 'No current price' : `$${latestPrice.toFixed(2)}`}</span>
             {latestPrice !== undefined && priceChange ? (
               <span
@@ -160,7 +160,7 @@ const CompactCard = React.memo(function CompactCard({
       </div>
 
       <div className="mt-3 flex items-center justify-between gap-2 border-t border-card-border/30 pt-2">
-        <div className="min-w-0 text-[10px] font-semibold">
+        <div className="min-w-0 text-xs font-semibold">
           {item.status === 'bullish' ? (
             <span className="flex items-center gap-1 text-profit" title={matchTitle || 'Bullish alert'}>
               <TrendingUp size={11} /> {primaryPatternName ? `${primaryPatternName} · Bullish` : 'Bullish Alert'}
@@ -261,7 +261,7 @@ function CompactWatchlist({
   return (
     <div ref={containerRef} className="space-y-3">
       {entries.length > pageSize ? (
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-card-border/50 bg-muted-bg/20 px-3 py-2 text-[10px] text-muted">
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-card-border/50 bg-muted-bg/20 px-3 py-2 text-xs text-muted">
           <span>
             Showing <strong className="text-foreground">{rangeStart}–{rangeEnd}</strong> of{' '}
             <strong className="text-foreground">{entries.length}</strong> monitored symbols

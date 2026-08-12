@@ -311,8 +311,8 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
         <div>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="font-bold text-foreground">{alert.symbol}</span>
-              <span className="bg-muted-bg text-muted px-1.5 py-0.5 rounded text-[10px] font-mono">
+              <span className="font-bold text-foreground text-base">{alert.symbol}</span>
+              <span className="bg-muted-bg text-muted px-1.5 py-0.5 rounded text-xs font-mono">
                 {alert.interval}
               </span>
               <span
@@ -343,7 +343,7 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
               {alert.patterns.map((p, idx) => (
                 <span
                   key={p.patternId || idx}
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold border ${
                     alert.type === 'bullish'
                       ? 'bg-profit/15 text-profit border-profit/30'
                       : 'bg-loss/15 text-loss border-loss/30'
@@ -417,13 +417,13 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
           aria-live="polite"
         >
           {alert.patterns && alert.patterns.length > 1 ? (
-            <div className="space-y-1 rounded-lg bg-muted-bg p-2 text-xs">
+            <div className="space-y-1.5 rounded-lg bg-muted-bg p-2.5 text-xs">
               {alert.patterns.map((pattern, index) => (
                 <div
                   key={pattern.patternId || index}
-                  className="flex items-start gap-1.5 font-mono text-[11px] leading-snug text-foreground/90"
+                  className="flex items-start gap-1.5 font-mono text-xs leading-snug text-foreground/90"
                 >
-                  <span className={`mt-0.5 shrink-0 text-[10px] font-bold ${alert.type === 'bullish' ? 'text-profit' : 'text-loss'}`}>•</span>
+                  <span className={`mt-0.5 shrink-0 text-xs font-bold ${alert.type === 'bullish' ? 'text-profit' : 'text-loss'}`}>•</span>
                   <div>
                     <span className="mr-1 font-bold text-foreground">{pattern.name}:</span>
                     <span className="text-foreground/80">{pattern.message}</span>
@@ -432,20 +432,20 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
               ))}
             </div>
           ) : (
-            <p className="rounded-lg bg-muted-bg p-2 text-xs font-medium leading-relaxed text-foreground/85">
+            <p className="rounded-lg bg-muted-bg p-2.5 text-sm font-medium leading-relaxed text-foreground/85">
               {alert.details}
             </p>
           )}
 
-          <div className="flex items-center justify-between text-[10px] text-muted font-mono">
+          <div className="flex items-center justify-between text-xs text-muted font-mono">
             <span className="flex items-center gap-1 text-accent font-semibold">
-              <BarChart2 size={11} />
+              <BarChart2 size={13} />
               4H window
             </span>
             <button
               type="button"
               onClick={() => onAlertClick(alert)}
-              className="text-[10px] text-accent hover:underline font-semibold flex items-center gap-1"
+              className="text-xs text-accent hover:underline font-semibold flex items-center gap-1"
             >
               <span>View watchlist</span>
               <span>→</span>
@@ -548,11 +548,11 @@ function AlertHistoryPanel({
         </div>
 
         {alerts.length === 0 ? (
-          <div className="text-center py-12 text-muted text-xs flex-1 flex items-center justify-center border border-dashed border-card-border rounded-xl">
+          <div className="text-center py-12 text-muted text-xs flex-1 flex items-center justify-center border border-dashed border-card-border rounded-xl min-h-[140px]">
             No alerts yet.
           </div>
         ) : (
-          <div className="space-y-3 overflow-y-auto flex-1 pr-1 min-h-[500px] max-h-[calc(100vh-220px)]">
+          <div className="space-y-3 overflow-y-auto flex-1 pr-1 min-h-[140px] lg:min-h-[400px] max-h-[calc(100vh-220px)]">
             {alerts.map((alert) => (
               <AlertHistoryCard
                 key={alert.id}
