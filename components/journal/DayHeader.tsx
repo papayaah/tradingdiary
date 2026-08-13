@@ -1,4 +1,4 @@
-import { StickyNote, ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react';
+import { StickyNote, BarChart2, ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react';
 import { pnlColorClass } from '@/lib/utils/format';
 import { formatCurrency } from '@/lib/currency';
 
@@ -8,6 +8,8 @@ interface DayHeaderProps {
   currency?: string;
   isNotesOpen: boolean;
   onToggleNotes: () => void;
+  isStatsOpen?: boolean;
+  onToggleStats?: () => void;
   onPrevDay?: () => void;
   onNextDay?: () => void;
   hasPrevDay?: boolean;
@@ -20,6 +22,8 @@ export default function DayHeader({
   currency = 'USD',
   isNotesOpen,
   onToggleNotes,
+  isStatsOpen = false,
+  onToggleStats,
   onPrevDay,
   onNextDay,
   hasPrevDay = false,
@@ -69,14 +73,35 @@ export default function DayHeader({
             </button>
           )}
         </div>
-        <div
-          className={`flex shrink-0 items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-widest transition-all ${
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleNotes();
+          }}
+          className={`flex shrink-0 items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-normal uppercase tracking-wider transition-all ${
             isNotesOpen ? 'bg-accent/20 text-accent ring-1 ring-accent/30' : 'bg-muted-bg/30 text-muted hover:bg-muted-bg/50 hover:text-foreground'
           }`}
         >
           <StickyNote size={12} />
-          {isNotesOpen ? 'Hide Notes' : 'Show Notes'}
-        </div>
+          {isNotesOpen ? 'Notes' : 'Notes'}
+        </button>
+
+        {onToggleStats && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleStats();
+            }}
+            className={`flex shrink-0 items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-normal uppercase tracking-wider transition-all ${
+              isStatsOpen ? 'bg-accent/20 text-accent ring-1 ring-accent/30' : 'bg-muted-bg/30 text-muted hover:bg-muted-bg/50 hover:text-foreground'
+            }`}
+          >
+            <BarChart2 size={12} />
+            {isStatsOpen ? 'Hide Stats' : 'Stats'}
+          </button>
+        )}
       </div>
       <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end">
         <span className="text-[10px] font-medium text-muted uppercase tracking-widest bg-muted-bg/50 px-2 py-1 rounded-lg">Day P&L</span>

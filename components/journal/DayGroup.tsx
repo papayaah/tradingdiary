@@ -30,6 +30,7 @@ export default function DayGroup({
 }: DayGroupProps) {
   const { accounts } = useAccount();
   const [isNotesOpen, setIsNotesOpen] = useState(openNotes);
+  const [isStatsOpen, setIsStatsOpen] = useState(false);
   const activeAccount = accounts.find(a => a.accountId === accountId);
   const currency = activeAccount?.currency || 'USD';
 
@@ -41,12 +42,18 @@ export default function DayGroup({
         currency={currency} 
         isNotesOpen={isNotesOpen}
         onToggleNotes={() => setIsNotesOpen(!isNotesOpen)}
+        isStatsOpen={isStatsOpen}
+        onToggleStats={() => setIsStatsOpen(!isStatsOpen)}
         onPrevDay={onPrevDay}
         onNextDay={onNextDay}
         hasPrevDay={hasPrevDay}
         hasNextDay={hasNextDay}
       />
-      <DayStats summary={summary} currency={currency} />
+      {isStatsOpen && (
+        <div className="animate-in fade-in slide-in-from-top-1 duration-200">
+          <DayStats summary={summary} currency={currency} />
+        </div>
+      )}
       {isNotesOpen && (
         <div className="animate-in fade-in slide-in-from-top-1 duration-200">
           <NotesArea date={summary.date} accountId={accountId} />

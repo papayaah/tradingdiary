@@ -66,7 +66,11 @@ export default function DayStats({ summary, currency = 'USD' }: DayStatsProps) {
           colorClass={pnlColorClass(summary.totalPnL)}
         />
       ) : (
-        <StatCard label="Adv. Metrics" locked />
+        <StatCard
+          label="Gross P&L"
+          value={formatCurrency(summary.grossPnL, currency)}
+          colorClass={pnlColorClass(summary.grossPnL)}
+        />
       )}
     </div>
   );

@@ -72,6 +72,7 @@ export interface SharedTradingChartProps {
   onLoadMoreHistory?: () => void;
   loadingMore?: boolean;
   hasMore?: boolean;
+  flat?: boolean;
 }
 
 function getETOffsetSeconds(dateStr: string): number {
@@ -372,6 +373,7 @@ export default function SharedTradingChart({
   onLoadMoreHistory,
   loadingMore = false,
   hasMore = false,
+  flat = false,
 }: SharedTradingChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -1159,7 +1161,7 @@ export default function SharedTradingChart({
   ]);
 
   return (
-    <div className="relative w-full rounded-2xl overflow-hidden border border-card-border bg-card-bg shadow-2xl flex flex-col">
+    <div className={`relative w-full overflow-hidden flex flex-col ${flat ? '' : 'rounded-2xl border border-card-border bg-card-bg shadow-2xl'}`}>
       {/* Top Chart Header & Timeline Toolbar */}
       <div className="flex flex-col gap-2 px-3 sm:px-5 py-2.5 border-b border-card-border/60 bg-muted-bg/40 backdrop-blur-md">
         {/* Row 1: Symbol/Date + Overlays & Replay */}
