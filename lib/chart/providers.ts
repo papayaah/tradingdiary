@@ -461,6 +461,15 @@ class TiingoProvider implements ChartProvider {
 
     async fetchCandles(symbol: string, date: string, interval: string): Promise<OHLCCandle[]> {
         const formattedDate = `${date.substring(0, 4)}-${date.substring(4, 6)}-${date.substring(6, 8)}`;
+        const normalizedInterval = interval.toLowerCase();
+        if (normalizedInterval === '1d' || normalizedInterval === 'd') {
+            // Daily lives on a different endpoint than intraday; never let '1d'
+            // fall through to fetchIntraday (which mis-maps it to '1min').
+            const dailyStart = new Date(Date.parse(formattedDate) - 10 * 24 * 60 * 60 * 1000)
+                .toISOString()
+                .split('T')[0];
+            return this.fetchDaily(symbol, dailyStart, formattedDate);
+        }
         return this.fetchIntraday(symbol, formattedDate, interval, formattedDate);
     }
 

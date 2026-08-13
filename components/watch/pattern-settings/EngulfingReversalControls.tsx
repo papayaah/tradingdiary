@@ -17,7 +17,7 @@ export function EngulfingReversalControls({
   };
 
   return (
-    <div className="basis-full rounded-xl border border-accent/20 bg-accent/5 p-3.5 space-y-3">
+    <div className="w-full rounded-xl border border-accent/20 bg-accent/5 p-3.5 space-y-3">
       <div className="text-xs font-bold uppercase tracking-wider text-foreground">
         Engulfing Reversal controls
       </div>

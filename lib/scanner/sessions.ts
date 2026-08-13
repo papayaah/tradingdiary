@@ -45,9 +45,22 @@ export function isSessionActive(
   assetClass: AssetClass,
   at: Date = new Date(),
 ): boolean {
-  if (assetClass !== 'equity') return true; // futures/crypto: always-eligible for now
+  if (assetClass === 'crypto') return true; // Crypto trades 24/7/365
 
   const { weekday, minutes } = etParts(at);
+
+  if (assetClass === 'futures') {
+    // CME / Globex Futures schedule (in America/New_York ET):
+    // Opens Sunday 6:00 PM ET (18:00), closes Friday 5:00 PM ET (17:00).
+    // Closed all day Saturday. Closed Sunday 00:00 - 18:00 ET.
+    // Mon-Thu daily maintenance pause: 17:00 ET to 18:00 ET.
+    if (weekday === 6) return false; // Saturday: closed all day
+    if (weekday === 0 && minutes < 18 * 60) return false; // Sunday before 6:00 PM ET: closed
+    if (weekday === 5 && minutes >= 17 * 60) return false; // Friday after 5:00 PM ET: closed
+    if (weekday >= 1 && weekday <= 4 && minutes >= 17 * 60 && minutes < 18 * 60) return false; // Mon-Thu 5p-6p ET halt
+    return true;
+  }
+
   const isWeekday = weekday >= 1 && weekday <= 5;
   if (!isWeekday) return false;
 

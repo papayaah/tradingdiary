@@ -27,11 +27,11 @@ export function MomentumBurstControls({
   };
 
   return (
-    <div className="basis-full rounded-xl border border-accent/20 bg-accent/5 p-3.5 space-y-3">
+    <div className="w-full rounded-xl border border-accent/20 bg-accent/5 p-3.5 space-y-3">
       <div className="text-xs font-bold uppercase tracking-wider text-foreground">
         Momentum Burst controls
       </div>
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
             <label htmlFor="momentum-min-body-slider" className="text-xs font-semibold text-foreground">
@@ -52,9 +52,9 @@ export function MomentumBurstControls({
             className="w-full cursor-pointer accent-accent"
           />
           <div className="flex items-center justify-between text-[10px] font-mono text-muted">
-            <span>0.05%</span>
-            <span>0.25% standard</span>
-            <span>3%</span>
+            <span className="whitespace-nowrap">0.05%</span>
+            <span className="whitespace-nowrap">0.25% standard</span>
+            <span className="whitespace-nowrap">3.00%</span>
           </div>
           <p className="text-xs text-muted">
             Absolute open-to-close floor the signal candle must meet.
@@ -94,10 +94,10 @@ export function MomentumBurstControls({
             onChange={(e) => update({ bodyMultiplier: parseFloat(e.target.value) })}
             className="w-full accent-accent cursor-pointer"
           />
-          <div className="flex items-center justify-between text-[11px] text-muted font-mono">
-            <span>1.1× sensitive</span>
-            <span>1.8× standard</span>
-            <span>5× rare</span>
+          <div className="flex items-center justify-between text-[10px] text-muted font-mono">
+            <span className="whitespace-nowrap">1.1× sensitive</span>
+            <span className="whitespace-nowrap">1.8× standard</span>
+            <span className="whitespace-nowrap">5.0× rare</span>
           </div>
         </div>
       </div>

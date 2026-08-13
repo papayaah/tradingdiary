@@ -12,7 +12,7 @@ export const scannerConfig = {
   concurrency: Number(process.env.SCANNER_CONCURRENCY ?? 4),
 
   // How often the scheduler looks for due watches.
-  schedulerTickMs: Number(process.env.SCANNER_TICK_MS ?? 5000),
+  schedulerTickMs: Number(process.env.SCANNER_TICK_MS ?? 2000),
   acquisitionTickMs: Number(process.env.SCANNER_ACQUISITION_TICK_MS ?? 250),
 
   // Per-request provider timeout.
@@ -38,7 +38,7 @@ export const scannerConfig = {
   // stale data is never served. Snapshot candle count is capped so a shared
   // snapshot cannot grow Redis unboundedly (providers already return a bounded
   // window; this is defense-in-depth).
-  acquisitionBucketMs: Number(process.env.SCANNER_ACQ_BUCKET_MS ?? 60000),
+  acquisitionBucketMs: Number(process.env.SCANNER_ACQ_BUCKET_MS ?? 15000),
   snapshotTtlMs: Number(process.env.SCANNER_SNAPSHOT_TTL_MS ?? 75000),
   maxSnapshotCandles: Number(process.env.SCANNER_MAX_SNAPSHOT_CANDLES ?? 1500),
 

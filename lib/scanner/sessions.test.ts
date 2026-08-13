@@ -56,8 +56,22 @@ describe('isSessionActive — weekends and non-equity', () => {
   it('equity RTH is closed on Saturday', () => {
     expect(isSessionActive('rth', 'equity', estSaturday(11))).toBe(false);
   });
-  it('futures/crypto ignore equity session windows for now', () => {
-    expect(isSessionActive('rth', 'futures', estSaturday(11))).toBe(true);
+  it('crypto is 24/7 active', () => {
     expect(isSessionActive('pre', 'crypto', estMonday(2))).toBe(true);
+    expect(isSessionActive('all', 'crypto', estSaturday(11))).toBe(true);
+  });
+  it('futures enforces Globex session hours (closed Sat, Sun AM, Fri after 5pm ET, Mon-Thu 5-6pm ET)', () => {
+    // Saturday: closed
+    expect(isSessionActive('all', 'futures', estSaturday(11))).toBe(false);
+    // Sunday 10am ET: closed
+    expect(isSessionActive('all', 'futures', new Date(Date.UTC(2026, 0, 4, 15, 0)))).toBe(false); // Sun Jan 4 10am ET (+5)
+    // Sunday 6:01pm ET: open
+    expect(isSessionActive('all', 'futures', new Date(Date.UTC(2026, 0, 4, 23, 1)))).toBe(true); // Sun Jan 4 6:01pm ET (+5)
+    // Monday 2pm ET: open
+    expect(isSessionActive('all', 'futures', estMonday(14, 0))).toBe(true);
+    // Monday 5:30pm ET maintenance halt: closed
+    expect(isSessionActive('all', 'futures', estMonday(17, 30))).toBe(false);
+    // Friday 5:30pm ET post-market: closed for weekend
+    expect(isSessionActive('all', 'futures', new Date(Date.UTC(2026, 0, 9, 22, 30)))).toBe(false); // Fri Jan 9 5:30pm ET (+5)
   });
 });

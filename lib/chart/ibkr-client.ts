@@ -42,6 +42,9 @@ const BENIGN_CODES = new Set([2104, 2106, 2107, 2108, 2158, 2103, 2100, 2119, 21
 // e.g. CME Bitcoin futures are requested as BRR (trading class BTC), not BTC.
 const IBKR_SYMBOL_ALIAS: Record<string, string> = {
   BTC: 'BRR', // CME Bitcoin future (symbol=BRR, localSymbol=BTCU6, tradingClass=BTC)
+  FDAX: 'DAX', // EUREX DAX 40 Index Future (symbol=DAX in IBKR)
+  FGBL: 'GBL', // EUREX Euro-Bund Future (symbol=GBL in IBKR)
+  FSTX: 'ESTX50', // EUREX Euro Stoxx 50 Future (symbol=ESTX50 in IBKR)
 };
 
 // Contract routing for roots that do not trade as USD-denominated CME futures.
@@ -50,6 +53,10 @@ const EXCHANGE_BY_ROOT: Record<string, string> = {
   CL: 'NYMEX', MCL: 'NYMEX', NG: 'NYMEX', QM: 'NYMEX', RB: 'NYMEX', HO: 'NYMEX',
   YM: 'CBOT', MYM: 'CBOT', ZB: 'CBOT', ZN: 'CBOT', ZF: 'CBOT', ZT: 'CBOT',
   ZC: 'CBOT', ZS: 'CBOT', ZW: 'CBOT',
+  DAX: 'EUREX', FDAX: 'EUREX',
+  GBL: 'EUREX', FGBL: 'EUREX',
+  ESTX50: 'EUREX', FSTX: 'EUREX',
+  Z: 'ICEEU',
   K200: 'KSE',
   HSI: 'HKFE',
   SPI: 'SNFE',
@@ -57,6 +64,10 @@ const EXCHANGE_BY_ROOT: Record<string, string> = {
 };
 
 const CURRENCY_BY_ROOT: Record<string, string> = {
+  DAX: 'EUR', FDAX: 'EUR',
+  GBL: 'EUR', FGBL: 'EUR',
+  ESTX50: 'EUR', FSTX: 'EUR',
+  Z: 'GBP',
   NIY: 'JPY',
   K200: 'KRW',
   HSI: 'HKD',

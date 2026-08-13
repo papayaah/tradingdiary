@@ -23,13 +23,16 @@ export function VolumeExpansionControls({
   };
 
   return (
-    <div className="basis-full rounded-xl border border-accent/20 bg-accent/5 p-3.5 space-y-3">
+    <div className="w-full rounded-xl border border-accent/20 bg-accent/5 p-3.5 space-y-3">
       <div className="text-xs font-bold uppercase tracking-wider text-foreground">
         Volume Expansion controls
       </div>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <div className="space-y-2">
-          <span className="block text-xs font-semibold text-foreground">Volume Baseline</span>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-foreground">Volume Baseline</span>
+            <span className="font-mono text-xs font-bold text-accent">{value.lookbackBars} bars</span>
+          </div>
           <div className="grid grid-cols-4 gap-1.5">
             {[5, 10, 20, 50].map((bars) => (
               <button
@@ -38,7 +41,7 @@ export function VolumeExpansionControls({
                 onClick={() => update({ lookbackBars: bars })}
                 className={optionClass(value.lookbackBars === bars)}
               >
-                {bars} bars
+                {bars}
               </button>
             ))}
           </div>

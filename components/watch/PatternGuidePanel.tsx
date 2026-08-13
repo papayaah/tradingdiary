@@ -40,10 +40,9 @@ interface PreviewCandle {
 
 const PREVIEW_CANDLES: Record<PatternId, PreviewCandle[]> = {
   consecutive: [
-    { open: 22, close: 19, high: 17, low: 25 },
-    { open: 19, close: 15, high: 13, low: 21 },
-    { open: 15, close: 10, high: 8, low: 17 },
-    { open: 10, close: 5, high: 3, low: 12 },
+    { open: 22, close: 17, high: 15, low: 24 },
+    { open: 17, close: 12, high: 10, low: 19 },
+    { open: 12, close: 6, high: 4, low: 14 },
   ],
   'momentum-burst': [
     { open: 21, close: 19, high: 17, low: 23 },
@@ -58,16 +57,13 @@ const PREVIEW_CANDLES: Record<PatternId, PreviewCandle[]> = {
     { open: 14, close: 5, high: 3, low: 16 },
   ],
   'volume-expansion': [
-    { open: 20, close: 18, high: 16, low: 22, volume: 4 },
-    { open: 19, close: 21, high: 17, low: 23, volume: 5 },
-    { open: 20, close: 17, high: 15, low: 22, volume: 4 },
-    { open: 18, close: 7, high: 5, low: 20, volume: 12 },
+    { open: 20, close: 18, high: 16, low: 22, volume: 3 },
+    { open: 18, close: 15, high: 13, low: 20, volume: 4 },
+    { open: 15, close: 5, high: 3, low: 18, volume: 14 },
   ],
   'engulfing-reversal': [
-    { open: 10, close: 14, high: 8, low: 16 },
-    { open: 14, close: 18, high: 12, low: 20 },
-    { open: 18, close: 22, high: 16, low: 24 },
-    { open: 23, close: 13, high: 11, low: 25 },
+    { open: 13, close: 17, high: 11, low: 19 },
+    { open: 19, close: 9, high: 7, low: 21 },
   ],
 };
 
@@ -153,21 +149,17 @@ export function PatternGuidePanel({
   const alertPatternIds = selectedValues ?? [value];
   const isMultiSelect = !!onSelectionChange;
 
-  const isFocused = isOpen || isGuideExpanded;
-
   useEffect(() => {
-    if (!isFocused) return;
+    if (!isOpen) return;
 
     const handlePointerDown = (event: PointerEvent) => {
       if (!containerRef.current?.contains(event.target as Node)) {
         setIsOpen(false);
-        setIsGuideExpanded(false);
       }
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setIsOpen(false);
-        setIsGuideExpanded(false);
       }
     };
 
@@ -177,7 +169,7 @@ export function PatternGuidePanel({
       document.removeEventListener('pointerdown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isFocused]);
+  }, [isOpen]);
 
   const definition = getPatternDefinition(value);
   const description = customDescription ?? (isMultiSelect
@@ -190,25 +182,11 @@ export function PatternGuidePanel({
     minMovePercent,
   );
   return (
-    <>
-      {isFocused ? (
-        <FocusBackdrop
-          label="Close pattern controls"
-          onDismiss={() => {
-            setIsOpen(false);
-            setIsGuideExpanded(false);
-          }}
-        />
-      ) : null}
-      <section
-        ref={containerRef}
-        className={`relative mb-3 space-y-2 rounded-xl border bg-card-bg p-2.5 transition-shadow ${
-          isFocused
-            ? 'z-[100] border-accent/50 shadow-2xl shadow-background'
-            : 'z-30 border-card-border/60 shadow-sm'
-        }`}
-        aria-labelledby="pattern-selector-title"
-      >
+    <section
+      ref={containerRef}
+      className="relative mb-3 space-y-2 rounded-xl border border-card-border/60 bg-card-bg p-2.5 shadow-sm"
+      aria-labelledby="pattern-selector-title"
+    >
       {/* Compact header: label, selected signal, and an inline-details toggle. */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center justify-between">
         <div>
@@ -219,14 +197,14 @@ export function PatternGuidePanel({
         </div>
 
         {/* Selected signal and inline-details toggle. */}
-        <div className="flex items-center gap-2 sm:ml-auto">
+        <div className="flex min-w-0 flex-1 items-center gap-2 sm:max-w-2xl sm:ml-auto">
           <button
             type="button"
             aria-haspopup="listbox"
             aria-expanded={isOpen}
             aria-controls="pattern-selector-options"
             onClick={() => setIsOpen((open) => !open)}
-            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-accent/40 bg-card-bg px-2 py-1.5 text-left transition-all hover:border-accent shadow-sm sm:w-[360px]"
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-accent/40 bg-card-bg px-2.5 py-1.5 text-left transition-all hover:border-accent shadow-sm w-full"
           >
             <PatternPreview patternId={selectedPreset.id} />
             <span className="min-w-0 flex-1">
@@ -395,7 +373,6 @@ export function PatternGuidePanel({
         </div>
       )}
       </section>
-    </>
   );
 }
 

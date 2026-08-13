@@ -114,7 +114,7 @@ export function entryForWatch(
     interval,
     scanFrequencySeconds: watch.scanFrequencySeconds,
     windowSeconds,
-    monthlyBarSeconds: estimatedBars * windowSeconds * activeDaysPerMonth,
+    monthlyBarSeconds: estimatedBars * activeDaysPerMonth,
     sourceSymbol: watch.symbol,
     assetClass,
   };

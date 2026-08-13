@@ -30,10 +30,9 @@ interface PreviewCandle {
 
 const PREVIEW_CANDLES: Record<PatternId, PreviewCandle[]> = {
   consecutive: [
-    { open: 22, close: 19, high: 17, low: 25 },
-    { open: 19, close: 15, high: 13, low: 21 },
-    { open: 15, close: 10, high: 8, low: 17 },
-    { open: 10, close: 5, high: 3, low: 12 },
+    { open: 22, close: 17, high: 15, low: 24 },
+    { open: 17, close: 12, high: 10, low: 19 },
+    { open: 12, close: 6, high: 4, low: 14 },
   ],
   'momentum-burst': [
     { open: 21, close: 19, high: 17, low: 23 },
@@ -48,16 +47,13 @@ const PREVIEW_CANDLES: Record<PatternId, PreviewCandle[]> = {
     { open: 14, close: 5, high: 3, low: 16 },
   ],
   'volume-expansion': [
-    { open: 20, close: 18, high: 16, low: 22, volume: 4 },
-    { open: 19, close: 21, high: 17, low: 23, volume: 5 },
-    { open: 20, close: 17, high: 15, low: 22, volume: 4 },
-    { open: 18, close: 7, high: 5, low: 20, volume: 12 },
+    { open: 20, close: 18, high: 16, low: 22, volume: 3 },
+    { open: 18, close: 15, high: 13, low: 20, volume: 4 },
+    { open: 15, close: 5, high: 3, low: 18, volume: 14 },
   ],
   'engulfing-reversal': [
-    { open: 10, close: 14, high: 8, low: 16 },
-    { open: 14, close: 18, high: 12, low: 20 },
-    { open: 18, close: 22, high: 16, low: 24 },
-    { open: 23, close: 13, high: 11, low: 25 },
+    { open: 13, close: 17, high: 11, low: 19 },
+    { open: 19, close: 9, high: 7, low: 21 },
   ],
 };
 
