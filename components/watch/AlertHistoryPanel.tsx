@@ -108,18 +108,20 @@ const MiniCandles = React.memo(function MiniCandles({ candles, interval = '5m' }
   }
 
   const range = maxValue - minValue || 1;
-  const height = 28;
-  const candleWidth = 4;
-  const gap = 2.5;
-  const step = candleWidth + gap;
-  const totalWidth = displayCandles.length * step - gap + 8;
+  // Fixed display box (larger than the old 28px sparkline); candles auto-fit its
+  // width so the same candle count never overflows regardless of interval.
+  const width = 172;
+  const height = 52;
+  const pad = 3;
+  const step = (width - pad * 2) / displayCandles.length;
+  const candleWidth = Math.max(1.5, Math.min(9, step - 1.5));
   const getScaledY = (price: number) =>
-    2 + (height - 4) - ((price - minValue) / range) * (height - 4);
+    pad + (height - pad * 2) - ((price - minValue) / range) * (height - pad * 2);
 
   return (
-    <svg width={totalWidth} height={height} className="overflow-visible select-none">
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="overflow-visible select-none">
       {displayCandles.map((candle, index) => {
-        const x = index * step + 4;
+        const x = pad + index * step + (step - candleWidth) / 2;
         const color = candle.close >= candle.open ? '#10b981' : '#f43f5e';
         const openY = getScaledY(candle.open);
         const closeY = getScaledY(candle.close);
@@ -131,7 +133,7 @@ const MiniCandles = React.memo(function MiniCandles({ candles, interval = '5m' }
               x2={x + candleWidth / 2}
               y2={getScaledY(candle.low)}
               stroke={color}
-              strokeWidth={1}
+              strokeWidth={1.25}
             />
             <rect
               x={x}
@@ -139,7 +141,7 @@ const MiniCandles = React.memo(function MiniCandles({ candles, interval = '5m' }
               width={candleWidth}
               height={Math.max(1.5, Math.abs(openY - closeY))}
               fill={color}
-              rx={0.5}
+              rx={1}
             />
           </g>
         );
@@ -308,8 +310,8 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
         className="w-full flex flex-col gap-2 text-left cursor-pointer touch-manipulation active:scale-[0.99] active:opacity-80 transition-transform"
         title="Tap to show alert details and chart"
       >
-        <div>
-          <div className="flex items-center justify-between">
+        <div className="flex items-stretch justify-between gap-3">
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className="font-bold text-foreground text-base">{alert.symbol}</span>
               <span className="bg-muted-bg text-muted px-1.5 py-0.5 rounded text-xs font-mono">
@@ -331,30 +333,30 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
                 </span>
               </span>
             </div>
-            {alert.candles && alert.candles.length > 0 && (
-              <div className="flex items-center rounded border border-card-border bg-muted-bg/70 px-1.5 py-0.5 shadow-inner">
-                <MiniCandles candles={alert.candles} interval={alert.interval} />
+
+            {alert.patterns && alert.patterns.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                {alert.patterns.map((p, idx) => (
+                  <span
+                    key={p.patternId || idx}
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold border ${
+                      alert.type === 'bullish'
+                        ? 'bg-profit/15 text-profit border-profit/30'
+                        : 'bg-loss/15 text-loss border-loss/30'
+                    }`}
+                  >
+                    <span>{p.name}</span>
+                  </span>
+                ))}
               </div>
             )}
           </div>
 
-          {alert.patterns && alert.patterns.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 mt-2">
-              {alert.patterns.map((p, idx) => (
-                <span
-                  key={p.patternId || idx}
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold border ${
-                    alert.type === 'bullish'
-                      ? 'bg-profit/15 text-profit border-profit/30'
-                      : 'bg-loss/15 text-loss border-loss/30'
-                  }`}
-                >
-                  <span>{p.name}</span>
-                </span>
-              ))}
+          {alert.candles && alert.candles.length > 0 && (
+            <div className="flex shrink-0 items-center self-center rounded border border-card-border bg-muted-bg/70 px-1.5 py-1 shadow-inner">
+              <MiniCandles candles={alert.candles} interval={alert.interval} />
             </div>
           )}
-
         </div>
 
         <div className="flex w-full flex-wrap items-center justify-between gap-3 border-t border-card-border/60 pt-2 font-mono text-xs text-foreground/80">
