@@ -20,17 +20,17 @@ export default function DayHeader({
   const isProfit = totalPnL >= 0;
 
   return (
-    <div 
-      className="flex items-center justify-between px-6 py-4 bg-card-bg/80 backdrop-blur-md border-b border-card-border/50 rounded-t-2xl cursor-pointer hover:bg-card-bg/90 transition-all"
+    <div
+      className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 sm:px-6 py-4 bg-card-bg/80 backdrop-blur-md border-b border-card-border/50 rounded-t-2xl cursor-pointer hover:bg-card-bg/90 transition-all"
       onClick={onToggleNotes}
     >
-      <div className="flex items-center gap-4">
-        <div className="text-muted/60 bg-muted-bg/50 p-1 rounded-md">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="text-muted/60 bg-muted-bg/50 p-1 rounded-md shrink-0">
           {isNotesOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </div>
-        <h2 className="text-lg font-black text-foreground tracking-tight">{formattedDate}</h2>
-        <div 
-          className={`flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${
+        <h2 className="text-lg font-semibold text-foreground tracking-tight whitespace-nowrap">{formattedDate}</h2>
+        <div
+          className={`flex shrink-0 items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-widest transition-all ${
             isNotesOpen ? 'bg-accent/20 text-accent ring-1 ring-accent/30' : 'bg-muted-bg/30 text-muted hover:bg-muted-bg/50 hover:text-foreground'
           }`}
         >
@@ -38,9 +38,9 @@ export default function DayHeader({
           {isNotesOpen ? 'Hide Notes' : 'Show Notes'}
         </div>
       </div>
-      <div className="flex items-center gap-3">
-        <span className="text-[10px] font-bold text-muted uppercase tracking-widest bg-muted-bg/50 px-2 py-1 rounded-lg">Day P&L</span>
-        <span className={`text-base font-black ${pnlColorClass(totalPnL)} drop-shadow-sm`}>
+      <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end">
+        <span className="text-[10px] font-medium text-muted uppercase tracking-widest bg-muted-bg/50 px-2 py-1 rounded-lg">Day P&L</span>
+        <span className={`text-base font-semibold whitespace-nowrap ${pnlColorClass(totalPnL)}`}>
           {isProfit ? '+' : ''}{formatCurrency(totalPnL, currency)}
         </span>
       </div>

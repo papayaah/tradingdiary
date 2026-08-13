@@ -8,9 +8,6 @@ import { pnlColorClass } from '@/lib/utils/format';
 
 interface MonthlyCalendarProps {
   summaries: DailySummary[];
-  /** Fires with the YYYYMMDD range the calendar is currently displaying
-   *  (a single month, or the contiguous multi-month range). */
-  onPeriodChange?: (period: { start: string; end: string }) => void;
 }
 
 function toDateKey(d: Date): string {
@@ -35,7 +32,7 @@ interface DayData {
   winRate: number;
 }
 
-export default function MonthlyCalendar({ summaries, onPeriodChange }: MonthlyCalendarProps) {
+export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
   const router = useRouter();
 
   // Build lookup from summaries
@@ -101,19 +98,10 @@ export default function MonthlyCalendar({ summaries, onPeriodChange }: MonthlyCa
   const prevMonth = () => setViewMonth(new Date(year, month - 1, 1));
   const nextMonth = () => setViewMonth(new Date(year, month + 1, 1));
 
-  // Report the currently-displayed period to the parent so the summary KPIs can
-  // follow the calendar: the contiguous range when active, else the single month.
-  useEffect(() => {
-    if (!onPeriodChange) return;
-    if (rangeInfo) {
-      onPeriodChange({ start: toDateKey(rangeInfo.firstDate), end: toDateKey(rangeInfo.lastDate) });
-    } else {
-      onPeriodChange({ start: toDateKey(new Date(year, month, 1)), end: toDateKey(new Date(year, month + 1, 0)) });
-    }
-  }, [rangeInfo, year, month, onPeriodChange]);
+
 
   return (
-    <div className="rounded-xl border border-card-border bg-card-bg p-5 shadow-sm space-y-4">
+    <div className="space-y-2">
       {!rangeInfo && (
         <div className="flex items-center justify-between pb-2 border-b border-card-border">
           <div className="flex items-center gap-2">

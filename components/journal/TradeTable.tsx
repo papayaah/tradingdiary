@@ -42,14 +42,14 @@ export default function TradeTable({ trades, accountId, currency = 'USD', focusS
           <thead>
             <tr className="bg-muted-bg/50 text-muted border-b border-card-border/50">
               <th className="w-10 px-3 py-4" />
-              <th className="text-left px-5 py-4 text-[10px] font-bold uppercase tracking-widest">Time</th>
-              <th className="text-left px-5 py-4 text-[10px] font-bold uppercase tracking-widest">Symbol</th>
-              <th className="text-left px-5 py-4 text-[10px] font-bold uppercase tracking-widest">Side</th>
-              <th className="text-right px-5 py-4 text-[10px] font-bold uppercase tracking-widest">Volume</th>
-              <th className="text-right px-5 py-4 text-[10px] font-bold uppercase tracking-widest">Execs</th>
-              <th className="text-right px-5 py-4 text-[10px] font-bold uppercase tracking-widest">P&L</th>
-              <th className="text-left px-5 py-4 text-[10px] font-bold uppercase tracking-widest">Notes</th>
-              <th className="text-left px-5 py-4 text-[10px] font-bold uppercase tracking-widest">Tags</th>
+              <th className="text-left px-5 py-4 text-[10px] font-medium uppercase tracking-widest">Time</th>
+              <th className="text-left px-5 py-4 text-[10px] font-medium uppercase tracking-widest">Symbol</th>
+              <th className="text-left px-5 py-4 text-[10px] font-medium uppercase tracking-widest">Side</th>
+              <th className="text-right px-5 py-4 text-[10px] font-medium uppercase tracking-widest">Volume</th>
+              <th className="text-right px-5 py-4 text-[10px] font-medium uppercase tracking-widest">Execs</th>
+              <th className="text-right px-5 py-4 text-[10px] font-medium uppercase tracking-widest">P&L</th>
+              <th className="text-left px-5 py-4 text-[10px] font-medium uppercase tracking-widest">Notes</th>
+              <th className="text-left px-5 py-4 text-[10px] font-medium uppercase tracking-widest">Tags</th>
             </tr>
           </thead>
           <tbody>
@@ -143,12 +143,12 @@ function TradeRow({
         <td className="px-5 py-4 text-muted font-mono text-[11px] font-medium tracking-tight">
           {trade.firstTradeTime.substring(0, 8)}
         </td>
-        <td className="px-5 py-4 font-black text-foreground text-sm tracking-tight capitalize">
+        <td className="px-5 py-4 font-semibold text-foreground text-sm tracking-tight capitalize">
           {trade.symbol}
         </td>
         <td className="px-5 py-4">
           <span
-            className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-widest ${trade.side === 'LONG'
+            className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-semibold uppercase tracking-widest ${trade.side === 'LONG'
               ? 'bg-profit/10 text-profit border border-profit/20'
               : 'bg-loss/10 text-loss border border-loss/20'
               }`}
@@ -163,16 +163,16 @@ function TradeRow({
           {trade.executions}
         </td>
         <td className="px-5 py-4 text-right shrink-0">
-          <span className={`text-sm font-black tabular-nums ${pnlColorClass(trade.netPnL)} drop-shadow-sm`}>
+          <span className={`text-sm font-semibold tabular-nums ${pnlColorClass(trade.netPnL)}`}>
             {formatCurrency(trade.netPnL, currency)}
           </span>
           {trade.isOpen && (
             <div className="flex flex-col items-end gap-0.5 mt-1">
-              <span className="text-[9px] font-bold text-muted/60 uppercase tracking-tighter">
+              <span className="text-[9px] font-medium text-muted/60 uppercase tracking-tighter">
                 {formatVolume(Math.abs(trade.netQuantity))} held
               </span>
               {trade.unrealizedPnL != null && (
-                <span className={`text-[10px] font-bold px-1 rounded bg-muted-bg/50 ${pnlColorClass(trade.unrealizedPnL)}`}>
+                <span className={`text-[10px] font-medium px-1 rounded bg-muted-bg/50 ${pnlColorClass(trade.unrealizedPnL)}`}>
                   unrl: {formatCurrency(trade.unrealizedPnL, currency)}
                 </span>
               )}
