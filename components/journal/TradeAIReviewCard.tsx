@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Sparkles, Copy, X, Save, AlertTriangle, Loader2 } from 'lucide-react';
+import { Sparkles, Copy, X, Save, AlertTriangle, Loader2, CircleHelp } from 'lucide-react';
 import type { AggregatedTrade } from '@/lib/trading/aggregator';
 import { formatCurrency } from '@/lib/currency';
 import { useAIManagementContextOptional } from '@/packages/ai-connect/src/components';
@@ -49,12 +49,66 @@ function confidenceBadge(c: 'low' | 'medium' | 'high') {
 /** Deterministic Objective Trade Statistics — always shown (no AI key required). */
 function StatsPanel({ ctx, currency }: { ctx: TradeAnalysisContext; currency: string }) {
   const { metrics, trade, executions, flags } = ctx;
-  const stat = (label: string, value: string) => (
-    <div className="flex flex-col">
-      <span className="text-[10px] uppercase tracking-wider text-muted/70">{label}</span>
+  type MetricKey = 'holding' | 'executions' | 'pnl' | 'size' | 'mfe' | 'mae' | 'giveback' | 'peak';
+  const [explainedMetric, setExplainedMetric] = useState<MetricKey | null>(null);
+  const explanations: Record<MetricKey, { title: string; description: string; calculation: string }> = {
+    holding: {
+      title: 'Holding duration',
+      description: 'How long the position remained open, from the first entry to the final exit.',
+      calculation: formatDuration(metrics.holdingDurationMs),
+    },
+    executions: {
+      title: 'Executions',
+      description: 'The number of individual fills used to open, add to, reduce, or close this position.',
+      calculation: `${executions.length} recorded fill${executions.length === 1 ? '' : 's'}`,
+    },
+    pnl: {
+      title: 'Net profit and loss',
+      description: 'The realized result of the trade after recorded commissions and fees.',
+      calculation: formatCurrency(trade.netPnL, currency),
+    },
+    size: {
+      title: 'Maximum size',
+      description: 'The largest absolute position quantity held at any moment during the trade.',
+      calculation: `${trade.maxPositionQuantity} shares or contracts`,
+    },
+    mfe: {
+      title: 'Maximum Favorable Excursion (MFE)',
+      description: 'The largest unrealized profit reached while the position was open.',
+      calculation: `${formatCurrency(metrics.mfe.points, currency)} favorable move × ${trade.maxPositionQuantity} maximum size = ${formatCurrency(metrics.mfe.amount, currency)}`,
+    },
+    mae: {
+      title: 'Maximum Adverse Excursion (MAE)',
+      description: 'The largest unrealized loss reached while the position was open.',
+      calculation: `${formatCurrency(metrics.mae.points, currency)} adverse move × ${trade.maxPositionQuantity} maximum size = ${formatCurrency(-metrics.mae.amount, currency)}`,
+    },
+    giveback: {
+      title: 'Exit giveback',
+      description: 'How much of the trade’s peak unrealized profit was no longer present at the final exit.',
+      calculation: metrics.exitGivebackFromMFE
+        ? `${formatCurrency(metrics.exitGivebackFromMFE.amount, currency)} · ${metrics.exitGivebackFromMFE.percentOfMFE.toFixed(1)}% of MFE`
+        : 'Not available for this trade',
+    },
+    peak: {
+      title: 'Time to peak',
+      description: 'Elapsed time from the first entry until the trade reached its MFE.',
+      calculation: metrics.timeToMfeMs != null ? formatDuration(metrics.timeToMfeMs) : 'Not available',
+    },
+  };
+  const stat = (key: MetricKey, label: string, value: string) => (
+    <button
+      type="button"
+      onClick={() => setExplainedMetric((current) => current === key ? null : key)}
+      aria-expanded={explainedMetric === key}
+      className="group flex flex-col rounded-md text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent/60"
+    >
+      <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted/70 group-hover:text-accent">
+        {label} <CircleHelp size={10} aria-hidden="true" />
+      </span>
       <span className="text-sm font-semibold text-foreground tabular-nums">{value}</span>
-    </div>
+    </button>
   );
+  const explanation = explainedMetric ? explanations[explainedMetric] : null;
   return (
     <div className="rounded-lg border border-card-border bg-background/40 p-3">
       <div className="flex items-center justify-between mb-2">
@@ -62,30 +116,53 @@ function StatsPanel({ ctx, currency }: { ctx: TradeAnalysisContext; currency: st
           Objective Trade Statistics
         </span>
         {!flags.hasCandles && (
-          <span className="text-[10px] text-muted/70">no market data — execution-only</span>
+          <span className="text-[10px] text-muted/70">
+            {flags.isDemoTrade ? 'demo data — execution-only' : 'no market data — execution-only'}
+          </span>
         )}
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {stat('Holding', formatDuration(metrics.holdingDurationMs))}
-        {stat('Executions', String(executions.length))}
-        {stat('Net P&L', formatCurrency(trade.netPnL, currency))}
-        {stat('Max Size', String(trade.maxPositionQuantity))}
+        {stat('holding', 'Holding', formatDuration(metrics.holdingDurationMs))}
+        {stat('executions', 'Executions', String(executions.length))}
+        {stat('pnl', 'Net P&L', formatCurrency(trade.netPnL, currency))}
+        {stat('size', 'Max Size', String(trade.maxPositionQuantity))}
         {stat(
+          'mfe',
           'MFE',
           `${formatCurrency(metrics.mfe.amount, currency)} (${metrics.mfe.percent.toFixed(1)}%)`
         )}
         {stat(
+          'mae',
           'MAE',
           `${formatCurrency(-metrics.mae.amount, currency)} (${metrics.mae.percent.toFixed(1)}%)`
         )}
         {metrics.exitGivebackFromMFE
           ? stat(
+              'giveback',
               'Exit Giveback',
               `${formatCurrency(metrics.exitGivebackFromMFE.amount, currency)} (${metrics.exitGivebackFromMFE.percentOfMFE.toFixed(0)}% of MFE)`
             )
-          : stat('Exit Giveback', '—')}
-        {stat('Time to Peak', metrics.timeToMfeMs != null ? formatDuration(metrics.timeToMfeMs) : '—')}
+          : stat('giveback', 'Exit Giveback', '—')}
+        {stat('peak', 'Time to Peak', metrics.timeToMfeMs != null ? formatDuration(metrics.timeToMfeMs) : '—')}
       </div>
+      {explanation && (
+        <div className="mt-3 rounded-lg border border-accent/20 bg-accent/5 p-3" role="note">
+          <div className="text-xs font-semibold text-foreground">{explanation.title}</div>
+          <p className="mt-1 text-xs leading-relaxed text-muted">{explanation.description}</p>
+          <p className="mt-1.5 text-xs font-medium tabular-nums text-foreground">This trade: {explanation.calculation}</p>
+        </div>
+      )}
+      {flags.marketDataPriceMismatch && (
+        <div className="mt-2 flex items-start gap-1.5 text-[11px] text-loss">
+          <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+          Market prices did not match the recorded fills, so MFE and MAE use execution-only estimates.
+        </div>
+      )}
+      {flags.isDemoTrade && (
+        <div className="mt-2 flex items-start gap-1.5 text-[11px] text-muted">
+          Demo fills use a synthetic price path, so excursion statistics are estimated from executions rather than live provider candles.
+        </div>
+      )}
       {flags.multipleRoundTrips && (
         <div className="mt-2 flex items-center gap-1.5 text-[11px] text-loss">
           <AlertTriangle size={12} />
@@ -96,17 +173,49 @@ function StatsPanel({ ctx, currency }: { ctx: TradeAnalysisContext; currency: st
   );
 }
 
+function humanizeMetricName(metric: string): string {
+  const names: Record<string, string> = {
+    mae: 'MAE',
+    mfe: 'MFE',
+    'metrics.mae': 'MAE',
+    'metrics.mfe': 'MFE',
+    'exitGivebackFromMFE.percentOfMFE': 'Exit giveback',
+    'metrics.exitGivebackFromMFE.percentOfMFE': 'Exit giveback',
+    holdingDurationMs: 'Holding duration',
+    timeToMfeMs: 'Time to peak',
+  };
+  return names[metric] ?? metric
+    .replace(/^metrics\./, '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/\./g, ' · ');
+}
+
+function humanizeReviewText(text: string): string {
+  return text
+    .replace(/([\d,]+(?:\.\d+)?)\s*ms\b/g, (_, raw: string) => formatDuration(Number(raw.replace(/,/g, ''))))
+    .replace(/(?:metrics\.)?exitGivebackFromMFE\.percentOfMFE/g, 'exit giveback')
+    .replace(/holdingDurationMs/g, 'holding duration')
+    .replace(/timeToMfeMs/g, 'time to peak');
+}
+
+function humanizeEvidenceValue(metric: string, value: string): string {
+  const numeric = Number(value.replace(/,/g, '').replace(/%$/, ''));
+  if (/percentOfMFE/i.test(metric) && Number.isFinite(numeric)) return `${numeric.toFixed(1)}%`;
+  if (/Ms$|Duration|timeTo/i.test(metric) && Number.isFinite(numeric)) return formatDuration(numeric);
+  return humanizeReviewText(value);
+}
+
 function AnalysisView({ a }: { a: TradeAnalysis }) {
   return (
     <div className="space-y-3">
-      <p className="text-sm text-foreground leading-relaxed">{a.summary}</p>
+      <p className="text-sm text-foreground leading-relaxed">{humanizeReviewText(a.summary)}</p>
 
       {a.observations.length > 0 && (
         <div className="space-y-2">
           {a.observations.map((o, i) => (
             <div key={i} className="rounded-lg border border-card-border bg-background/40 p-2.5">
               <div className="text-xs font-semibold text-foreground">{o.label}</div>
-              <div className="text-xs text-muted mt-0.5 leading-relaxed">{o.detail}</div>
+              <div className="text-xs text-muted mt-0.5 leading-relaxed">{humanizeReviewText(o.detail)}</div>
               {o.evidence && o.evidence.length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-1.5">
                   {o.evidence.map((e, j) => (
@@ -114,8 +223,8 @@ function AnalysisView({ a }: { a: TradeAnalysis }) {
                       key={j}
                       className="inline-flex items-center gap-1 rounded bg-muted-bg px-1.5 py-0.5 text-[10px] text-muted"
                     >
-                      <span className="font-medium text-foreground">{e.metric}</span>
-                      {e.value}
+                      <span className="font-medium text-foreground">{humanizeMetricName(e.metric)}</span>
+                      {humanizeEvidenceValue(e.metric, e.value)}
                     </span>
                   ))}
                 </div>
@@ -128,13 +237,13 @@ function AnalysisView({ a }: { a: TradeAnalysis }) {
       {a.executionReview && (
         <div>
           <div className="text-[10px] uppercase tracking-wider text-muted/70 mb-0.5">Execution</div>
-          <p className="text-xs text-muted leading-relaxed">{a.executionReview}</p>
+          <p className="text-xs text-muted leading-relaxed">{humanizeReviewText(a.executionReview)}</p>
         </div>
       )}
       {a.riskReview && (
         <div>
           <div className="text-[10px] uppercase tracking-wider text-muted/70 mb-0.5">Risk</div>
-          <p className="text-xs text-muted leading-relaxed">{a.riskReview}</p>
+          <p className="text-xs text-muted leading-relaxed">{humanizeReviewText(a.riskReview)}</p>
         </div>
       )}
       {a.questionsForTrader && a.questionsForTrader.length > 0 && (
@@ -145,7 +254,7 @@ function AnalysisView({ a }: { a: TradeAnalysis }) {
           <ul className="list-disc list-inside space-y-0.5">
             {a.questionsForTrader.map((q, i) => (
               <li key={i} className="text-xs text-muted leading-relaxed">
-                {q}
+                {humanizeReviewText(q)}
               </li>
             ))}
           </ul>
@@ -154,7 +263,7 @@ function AnalysisView({ a }: { a: TradeAnalysis }) {
       {a.takeaway && (
         <div className="rounded-lg bg-accent/5 border border-accent/20 p-2.5">
           <div className="text-[10px] uppercase tracking-wider text-accent mb-0.5">Takeaway</div>
-          <p className="text-xs text-foreground leading-relaxed">{a.takeaway}</p>
+          <p className="text-xs text-foreground leading-relaxed">{humanizeReviewText(a.takeaway)}</p>
         </div>
       )}
     </div>
@@ -162,15 +271,15 @@ function AnalysisView({ a }: { a: TradeAnalysis }) {
 }
 
 function analysisToText(a: TradeAnalysis): string {
-  const lines = [a.summary, ''];
-  for (const o of a.observations) lines.push(`• ${o.label}: ${o.detail}`);
-  if (a.executionReview) lines.push('', `Execution: ${a.executionReview}`);
-  if (a.riskReview) lines.push('', `Risk: ${a.riskReview}`);
+  const lines = [humanizeReviewText(a.summary), ''];
+  for (const o of a.observations) lines.push(`• ${o.label}: ${humanizeReviewText(o.detail)}`);
+  if (a.executionReview) lines.push('', `Execution: ${humanizeReviewText(a.executionReview)}`);
+  if (a.riskReview) lines.push('', `Risk: ${humanizeReviewText(a.riskReview)}`);
   if (a.questionsForTrader?.length) {
     lines.push('', 'Questions:');
-    a.questionsForTrader.forEach((q) => lines.push(`- ${q}`));
+    a.questionsForTrader.forEach((q) => lines.push(`- ${humanizeReviewText(q)}`));
   }
-  if (a.takeaway) lines.push('', `Takeaway: ${a.takeaway}`);
+  if (a.takeaway) lines.push('', `Takeaway: ${humanizeReviewText(a.takeaway)}`);
   return lines.join('\n');
 }
 

@@ -74,6 +74,8 @@ export type TradeAnalysisContext = {
   events: TradeAnalysisEvent[];
   flags: {
     hasCandles: boolean;
+    marketDataPriceMismatch: boolean;
+    isDemoTrade: boolean;
     multipleRoundTrips: boolean;
     isOpen: boolean;
   };
@@ -113,6 +115,14 @@ function execSeconds(t: TransactionRecord): number {
   return Math.floor(Date.UTC(y, m, d, hh, mm, ss) / 1000);
 }
 
+function intervalSeconds(interval = '5m'): number {
+  const normalized = interval.toLowerCase();
+  const value = parseInt(normalized, 10) || 5;
+  if (normalized.endsWith('h')) return value * 60 * 60;
+  if (normalized.endsWith('s')) return value;
+  return value * 60;
+}
+
 // ============================================================================
 // Deterministic analyzer
 // ============================================================================
@@ -136,7 +146,7 @@ function weightedAvg(rows: { price: number; qty: number }[]): number {
 export function buildTradeAnalysisContext(
   trade: AggregatedTrade,
   candles: OHLCCandle[],
-  opts?: { interval?: string; risk?: TradeAnalysisRisk }
+  opts?: { interval?: string; risk?: TradeAnalysisRisk; isDemoTrade?: boolean }
 ): TradeAnalysisContext {
   const tradeGroupId = `${trade.date}:${trade.symbol}`;
   const side = trade.side;
@@ -185,9 +195,32 @@ export function buildTradeAnalysisContext(
   const etOffset = getETOffsetSeconds(trade.date);
   const startSec = openedAt / 1000;
   const endSec = (closedAt ?? Number.POSITIVE_INFINITY) / 1000;
-  const windowCandles = candles
+  const candleDurationSeconds = intervalSeconds(opts?.interval);
+  const candidateWindowCandles = candles
     .map((c) => ({ ...c, etTime: c.time + etOffset }))
-    .filter((c) => c.etTime >= startSec && c.etTime <= endSec);
+    // Include the bar containing an execution even when its bucket begins a few
+    // seconds before the fill (for example, a 09:35:10 fill in the 09:35 bar).
+    .filter((c) => c.etTime + candleDurationSeconds > startSec && c.etTime <= endSec);
+
+  // Execution prices must be plausible inside their corresponding market-data
+  // bars. This protects excursion metrics from split-adjustment mismatches and
+  // synthetic/demo trades whose dates were shifted while prices stayed fixed.
+  let matchedExecutionCandles = 0;
+  let incompatibleExecutionCandles = 0;
+  for (const execution of execs) {
+    const candle = candidateWindowCandles.find(
+      (c) => c.etTime <= execution.seconds && c.etTime + candleDurationSeconds > execution.seconds,
+    );
+    if (!candle) continue;
+    matchedExecutionCandles += 1;
+    const tolerance = Math.max(execution.price * 0.005, 0.05);
+    if (execution.price < candle.low - tolerance || execution.price > candle.high + tolerance) {
+      incompatibleExecutionCandles += 1;
+    }
+  }
+
+  const marketDataPriceMismatch = matchedExecutionCandles > 0 && incompatibleExecutionCandles > 0;
+  const windowCandles = marketDataPriceMismatch ? [] : candidateWindowCandles;
   const hasCandles = windowCandles.length > 0;
 
   // ── MFE / MAE (side-aware) ──
@@ -233,7 +266,7 @@ export function buildTradeAnalysisContext(
     }
     mfe = toExcursion(bestFav);
     mae = toExcursion(worstAdv);
-    if (mfeTimestamp != null) timeToMfeMs = mfeTimestamp - openedAt;
+    if (mfeTimestamp != null) timeToMfeMs = Math.max(0, mfeTimestamp - openedAt);
   } else if (exitPrice != null && entryPrice > 0) {
     // Execution-only fallback: excursion inferred from realized move (low confidence).
     const realized = side === 'LONG' ? exitPrice - entryPrice : entryPrice - exitPrice;
@@ -362,7 +395,13 @@ export function buildTradeAnalysisContext(
       holdingDurationMs,
     },
     events,
-    flags: { hasCandles, multipleRoundTrips, isOpen: trade.isOpen },
+    flags: {
+      hasCandles,
+      marketDataPriceMismatch,
+      isDemoTrade: opts?.isDemoTrade ?? false,
+      multipleRoundTrips,
+      isOpen: trade.isOpen,
+    },
     evidenceConfidence,
   };
 }

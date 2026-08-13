@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { TradeAnalysisContext } from './trade-analysis';
 
 /** Bump when the prompt template or schema meaningfully changes. */
-export const TRADE_REVIEW_PROMPT_VERSION = '1';
+export const TRADE_REVIEW_PROMPT_VERSION = '2';
 
 // ============================================================================
 // AI output contract (see docs/specs/trade-ai-assistant-notes.md §4)
@@ -56,11 +56,57 @@ round-trip and are approximate — say so.
 
 Return ONLY raw JSON matching the requested schema. No markdown, no code fences.`;
 
+function displayDuration(ms?: number): string | undefined {
+  if (ms == null || ms < 0) return undefined;
+  const seconds = Math.round(ms / 1000);
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = seconds % 60;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${remainder}s`;
+  return `${remainder}s`;
+}
+
+function displayEtTimestamp(ms?: number): string | undefined {
+  if (ms == null) return undefined;
+  return `${new Date(ms).toISOString().replace('T', ' ').slice(0, 19)} ET`;
+}
+
+function buildDisplayContext(ctx: TradeAnalysisContext) {
+  return {
+    trade: {
+      ...ctx.trade,
+      openedAt: displayEtTimestamp(ctx.trade.openedAt),
+      closedAt: displayEtTimestamp(ctx.trade.closedAt),
+    },
+    executions: ctx.executions.map((execution) => ({
+      ...execution,
+      timestamp: displayEtTimestamp(execution.timestamp),
+    })),
+    risk: ctx.risk,
+    marketContext: ctx.marketContext,
+    metrics: {
+      MFE: ctx.metrics.mfe,
+      MAE: ctx.metrics.mae,
+      rMultiple: ctx.metrics.rMultiple,
+      exitGivebackFromMFE: ctx.metrics.exitGivebackFromMFE,
+      timeToPeak: displayDuration(ctx.metrics.timeToMfeMs),
+      holdingDuration: displayDuration(ctx.metrics.holdingDurationMs),
+    },
+    events: ctx.events.map((event) => ({
+      ...event,
+      timestamp: displayEtTimestamp(event.timestamp),
+    })),
+    flags: ctx.flags,
+    evidenceConfidence: ctx.evidenceConfidence,
+  };
+}
+
 export function buildTradeReviewPrompt(ctx: TradeAnalysisContext): string {
   return `Review this trade using ONLY the deterministic data below.
 
 DATA:
-${JSON.stringify(ctx, null, 2)}
+${JSON.stringify(buildDisplayContext(ctx), null, 2)}
 
 Return a JSON object with this exact shape:
 {
@@ -76,7 +122,9 @@ Return a JSON object with this exact shape:
   "evidenceConfidence": "low"|"medium"|"high"  // <= ${ctx.evidenceConfidence}
 }
 
-Ground every observation in a metric or event from the data. Do not invent prices, times, or levels.`;
+Ground every observation in a metric or event from the data. Do not invent prices, times, or levels.
+Use human-readable durations (for example, "45m"), never milliseconds. Use friendly metric names,
+never internal property paths. Round displayed percentages to at most one decimal place.`;
 }
 
 /**

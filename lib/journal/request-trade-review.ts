@@ -31,13 +31,17 @@ export async function buildTradeContext(
   trade: AggregatedTrade,
   interval = '5m'
 ): Promise<TradeAnalysisContext> {
+  const isDemoTrade = trade.transactions.length > 0
+    && trade.transactions.every((transaction) => transaction.accountId === 'U99887766');
   let candles: Awaited<ReturnType<typeof fetchCandles>> = [];
-  try {
-    candles = await fetchCandles(trade.symbol, trade.date, interval);
-  } catch {
-    candles = [];
+  if (!isDemoTrade) {
+    try {
+      candles = await fetchCandles(trade.symbol, trade.date, interval);
+    } catch {
+      candles = [];
+    }
   }
-  return buildTradeAnalysisContext(trade, candles, { interval });
+  return buildTradeAnalysisContext(trade, candles, { interval, isDemoTrade });
 }
 
 /** Run a full AI review: build context, call the server route, return validated analysis. */
