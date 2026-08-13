@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findPivots, detectCupAndHandle, detectHeadAndShoulders, detectDoubleTopBottom, detectAllPatterns, CandleData } from './index';
+import { findPivots, detectHeadAndShoulders, detectDoubleTopBottom, detectAllPatterns, CandleData } from './index';
 
 describe('Chart Pattern Recognition Engine', () => {
   it('identifies swing high peaks and swing low troughs correctly', () => {
@@ -49,6 +49,29 @@ describe('Chart Pattern Recognition Engine', () => {
     expect(wPatterns[0].name).toBe('Double Bottom (W)');
     expect(wPatterns[0].type).toBe('bullish');
     expect(wPatterns[0].targetPrice).toBeGreaterThan(wPatterns[0].breakoutPrice);
+    expect(wPatterns[0].stopLossPrice).toBeLessThan(Math.min(
+      wPatterns[0].firstPivot.price,
+      wPatterns[0].secondPivot.price,
+    ));
+  });
+
+  it('does not complete a Double Bottom before a neckline breakout close', () => {
+    const baseTime = 1700000000;
+    const prices = [
+      100, 95, 90, 85, 80,
+      85, 92, 95,
+      90, 85, 81,
+      86, 90, 93, 94,
+    ];
+    const candles = prices.map((price, index) => ({
+      time: baseTime + index * 86400,
+      open: price - 1,
+      high: price + 1,
+      low: price - 1,
+      close: price,
+    }));
+
+    expect(detectDoubleTopBottom(candles).filter((pattern) => pattern.type === 'bullish')).toHaveLength(0);
   });
 
   it('detects Head & Shoulders pattern correctly', () => {

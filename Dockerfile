@@ -16,13 +16,15 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 # Dummy values for build-time only (Next.js evaluates API routes during build)
 ENV DATABASE_URL="postgresql://build:build@localhost:5432/build"
-ENV BETTER_AUTH_SECRET="build-time-placeholder"
 # The Web Push public key is inlined into the client bundle at build time, so it
 # must be present here (a runtime env var has no effect on NEXT_PUBLIC_* values).
 # The matching private key is supplied at runtime by compose to the scanner.
 ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY=""
 ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
-RUN npm run build
+# Better Auth is initialized while Next.js evaluates routes. Give that one build
+# command a fresh high-entropy secret without persisting it in an image ENV layer.
+# Runtime containers receive the stable production secret from docker compose.
+RUN BETTER_AUTH_SECRET="$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64'))")" npm run build
 
 FROM node:24-bookworm-slim AS runner
 WORKDIR /app
@@ -49,4 +51,3 @@ CMD ["npm","run","start","--","-p","3000","-H","0.0.0.0"]
 FROM builder AS scanner
 ENV NODE_ENV=production
 CMD ["npm","run","scanner"]
-

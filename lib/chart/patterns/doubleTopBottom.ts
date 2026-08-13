@@ -15,6 +15,25 @@ export interface DoubleTopBottomResult {
   confidence: number;
 }
 
+const MAX_PIVOT_SPACING = 60;
+const MIN_PIVOT_SPACING = 5;
+const MAX_LEVEL_DIFFERENCE_RATIO = 0.25;
+const STOP_BUFFER_RATIO = 0.1;
+
+function highestPivotBetween(pivots: PivotPoint[], startIndex: number, endIndex: number) {
+  return pivots
+    .filter((pivot) => pivot.index > startIndex && pivot.index < endIndex)
+    .reduce<PivotPoint | null>((highest, pivot) =>
+      !highest || pivot.price > highest.price ? pivot : highest, null);
+}
+
+function lowestPivotBetween(pivots: PivotPoint[], startIndex: number, endIndex: number) {
+  return pivots
+    .filter((pivot) => pivot.index > startIndex && pivot.index < endIndex)
+    .reduce<PivotPoint | null>((lowest, pivot) =>
+      !lowest || pivot.price < lowest.price ? pivot : lowest, null);
+}
+
 export function detectDoubleTopBottom(candles: CandleData[]): DoubleTopBottomResult[] {
   if (candles.length < 15) return [];
 
@@ -29,21 +48,30 @@ export function detectDoubleTopBottom(candles: CandleData[]): DoubleTopBottomRes
     const p1 = lowPivots[i];
     const p2 = lowPivots[i + 1];
 
-    const diffPercent = Math.abs(p1.price - p2.price) / p1.price;
-    if (diffPercent > 0.035) continue; // Bottoms must match within 3.5%
-
     const indexDiff = p2.index - p1.index;
-    if (indexDiff < 5 || indexDiff > 60) continue;
+    if (indexDiff < MIN_PIVOT_SPACING || indexDiff > MAX_PIVOT_SPACING) continue;
 
-    // Find peak between the two bottoms
-    const peak = highPivots.find((p) => p.index > p1.index && p.index < p2.index);
+    // The neckline is the highest swing high between the two bottoms.
+    const peak = highestPivotBetween(highPivots, p1.index, p2.index);
     if (!peak) continue;
 
     const breakoutPrice = Number(peak.price.toFixed(2));
-    const depth = breakoutPrice - Math.min(p1.price, p2.price);
+    const lowerBottom = Math.min(p1.price, p2.price);
+    const depth = breakoutPrice - lowerBottom;
+    if (depth <= 0) continue;
+
+    // Compare the lows to the formation's height, not the instrument price.
+    // This prevents shallow intraday wiggles from scoring as high-quality Ws.
+    const levelDifferenceRatio = Math.abs(p1.price - p2.price) / depth;
+    if (levelDifferenceRatio > MAX_LEVEL_DIFFERENCE_RATIO) continue;
+
+    // A double bottom is only complete after a later candle closes above its neckline.
+    const breakoutCandle = candles.find((candle, index) => index > p2.index && candle.close > breakoutPrice);
+    if (!breakoutCandle) continue;
+
     const targetPrice = Number((breakoutPrice + depth).toFixed(2));
-    const stopLossPrice = Number((Math.min(p1.price, p2.price) * 0.99).toFixed(2));
-    const confidence = Math.round(Math.max(65, 95 - diffPercent * 600));
+    const stopLossPrice = Number((lowerBottom - depth * STOP_BUFFER_RATIO).toFixed(2));
+    const confidence = Math.round(Math.max(65, 95 - levelDifferenceRatio * 40));
 
     results.push({
       id: `w-${p1.index}-${p2.index}`,
@@ -66,21 +94,27 @@ export function detectDoubleTopBottom(candles: CandleData[]): DoubleTopBottomRes
     const p1 = highPivots[i];
     const p2 = highPivots[i + 1];
 
-    const diffPercent = Math.abs(p1.price - p2.price) / p1.price;
-    if (diffPercent > 0.035) continue; // Tops must match within 3.5%
-
     const indexDiff = p2.index - p1.index;
-    if (indexDiff < 5 || indexDiff > 60) continue;
+    if (indexDiff < MIN_PIVOT_SPACING || indexDiff > MAX_PIVOT_SPACING) continue;
 
-    // Find trough between the two tops
-    const trough = lowPivots.find((p) => p.index > p1.index && p.index < p2.index);
+    // The neckline is the lowest swing low between the two tops.
+    const trough = lowestPivotBetween(lowPivots, p1.index, p2.index);
     if (!trough) continue;
 
     const breakoutPrice = Number(trough.price.toFixed(2));
-    const height = Math.max(p1.price, p2.price) - breakoutPrice;
+    const higherTop = Math.max(p1.price, p2.price);
+    const height = higherTop - breakoutPrice;
+    if (height <= 0) continue;
+
+    const levelDifferenceRatio = Math.abs(p1.price - p2.price) / height;
+    if (levelDifferenceRatio > MAX_LEVEL_DIFFERENCE_RATIO) continue;
+
+    const breakoutCandle = candles.find((candle, index) => index > p2.index && candle.close < breakoutPrice);
+    if (!breakoutCandle) continue;
+
     const targetPrice = Number((breakoutPrice - height).toFixed(2));
-    const stopLossPrice = Number((Math.max(p1.price, p2.price) * 1.01).toFixed(2));
-    const confidence = Math.round(Math.max(65, 95 - diffPercent * 600));
+    const stopLossPrice = Number((higherTop + height * STOP_BUFFER_RATIO).toFixed(2));
+    const confidence = Math.round(Math.max(65, 95 - levelDifferenceRatio * 40));
 
     results.push({
       id: `m-${p1.index}-${p2.index}`,

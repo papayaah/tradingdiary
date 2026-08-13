@@ -97,6 +97,11 @@ run "rsync -az --delete \
 echo "Ensuring shared IBKR network exists..."
 run "ssh_cmd \"docker network create tradingdiary-ibkr-net 2>/dev/null || true\""
 
+# Auth cookies and encrypted data depend on a stable, high-entropy production
+# secret. Validate the remote runtime environment without printing the value.
+echo "Validating production authentication secret..."
+run "ssh_cmd \"cd '$REMOTE_BASE' && bash scripts/validate-production-env.sh '$REMOTE_ENV'\""
+
 # 5. Build images, apply committed DB migrations, then start. Migrations run
 #    BEFORE the app starts so schema and data changes are both complete before
 #    the web/scanner processes load. This is deliberately fail-fast: starting a

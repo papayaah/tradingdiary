@@ -252,20 +252,6 @@ export function PatternTesterSection({
               </div>
 
               <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={onToggleAutoPatterns}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border ${
-                    autoPatternsEnabled
-                      ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                      : 'bg-card-bg border-card-border text-muted hover:text-foreground'
-                  }`}
-                  title="Toggle Chart Pattern Recognition & Overlays"
-                >
-                  <Sparkles size={13} className={autoPatternsEnabled ? 'text-amber-400 animate-pulse' : ''} />
-                  <span>Auto Patterns</span>
-                </button>
-
                 <span className="text-muted hidden sm:inline">
                   {selectedPatternId === 'volume-expansion' && !hasVolumeData
                     ? 'No usable volume data available.'

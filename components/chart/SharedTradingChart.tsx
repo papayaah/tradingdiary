@@ -38,7 +38,7 @@ import {
   type PatternSettings,
 } from '@/lib/scanner/patterns';
 import type { TransactionRecord } from '@/lib/db/schema';
-import { Loader2, Play } from 'lucide-react';
+import { CalendarDays, ChartNoAxesCombined, Loader2, Minus, Play, Sparkles } from 'lucide-react';
 const DEFAULT_INTERVALS = ['1m', '5m', '10m', '15m', '1h', '1d'] as const;
 const LOAD_MORE_THRESHOLD_BARS = 25;
 const DEFAULT_VISIBLE_BARS = 140;
@@ -381,6 +381,8 @@ export default function SharedTradingChart({
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const patternSeriesRef = useRef<ISeriesApi<'Line'>[]>([]);
   const primitiveRef = useRef<TradeExecutionPrimitive | null>(null);
+  const [levelsEnabled, setLevelsEnabled] = useState(true);
+  const [trendlinesEnabled, setTrendlinesEnabled] = useState(true);
   const [hoveredTrade, setHoveredTrade] = useState<{
     trade: TransactionRecord;
     x: number;
@@ -441,6 +443,7 @@ export default function SharedTradingChart({
   });
 
   const isDaily = interval === '1d' || interval === 'D';
+  const canLoadOlderHistory = Boolean(onLoadMoreHistory);
 
   const formatCandleTime = useCallback(
     (timestamp: number): Time => {
@@ -513,8 +516,10 @@ export default function SharedTradingChart({
   }, [visibleCandles, autoPatternsEnabled]);
 
   const marketStructure = useMemo(
-    () => autoPatternsEnabled ? detectMarketStructure(visibleCandles) : { levels: [], trendlines: [] },
-    [visibleCandles, autoPatternsEnabled],
+    () => levelsEnabled || trendlinesEnabled
+      ? detectMarketStructure(visibleCandles)
+      : { levels: [], trendlines: [] },
+    [visibleCandles, levelsEnabled, trendlinesEnabled],
   );
 
   // Execution arrows are drawn by the TradeExecutionPrimitive inside the chart's
@@ -664,12 +669,12 @@ export default function SharedTradingChart({
         // sane number of bars and the user scrolls horizontally for the rest,
         // rather than cramming thousands of microscopic candles into one screen.
         minBarSpacing: 2,
-        // Keep the left edge free so the user can always pan/overscroll left.
-        // Locking it (fixLeftEdge: true) hard-stops panning at the first bar —
-        // which strands single-day charts (no infinite scroll) with no way to
-        // move, and fights the infinite-scroll charts whose load-more triggers
-        // on exactly that near-edge overscroll.
-        fixLeftEdge: false,
+        // Finite/current-day charts have no older candles to fetch, so prevent
+        // zooming into misleading empty logical time. History-enabled charts
+        // keep the left edge open so a left pan can trigger the loader.
+        fixLeftEdge: !canLoadOlderHistory,
+        // There is never meaningful future data to reveal by overscrolling.
+        fixRightEdge: true,
       },
       handleScale: {
         axisPressedMouseMove: { time: true, price: true },
@@ -778,7 +783,7 @@ export default function SharedTradingChart({
       priceLinesRef.current = [];
       patternSeriesRef.current = [];
     };
-  }, [symbol, interval, height, showVolume, isDaily, isDark]);
+  }, [symbol, interval, height, showVolume, isDaily, isDark, canLoadOlderHistory]);
 
   // ── Effect B1: push candle/volume DATA + position the view ──────────────────
   // Runs only when candle data changes — not on pattern/overlay changes — so
@@ -931,7 +936,7 @@ export default function SharedTradingChart({
     }
 
     // 2. Viewport-scoped wick support/resistance and diagonal trendlines.
-    if (autoPatternsEnabled) {
+    if (levelsEnabled) {
       marketStructure.levels.forEach((level) => {
         priceLinesRef.current.push(candleSeries.createPriceLine({
           price: level.price,
@@ -943,6 +948,9 @@ export default function SharedTradingChart({
         }));
       });
 
+    }
+
+    if (trendlinesEnabled) {
       marketStructure.trendlines.forEach((trendline) => {
         const lineSeries = chart.addSeries(LineSeries, {
           color: trendline.type === 'rising-support' ? '#3b82f6' : '#8b5cf6',
@@ -1137,6 +1145,8 @@ export default function SharedTradingChart({
     marketStructure,
     visibleCandles,
     autoPatternsEnabled,
+    levelsEnabled,
+    trendlinesEnabled,
     transactions,
     date,
     formatCandleTime,
@@ -1151,7 +1161,7 @@ export default function SharedTradingChart({
   return (
     <div className="relative w-full rounded-2xl overflow-hidden border border-card-border bg-card-bg shadow-2xl flex flex-col">
       {/* Top Chart Header & Timeline Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between px-5 py-3 gap-3 border-b border-card-border/60 bg-muted-bg/40 backdrop-blur-md">
+      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center justify-between px-5 py-3 gap-3 border-b border-card-border/60 bg-muted-bg/40 backdrop-blur-md">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center text-accent shadow-inner">
             <span className="text-xs font-black uppercase">{symbol.substring(0, 1)}</span>
@@ -1171,18 +1181,70 @@ export default function SharedTradingChart({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:justify-end">
+          <div className="flex items-center gap-1 rounded-xl border border-card-border/40 bg-muted-bg/50 p-1" aria-label="Chart overlays">
+            <button
+              type="button"
+              aria-pressed={autoPatternsEnabled}
+              onClick={onTogglePatterns}
+              disabled={!onTogglePatterns}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${
+                autoPatternsEnabled
+                  ? 'bg-card-bg text-foreground shadow-sm'
+                  : 'text-muted hover:bg-card-bg/60 hover:text-foreground'
+              } disabled:cursor-default disabled:opacity-50`}
+              title="Toggle geometric chart patterns"
+            >
+              <Sparkles size={13} className="text-amber-500" />
+              Patterns
+            </button>
+            <button
+              type="button"
+              aria-pressed={levelsEnabled}
+              onClick={() => setLevelsEnabled((enabled) => !enabled)}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${
+                levelsEnabled
+                  ? 'bg-card-bg text-foreground shadow-sm'
+                  : 'text-muted hover:bg-card-bg/60 hover:text-foreground'
+              }`}
+              title="Toggle horizontal support and resistance levels"
+            >
+              <Minus size={13} className="text-slate-500" />
+              Levels
+            </button>
+            <button
+              type="button"
+              aria-pressed={trendlinesEnabled}
+              onClick={() => setTrendlinesEnabled((enabled) => !enabled)}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${
+                trendlinesEnabled
+                  ? 'bg-card-bg text-foreground shadow-sm'
+                  : 'text-muted hover:bg-card-bg/60 hover:text-foreground'
+              }`}
+              title="Toggle diagonal support and resistance trendlines"
+            >
+              <ChartNoAxesCombined size={13} className="text-blue-500" />
+              Trendlines
+            </button>
+          </div>
+
           {/* Current Day Filter Toggle */}
           {onToggleCurrentDayOnly && (
-            <label className="flex items-center gap-1.5 text-sm text-muted cursor-pointer hover:text-foreground transition-colors mr-1">
-              <input
-                type="checkbox"
-                checked={currentDayOnly}
-                onChange={(e) => onToggleCurrentDayOnly(e.target.checked)}
-                className="rounded border-card-border bg-card-bg text-accent focus:ring-accent accent-accent"
-              />
-              Current Day Only
-            </label>
+            <button
+              type="button"
+              aria-pressed={currentDayOnly}
+              aria-label="Current Day Only"
+              onClick={() => onToggleCurrentDayOnly(!currentDayOnly)}
+              className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                currentDayOnly
+                  ? 'border-accent/30 bg-accent/10 text-accent'
+                  : 'border-card-border/40 bg-muted-bg/50 text-muted hover:text-foreground'
+              }`}
+              title="Show only candles from the current trading day"
+            >
+              <CalendarDays size={13} />
+              Today
+            </button>
           )}
 
           {/* Replay Trade Button */}
@@ -1228,15 +1290,15 @@ export default function SharedTradingChart({
         </div>
       </div>
 
-      {/* Floating Auto Patterns Toggle & Details Badge — scoped to the viewport */}
-      <PatternOverlay
-        candles={visibleCandles}
-        enabled={autoPatternsEnabled}
-        onToggleEnabled={onTogglePatterns}
-      />
-
       {/* Chart Canvas Area */}
       <div className="relative w-full">
+        {/* Floating geometric-pattern details, scoped to the chart viewport. */}
+        <PatternOverlay
+          candles={visibleCandles}
+          enabled={autoPatternsEnabled}
+          onToggleEnabled={onTogglePatterns}
+        />
+
         {loading && (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-card-bg/80 backdrop-blur-sm">
             <Loader2 className="w-6 h-6 text-accent animate-spin" />

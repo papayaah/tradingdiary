@@ -7,6 +7,7 @@ export * from './pivots';
 export * from './cupAndHandle';
 export * from './headAndShoulders';
 export * from './doubleTopBottom';
+export * from './marketStructure';
 
 export type DetectedPattern = CupAndHandleResult | HeadAndShouldersResult | DoubleTopBottomResult;
 
