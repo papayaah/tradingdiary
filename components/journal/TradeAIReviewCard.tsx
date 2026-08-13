@@ -100,21 +100,38 @@ function StatsPanel({ ctx, currency }: { ctx: TradeAnalysisContext; currency: st
       type="button"
       onClick={() => setExplainedMetric((current) => current === key ? null : key)}
       aria-expanded={explainedMetric === key}
-      className="group flex flex-col rounded-md text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent/60"
+      aria-label={`${explanations[key].title}. ${explanations[key].description}`}
+      className="group relative flex cursor-help flex-col rounded-md text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent/60"
     >
       <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted/70 group-hover:text-accent">
         {label} <CircleHelp size={10} aria-hidden="true" />
       </span>
       <span className="text-sm font-semibold text-foreground tabular-nums">{value}</span>
+      {explainedMetric !== key && (
+        <span
+          role="tooltip"
+          className="pointer-events-none absolute left-0 top-full z-30 mt-1 hidden w-64 rounded-lg border border-card-border bg-card-bg p-2.5 text-left shadow-xl group-hover:block group-focus-visible:block"
+        >
+          <span className="block text-xs font-semibold normal-case tracking-normal text-foreground">
+            {explanations[key].title}
+          </span>
+          <span className="mt-1 block text-[11px] font-normal normal-case leading-relaxed tracking-normal text-muted">
+            {explanations[key].description}
+          </span>
+        </span>
+      )}
     </button>
   );
   const explanation = explainedMetric ? explanations[explainedMetric] : null;
   return (
     <div className="rounded-lg border border-card-border bg-background/40 p-3">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-semibold text-foreground uppercase tracking-wider">
-          Objective Trade Statistics
-        </span>
+        <div>
+          <span className="block text-xs font-semibold text-foreground uppercase tracking-wider">
+            Objective Trade Statistics
+          </span>
+          <span className="block text-[10px] text-muted/70">Hover or tap a metric for an explanation</span>
+        </div>
         {!flags.hasCandles && (
           <span className="text-[10px] text-muted/70">
             {flags.isDemoTrade ? 'demo data — execution-only' : 'no market data — execution-only'}
