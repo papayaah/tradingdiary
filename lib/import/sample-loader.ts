@@ -19,12 +19,25 @@ export async function loadDemoSampleData(): Promise<{
     throw new Error('Sample TLG file contains no valid trade records.');
   }
 
-  await importData(parsed.account, parsed.transactions, parsed.positions);
+  // Dynamically adjust sample trade dates to match the user's current month & year
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
+
+  const adjustedTransactions = parsed.transactions.map((t) => {
+    const day = t.date.length >= 8 ? t.date.slice(6, 8) : '01';
+    return {
+      ...t,
+      date: `${currentYear}${currentMonth}${day}`,
+    };
+  });
+
+  await importData(parsed.account, adjustedTransactions, parsed.positions);
 
   return {
     success: true,
     accountId: parsed.account.accountId,
     accountName: parsed.account.name,
-    transactionCount: parsed.transactions.length,
+    transactionCount: adjustedTransactions.length,
   };
 }
