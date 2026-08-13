@@ -85,6 +85,13 @@
       "when": 1785993519354,
       "tag": "0011_add_invalid_symbols_table",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1786598834505,
+      "tag": "0012_new_tombstone",
+      "breakpoints": true
     }
   ]
 }

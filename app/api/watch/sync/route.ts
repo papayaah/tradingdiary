@@ -11,6 +11,11 @@ import {
   type PatternId,
 } from '@/lib/scanner/patterns';
 import type { AssetClass, WatchSession } from '@/lib/scanner/sessions';
+import {
+  AUTHENTICATED_WATCHLIST_LIMIT,
+  GUEST_WATCHLIST_LIMIT,
+  canPersistAuthenticatedWatchlist,
+} from '@/lib/watch/watchlist-limits';
 
 const MIN_SCAN_FREQUENCY_SECONDS = 15;
 const DEFAULT_SCAN_FREQUENCY_SECONDS = MIN_SCAN_FREQUENCY_SECONDS;
@@ -118,7 +123,11 @@ export async function GET(request: NextRequest) {
   try {
     const session = await auth.api.getSession({ headers: request.headers });
     if (!session?.user) {
-      return NextResponse.json({ watchlist: null, authenticated: false }, { status: 200 });
+      return NextResponse.json({
+        watchlist: null,
+        authenticated: false,
+        watchlistLimit: GUEST_WATCHLIST_LIMIT,
+      }, { status: 200 });
     }
 
     const records = await db
@@ -143,6 +152,7 @@ export async function GET(request: NextRequest) {
         patternSettings: normalizePatternSettings(null, 0.25),
         disabledAssetClasses,
         authenticated: true,
+        watchlistLimit: AUTHENTICATED_WATCHLIST_LIMIT,
       });
     }
 
@@ -159,6 +169,7 @@ export async function GET(request: NextRequest) {
       scanFrequencySeconds: record.scanFrequencySeconds,
       disabledAssetClasses,
       authenticated: true,
+      watchlistLimit: AUTHENTICATED_WATCHLIST_LIMIT,
     });
   } catch (error) {
     console.error('Failed to fetch user watchlist from DB:', error);
@@ -170,7 +181,11 @@ export async function POST(request: NextRequest) {
   try {
     const session = await auth.api.getSession({ headers: request.headers });
     if (!session?.user) {
-      return NextResponse.json({ success: false, authenticated: false }, { status: 200 });
+      return NextResponse.json({
+        success: false,
+        authenticated: false,
+        watchlistLimit: GUEST_WATCHLIST_LIMIT,
+      }, { status: 200 });
     }
 
     const body = await request.json();
@@ -194,6 +209,23 @@ export async function POST(request: NextRequest) {
     const disabledAssetClasses = parseDisabledAssetClasses(body.disabledAssetClasses);
     const userId = session.user.id;
     const nowIso = new Date().toISOString();
+
+    const currentRecords = await db
+      .select({ watchlist: userWatchlists.watchlist })
+      .from(userWatchlists)
+      .where(eq(userWatchlists.userId, userId))
+      .limit(1);
+    const currentWatchlist = currentRecords[0]?.watchlist;
+    const currentCount = Array.isArray(currentWatchlist) ? currentWatchlist.length : 0;
+
+    if (!canPersistAuthenticatedWatchlist(watchlist.length, currentCount)) {
+      return NextResponse.json({
+        error: `Signed-in watchlists are limited to ${AUTHENTICATED_WATCHLIST_LIMIT} symbols.`,
+        code: 'WATCHLIST_LIMIT_EXCEEDED',
+        limit: AUTHENTICATED_WATCHLIST_LIMIT,
+        count: watchlist.length,
+      }, { status: 422 });
+    }
 
     await db.transaction(async (tx) => {
       const existingSettings = await tx
@@ -299,6 +331,7 @@ export async function POST(request: NextRequest) {
       requiredCandleCount,
       maxBodyOverlapPercent,
       patternSettings,
+      watchlistLimit: AUTHENTICATED_WATCHLIST_LIMIT,
     });
   } catch (error) {
     console.error('Failed to sync watchlist to DB:', error);

@@ -187,7 +187,7 @@ export default function TradeAIReviewCard({ trade, accountId, currency }: TradeA
   const apiKey = cfg?.customLLM?.apiKey;
   const provider = cfg?.customLLM?.provider;
   const model = cfg?.customLLM?.model;
-  const hasKey = Boolean(apiKey) || cfg?.type === 'hosted-api';
+  const hasAI = Boolean(apiKey) || cfg?.type === 'hosted-api';
 
   // Build deterministic context (for the fallback stats panel + staleness checks)
   useEffect(() => {
@@ -223,8 +223,8 @@ export default function TradeAIReviewCard({ trade, accountId, currency }: TradeA
           totalTokens: r.usage.totalTokens,
         });
       }
-    } catch (e: any) {
-      setError(e?.message || 'Review failed');
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : 'Review failed');
     } finally {
       setLoading(false);
     }
@@ -281,16 +281,16 @@ export default function TradeAIReviewCard({ trade, accountId, currency }: TradeA
       <div className="flex items-center gap-2">
         <button
           onClick={handleAsk}
-          disabled={loading || !hasKey || !ctx}
+          disabled={loading || !hasAI || !ctx}
           className="inline-flex items-center gap-1.5 rounded-lg bg-accent/10 border border-accent/30 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
           {loading ? 'Reviewing…' : 'Ask AI Assistant'}
         </button>
-        {!hasKey && (
+        {!hasAI && (
           <span className="text-[11px] text-muted/70">Add an AI key in Settings to enable review.</span>
         )}
-        {hasKey && freshExists && !result && (
+        {hasAI && freshExists && !result && (
           <span className="text-[11px] text-muted/70">
             A current review already exists below.
           </span>

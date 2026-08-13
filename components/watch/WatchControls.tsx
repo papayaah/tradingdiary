@@ -168,6 +168,7 @@ interface TickerInputProps {
   category: SymbolSearchCategory;
   onSearch: (value: string) => void;
   onAdd: (value: string) => boolean | Promise<boolean>;
+  disabled?: boolean;
   className?: string;
 }
 
@@ -179,7 +180,7 @@ interface SymbolSuggestion {
 }
 
 const TickerInputComponent = forwardRef<TickerInputHandle, TickerInputProps>(
-function TickerInput({ placeholder, category, onSearch, onAdd, className }, ref) {
+function TickerInput({ placeholder, category, onSearch, onAdd, disabled = false, className }, ref) {
   const [value, setValue] = useState('');
   const [suggestions, setSuggestions] = useState<SymbolSuggestion[]>([]);
   const [open, setOpen] = useState(false);
@@ -243,6 +244,7 @@ function TickerInput({ placeholder, category, onSearch, onAdd, className }, ref)
   }, []);
 
   const add = async () => {
+    if (disabled) return;
     if (await onAdd(value)) {
       setValue('');
       setSuggestions([]);
@@ -295,11 +297,12 @@ function TickerInput({ placeholder, category, onSearch, onAdd, className }, ref)
         type="text"
         placeholder={placeholder}
         value={value}
+        disabled={disabled}
         autoComplete="off"
         onChange={(event) => setValue(event.target.value)}
         onFocus={() => { if (suggestions.length > 0) setOpen(true); }}
         onKeyDown={onKeyDown}
-        className="w-full bg-card-bg border border-card-border focus:border-accent focus:ring-1 focus:ring-accent rounded-xl py-2.5 pl-16 pr-8 text-sm text-foreground outline-none transition-all"
+        className="w-full bg-card-bg border border-card-border focus:border-accent focus:ring-1 focus:ring-accent rounded-xl py-2.5 pl-16 pr-8 text-sm text-foreground outline-none transition-all disabled:cursor-not-allowed disabled:opacity-60"
       />
       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted">
         {loading ? (

@@ -1,7 +1,7 @@
 import { ExtractedData } from '../types';
 
 interface LLMConfig {
-    apiKey: string;
+    apiKey?: string;
     provider?: string;
     model?: string;
 }
@@ -14,15 +14,11 @@ export async function extractFromImage(
         ? { apiKey: config, provider: undefined, model: undefined }
         : config;
 
-    if (!apiKey) {
-        throw new Error('No API key provided for image extraction');
-    }
-
     const res = await fetch('/api/ai/extract-image', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'x-api-key': apiKey,
+            ...(apiKey && apiKey !== 'SERVER_MANAGED' && { 'x-api-key': apiKey }),
             ...(provider && { 'x-provider': provider }),
             ...(model && { 'x-model': model }),
         },
@@ -31,12 +27,12 @@ export async function extractFromImage(
 
     if (!res.ok) {
         const errorText = await res.text();
+        let message: string | undefined;
         try {
-            const json = JSON.parse(errorText);
-            throw new Error(json.error || 'Image extraction failed');
-        } catch (e) {
-            throw new Error(`Image extraction failed: ${errorText}`);
-        }
+            const json = JSON.parse(errorText) as { error?: string };
+            message = json.error;
+        } catch {}
+        throw new Error(message || `Image extraction failed: ${errorText}`);
     }
 
     return res.json();

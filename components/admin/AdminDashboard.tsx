@@ -144,13 +144,6 @@ interface GovernorItem {
   floorSeconds: number;
 }
 
-interface ProviderStatRow {
-  day: string;
-  provider: string;
-  keyOwner: string;
-  count: number;
-}
-
 interface ProviderSummaryMap {
   [scope: string]: {
     todayCount: number;
@@ -178,17 +171,40 @@ interface LivePresenceData {
   distinctUsers: number;
 }
 
+interface AIUsageData {
+  days: number;
+  summary: {
+    requests: number;
+    credits: number;
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    costUsd: number;
+    uniqueUsers: number;
+    uniqueGuests: number;
+    failedRequests: number;
+  };
+  byAction: Array<{
+    action: string;
+    requests: number;
+    credits: number;
+    tokens: number;
+    costUsd: number;
+  }>;
+  trend: Array<{ day: string; requests: number; credits: number; costUsd: number }>;
+}
+
 export default function AdminDashboard() {
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [queueInfo, setQueueInfo] = useState<QueueData | null>(null);
   const [watchMetrics, setWatchMetrics] = useState<WatchData | null>(null);
   const [cacheMetrics, setCacheMetrics] = useState<CacheData | null>(null);
   const [governorItems, setGovernorItems] = useState<GovernorItem[]>([]);
-  const [providerStats, setProviderStats] = useState<ProviderStatRow[]>([]);
   const [providerSummary, setProviderSummary] = useState<ProviderSummaryMap>({});
   const [userTrends, setUserTrends] = useState<UserTrendItem[]>([]);
   const [alertAnalytics, setAlertAnalytics] = useState<AlertAnalyticsData | null>(null);
   const [livePresence, setLivePresence] = useState<LivePresenceData | null>(null);
+  const [aiUsage, setAIUsage] = useState<AIUsageData | null>(null);
   const [allowlistConfigured, setAllowlistConfigured] = useState<boolean>(true);
   const [loading, setLoading] = useState<boolean>(true);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
@@ -222,6 +238,7 @@ export default function AdminDashboard() {
         usersRes,
         alertsRes,
         liveRes,
+        aiUsageRes,
       ] = await Promise.all([
         fetch('/api/admin/status').then((r) => r.json()).catch(() => null),
         fetch('/api/admin/overview').then((r) => r.json()).catch(() => null),
@@ -233,6 +250,7 @@ export default function AdminDashboard() {
         fetch('/api/admin/users?days=30').then((r) => r.json()).catch(() => null),
         fetch('/api/admin/alerts?days=30').then((r) => r.json()).catch(() => null),
         fetch('/api/admin/live').then((r) => r.json()).catch(() => null),
+        fetch('/api/admin/ai-usage?days=30').then((r) => r.json()).catch(() => null),
       ]);
 
       if (statusRes) setAllowlistConfigured(Boolean(statusRes.allowlistConfigured));
@@ -240,7 +258,6 @@ export default function AdminDashboard() {
       if (queueRes?.success) setQueueInfo(queueRes);
       if (watchesRes?.success) setWatchMetrics(watchesRes);
       if (providerRes?.stats) {
-        setProviderStats(providerRes.stats);
         if (providerRes.summary) setProviderSummary(providerRes.summary);
       }
       if (cacheRes?.success && cacheRes.cache) setCacheMetrics(cacheRes.cache);
@@ -248,6 +265,7 @@ export default function AdminDashboard() {
       if (usersRes?.success && usersRes.signups) setUserTrends(usersRes.signups);
       if (alertsRes?.success) setAlertAnalytics(alertsRes);
       if (liveRes?.success) setLivePresence(liveRes);
+      if (aiUsageRes?.success) setAIUsage(aiUsageRes);
 
       setLastUpdated(new Date());
     } finally {
@@ -287,6 +305,7 @@ export default function AdminDashboard() {
       providerSummary,
       livePresence,
       alertAnalyticsSummary: alertAnalytics?.topSymbols,
+      aiUsage,
     };
 
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -453,6 +472,64 @@ export default function AdminDashboard() {
                 <Bell size={12} /> {overview.activity.alertsToday} alerts
               </span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {aiUsage && (
+        <div className="bg-card-bg border border-card-border rounded-xl p-5 space-y-4">
+          <div className="flex flex-col gap-1 border-b border-card-border pb-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <Cpu size={16} className="text-accent" /> Hosted AI usage
+              </h2>
+              <p className="mt-0.5 text-xs text-muted">Global server-funded usage and estimated Gemini cost over the last {aiUsage.days} days.</p>
+            </div>
+            <span className="text-xs font-semibold text-muted">
+              {aiUsage.summary.uniqueUsers} users · {aiUsage.summary.uniqueGuests} guests
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+            {[
+              ['Successful requests', aiUsage.summary.requests.toLocaleString()],
+              ['Credits charged', aiUsage.summary.credits.toLocaleString()],
+              ['Total tokens', aiUsage.summary.totalTokens.toLocaleString()],
+              ['Estimated cost', `$${aiUsage.summary.costUsd.toFixed(4)}`],
+              ['Failed / refunded', aiUsage.summary.failedRequests.toLocaleString()],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-xl border border-card-border bg-muted-bg p-3">
+                <div className="text-[11px] text-muted">{label}</div>
+                <div className="mt-1 text-lg font-bold text-foreground">{value}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-card-border text-muted">
+                  <th className="px-2 py-2">AI action</th>
+                  <th className="px-2 py-2 text-right">Requests</th>
+                  <th className="px-2 py-2 text-right">Credits</th>
+                  <th className="px-2 py-2 text-right">Tokens</th>
+                  <th className="px-2 py-2 text-right">Est. cost</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-card-border/50">
+                {aiUsage.byAction.length > 0 ? aiUsage.byAction.map((item) => (
+                  <tr key={item.action} className="hover:bg-muted-bg/40">
+                    <td className="px-2 py-2 font-mono font-semibold text-foreground">{item.action}</td>
+                    <td className="px-2 py-2 text-right text-foreground">{item.requests}</td>
+                    <td className="px-2 py-2 text-right text-foreground">{item.credits}</td>
+                    <td className="px-2 py-2 text-right text-muted">{item.tokens.toLocaleString()}</td>
+                    <td className="px-2 py-2 text-right text-muted">${item.costUsd.toFixed(4)}</td>
+                  </tr>
+                )) : (
+                  <tr><td colSpan={5} className="px-2 py-6 text-center text-muted">No hosted AI usage recorded yet.</td></tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

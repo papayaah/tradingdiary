@@ -66,6 +66,11 @@ import {
 } from '@/lib/market/intraday-change';
 import { buildScannerSyncWatchlist } from '@/lib/watch/sync-settings';
 import { limitAlertHistory } from '@/lib/watch/alert-history';
+import {
+  AUTHENTICATED_WATCHLIST_LIMIT,
+  GUEST_WATCHLIST_LIMIT,
+  getWatchlistLimit,
+} from '@/lib/watch/watchlist-limits';
 
 interface WatchItem {
   symbol: string;
@@ -416,9 +421,10 @@ export default function MarketWatcher() {
   alertLogsRef.current = alertLogs;
   const alertPersistTimerRef = useRef<number | null>(null);
   const [addNotice, setAddNotice] = useState<{
-    type: 'success' | 'duplicate' | 'error';
+    type: 'success' | 'duplicate' | 'error' | 'limit';
     message: string;
   } | null>(null);
+  const [showGuestLimitPanel, setShowGuestLimitPanel] = useState(false);
   const addNoticeTimerRef = useRef<number | null>(null);
   const [isPolygonActive, setIsPolygonActive] = useState(false);
   const [autoPauseEnabled, setAutoPauseEnabled] = useState(true); // pause scanner outside chosen session
@@ -479,8 +485,12 @@ export default function MarketWatcher() {
   const [sortColumn, setSortColumn] = useState<'symbol' | 'interval' | 'status' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
-  const { data: sessionData } = authClient.useSession();
+  const { data: sessionData, isPending: isSessionPending } = authClient.useSession();
   const isAuthenticated = !!sessionData?.user;
+  const watchlistLimit = isSessionPending
+    ? AUTHENTICATED_WATCHLIST_LIMIT
+    : getWatchlistLimit(isAuthenticated);
+  const isWatchlistAtLimit = watchlist.length >= watchlistLimit;
   // When signed in, the server scanner is authoritative and the browser must be
   // a pure viewer (snapshot + SSE), not a second market-data fetcher. A ref lets
   // the interval loop read the latest value without re-subscribing.
@@ -1199,12 +1209,6 @@ export default function MarketWatcher() {
       { symbol: 'NVDA', interval: '10m' },
       { symbol: 'SPY', interval: '5m' },
       { symbol: 'QQQ', interval: '10m' },
-      { symbol: 'NQ=F', interval: '10m' },
-      { symbol: 'ES=F', interval: '10m' },
-      { symbol: 'YM=F', interval: '10m' },
-      { symbol: 'CL=F', interval: '10m' },
-      { symbol: 'GC=F', interval: '10m' },
-      { symbol: 'SI=F', interval: '10m' },
     ];
 
     const savedWatch = localStorage.getItem('watcher-watchlist');
@@ -2497,7 +2501,7 @@ export default function MarketWatcher() {
     void syncScannerSettings(watchlist, selectedPatternId, activeWindow, mins).catch(() => {});
   };
 
-  const showAddNotice = (type: 'success' | 'duplicate' | 'error', message: string) => {
+  const showAddNotice = (type: 'success' | 'duplicate' | 'error' | 'limit', message: string) => {
     setAddNotice({ type, message });
     if (addNoticeTimerRef.current !== null) {
       window.clearTimeout(addNoticeTimerRef.current);
@@ -2535,6 +2539,20 @@ export default function MarketWatcher() {
         setWatchlistCategory(targetCat);
         localStorage.setItem('watcher-watchlist-category', targetCat);
       }
+      return false;
+    }
+
+    if (isWatchlistAtLimit) {
+      const isGuestLimit = !isAuthenticated && !isSessionPending;
+      showAddNotice(
+        isGuestLimit ? 'limit' : 'error',
+        isSessionPending
+          ? 'Checking your account before adding another symbol.'
+          : isAuthenticated
+          ? `Your watchlist is limited to ${watchlistLimit} symbols.`
+          : `Guest watchlists are limited to ${GUEST_WATCHLIST_LIMIT} symbols. Sign in to add up to ${AUTHENTICATED_WATCHLIST_LIMIT}.`,
+      );
+      if (isGuestLimit) setShowGuestLimitPanel(true);
       return false;
     }
 
@@ -2592,6 +2610,7 @@ export default function MarketWatcher() {
 
   const handleRemoveSymbol = (symbol: string, interval: string) => {
     const updated = watchlist.filter(w => !(w.symbol === symbol && w.interval === interval));
+    setShowGuestLimitPanel(false);
     saveWatchlist(updated);
   };
 
@@ -3495,6 +3514,18 @@ export default function MarketWatcher() {
 
               {/* WATCHLIST FORM */}
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 mb-6 bg-muted-bg/30 p-4 rounded-xl border border-card-border">
+                <div className="sm:col-span-12 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <span className="font-semibold text-foreground">
+                    {watchlist.length} of {watchlistLimit} symbols used
+                  </span>
+                  {!isAuthenticated && !isSessionPending ? (
+                    <span className="text-muted">
+                      Guest limit · <a href="/login?returnTo=/watch" className="font-semibold text-accent hover:underline">Sign in for up to {AUTHENTICATED_WATCHLIST_LIMIT}</a>
+                    </span>
+                  ) : (
+                    <span className="text-muted">Signed-in watchlist</span>
+                  )}
+                </div>
                 {addNotice && (
                   <div
                     role="status"
@@ -3502,7 +3533,7 @@ export default function MarketWatcher() {
                     className={`sm:col-span-12 flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${
                       addNotice.type === 'success'
                         ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-400'
-                        : addNotice.type === 'error'
+                        : addNotice.type === 'error' || addNotice.type === 'limit'
                           ? 'border-rose-500/25 bg-rose-500/10 text-rose-400'
                           : 'border-amber-500/25 bg-amber-500/10 text-amber-400'
                     }`}
@@ -3513,6 +3544,36 @@ export default function MarketWatcher() {
                     <span>{addNotice.message}</span>
                   </div>
                 )}
+                {showGuestLimitPanel && !isAuthenticated && !isSessionPending ? (
+                  <div className="sm:col-span-12 rounded-xl border border-accent/30 bg-card-bg p-4" role="region" aria-label="Sign-in benefits">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h3 className="text-sm font-bold text-foreground">Keep watching more markets</h3>
+                        <p className="mt-1 text-xs text-muted">Sign in free to unlock:</p>
+                        <ul className="mt-2 grid gap-1.5 text-xs text-foreground sm:grid-cols-3">
+                          <li className="flex items-center gap-1.5"><CheckCircle2 size={14} className="shrink-0 text-profit" /> Up to {AUTHENTICATED_WATCHLIST_LIMIT} symbols</li>
+                          <li className="flex items-center gap-1.5"><CheckCircle2 size={14} className="shrink-0 text-profit" /> Watchlist sync across devices</li>
+                          <li className="flex items-center gap-1.5"><CheckCircle2 size={14} className="shrink-0 text-profit" /> Background scans and alerts</li>
+                        </ul>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowGuestLimitPanel(false)}
+                          className="rounded-lg border border-card-border bg-muted-bg px-3 py-2 text-xs font-semibold text-muted transition-colors hover:text-foreground"
+                        >
+                          Not now
+                        </button>
+                        <a
+                          href="/login?returnTo=/watch"
+                          className="rounded-lg bg-accent px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-accent/90"
+                        >
+                          Sign in free
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
                 <TickerInput
                   ref={tickerInputRef}
                   category="all"
@@ -3525,13 +3586,15 @@ export default function MarketWatcher() {
                   }
                   onSearch={setSearchTerm}
                   onAdd={stableAddSymbol}
+                  disabled={isAuthenticated && isWatchlistAtLimit}
                   className="sm:col-span-9 relative"
                 />
 
                 <div className="sm:col-span-3">
                   <button
                     onClick={() => tickerInputRef.current?.add()}
-                    className="w-full h-full flex items-center justify-center gap-1 bg-accent hover:bg-accent/80 active:bg-accent text-white rounded-xl text-sm font-semibold transition-colors py-2.5 sm:py-0"
+                    disabled={isAuthenticated && isWatchlistAtLimit}
+                    className="w-full h-full flex items-center justify-center gap-1 bg-accent hover:bg-accent/80 active:bg-accent text-white rounded-xl text-sm font-semibold transition-colors py-2.5 sm:py-0 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Plus size={16} /> Add
                   </button>

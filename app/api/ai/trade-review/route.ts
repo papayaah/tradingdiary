@@ -8,17 +8,24 @@ import {
   TRADE_REVIEW_PROMPT_VERSION,
 } from '@/lib/trading/trade-review-contract';
 import type { TradeAnalysisContext } from '@/lib/trading/trade-analysis';
+import type { LLMProvider } from '@/packages/ai-connect/src/types';
+import {
+  attachGuestAICookie,
+  creditExhaustedBody,
+  creditUsageDetails,
+  hostedAIConfig,
+  reserveHostedAICredit,
+  type HostedAICreditGate,
+} from '@/lib/ai/hosted-credits';
 
 // Reads headers, so must be dynamic.
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
+  let creditGate: HostedAICreditGate | undefined;
   try {
-    const apiKey = request.headers.get('x-api-key') || process.env.OPENROUTER_API_KEY;
-    const provider = request.headers.get('x-provider') || 'openrouter';
-    const modelId =
-      request.headers.get('x-model') ||
-      (provider === 'openrouter' ? 'google/gemini-2.0-flash:free' : 'gemini-2.5-flash');
+    const config = hostedAIConfig(request);
+    const { apiKey, provider, model: modelId } = config;
 
     if (!apiKey) {
       return NextResponse.json(
@@ -31,9 +38,22 @@ export async function POST(request: NextRequest) {
     if (!context || !context.trade) {
       return NextResponse.json({ error: 'Missing trade context' }, { status: 400 });
     }
+    if (JSON.stringify(context).length > 250_000) {
+      return NextResponse.json({ error: 'Trade context is too large' }, { status: 413 });
+    }
+
+    if (config.hosted) {
+      creditGate = await reserveHostedAICredit(request, 'trade-review');
+      if (!creditGate.reservation.allowed) {
+        return attachGuestAICookie(
+          NextResponse.json(creditExhaustedBody(creditGate), { status: 429 }),
+          creditGate,
+        );
+      }
+    }
 
     const model = await createVercelAIModel({
-      provider: provider as any,
+      provider: provider as LLMProvider,
       model: modelId,
       apiKey,
     });
@@ -74,11 +94,15 @@ ${first.text}`,
     }
 
     if (!analysis) {
+      await creditGate?.reservation.release(
+        'AI response could not be validated',
+        creditUsageDetails(provider, modelId, usage),
+      );
       // Client falls back to the deterministic Objective Trade Statistics panel.
-      return NextResponse.json(
+      return attachGuestAICookie(NextResponse.json(
         { error: 'AI response could not be validated', fallback: true },
         { status: 422 }
-      );
+      ), creditGate);
     }
 
     // Never let the model raise the deterministic confidence ceiling.
@@ -87,7 +111,8 @@ ${first.text}`,
       analysis.evidenceConfidence = context.evidenceConfidence;
     }
 
-    return NextResponse.json({
+    await creditGate?.reservation.complete(creditUsageDetails(provider, modelId, usage));
+    return attachGuestAICookie(NextResponse.json({
       analysis,
       provider,
       model: modelId,
@@ -99,10 +124,12 @@ ${first.text}`,
             totalTokens: usage.totalTokens,
           }
         : undefined,
-    });
-  } catch (error: any) {
+      credits: creditGate ? { remaining: creditGate.reservation.remaining } : undefined,
+    }), creditGate);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Trade review failed';
+    await creditGate?.reservation.release(message).catch(() => {});
     console.error('[Trade Review API Error]:', error);
-    const message = error?.message || 'Trade review failed';
     if (message.includes('401') || message.includes('Unauthorized') || message.includes('invalid')) {
       return NextResponse.json({ error: 'Invalid API key' }, { status: 401 });
     }

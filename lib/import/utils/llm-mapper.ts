@@ -1,7 +1,7 @@
 import { ColumnMapping, SideValueMapping } from '../types';
 
 interface LLMConfig {
-    apiKey: string;
+    apiKey?: string;
     provider?: string;
     model?: string;
 }
@@ -23,15 +23,11 @@ export async function mapColumnsWithLLM(
         ? { apiKey: config, provider: undefined, model: undefined }
         : config;
 
-    if (!apiKey) {
-        throw new Error('No API key provided for LLM mapping');
-    }
-
     const res = await fetch('/api/ai/map-columns', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'x-api-key': apiKey,
+            ...(apiKey && apiKey !== 'SERVER_MANAGED' && { 'x-api-key': apiKey }),
             ...(provider && { 'x-provider': provider }),
             ...(model && { 'x-model': model }),
         },

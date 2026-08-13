@@ -235,6 +235,35 @@ export const invalidSymbols = pgTable("invalid_symbols", {
     createdAt: timestamp("created_at", { mode: 'string' }).notNull().defaultNow(),
 });
 
+// Authoritative hosted-AI credit ledger. Product allowances are evaluated by
+// the app, while the reusable ai-connect meter owns the reserve/settle shape.
+export const aiUsageEvent = pgTable("ai_usage_event", {
+    id: uuid("id").primaryKey(),
+    subjectType: text("subject_type").notNull(), // guest | user
+    subjectId: text("subject_id").notNull(),
+    userId: text("user_id").references(() => user.id, { onDelete: 'set null' }),
+    periodKey: text("period_key").notNull(),
+    action: text("action").notNull(),
+    status: text("status").notNull(), // reserved | succeeded | failed
+    creditsReserved: integer("credits_reserved").notNull().default(1),
+    creditsCharged: integer("credits_charged").notNull().default(0),
+    provider: text("provider"),
+    model: text("model"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    totalTokens: integer("total_tokens"),
+    costUsd: doublePrecision("cost_usd"),
+    errorMessage: text("error_message"),
+    expiresAt: timestamp("expires_at", { mode: 'date' }).notNull(),
+    createdAt: timestamp("created_at", { mode: 'date' }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { mode: 'date' }),
+}, (t) => [
+    index("ai_usage_subject_period_idx").on(t.subjectType, t.subjectId, t.periodKey),
+    index("ai_usage_created_idx").on(t.createdAt),
+    index("ai_usage_action_idx").on(t.action),
+    index("ai_usage_user_idx").on(t.userId),
+]);
+
 // ============================================================================
 // React Engage Suite Tables (Postgres)
 // ============================================================================
@@ -279,5 +308,4 @@ export const engageBroadcasts = pgTable("engage_broadcasts", {
     recipientCount: integer("recipient_count").notNull().default(0),
     sentAt: timestamp("sent_at", { mode: 'string' }).notNull().defaultNow(),
 });
-
 

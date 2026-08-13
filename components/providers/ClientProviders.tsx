@@ -12,7 +12,9 @@ import '@reactkits.dev/react-engage/styles.css';
 export function ClientProviders({ children }: { children: ReactNode }) {
     return (
         <IntegrationProvider authClient={authClient}>
-            <AIManagementProvider>
+            <AIManagementProvider
+                initialConfig={{ type: 'hosted-api', lastUpdated: new Date().toISOString() }}
+            >
                 {children}
                 <Toaster richColors position="top-right" />
                 <ServiceWorkerRegistrar />
@@ -26,4 +28,3 @@ export function ClientProviders({ children }: { children: ReactNode }) {
         </IntegrationProvider>
     );
 }
-

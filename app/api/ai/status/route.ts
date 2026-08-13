@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createVercelAIModel } from '@/packages/ai-connect/src/services/aiService';
 import { generateText } from 'ai';
+import type { LLMProvider } from '@/packages/ai-connect/src/types';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
+    const hasGoogleKey = !!(process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GOOGLE_AI_API_KEY);
     return NextResponse.json({
-        hasServerKey: !!process.env.OPENROUTER_API_KEY,
-        provider: 'openrouter',
-        model: 'google/gemini-2.0-flash:free',
+        hasServerKey: hasGoogleKey || !!process.env.OPENROUTER_API_KEY,
+        provider: hasGoogleKey ? 'google' : 'openrouter',
+        model: hasGoogleKey ? 'gemini-3.5-flash-lite' : 'google/gemini-3.5-flash-lite',
     });
 }
 
@@ -35,7 +37,7 @@ export async function POST(request: NextRequest) {
         console.log(`[AI Status] Starting validation for ${provider} / ${modelId}...`);
 
         const model = await createVercelAIModel({
-            provider: provider as any,
+            provider: provider as LLMProvider,
             model: modelId,
             apiKey,
         });
@@ -68,9 +70,9 @@ export async function POST(request: NextRequest) {
         } finally {
             clearTimeout(timeoutId);
         }
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('API key validation error:', error);
-        const message = error.message || 'Validation failed';
+        const message = error instanceof Error ? error.message : 'Validation failed';
         // Extract a user-friendly message
         if (message.includes('401') || message.includes('Unauthorized') || message.includes('invalid')) {
             return NextResponse.json({ error: 'Invalid API key' }, { status: 401 });
