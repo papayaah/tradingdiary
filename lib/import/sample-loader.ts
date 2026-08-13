@@ -19,16 +19,30 @@ export async function loadDemoSampleData(): Promise<{
     throw new Error('Sample TLG file contains no valid trade records.');
   }
 
-  // Dynamically adjust sample trade dates to match the user's current month & year
+  // Dynamically map sample trades across 3 consecutive months up to the current month
   const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
+
+  const getYearMonthForOffset = (offset: number) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    return `${y}${m}`;
+  };
+
+  const monthMap: Record<string, string> = {
+    '202606': getYearMonthForOffset(2), // 2 months ago
+    '202607': getYearMonthForOffset(1), // 1 month ago
+    '202608': getYearMonthForOffset(0), // current month
+  };
 
   const adjustedTransactions = parsed.transactions.map((t) => {
-    const day = t.date.length >= 8 ? t.date.slice(6, 8) : '01';
+    const origYm = t.date.slice(0, 6);
+    const day = t.date.length >= 8 ? t.date.slice(6, 8) : '05';
+    const targetYm = monthMap[origYm] || getYearMonthForOffset(0);
+
     return {
       ...t,
-      date: `${currentYear}${currentMonth}${day}`,
+      date: `${targetYm}${day}`,
     };
   });
 
