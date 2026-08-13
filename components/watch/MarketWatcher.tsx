@@ -28,10 +28,8 @@ import { getChartDB } from '@/lib/chart/cache';
 import AlertHistoryPanel from './AlertHistoryPanel';
 import LightweightPatternChart from '@/components/chart/LightweightPatternChart';
 import {
-  BatchScanControl,
   TickerInput,
   WatchlistViewToggle,
-  type BatchScanControlHandle,
   type TickerInputHandle,
   type WatchlistView,
 } from './WatchControls';
@@ -350,7 +348,6 @@ export default function MarketWatcher() {
   const watchlistRef = useRef(watchlist);
   watchlistRef.current = watchlist;
   const tickerInputRef = useRef<TickerInputHandle>(null);
-  const batchScanControlRef = useRef<BatchScanControlHandle>(null);
   const globalMinMoveSyncTimerRef = useRef<number | null>(null);
   const pendingServerStateUpdatesRef = useRef(
     new Map<string, WatchStateUpdatePayload>(),
@@ -415,7 +412,6 @@ export default function MarketWatcher() {
   // slow acquisition for the whole provider pool as demand grows.
   const [scanIntervalMinutes, setScanIntervalMinutes] = useState(0.25);
   const [isBackgroundScanning, setIsBackgroundScanning] = useState(false);
-  const [isBatchScanning, setIsBatchScanning] = useState(false);
   const [alertLogs, setAlertLogs] = useState<AlertLog[]>([]);
   const alertLogsRef = useRef<AlertLog[]>([]);
   alertLogsRef.current = alertLogs;
@@ -429,11 +425,6 @@ export default function MarketWatcher() {
   const [isPolygonActive, setIsPolygonActive] = useState(false);
   const [autoPauseEnabled, setAutoPauseEnabled] = useState(true); // pause scanner outside chosen session
   const [activeWindow, setActiveWindow] = useState<'rth' | 'pre' | 'ext' | 'all'>('pre'); // which session the scanner runs in
-  const [parallelScanEnabled, setParallelScanEnabled] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return true;
-    const saved = localStorage.getItem('watcher-parallel-scan');
-    return saved !== null ? saved === 'true' : true;
-  });
   const [requiredCandleCount, setRequiredCandleCount] = useState<number>(() => {
     if (typeof window === 'undefined') return 3;
     const saved = localStorage.getItem('watcher-consecutive-candles');
@@ -1880,7 +1871,6 @@ export default function MarketWatcher() {
     price: number,
     candles?: Candle[],
     dailyMove?: IntradayChange | null,
-    collector?: (alert: PendingAlert) => void,
     patterns?: PatternMatchedTag[],
   ) => {
     const alert: PendingAlert = {
@@ -1896,16 +1886,11 @@ export default function MarketWatcher() {
       // Store the exact 4-hour window rather than the full provider response.
       candles: candles ? candles.slice(-candleCountForHours(interval)) : undefined,
     };
-    if (collector) {
-      collector(alert);
-    } else {
-      publishAlerts([alert]);
-    }
+    publishAlerts([alert]);
   };
 
   const scanSymbol = async (
     item: WatchItem,
-    alertCollector?: (alert: PendingAlert) => void,
     forceFresh = false,
   ): Promise<WatchItem> => {
     try {
@@ -2021,7 +2006,6 @@ export default function MarketWatcher() {
             scanCandles[scanCandles.length - 1]?.close || 0,
             scanCandles,
             dailyMove,
-            alertCollector,
             patterns,
           );
 
@@ -2095,7 +2079,7 @@ export default function MarketWatcher() {
 
   const handleScanNext = async () => {
     const currentList = categoryItemsRef.current;
-    if (currentList.length === 0 || isBackgroundScanning || isBatchScanning) return;
+    if (currentList.length === 0 || isBackgroundScanning) return;
 
     const indexToScan = nextScanIndexRef.current % currentList.length;
     const item = currentList[indexToScan];
@@ -2162,10 +2146,8 @@ export default function MarketWatcher() {
     nextScanIndexRef.current = nextScanIndex;
   }, [nextScanIndex]);
 
-  // Scan all items in the current active category (manual override Scan Now button)
   // Pull the latest per-watch state from the server snapshot and apply it to the
-  // rows (status/price/candles) — no provider calls. Used as the authenticated
-  // "Scan Now All" behavior, since the server is the scanner.
+  // rows (status/price/candles) without making provider calls.
   const refreshFromServerSnapshot = React.useCallback(async () => {
     const baseUrl = process.env.NEXT_PUBLIC_SERVER_URL || '';
     const res = await fetch(`${baseUrl}/api/watch/state`);
@@ -2225,162 +2207,14 @@ export default function MarketWatcher() {
   // On load (signed in), pull the scanner's per-watch state onto the rows so they
   // show the server's data — provider, price, candles, and the settlement-based
   // change — immediately. Without this the rows sit on stale local data (their
-  // own Yahoo fetch + a client window change) until a manual "Scan Now All" or
-  // the next SSE scan event. Runs once, after the watchlist has loaded.
+  // own Yahoo fetch + a client window change) until the next SSE scan event.
+  // Runs once, after the watchlist has loaded.
   const didInitialServerRefreshRef = useRef(false);
   useEffect(() => {
     if (!isAuthenticated || watchlist.length === 0 || didInitialServerRefreshRef.current) return;
     didInitialServerRefreshRef.current = true;
     void refreshFromServerSnapshot();
   }, [isAuthenticated, watchlist.length, refreshFromServerSnapshot]);
-
-  const handleScanAll = async () => {
-    // "Scan All" spans the whole watchlist, not just the current tab — but skips
-    // any muted (switched-off) category regardless of which tab is showing.
-    const categoryOf = (symbol: string): ScanCategory =>
-      isFuturesSymbol(symbol) ? 'futures' : isCryptoSymbol(symbol) ? 'crypto' : 'stocks';
-    const targetList = watchlistRef.current.filter(
-      (w) => !disabledCategoriesRef.current.includes(categoryOf(w.symbol)),
-    );
-
-    // Signed in: the server scanner owns scanning. Force an immediate scan by
-    // marking the user's watches due now (POST /api/watch/scan-now); the running
-    // scanner picks them up within ~5s and rows update live over SSE. We poll the
-    // snapshot a few times so the progress bar reflects real elapsed work instead
-    // of completing instantly. (Requires the scanner to be running: always on in
-    // prod, `npm run scanner` locally.)
-    if (isAuthenticatedRef.current) {
-      if (isBatchScanning) return;
-      const total = targetList.length || 1;
-      let scanCompleted = false;
-      setIsBatchScanning(true);
-      batchScanControlRef.current?.start(total);
-      try {
-        const base = process.env.NEXT_PUBLIC_SERVER_URL || '';
-        // The browser may have a localStorage watchlist before this database has
-        // normalized server_watch rows (fresh local DB, new device, or restored
-        // browser state). Persist/normalize first so Scan Now never animates
-        // against a list the server does not actually know about.
-        const syncResponse = await syncScannerSettings(
-          watchlistRef.current,
-          selectedPatternId,
-          activeWindow,
-          scanIntervalMinutes,
-        );
-        const syncResult = await syncResponse.json().catch(() => null);
-        if (!syncResponse.ok || !syncResult?.success) {
-          throw new Error(syncResult?.error || 'Could not synchronize the watchlist');
-        }
-
-        const scanResponse = await fetch(`${base}/api/watch/scan-now`, { method: 'POST' });
-        const scanResult = await scanResponse.json().catch(() => null);
-        if (!scanResponse.ok) {
-          throw new Error(scanResult?.error || 'Could not request a server scan');
-        }
-        if (!scanResult?.enqueued) {
-          throw new Error('The server accepted zero enabled watches for scanning');
-        }
-
-        const ROUNDS = 6;
-        for (let i = 1; i <= ROUNDS; i++) {
-          await new Promise((resolve) => setTimeout(resolve, 1500));
-          await refreshFromServerSnapshot();
-          batchScanControlRef.current?.update(Math.round((i / ROUNDS) * total), total);
-        }
-        scanCompleted = true;
-      } catch (err) {
-        console.error('Scan-now error:', err);
-        batchScanControlRef.current?.fail(
-          err instanceof Error ? err.message : 'The server scan could not be started',
-        );
-      } finally {
-        if (scanCompleted) {
-          batchScanControlRef.current?.update(total, total);
-          batchScanControlRef.current?.complete(total);
-        }
-        setIsBatchScanning(false);
-      }
-      return;
-    }
-
-    if (isBatchScanning || targetList.length === 0) return;
-    setIsBatchScanning(true);
-    batchScanControlRef.current?.start(targetList.length);
-
-    const currentFullList = [...watchlist];
-    const canUseParallel = parallelScanEnabled && !isPolygonActive;
-    const pendingAlerts: PendingAlert[] = [];
-    const collectAlert = (alert: PendingAlert) => pendingAlerts.push(alert);
-    let lastAlertFlushAt = performance.now();
-    const flushPendingAlerts = (force = false) => {
-      if (pendingAlerts.length === 0) return;
-      const now = performance.now();
-      if (!force && now - lastAlertFlushAt < 250) return;
-      publishAlerts(pendingAlerts.splice(0, pendingAlerts.length));
-      lastAlertFlushAt = now;
-    };
-
-    try {
-      if (canUseParallel) {
-        // Parallel batch scanning: 5 concurrent API requests per batch
-        const BATCH_SIZE = 5;
-        let processedCount = 0;
-        for (let i = 0; i < targetList.length; i += BATCH_SIZE) {
-          const batch = targetList.slice(i, i + BATCH_SIZE);
-          const results = await Promise.all(batch.map((item) => scanSymbol(item, collectAlert)));
-          results.forEach((scanned, batchIdx) => {
-            const item = batch[batchIdx];
-            const idx = currentFullList.findIndex((w) => w.symbol === item.symbol && w.interval === item.interval);
-            if (idx !== -1) {
-              currentFullList[idx] = scanned;
-            }
-          });
-
-          processedCount += batch.length;
-          const currentProgress = Math.min(targetList.length, processedCount);
-          batchScanControlRef.current?.update(currentProgress, targetList.length);
-          flushPendingAlerts();
-        }
-      } else {
-        // Sequential scanning fallback (for rate-limited keys)
-        for (let i = 0; i < targetList.length; i++) {
-          const item = targetList[i];
-          const scanned = await scanSymbol(item, collectAlert);
-          const idx = currentFullList.findIndex((w) => w.symbol === item.symbol && w.interval === item.interval);
-          if (idx !== -1) {
-            currentFullList[idx] = scanned;
-          }
-
-          batchScanControlRef.current?.update(i + 1, targetList.length);
-          flushPendingAlerts();
-
-          if (i < targetList.length - 1) {
-            if (isPolygonActive) {
-              await new Promise((resolve) => setTimeout(resolve, 12000));
-            } else {
-              await new Promise((resolve) => setTimeout(resolve, 500));
-            }
-          }
-        }
-      }
-
-      saveWatchlist(currentFullList);
-      flushPendingAlerts(true);
-    } catch (err) {
-      console.error('Batch scan error:', err);
-      flushPendingAlerts(true);
-    } finally {
-      setIsBatchScanning(false);
-      batchScanControlRef.current?.complete(targetList.length);
-    }
-  };
-
-  const handleScanAllRef = useRef(handleScanAll);
-  handleScanAllRef.current = handleScanAll;
-  const stableHandleScanAll = React.useCallback(
-    () => handleScanAllRef.current(),
-    [],
-  );
 
   // 7. Polling Timer scheduler spacing reset
   useEffect(() => {
@@ -2590,15 +2424,18 @@ export default function MarketWatcher() {
       localStorage.setItem('watcher-watchlist-category', targetCat);
     }
 
-    // Immediately scan the newly added symbol
-    scanSymbol(newItem).then((scanned) => {
-      const currentList = [...updated];
-      const idx = currentList.findIndex(w => w.symbol === symbol && w.interval === newInterval);
-      if (idx !== -1) {
-        currentList[idx] = scanned;
-        saveWatchlist(currentList);
-      }
-    });
+    // Guests have no server watch, so scan once immediately. Signed-in watches
+    // are picked up by the shared server scanner and arrive through snapshot/SSE.
+    if (!isAuthenticatedRef.current) {
+      scanSymbol(newItem).then((scanned) => {
+        const currentList = [...updated];
+        const idx = currentList.findIndex(w => w.symbol === symbol && w.interval === newInterval);
+        if (idx !== -1) {
+          currentList[idx] = scanned;
+          saveWatchlist(currentList);
+        }
+      });
+    }
     return true;
   };
   const addSymbolRef = useRef(handleAddSymbol);
@@ -2787,7 +2624,7 @@ export default function MarketWatcher() {
       (w) => w.symbol === symbol && w.interval === interval,
     );
     if (!item) return;
-    const scanned = await scanSymbol(item, undefined, true);
+    const scanned = await scanSymbol(item, true);
     const latestList = [...watchlistRef.current];
     const idx = latestList.findIndex((w) => w.symbol === symbol && w.interval === interval);
     if (idx !== -1) {
@@ -3237,14 +3074,6 @@ export default function MarketWatcher() {
                   <p className="text-xs text-muted mt-0.5">Define assets and intervals to monitor automatically</p>
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <BatchScanControl
-                    ref={batchScanControlRef}
-                    disabled={categoryItems.length === 0}
-                    isParallel={parallelScanEnabled && !isPolygonActive}
-                    onScan={stableHandleScanAll}
-                  />
-                </div>
               </div>
 
               {/* TOOLBAR: Timeframe/Settings row, then the category tabs as a

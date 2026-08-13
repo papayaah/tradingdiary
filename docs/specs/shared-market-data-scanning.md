@@ -10,12 +10,12 @@ provider-owned and independent of user watch timing:
   governor's `N` counts symbols, not `(symbol, interval)`.
 - **Derived-vs-native parity harness** (`aggregation-parity.ts` + `dev-parity.ts`):
   the gate for trusting derived candles before enabling `SCANNER_AGGREGATION`.
-- **Evaluation-only Scan Now**: manual scans re-run the detector against cached
+- **Evaluation-only processing**: watch and admin evaluations run against cached
   data only (`getCachedCandlesForWatch`) and never trigger a provider request.
 - **Provider acquisition scheduler** (`acquisition-scheduler.ts`): refreshes the
   stalest unique series, with a distributed per-scope dispatch lease for fair
   staggering across scanner instances.
-- **Evaluation-only watch worker**: scheduled scans and manual Scan Now jobs read
+- **Evaluation-only watch worker**: scheduled scans and admin evaluation jobs read
   the stable latest snapshot or persisted watch state and never fetch upstream.
 - **Physical-request quota gate** (`provider-request-gate.ts` +
   `request-quota.ts`): atomically reserves hourly and daily permits before every
@@ -42,7 +42,7 @@ separate six-hour server cadence.
 | Phase 6 — adaptive cadence governor | ✅ built | inventory and market window are server-owned; measured feedback reads physical Redis counters |
 | Phase 7 — provider-owned base-series acquisition | ✅ built | unique-series scheduler, oldest-due fairness, distributed staggering, stable latest snapshots, evaluation-only workers |
 | Physical-request quota enforcement | ✅ default ON | atomic Redis hourly + daily permit at physical provider boundary; credential-fingerprinted user scopes; durable physical-attempt audit |
-| Evaluation-only Scan Now | ✅ built | manual and admin scans enqueue cache-only evaluation jobs without changing acquisition due state |
+| Manual Scan Now | 🗑️ retired | automatic server evaluation, snapshot/SSE updates, and Web Push made the user-facing control redundant |
 | Prerequisite 1 — server-authoritative provider config | ❌ not done | scanner still uses server env keys; per-user credentials never reach it |
 | Prerequisite 2 — authenticated browser is a pure viewer | ✅ done (signed-in) | `MarketWatcher.tsx` skips per-symbol fetching when authenticated (`if (isAuthenticatedRef.current) return`) and renders from `/api/watch/state` + `/api/watch/events` SSE. Only signed-OUT sessions still fetch client-side (no server watches to share). |
 | Provider-scoped distributed rate limiter | ✅ built | provider cadence optimizer plus atomic hard quota; BullMQ limiter remains defense-in-depth |
@@ -51,7 +51,7 @@ separate six-hour server cadence.
 For **signed-in** users the browser is a viewer (snapshot + SSE, no automatic
 per-symbol fetching). Aggregatable providers acquire one base series per unique
 canonical symbol regardless of user count, candle interval, evaluation cadence,
-or Scan Now taps. Signed-out and detailed chart/tester requests remain separate
+or user activity. Signed-out and detailed chart/tester requests remain separate
 data consumers, but they share the same credential-scoped physical quota gate.
 
 ## Related specification
@@ -752,8 +752,8 @@ If exact sharing and aggregation later require durable provider capability or ca
 - **Done:** Make the watch worker evaluation-only. It reads the latest base series, applies
   the user's session filter, derives the requested interval, evaluates the
   pattern, and persists isolated user state.
-- **Done:** Make `Scan Now All` enqueue evaluations without marking provider acquisition
-  due. Repeated taps must produce zero additional upstream calls.
+- **Done:** Retire the user-facing `Scan Now All` control and endpoint; automatic
+  evaluation continues without changing provider acquisition due state.
 - **Done:** Add a Redis-backed quota gate for physical hourly and daily requests, keyed by
   provider credential scope and shared by scanner, web, charts, tester,
   anonymous requests, retries, and provider fallback attempts.
@@ -798,7 +798,7 @@ If exact sharing and aggregation later require durable provider capability or ca
 - Changing a user evaluation frequency creates no provider acquisition request
   and does not change provider cadence.
 - PostgreSQL `nextScanAt` remains authoritative for evaluation only.
-- `Scan Now All` makes evaluations due and causes zero provider requests by itself.
+- User page activity does not make evaluations or provider acquisition due.
 
 ### Adaptive cadence
 
@@ -851,7 +851,7 @@ If exact sharing and aggregation later require durable provider capability or ca
 - worker crash while holding a lock;
 - Redis flush and repopulation;
 - per-user alert and event isolation.
-- repeated `Scan Now All` evaluations with zero acquisition calls;
+- automatic and admin evaluations with zero acquisition calls;
 - scanner, chart, tester, and anonymous paths sharing one credential quota;
 - multiple worker/web processes contending for the last hourly/daily permits;
 - Redis loss failing closed without an uncontrolled provider request.
