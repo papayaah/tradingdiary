@@ -138,6 +138,13 @@ describe('entryForWatch symbol-only collapse', () => {
     expect(entries.every((e) => e.interval === '1m')).toBe(true);
   });
 
+  it('includes repeated full-window responses in monthly bandwidth demand', () => {
+    const result = entryForWatch(watch({ interval: '1m' }), true);
+    const barsPerResponse = (16 * 3600) / 60;
+
+    expect(result.monthlyBarSeconds).toBe(barsPerResponse * 16 * 3600 * 22);
+  });
+
   it('keeps one acquisition per interval when aggregation is off (unchanged behavior)', () => {
     const entries = [
       entryForWatch(watch({ interval: '1m' }), false),

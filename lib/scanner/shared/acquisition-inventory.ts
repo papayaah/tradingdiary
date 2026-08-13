@@ -114,7 +114,10 @@ export function entryForWatch(
     interval,
     scanFrequencySeconds: watch.scanFrequencySeconds,
     windowSeconds,
-    monthlyBarSeconds: estimatedBars * activeDaysPerMonth,
+    // The bandwidth governor divides this demand by its candidate cadence.
+    // Include every active second in the month so the result models repeated
+    // full-window responses, not a single response per trading day.
+    monthlyBarSeconds: estimatedBars * windowSeconds * activeDaysPerMonth,
     sourceSymbol: watch.symbol,
     assetClass,
   };
