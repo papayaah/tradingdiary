@@ -128,6 +128,9 @@ function TradeRow({
     [trade.date, trade.symbol, accountId]
   );
 
+  const tradeCurrency = trade.currency || currency;
+  const isDifferentCurrency = Boolean(trade.currency && trade.currency.toUpperCase() !== currency.toUpperCase());
+
   return (
     <>
       <tr
@@ -144,7 +147,14 @@ function TradeRow({
           {trade.firstTradeTime.substring(0, 8)}
         </td>
         <td className="px-2.5 sm:px-4 py-3 font-normal text-foreground text-xs sm:text-sm tracking-tight capitalize whitespace-nowrap">
-          {trade.symbol}
+          <div className="flex items-center gap-1.5">
+            <span>{trade.symbol}</span>
+            {isDifferentCurrency && (
+              <span className="px-1 py-0.5 text-[9px] font-normal uppercase tracking-wider bg-accent/10 text-accent border border-accent/20 rounded">
+                {tradeCurrency}
+              </span>
+            )}
+          </div>
         </td>
         <td className="px-2.5 sm:px-4 py-3 whitespace-nowrap">
           <span
@@ -164,7 +174,7 @@ function TradeRow({
         </td>
         <td className="px-2.5 sm:px-4 py-3 text-right shrink-0 whitespace-nowrap">
           <span className={`text-xs sm:text-sm font-normal tabular-nums ${pnlColorClass(trade.netPnL)}`}>
-            {formatCurrency(trade.netPnL, currency)}
+            {formatCurrency(trade.netPnL, tradeCurrency)}
           </span>
           {trade.isOpen && (
             <div className="flex flex-col items-end gap-0.5 mt-0.5">
@@ -173,7 +183,7 @@ function TradeRow({
               </span>
               {trade.unrealizedPnL != null && (
                 <span className={`text-[10px] font-normal px-1 rounded bg-muted-bg/50 ${pnlColorClass(trade.unrealizedPnL)}`}>
-                  unrl: {formatCurrency(trade.unrealizedPnL, currency)}
+                  unrl: {formatCurrency(trade.unrealizedPnL, tradeCurrency)}
                 </span>
               )}
             </div>

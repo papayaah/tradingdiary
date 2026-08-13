@@ -5,6 +5,7 @@ export interface AggregatedTrade {
   companyName: string;
   date: string;
   firstTradeTime: string;
+  currency?: string;
   volume: number;
   executions: number;
   grossPnL: number;
@@ -244,6 +245,7 @@ export function aggregateByDay(
       companyName: acc.companyName,
       date: acc.date,
       firstTradeTime: acc.transactions[0].time,
+      currency: acc.transactions[0]?.currency || 'USD',
       volume,
       executions: acc.transactions.length,
       grossPnL,

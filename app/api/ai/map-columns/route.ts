@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
         // Use the user's configured provider and model
         const model = await createVercelAIModel({
             provider: provider as LLMProvider,
-            model: modelId || 'gemini-2.5-flash',
+            model: modelId || 'gemini-3.5-flash-lite',
             apiKey,
         });
 
@@ -80,7 +80,6 @@ Return a strictly valid JSON object with this structure:
 
 Example sideValues: { "买入": "BUY", "卖出": "SELL", "Long": "BUY", "Short": "SELL" }
 Only map fields where you are confident. Return raw JSON without markdown formatting.`,
-            temperature: 0,
             maxTokens: 800,
         });
 

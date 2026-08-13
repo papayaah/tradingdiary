@@ -260,7 +260,7 @@ export function hostedAIConfig(request: NextRequest): {
     };
   }
 
-  const googleKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GOOGLE_AI_API_KEY;
+  const googleKey = process.env.GOOGLE_GEMINI_API_KEY;
   if (googleKey) {
     return { apiKey: googleKey, provider: 'google', model: HOSTED_AI_MODEL, hosted: true };
   }

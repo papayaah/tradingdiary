@@ -46,11 +46,11 @@ export async function POST(request: NextRequest) {
         }
 
         // Use the user's configured provider and model
-        console.log(`[AI-Extract] Starting extraction using provider: ${provider}, model: ${modelId || 'gemini-2.0-flash'}`);
+        console.log(`[AI-Extract] Starting extraction using provider: ${provider}, model: ${modelId || 'gemini-3.5-flash-lite'}`);
 
         const model = await createVercelAIModel({
             provider: provider as LLMProvider,
-            model: modelId || 'gemini-2.0-flash',
+            model: modelId || 'gemini-3.5-flash-lite',
             apiKey,
         });
 
@@ -81,7 +81,6 @@ Rules:
 ` }
                 ],
             }],
-            temperature: 0,
             maxTokens: 4000,
         });
 

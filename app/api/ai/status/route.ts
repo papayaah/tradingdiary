@@ -6,7 +6,7 @@ import type { LLMProvider } from '@/packages/ai-connect/src/types';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-    const hasGoogleKey = !!(process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GOOGLE_AI_API_KEY);
+    const hasGoogleKey = !!process.env.GOOGLE_GEMINI_API_KEY;
     return NextResponse.json({
         hasServerKey: hasGoogleKey || !!process.env.OPENROUTER_API_KEY,
         provider: hasGoogleKey ? 'google' : 'openrouter',
@@ -26,13 +26,13 @@ export async function POST(request: NextRequest) {
 
         // Default test models if none requested
         const defaultTestModels: Record<string, string> = {
-            openrouter: 'google/gemini-2.0-flash:free',
-            google: 'gemini-1.5-flash',
+            openrouter: 'google/gemini-3.5-flash-lite',
+            google: 'gemini-3.5-flash-lite',
             openai: 'gpt-4o-mini',
             anthropic: 'claude-3-haiku-20240307',
         };
 
-        const modelId = requestedModel || defaultTestModels[provider] || 'gemini-1.5-flash';
+        const modelId = requestedModel || defaultTestModels[provider] || 'gemini-3.5-flash-lite';
 
         console.log(`[AI Status] Starting validation for ${provider} / ${modelId}...`);
 

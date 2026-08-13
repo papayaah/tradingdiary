@@ -20,14 +20,14 @@ interface StatCardProps {
 function StatCard({ label, value, locked, colorClass }: StatCardProps) {
   return (
     <div className="flex flex-col gap-1 px-4 py-2 bg-muted-bg/30 rounded-xl border border-card-border/30 hover:bg-muted-bg/50 transition-colors">
-      <span className="text-[10px] font-medium text-muted uppercase tracking-widest">{label}</span>
+      <span className="text-[10px] font-normal text-muted uppercase tracking-wider">{label}</span>
       {locked ? (
         <div className="flex items-center gap-1.5 h-6">
           <Lock size={12} className="text-muted/50" />
           <span className="text-xs font-normal text-muted/50 font-mono italic">Locked</span>
         </div>
       ) : (
-        <span className={`text-sm font-semibold ${colorClass || 'text-foreground'} tabular-nums`}>
+        <span className={`text-sm font-normal ${colorClass || 'text-foreground'} tabular-nums`}>
           {value}
         </span>
       )}

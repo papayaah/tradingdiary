@@ -68,7 +68,7 @@ export default function TradeImportWorkspace() {
     isProcessing,
     detectedCurrency, setDetectedCurrency,
     detectedBrokerName, setDetectedBrokerName,
-    error, setError,
+    setError,
     startProcessing,
     clearImportState
   } = useImport();
@@ -247,7 +247,7 @@ export default function TradeImportWorkspace() {
         if (result.usage && aiContext?.recordUsage) {
           aiContext.recordUsage(
             (activeProvider as LLMProvider) || 'google',
-            activeModel || 'gemini-1.5-flash',
+            activeModel || 'gemini-3.5-flash-lite',
             {
               inputTokens: result.usage.promptTokens ?? 0,
               outputTokens: result.usage.completionTokens ?? 0,
@@ -290,7 +290,7 @@ export default function TradeImportWorkspace() {
           detectedMapping = response.mapping as ColumnMapping;
           detectedSideMap = response.sideValues || {};
           if (response.usage && aiContext?.recordUsage) {
-            aiContext.recordUsage(activeProvider || 'google', activeModel || 'gemini-1.5-flash', {
+            aiContext.recordUsage(activeProvider || 'google', activeModel || 'gemini-3.5-flash-lite', {
               inputTokens: response.usage.promptTokens,
               outputTokens: response.usage.completionTokens,
               totalTokens: response.usage.totalTokens
@@ -367,7 +367,7 @@ export default function TradeImportWorkspace() {
         detectedMapping = response.mapping as ColumnMapping;
         detectedSideMap = response.sideValues || {};
         if (response.usage && aiContext?.recordUsage) {
-          aiContext.recordUsage(ai.provider || 'google', ai.model || 'gemini-1.5-flash', {
+          aiContext.recordUsage(ai.provider || 'google', ai.model || 'gemini-3.5-flash-lite', {
             inputTokens: response.usage.promptTokens,
             outputTokens: response.usage.completionTokens,
             totalTokens: response.usage.totalTokens,
@@ -634,8 +634,8 @@ export default function TradeImportWorkspace() {
                     await refreshAccounts(res.accountId);
                     toast.success(`Loaded ${res.transactionCount} sample IBKR trades!`);
                     router.push('/journal');
-                  } catch (err: any) {
-                    toast.error(err.message || 'Failed to load sample data');
+                  } catch (err: unknown) {
+                    toast.error(err instanceof Error ? err.message : 'Failed to load sample data');
                   }
                 });
               }}

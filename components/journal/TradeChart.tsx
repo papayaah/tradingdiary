@@ -100,7 +100,7 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
   }, [symbol, date, interval]);
 
   return (
-    <div className="p-4">
+    <div className="p-2 sm:p-4">
       <SharedTradingChart
         symbol={symbol}
         date={date}
@@ -114,7 +114,7 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
         autoPatternsEnabled={autoPatternsEnabled}
         onTogglePatterns={() => setAutoPatternsEnabled(!autoPatternsEnabled)}
         onReplayTrade={() => openReplay({ date, symbol })}
-        title={`${symbol} Intraday Trade Chart`}
+        title={symbol}
         subtitle={formatChartDate(date)}
         loading={loading}
         error={error}

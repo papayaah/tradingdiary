@@ -80,7 +80,7 @@ export default function DayHeader({
       </div>
       <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end">
         <span className="text-[10px] font-medium text-muted uppercase tracking-widest bg-muted-bg/50 px-2 py-1 rounded-lg">Day P&L</span>
-        <span className={`text-base font-semibold whitespace-nowrap ${pnlColorClass(totalPnL)}`}>
+        <span className={`text-base font-normal tabular-nums whitespace-nowrap ${pnlColorClass(totalPnL)}`}>
           {isProfit ? '+' : ''}{formatCurrency(totalPnL, currency)}
         </span>
       </div>
