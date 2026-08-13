@@ -16,8 +16,8 @@ interface TradeDetailsPanelProps {
 function Row({ label, value, valueClass }: { label: string; value: React.ReactNode; valueClass?: string }) {
   return (
     <div className="flex items-baseline justify-between gap-3 py-1.5">
-      <span className="text-[10px] font-bold text-muted uppercase tracking-wider shrink-0">{label}</span>
-      <span className={`text-xs font-bold text-foreground tabular-nums text-right ${valueClass ?? ''}`}>{value}</span>
+      <span className="text-[10px] font-normal text-muted uppercase tracking-wider shrink-0">{label}</span>
+      <span className={`text-xs font-normal text-foreground tabular-nums text-right ${valueClass ?? ''}`}>{value}</span>
     </div>
   );
 }
@@ -36,27 +36,27 @@ export default function TradeDetailsPanel({ trade, currency = 'USD', className =
       <div className="flex items-start justify-between gap-3 mb-3 pb-3 border-b border-card-border/50">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-sm font-black text-foreground tracking-tight">{trade.symbol}</span>
+            <span className="text-sm font-normal text-foreground tracking-tight">{trade.symbol}</span>
             <span
-              className={`px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-md border ${
+              className={`px-1.5 py-0.5 text-[9px] font-normal uppercase tracking-wider rounded-md border ${
                 isLong ? 'bg-profit/10 text-profit border-profit/20' : 'bg-loss/10 text-loss border-loss/20'
               }`}
             >
               {d.side}
             </span>
             {d.isOpen && (
-              <span className="px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-md bg-accent/10 text-accent border border-accent/20">
+              <span className="px-1.5 py-0.5 text-[9px] font-normal uppercase tracking-wider rounded-md bg-accent/10 text-accent border border-accent/20">
                 Open
               </span>
             )}
           </div>
-          <span className="text-[10px] font-medium text-muted">{d.dateLabel}</span>
+          <span className="text-[10px] font-normal text-muted">{d.dateLabel}</span>
         </div>
         <div className="text-right">
-          <p className={`text-lg font-black tabular-nums ${pnlColorClass(d.netPnL)}`}>
+          <p className={`text-lg font-normal tabular-nums ${pnlColorClass(d.netPnL)}`}>
             {formatCurrency(d.netPnL, currency)}
           </p>
-          <span className="text-[9px] font-bold text-muted uppercase tracking-widest">Net P&amp;L</span>
+          <span className="text-[9px] font-normal text-muted uppercase tracking-wider">Net P&amp;L</span>
         </div>
       </div>
 

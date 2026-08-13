@@ -41,15 +41,15 @@ export default function TradeTable({ trades, accountId, currency = 'USD', focusS
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="bg-muted-bg/50 text-muted border-b border-card-border/50">
-              <th className="w-10 px-3 py-4" />
-              <th className="text-left px-5 py-4 text-[10px] font-medium uppercase tracking-widest">Time</th>
-              <th className="text-left px-5 py-4 text-[10px] font-medium uppercase tracking-widest">Symbol</th>
-              <th className="text-left px-5 py-4 text-[10px] font-medium uppercase tracking-widest">Side</th>
-              <th className="text-right px-5 py-4 text-[10px] font-medium uppercase tracking-widest">Volume</th>
-              <th className="text-right px-5 py-4 text-[10px] font-medium uppercase tracking-widest">Execs</th>
-              <th className="text-right px-5 py-4 text-[10px] font-medium uppercase tracking-widest">P&L</th>
-              <th className="text-left px-5 py-4 text-[10px] font-medium uppercase tracking-widest">Notes</th>
-              <th className="text-left px-5 py-4 text-[10px] font-medium uppercase tracking-widest">Tags</th>
+              <th className="w-8 px-2 py-3" />
+              <th className="text-left px-2.5 sm:px-4 py-3 text-[10px] font-normal uppercase tracking-wider">Time</th>
+              <th className="text-left px-2.5 sm:px-4 py-3 text-[10px] font-normal uppercase tracking-wider">Symbol</th>
+              <th className="text-left px-2.5 sm:px-4 py-3 text-[10px] font-normal uppercase tracking-wider">Side</th>
+              <th className="text-right px-2.5 sm:px-4 py-3 text-[10px] font-normal uppercase tracking-wider">Volume</th>
+              <th className="hidden md:table-cell text-right px-2.5 sm:px-4 py-3 text-[10px] font-normal uppercase tracking-wider">Execs</th>
+              <th className="text-right px-2.5 sm:px-4 py-3 text-[10px] font-normal uppercase tracking-wider">P&amp;L</th>
+              <th className="hidden lg:table-cell text-left px-2.5 sm:px-4 py-3 text-[10px] font-normal uppercase tracking-wider">Notes</th>
+              <th className="hidden xl:table-cell text-left px-2.5 sm:px-4 py-3 text-[10px] font-normal uppercase tracking-wider">Tags</th>
             </tr>
           </thead>
           <tbody>
@@ -135,20 +135,20 @@ function TradeRow({
         className={`group border-b hover:bg-muted-bg/40 transition-all cursor-pointer ${isFocused ? 'border-accent bg-accent/10 ring-1 ring-inset ring-accent/30' : 'border-card-border/30'} ${isExpanded ? 'bg-muted-bg/30' : ''}`}
         onClick={() => onToggle(rowKey)}
       >
-        <td className="px-3 py-4 text-center">
+        <td className="px-2 py-3 text-center w-8">
           <div className={`p-1 rounded-lg transition-colors ${isExpanded ? 'text-accent bg-accent/10' : 'text-muted group-hover:text-foreground'}`}>
             {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </div>
         </td>
-        <td className="px-5 py-4 text-muted font-mono text-[11px] font-medium tracking-tight">
+        <td className="px-2.5 sm:px-4 py-3 text-muted font-mono text-[11px] font-normal tracking-tight whitespace-nowrap">
           {trade.firstTradeTime.substring(0, 8)}
         </td>
-        <td className="px-5 py-4 font-semibold text-foreground text-sm tracking-tight capitalize">
+        <td className="px-2.5 sm:px-4 py-3 font-normal text-foreground text-xs sm:text-sm tracking-tight capitalize whitespace-nowrap">
           {trade.symbol}
         </td>
-        <td className="px-5 py-4">
+        <td className="px-2.5 sm:px-4 py-3 whitespace-nowrap">
           <span
-            className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-semibold uppercase tracking-widest ${trade.side === 'LONG'
+            className={`inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-lg text-[9px] sm:text-[10px] font-normal uppercase tracking-wider ${trade.side === 'LONG'
               ? 'bg-profit/10 text-profit border border-profit/20'
               : 'bg-loss/10 text-loss border border-loss/20'
               }`}
@@ -156,31 +156,31 @@ function TradeRow({
             {trade.side}
           </span>
         </td>
-        <td className="px-5 py-4 text-right font-medium text-foreground tabular-nums">
+        <td className="px-2.5 sm:px-4 py-3 text-right font-normal text-foreground tabular-nums whitespace-nowrap text-xs sm:text-sm">
           {formatVolume(trade.volume)}
         </td>
-        <td className="px-5 py-4 text-right text-muted tabular-nums">
+        <td className="hidden md:table-cell px-2.5 sm:px-4 py-3 text-right text-muted tabular-nums text-xs whitespace-nowrap">
           {trade.executions}
         </td>
-        <td className="px-5 py-4 text-right shrink-0">
-          <span className={`text-sm font-semibold tabular-nums ${pnlColorClass(trade.netPnL)}`}>
+        <td className="px-2.5 sm:px-4 py-3 text-right shrink-0 whitespace-nowrap">
+          <span className={`text-xs sm:text-sm font-normal tabular-nums ${pnlColorClass(trade.netPnL)}`}>
             {formatCurrency(trade.netPnL, currency)}
           </span>
           {trade.isOpen && (
-            <div className="flex flex-col items-end gap-0.5 mt-1">
-              <span className="text-[9px] font-medium text-muted/60 uppercase tracking-tighter">
+            <div className="flex flex-col items-end gap-0.5 mt-0.5">
+              <span className="text-[9px] font-normal text-muted/60 uppercase tracking-tighter">
                 {formatVolume(Math.abs(trade.netQuantity))} held
               </span>
               {trade.unrealizedPnL != null && (
-                <span className={`text-[10px] font-medium px-1 rounded bg-muted-bg/50 ${pnlColorClass(trade.unrealizedPnL)}`}>
+                <span className={`text-[10px] font-normal px-1 rounded bg-muted-bg/50 ${pnlColorClass(trade.unrealizedPnL)}`}>
                   unrl: {formatCurrency(trade.unrealizedPnL, currency)}
                 </span>
               )}
             </div>
           )}
         </td>
-        <td className="px-5 py-4 text-muted/40 font-medium italic text-xs">No notes</td>
-        <td className="px-5 py-4 text-muted/40 font-medium italic text-xs">-</td>
+        <td className="hidden lg:table-cell px-2.5 sm:px-4 py-3 text-muted/40 font-normal italic text-xs truncate max-w-[120px]">No notes</td>
+        <td className="hidden xl:table-cell px-2.5 sm:px-4 py-3 text-muted/40 font-normal italic text-xs">-</td>
       </tr>
       {isExpanded && (
         <>
