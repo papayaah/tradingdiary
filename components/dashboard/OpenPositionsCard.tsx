@@ -129,14 +129,14 @@ export default function OpenPositionsCard({ onTradeAdded }: OpenPositionsCardPro
               <PieChartIcon size={20} />
             </div>
             <div>
-              <h3 className="font-bold text-foreground text-base">Open Positions</h3>
-              <p className="text-xs text-muted">You currently have 0 active open holdings.</p>
+              <h3 className="font-normal text-foreground text-base">Open Positions</h3>
+              <p className="text-xs text-muted font-normal">You currently have 0 active open holdings.</p>
             </div>
           </div>
           <button
             type="button"
             onClick={() => setShowManualEntry((prev) => !prev)}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2 text-xs font-bold text-white transition hover:bg-accent/90 self-start sm:self-auto"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2 text-xs font-normal text-white transition hover:bg-accent/90 self-start sm:self-auto"
           >
             <Plus size={15} />
             {showManualEntry ? 'Close Form' : 'Add Position'}

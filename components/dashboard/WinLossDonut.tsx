@@ -17,7 +17,7 @@ export default function WinLossDonut({ wins, losses, title }: WinLossDonutProps)
 
   return (
     <div className="h-full rounded-2xl border border-card-border bg-card-bg/50 backdrop-blur-sm p-4 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col">
-      <h3 className="text-[10px] font-bold text-muted uppercase tracking-widest mb-3 border-b border-card-border/50 pb-2">{title}</h3>
+      <h3 className="text-xs font-normal text-muted uppercase tracking-wider mb-3 border-b border-card-border/50 pb-2">{title}</h3>
       <div className="flex-1 flex items-center justify-center">
         {total > 0 ? (
           <div className="relative w-[140px] h-[140px]">
@@ -43,8 +43,8 @@ export default function WinLossDonut({ wins, losses, title }: WinLossDonutProps)
               </PieChart>
             </ResponsiveContainer>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-xl font-black text-foreground">{total}</span>
-              <span className="text-[9px] uppercase font-bold text-muted tracking-widest">Trades</span>
+              <span className="text-2xl font-normal text-foreground tabular-nums">{total}</span>
+              <span className="text-[9px] uppercase font-normal text-muted tracking-wider">Trades</span>
             </div>
           </div>
         ) : (
@@ -52,24 +52,24 @@ export default function WinLossDonut({ wins, losses, title }: WinLossDonutProps)
             <div className="w-12 h-12 rounded-full bg-muted-bg/30 flex items-center justify-center border border-dashed border-card-border">
               <span className="text-muted text-xs">?</span>
             </div>
-            <span className="text-xs font-bold text-muted uppercase tracking-tighter">No data</span>
+            <span className="text-xs font-normal text-muted uppercase tracking-tighter">No data</span>
           </div>
         )}
       </div>
       {total > 0 && (
         <div className="flex justify-center gap-4 mt-3 pt-3 border-t border-card-border/30">
           <div className="flex flex-col items-center">
-            <span className="text-[9px] font-bold text-muted uppercase tracking-widest mb-1">Wins</span>
+            <span className="text-[9px] font-normal text-muted uppercase tracking-wider mb-1">Wins</span>
             <div className="flex items-center gap-2">
               <div className="w-2.5 h-2.5 rounded-full bg-profit shadow-[0_0_8px_rgba(22,163,74,0.4)]" />
-              <span className="text-sm font-black text-foreground">{wins}</span>
+              <span className="text-sm font-normal text-foreground tabular-nums">{wins}</span>
             </div>
           </div>
           <div className="flex flex-col items-center">
-            <span className="text-[9px] font-bold text-muted uppercase tracking-widest mb-1">Losses</span>
+            <span className="text-[9px] font-normal text-muted uppercase tracking-wider mb-1">Losses</span>
             <div className="flex items-center gap-2">
               <div className="w-2.5 h-2.5 rounded-full bg-loss shadow-[0_0_8px_rgba(220,38,38,0.4)]" />
-              <span className="text-sm font-black text-foreground">{losses}</span>
+              <span className="text-sm font-normal text-foreground tabular-nums">{losses}</span>
             </div>
           </div>
         </div>

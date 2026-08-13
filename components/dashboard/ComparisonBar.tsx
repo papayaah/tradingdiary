@@ -23,12 +23,12 @@ export default function ComparisonBar({
 
   return (
     <div className="h-full rounded-2xl border border-card-border bg-card-bg/50 backdrop-blur-sm p-4 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col">
-      <h3 className="text-[10px] font-bold text-muted uppercase tracking-widest mb-3 border-b border-card-border/50 pb-2">{title}</h3>
+      <h3 className="text-xs font-normal text-muted uppercase tracking-wider mb-3 border-b border-card-border/50 pb-2">{title}</h3>
       <div className="flex-1 flex flex-col justify-center gap-4">
         <div>
           <div className="flex items-baseline justify-between gap-2 mb-1.5">
-            <span className="text-[10px] font-bold text-muted uppercase tracking-wider">{winLabel}</span>
-            <span className="text-sm font-black text-profit">{formatValue(winValue)}</span>
+            <span className="text-[10px] font-normal text-muted uppercase tracking-wider">{winLabel}</span>
+            <span className="text-sm font-normal tabular-nums text-profit">{formatValue(winValue)}</span>
           </div>
           <div className="h-2 rounded-full bg-muted-bg/50 overflow-hidden shadow-inner">
             <div
@@ -39,8 +39,8 @@ export default function ComparisonBar({
         </div>
         <div>
           <div className="flex items-baseline justify-between gap-2 mb-1.5">
-            <span className="text-[10px] font-bold text-muted uppercase tracking-wider">{lossLabel}</span>
-            <span className="text-sm font-black text-loss">{formatValue(lossValue)}</span>
+            <span className="text-[10px] font-normal text-muted uppercase tracking-wider">{lossLabel}</span>
+            <span className="text-sm font-normal tabular-nums text-loss">{formatValue(lossValue)}</span>
           </div>
           <div className="h-2 rounded-full bg-muted-bg/50 overflow-hidden shadow-inner">
             <div

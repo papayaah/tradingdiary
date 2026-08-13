@@ -57,7 +57,7 @@ export default function DailyWinLossChart({ summaries }: DailyWinLossChartProps)
 
   return (
     <div className="h-full flex flex-col rounded-2xl border border-card-border bg-card-bg/50 backdrop-blur-sm p-4 shadow-sm hover:shadow-md transition-all duration-300">
-      <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-4">Daily Wins/Losses</h3>
+      <h3 className="text-xs font-normal text-muted uppercase tracking-wider mb-4">Daily Wins/Losses</h3>
       <div className="w-full flex-1 min-h-[200px] flex flex-col">
         {data.length > 0 ? (
           <>

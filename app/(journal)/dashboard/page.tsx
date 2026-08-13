@@ -403,7 +403,7 @@ export default function DashboardPage() {
 
       <MonthlyCalendar summaries={summaries} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 items-stretch">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 items-stretch">
         <DailyWinLossChart summaries={summaries} />
         <DailyPnLChart summaries={summaries} currency={baseCurrency} />
       </div>
@@ -446,7 +446,7 @@ export default function DashboardPage() {
 
       {latestDay && (
         <div className="rounded-xl border border-card-border bg-card-bg p-5 shadow-sm">
-          <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+          <h3 className="text-sm font-normal text-foreground mb-3 flex items-center gap-2">
             <Calendar size={14} className="text-accent" />
             Latest Day Activity — {latestDay.formattedDate}
           </h3>
