@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, gt, gte, or, sql } from 'drizzle-orm';
 import type { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db/server';
@@ -52,8 +52,11 @@ const adapter: AICreditMeterAdapter = {
         })
         .from(aiUsageEvent)
         .where(and(
-          sql`${aiUsageEvent.createdAt} >= ${startOfDay}`,
-          sql`(${aiUsageEvent.status} = 'succeeded' or (${aiUsageEvent.status} = 'reserved' and ${aiUsageEvent.expiresAt} > ${now}))`,
+          gte(aiUsageEvent.createdAt, startOfDay),
+          or(
+            eq(aiUsageEvent.status, 'succeeded'),
+            and(eq(aiUsageEvent.status, 'reserved'), gt(aiUsageEvent.expiresAt, now)),
+          ),
         ));
       const globalCredits = Number(globalUsage?.credits ?? 0);
 
@@ -68,7 +71,10 @@ const adapter: AICreditMeterAdapter = {
           eq(aiUsageEvent.subjectType, request.subject.type),
           eq(aiUsageEvent.subjectId, request.subject.id),
           eq(aiUsageEvent.periodKey, request.policy.periodKey),
-          sql`(${aiUsageEvent.status} = 'succeeded' or (${aiUsageEvent.status} = 'reserved' and ${aiUsageEvent.expiresAt} > ${now}))`,
+          or(
+            eq(aiUsageEvent.status, 'succeeded'),
+            and(eq(aiUsageEvent.status, 'reserved'), gt(aiUsageEvent.expiresAt, now)),
+          ),
         ));
 
       const used = existing.reduce(
