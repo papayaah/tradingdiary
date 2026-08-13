@@ -6,6 +6,9 @@ import { IBKRGuidePromo } from './compositions/IBKRGuidePromo';
 import { ImportPromo } from './compositions/ImportPromo';
 import { PatternPromo } from './compositions/PatternPromo';
 import { ProductMashupPromo } from './compositions/ProductMashupPromo';
+import { ReactEngagePromo } from './compositions/ReactEngagePromo';
+import { ComicTutorialPromo } from './compositions/ComicTutorialPromo';
+import { OwlCapybaraTradingPromo } from './compositions/OwlCapybaraTradingPromo';
 import { ReplayPromo } from './compositions/ReplayPromo';
 import { patternPromos } from './patterns';
 
@@ -169,6 +172,44 @@ export function VideoRoot() {
         width={WIDTH}
         height={HEIGHT}
         defaultProps={{ themeMode: 'light' }}
+      />
+
+      {/* React Engage Promo (Dark & Light) */}
+      <Composition
+        id="ReactEngagePromo"
+        component={ReactEngagePromo}
+        durationInFrames={280}
+        fps={FPS}
+        width={1440}
+        height={900}
+        defaultProps={{ themeMode: 'dark' }}
+      />
+      <Composition
+        id="ReactEngagePromoLight"
+        component={ReactEngagePromo}
+        durationInFrames={280}
+        fps={FPS}
+        width={1440}
+        height={900}
+        defaultProps={{ themeMode: 'light' }}
+      />
+      {/* Comic Tutorial Promo */}
+      <Composition
+        id="ComicTutorialPromo"
+        component={ComicTutorialPromo}
+        durationInFrames={300}
+        fps={FPS}
+        width={1440}
+        height={900}
+      />
+      {/* Owl & Capybara Trading Demo */}
+      <Composition
+        id="OwlCapybaraTradingPromo"
+        component={OwlCapybaraTradingPromo}
+        durationInFrames={270}
+        fps={FPS}
+        width={1440}
+        height={900}
       />
     </>
   );
