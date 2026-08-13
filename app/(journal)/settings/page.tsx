@@ -10,7 +10,7 @@ import DataManagementSettings from '@/components/settings/DataManagementSettings
 export default function SettingsPage() {
     return (
         <div className="p-4 sm:p-6 space-y-8 w-full">
-            <h1 className="text-3xl font-bold text-foreground mb-8">Settings</h1>
+            <h1 className="hidden sm:block text-3xl font-bold text-foreground mb-8">Settings</h1>
 
             <div className="space-y-8">
                 <AccountSettings />

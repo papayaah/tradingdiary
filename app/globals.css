@@ -4,6 +4,21 @@
    (used by AuthCard / UserButton / IntegrationCard) are generated. */
 @source "../packages/better-auth-connect/src";
 
+/* Flat design: square off every box corner across the app. Circular elements
+   (rounded-full: avatars, spinners, toggle knobs) intentionally keep their
+   shape since they don't use these radius tokens. */
+@theme {
+  --radius: 0px;
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-4xl: 0px;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #1a1a2e;

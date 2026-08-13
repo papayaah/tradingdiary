@@ -9,6 +9,9 @@ interface AccountSwitcherProps {
   selectedAccountId: string | null;
   onSelect: (accountId: string) => void;
   collapsed: boolean;
+  // Where the dropdown opens from the icon button: to the right (sidebar rail)
+  // or below-right (mobile top bar).
+  menuPlacement?: 'right' | 'bottom-end';
 }
 
 export default function AccountSwitcher({
@@ -16,6 +19,7 @@ export default function AccountSwitcher({
   selectedAccountId,
   onSelect,
   collapsed,
+  menuPlacement = 'right',
 }: AccountSwitcherProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -63,7 +67,7 @@ export default function AccountSwitcher({
   }
 
   return (
-    <div ref={rootRef} className="relative z-50 px-2">
+    <div ref={rootRef} className={`relative z-50 ${menuPlacement === 'right' ? 'px-2' : ''}`}>
       <button
         type="button"
         onClick={() => setIsOpen((open) => !open)}
@@ -71,7 +75,9 @@ export default function AccountSwitcher({
         aria-haspopup="menu"
         aria-expanded={isOpen}
         title={selectedAccount ? `Account: ${selectedAccount.name}` : 'Switch account'}
-        className={`flex h-10 w-full items-center justify-center rounded-lg transition-colors ${
+        className={`flex items-center justify-center rounded-lg transition-colors ${
+          menuPlacement === 'right' ? 'h-10 w-full' : 'h-8 w-8'
+        } ${
           isOpen
             ? 'bg-accent/10 text-accent'
             : 'text-muted hover:bg-sidebar-hover hover:text-foreground'
@@ -84,7 +90,11 @@ export default function AccountSwitcher({
         <div
           role="menu"
           aria-label="Trading accounts"
-          className="absolute left-[calc(100%+0.75rem)] top-0 w-72 overflow-hidden rounded-2xl border border-card-border bg-card-bg p-2 shadow-2xl"
+          className={`absolute z-50 w-72 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-2xl border border-card-border bg-card-bg p-2 shadow-2xl ${
+            menuPlacement === 'right'
+              ? 'left-[calc(100%+0.75rem)] top-0'
+              : 'right-0 top-[calc(100%+0.5rem)]'
+          }`}
         >
           <div className="px-3 pb-2 pt-1 text-[10px] font-bold uppercase tracking-widest text-muted">
             Switch account

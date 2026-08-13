@@ -335,7 +335,7 @@ export default function AdminDashboard() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-card-border pb-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-foreground hidden sm:flex items-center gap-2">
             <Cpu className="text-accent" size={24} />
             Admin Observability Dashboard
           </h1>

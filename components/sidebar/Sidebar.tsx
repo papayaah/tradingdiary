@@ -62,8 +62,9 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   return (
     <aside
-      className={`relative flex flex-col h-screen bg-sidebar-bg border-r border-sidebar-border transition-all duration-200 ease-in-out ${collapsed ? 'w-[60px]' : 'w-[220px]'
-        }`}
+      className={`relative shrink-0 z-50 hidden sm:flex flex-col h-dvh bg-sidebar-bg border-r border-sidebar-border transition-all duration-200 ease-in-out ${
+        collapsed ? 'w-[60px]' : 'w-[220px]'
+      }`}
     >
       {/* Collapse/expand notch on the right edge, vertically centered */}
       <button
@@ -96,7 +97,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
         )}
       </div>
 
-      <nav className="flex-1 py-2 px-2 space-y-0.5">
+      <nav className="min-h-0 flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
         <GlobalSearch collapsed={collapsed} />
 
         {navItems.map((item) => {

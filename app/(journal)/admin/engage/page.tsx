@@ -19,7 +19,7 @@ export default async function EngageAdminPage() {
   return (
     <div className="p-6 bg-background text-foreground min-h-screen space-y-4">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Engage Suite Dashboard</h1>
+        <h1 className="hidden sm:block text-2xl font-bold tracking-tight">Engage Suite Dashboard</h1>
         <p className="text-sm text-muted">
           Manage support tickets, inspect bug environment metadata, edit email templates, and send newsletter broadcasts.
         </p>

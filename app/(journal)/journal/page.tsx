@@ -181,7 +181,7 @@ export default function JournalPage() {
     <div className="p-4 sm:p-6 space-y-8 w-full">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-black text-foreground tracking-tight mb-1">Trading Journal</h1>
+          <h1 className="hidden sm:block text-3xl font-semibold text-foreground tracking-tight mb-1">Trading Journal</h1>
           <p className="text-sm text-muted font-medium">Capture your trades, thoughts, and market analysis.</p>
         </div>
         <button

@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import Sidebar from '@/components/sidebar/Sidebar';
+import BottomNav from '@/components/sidebar/BottomNav';
+import MobileTopBar from '@/components/sidebar/MobileTopBar';
 import { ReplayProvider } from '@/components/replay/ReplayProvider';
 import { AuthOverlayProvider } from '@/components/auth/AuthOverlayProvider';
 import { MediaLibraryProvider } from '@/packages/react-media-library/src/components/MediaLibraryProvider';
@@ -23,7 +25,13 @@ export default function JournalLayout({
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
-      setCollapsed(localStorage.getItem('sidebar-collapsed') === 'true');
+      const isSmallScreen = window.innerWidth < 768;
+      const savedCollapsed = localStorage.getItem('sidebar-collapsed');
+      if (isSmallScreen) {
+        setCollapsed(true);
+      } else if (savedCollapsed !== null) {
+        setCollapsed(savedCollapsed === 'true');
+      }
       setMounted(true);
     });
     return () => cancelAnimationFrame(frame);
@@ -39,11 +47,11 @@ export default function JournalLayout({
 
   if (!mounted) {
     return (
-      <div className="flex h-screen">
+      <div className="flex h-dvh w-full max-w-full overflow-hidden">
         {!isDirectReplay && (
-          <div className="w-[220px] bg-sidebar-bg border-r border-sidebar-border" />
+          <div className="hidden sm:block w-[60px] md:w-[220px] shrink-0 bg-sidebar-bg border-r border-sidebar-border" />
         )}
-        <main className="flex-1" />
+        <main className="flex-1 min-w-0" />
       </div>
     );
   }
@@ -55,13 +63,15 @@ export default function JournalLayout({
           <AuthOverlayProvider>
             <ReplayProvider>
               <WelcomeProvider>
-                <div className="flex h-screen overflow-hidden">
+                <div className="flex h-dvh w-full max-w-full overflow-hidden">
                   {!isDirectReplay && <Sidebar collapsed={collapsed} onToggle={toggle} />}
                   <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
-                    <main className="min-h-0 flex-1 overflow-y-auto bg-background">
+                    {!isDirectReplay && <MobileTopBar />}
+                    <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-background pb-[calc(4rem+env(safe-area-inset-bottom))] sm:pb-0">
                       {children}
                     </main>
                   </div>
+                  {!isDirectReplay && <BottomNav />}
                   <WelcomeModal />
                 </div>
               </WelcomeProvider>

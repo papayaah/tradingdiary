@@ -47,9 +47,23 @@ export default function DashboardPage() {
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
 
-  // The period the calendar is currently showing (a month or its contiguous
-  // range). The top KPI cards follow this so they match what the calendar shows.
-  const [activePeriod, setActivePeriod] = useState<{ start: string; end: string } | null>(null);
+  const rangeLabel = useMemo(() => {
+    switch (rangeType) {
+      case 'all': return 'All Time';
+      case '7d': return 'Last 7 Days';
+      case '30d': return 'Last 30 Days';
+      case 'quarter': return 'This Quarter';
+      case 'lastquarter': return 'Last Quarter';
+      case 'mtd': return 'Month to Date';
+      case 'ytd': return 'Year to Date';
+      case 'custom':
+        if (startDate && endDate) return `${startDate} to ${endDate}`;
+        if (startDate) return `From ${startDate}`;
+        if (endDate) return `Until ${endDate}`;
+        return 'Custom Range';
+      default: return 'Selected Range';
+    }
+  }, [rangeType, startDate, endDate]);
 
   const [allSummaries, setAllSummaries] = useState<DailySummary[]>([]);
   const [latestDay, setLatestDay] = useState<LatestDayTimeline | null>(null);
@@ -123,32 +137,60 @@ export default function DashboardPage() {
 
     let filtered = allSummaries;
     if (rangeType !== 'all') {
-      const now = new Date();
+      // Determine reference date anchor:
+      // If dataset's latest trade date (e.g. 20260526) is earlier than system Date.now(),
+      // anchor relative ranges (MTD, 30D, 7D, YTD, Quarter) to the dataset's latest trade date
+      // so historical trade logs populate metrics and calendar tiles correctly.
+      let referenceDate = new Date();
+      const latestStr = allSummaries[0]?.date; // format 'YYYYMMDD', sorted desc
+      if (latestStr && latestStr.length === 8) {
+        const y = parseInt(latestStr.substring(0, 4), 10);
+        const m = parseInt(latestStr.substring(4, 6), 10) - 1;
+        const d = parseInt(latestStr.substring(6, 8), 10);
+        const latestDateObj = new Date(y, m, d);
+        if (latestDateObj.getTime() <= referenceDate.getTime()) {
+          referenceDate = latestDateObj;
+        }
+      }
+
+      const toYMD = (dateObj: Date): string => {
+        const y = dateObj.getFullYear();
+        const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const day = String(dateObj.getDate()).padStart(2, '0');
+        return `${y}${m}${day}`;
+      };
+
       let start = '';
       let end = '';
 
       if (rangeType === '7d') {
-        const d = new Date(); d.setDate(d.getDate() - 7);
-        start = d.toISOString().split('T')[0].replace(/-/g, '');
+        const d = new Date(referenceDate);
+        d.setDate(d.getDate() - 6);
+        start = toYMD(d);
+        end = toYMD(referenceDate);
       } else if (rangeType === '30d') {
-        const d = new Date(); d.setDate(d.getDate() - 30);
-        start = d.toISOString().split('T')[0].replace(/-/g, '');
+        const d = new Date(referenceDate);
+        d.setDate(d.getDate() - 29);
+        start = toYMD(d);
+        end = toYMD(referenceDate);
       } else if (rangeType === 'quarter') {
-        // This quarter (calendar): first day of the current quarter through now.
-        const qStartMonth = Math.floor(now.getMonth() / 3) * 3;
-        start = `${now.getFullYear()}${String(qStartMonth + 1).padStart(2, '0')}01`;
+        const qStartMonth = Math.floor(referenceDate.getMonth() / 3) * 3;
+        start = `${referenceDate.getFullYear()}${String(qStartMonth + 1).padStart(2, '0')}01`;
+        const endDay = new Date(referenceDate.getFullYear(), qStartMonth + 3, 0);
+        end = toYMD(endDay);
       } else if (rangeType === 'lastquarter') {
-        // The previous full calendar quarter.
-        const q = Math.floor(now.getMonth() / 3);
-        const lastQYear = q === 0 ? now.getFullYear() - 1 : now.getFullYear();
+        const q = Math.floor(referenceDate.getMonth() / 3);
+        const lastQYear = q === 0 ? referenceDate.getFullYear() - 1 : referenceDate.getFullYear();
         const lastQStartMonth = (q === 0 ? 3 : q - 1) * 3;
         start = `${lastQYear}${String(lastQStartMonth + 1).padStart(2, '0')}01`;
-        const endDay = new Date(lastQYear, lastQStartMonth + 3, 0); // last day of the quarter
-        end = `${endDay.getFullYear()}${String(endDay.getMonth() + 1).padStart(2, '0')}${String(endDay.getDate()).padStart(2, '0')}`;
+        const endDay = new Date(lastQYear, lastQStartMonth + 3, 0);
+        end = toYMD(endDay);
       } else if (rangeType === 'mtd') {
-        start = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}01`;
+        start = `${referenceDate.getFullYear()}${String(referenceDate.getMonth() + 1).padStart(2, '0')}01`;
+        end = toYMD(referenceDate);
       } else if (rangeType === 'ytd') {
-        start = `${now.getFullYear()}0101`;
+        start = `${referenceDate.getFullYear()}0101`;
+        end = toYMD(referenceDate);
       } else if (rangeType === 'custom') {
         if (startDate) start = startDate.replace(/-/g, '');
         if (endDate) end = endDate.replace(/-/g, '');
@@ -169,23 +211,11 @@ export default function DashboardPage() {
     };
   }, [allSummaries, rangeType, startDate, endDate]);
 
-  // Stats for the top KPI cards. When the calendar reports a displayed period,
-  // scope them to that period so the cards match what the calendar shows;
-  // otherwise fall back to the full selected time-range.
-  const headerStats = useMemo(() => {
-    if (!filteredData) return null;
-    if (!activePeriod) return filteredData.stats;
-    const periodSummaries = filteredData.summaries.filter(
-      (s) => s.date >= activePeriod.start && s.date <= activePeriod.end
-    );
-    return computeDashboard(periodSummaries);
-  }, [filteredData, activePeriod]);
-
   if (empty) {
     return (
-      <div className="p-4 sm:p-6 space-y-8 w-full">
+      <div className="p-2 sm:p-6 space-y-4 sm:space-y-8 w-full">
         <div>
-          <h1 className="text-3xl font-black text-foreground tracking-tight mb-1">Trading Dashboard</h1>
+          <h1 className="hidden sm:block text-2xl sm:text-3xl font-black text-foreground tracking-tight mb-1">Trading Dashboard</h1>
           <p className="text-sm text-muted font-medium">Analyze your performance and trading patterns.</p>
         </div>
 
@@ -228,10 +258,10 @@ export default function DashboardPage() {
   const { stats, summaries } = filteredData;
 
   return (
-    <div className="p-4 sm:p-6 space-y-8 w-full">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+    <div className="p-2 sm:p-6 space-y-4 sm:space-y-8 w-full">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-6">
         <div>
-          <h1 className="text-3xl font-black text-foreground tracking-tight mb-1">Trading Dashboard</h1>
+          <h1 className="hidden sm:block text-2xl sm:text-3xl font-black text-foreground tracking-tight mb-1">Trading Dashboard</h1>
           <p className="text-sm text-muted font-medium">Analyze your performance and trading patterns.</p>
         </div>
 
@@ -285,41 +315,47 @@ export default function DashboardPage() {
 
       {/* Summary Stats Row */}
       {(() => {
-        const s = headerStats ?? stats;
+        const s = stats;
         const totalPnL = s.cumulativePnL.length > 0 ? s.cumulativePnL[s.cumulativePnL.length - 1].value : 0;
         const totalTrades = s.totalWins + s.totalLosses;
         const avgTrade = totalTrades > 0 ? totalPnL / totalTrades : 0;
         const winRate = totalTrades > 0 ? (s.totalWins / totalTrades) * 100 : 0;
 
         return (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[
-              { label: 'Total P&L', value: totalPnL, prefix: '$', color: totalPnL >= 0 ? 'text-profit' : 'text-loss' },
-              { label: 'Win Rate', value: winRate, suffix: '%', color: 'text-accent' },
-              { label: 'Total Trades', value: totalTrades, color: 'text-foreground' },
-              { label: 'Avg Trade', value: avgTrade, prefix: '$', color: avgTrade >= 0 ? 'text-profit' : 'text-loss' },
-            ].map((s, i) => (
-              <div key={i} className="bg-card-bg/50 backdrop-blur-sm border border-card-border p-5 rounded-2xl shadow-sm hover:shadow-md transition-all">
-                <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-1">{s.label}</p>
-                <p className={`text-xl font-black ${s.color}`}>
-                  {s.prefix}{Math.abs(s.value).toLocaleString('en-US', { minimumFractionDigits: s.prefix ? 2 : 0, maximumFractionDigits: s.prefix ? 2 : 1 })}{s.suffix}
-                </p>
-              </div>
-            ))}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs text-muted font-medium px-1">
+              <span>Showing metrics for <strong className="text-foreground font-bold">{rangeLabel}</strong></span>
+              <span>{summaries.length} trading day{summaries.length === 1 ? '' : 's'}</span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
+              {[
+                { label: 'Total P&L', value: totalPnL, prefix: '$', color: totalPnL >= 0 ? 'text-profit' : 'text-loss' },
+                { label: 'Win Rate', value: winRate, suffix: '%', color: 'text-accent' },
+                { label: 'Total Trades', value: totalTrades, color: 'text-foreground' },
+                { label: 'Avg Trade', value: avgTrade, prefix: '$', color: avgTrade >= 0 ? 'text-profit' : 'text-loss' },
+              ].map((item, i) => (
+                <div key={i} className="bg-card-bg/50 backdrop-blur-sm border border-card-border p-3 sm:p-5 rounded-2xl shadow-sm hover:shadow-md transition-all">
+                  <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-1">{item.label}</p>
+                  <p className={`text-xl font-black ${item.color}`}>
+                    {item.prefix}{Math.abs(item.value).toLocaleString('en-US', { minimumFractionDigits: item.prefix ? 2 : 0, maximumFractionDigits: item.prefix ? 2 : 1 })}{item.suffix}
+                  </p>
+                </div>
+              ))}
+            </div>
           </div>
         );
       })()}
 
-      <MonthlyCalendar summaries={summaries} onPeriodChange={setActivePeriod} />
+      <MonthlyCalendar summaries={summaries} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 items-stretch">
         <DailyWinLossChart summaries={summaries} />
         <DailyPnLChart summaries={summaries} currency={baseCurrency} />
       </div>
 
       {/* Chart + metric cards. One row on xl screens (chart spans 2 of 6);
           folds to a full-width chart with 2×2 cards on small screens. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-4 items-stretch">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-2 sm:gap-4 items-stretch">
         <div className="sm:col-span-2 h-full">
           <CumulativePnLChart
             data={stats.cumulativePnL}

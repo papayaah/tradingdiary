@@ -18,7 +18,6 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
-  Sparkles,
   Settings,
   Loader2,
   ChevronLeft,
@@ -867,37 +866,19 @@ export default function MarketWatcher() {
     localStorage.setItem('watcher-pattern-settings', JSON.stringify(normalized));
     localStorage.setItem('watcher-new-min-move', String(activeMinMove));
 
-    setWatchlist((current) => current.map((item) => {
-      if (!item.candles?.length) return item;
-      const { matched } = detectPattern(
-        item.candles,
-        newMinMove,
-        requiredCandleCount,
-        selectedPatternId,
-        maxBodyOverlapPercent,
-        normalized,
-      );
-      return { ...item, status: matched };
-    }));
-    setTestResult((prev) => {
-      if (!prev || !prev.candles?.length) return prev;
-      const { matched, message } = detectPattern(
-        prev.candles,
-        newMinMove,
-        requiredCandleCount,
-        selectedPatternId,
-        maxBodyOverlapPercent,
-        normalized,
-      );
-      const allMatches = scanAllPatterns(
-        prev.candles,
-        newMinMove,
-        requiredCandleCount,
-        selectedPatternId,
-        maxBodyOverlapPercent,
-        normalized,
-      );
-      return { ...prev, patternMatched: matched, message, allMatches };
+    React.startTransition(() => {
+      setWatchlist((current) => current.map((item) => {
+        if (!item.candles?.length) return item;
+        const { matched } = detectPattern(
+          item.candles,
+          activeMinMove,
+          requiredCandleCount,
+          selectedPatternId,
+          maxBodyOverlapPercent,
+          normalized,
+        );
+        return { ...item, status: matched };
+      }));
     });
 
     void syncScannerSettings(
@@ -3170,8 +3151,9 @@ export default function MarketWatcher() {
   return (
     <div className="p-3 sm:p-5 md:p-6 w-full max-w-full overflow-x-hidden space-y-5 text-foreground">
 
-      {/* COMPACT HEADER HERO */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-card-border/40">
+      {/* COMPACT HEADER HERO — title lives in the mobile top bar, so this only
+          shows on larger screens where there's no top bar. */}
+      <div className="hidden sm:flex sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-card-border/40">
         <h1 className="text-xl md:text-2xl font-extrabold tracking-tight text-foreground">
           Market Pattern Watcher
         </h1>
@@ -3246,8 +3228,10 @@ export default function MarketWatcher() {
                 </div>
               </div>
 
-              {/* SINGLE COMPACT TOOLBAR: Timeframe on Left, Category Tabs + Mute Icons on Right */}
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4">
+              {/* TOOLBAR: Timeframe/Settings row, then the category tabs as a
+                  full-width left-aligned row that wraps (no right-pinned gap in
+                  the narrow watchlist column). */}
+              <div className="flex flex-col gap-3 mb-4">
                 {/* Left: Global Timeframe Selector & Settings Icon */}
                 <div className="flex items-center gap-2">
                   <div className="flex items-center gap-2 bg-muted-bg/30 px-3 py-1.5 rounded-xl border border-card-border/50 shrink-0">
@@ -3287,7 +3271,7 @@ export default function MarketWatcher() {
                 </div>
 
                 {/* Right: Category Tabs with Integrated Category Mute (Bell) Buttons */}
-                <div className="flex items-center gap-1.5 bg-muted-bg/40 p-1 rounded-xl border border-card-border/50 overflow-x-auto no-scrollbar w-full lg:w-auto shrink-0">
+                <div className="flex flex-wrap items-center gap-1.5 bg-muted-bg/40 p-1 rounded-xl border border-card-border/50">
                   {(
                     [
                       { id: 'stocks', label: 'Stocks', icon: ChartCandlestick, count: watchlist.filter((w) => !isFuturesSymbol(w.symbol) && !isCryptoSymbol(w.symbol)).length },
@@ -3304,7 +3288,7 @@ export default function MarketWatcher() {
                     return (
                       <div
                         key={cat.id}
-                        className={`flex flex-1 sm:flex-none items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-all ${
+                        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
                           active
                             ? 'bg-accent text-white shadow-sm font-bold'
                             : 'text-muted hover:text-foreground'
@@ -3450,7 +3434,7 @@ export default function MarketWatcher() {
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                       <div>
                         <span className="font-semibold text-foreground block">Stock Session Scanning Hours</span>
-                        <span className="text-[11px] text-muted block">Controls session boundaries for stock background scans</span>
+                        <span className="text-[11px] text-muted block">Controls session boundaries for stock scans and price alerts</span>
                       </div>
                       <div className="flex flex-wrap items-center gap-1.5 bg-card-bg/60 p-1 rounded-xl border border-card-border">
                         <button
@@ -3465,7 +3449,7 @@ export default function MarketWatcher() {
                               ? 'bg-accent text-white shadow-sm'
                               : 'text-muted hover:text-foreground'
                           }`}
-                          title="Regular Trading Hours: 9:30 AM - 4:00 PM ET"
+                          title="Regular Trading Hours Only: 9:30 AM - 4:00 PM ET"
                         >
                           Regular (9:30a–4p ET)
                         </button>
@@ -3481,25 +3465,25 @@ export default function MarketWatcher() {
                               ? 'bg-accent text-white shadow-sm'
                               : 'text-muted hover:text-foreground'
                           }`}
-                          title="Pre-Market + Regular: 4:00 AM - 4:00 PM ET"
+                          title="Pre-Market + Regular Hours: 4:00 AM - 4:00 PM ET"
                         >
                           Pre + Regular (4a–4p ET)
                         </button>
                         <button
                           type="button"
                           onClick={() => {
-                            setActiveWindow('ext');
-                            localStorage.setItem('watcher-active-window', 'ext');
-                            void syncScannerSettings(watchlist, selectedPatternId, 'ext', scanIntervalMinutes).catch(() => {});
+                            setActiveWindow('all');
+                            localStorage.setItem('watcher-active-window', 'all');
+                            void syncScannerSettings(watchlist, selectedPatternId, 'all', scanIntervalMinutes).catch(() => {});
                           }}
                           className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
-                            activeWindow === 'ext'
+                            activeWindow === 'all' || activeWindow === 'ext'
                               ? 'bg-accent text-white shadow-sm'
                               : 'text-muted hover:text-foreground'
                           }`}
-                          title="Pre + Regular + Extended After-Hours: 4:00 AM - 8:00 PM ET"
+                          title="All Hours: Pre-Market + Regular + Post-Market / After-Hours (4:00 AM - 8:00 PM ET)"
                         >
-                          Extended (4a–8p ET)
+                          All (Pre, Regular & Post: 4a–8p ET)
                         </button>
                       </div>
                     </div>
@@ -3600,18 +3584,6 @@ export default function MarketWatcher() {
                         Errors ({categoryItems.filter(w => w.status === 'error').length})
                       </button>
 
-                      <button
-                        onClick={handleToggleAutoPatterns}
-                        className={`px-2.5 py-1 rounded-md transition-all font-semibold flex items-center gap-1.5 border ml-1 ${
-                          autoPatternsEnabled
-                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                            : 'bg-card-bg border-card-border text-muted hover:text-foreground'
-                        }`}
-                        title="Toggle Auto Patterns on Live Watchlist Charts"
-                      >
-                        <Sparkles size={12} className={autoPatternsEnabled ? 'text-amber-400 animate-pulse' : ''} />
-                        <span>Auto Patterns</span>
-                      </button>
                     </div>
                   </div>
 
