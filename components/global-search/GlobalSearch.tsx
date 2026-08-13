@@ -127,13 +127,16 @@ export default function GlobalSearch({ collapsed }: { collapsed: boolean }) {
       </button>
 
       {isOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-16 sm:pt-24 bg-background/60 backdrop-blur-sm"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) close();
-          }}
-        >
-          <div className="flex max-h-[min(80vh,640px)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-card-border bg-card-bg shadow-2xl">
+        <>
+          <div className="fixed inset-0 z-40 bg-background/20 backdrop-blur-[2px]" onClick={close} />
+
+          <div
+            className={`fixed z-50 flex max-h-[min(78vh,620px)] flex-col overflow-hidden rounded-2xl border border-card-border bg-card-bg shadow-2xl ${
+              collapsed
+                ? 'left-[68px] top-16 w-[min(42rem,calc(100vw-5rem))]'
+                : 'left-[228px] top-16 w-[min(42rem,calc(100vw-15.5rem))]'
+            }`}
+          >
           <div className="border-b border-card-border p-3">
             <div className="flex h-11 items-center gap-3 rounded-xl border border-accent bg-card-bg px-3 ring-2 ring-accent/15">
               <Search size={18} className="shrink-0 text-accent" />
@@ -217,7 +220,7 @@ export default function GlobalSearch({ collapsed }: { collapsed: boolean }) {
             </footer>
           </div>
         </div>
-      </div>
+      </>
       )}
     </div>
   );
