@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { X, Upload } from 'lucide-react';
 import { useWelcome } from './WelcomeContext';
+import { WelcomeHeroVideo } from './WelcomeHeroVideo';
 import { version } from '@/package.json';
 
 interface WelcomeModalProps {
@@ -24,7 +25,7 @@ const SHORTS: Short[] = [
   { key: 'autoscan', base: '/auto-scan-promo', offsetRatio: 0.75 },
 ];
 
-export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4' }: WelcomeModalProps) {
+export default function WelcomeModal({ videoUrl }: WelcomeModalProps) {
   const { isOpen, closeWelcomeModal } = useWelcome();
   const [dontShowAgain, setDontShowAgain] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
@@ -59,13 +60,7 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4' }: W
   };
 
   const themeSuffix = isDarkMode ? '' : '-light';
-  const activeDemoVideo = isDarkMode
-    ? videoUrl
-    : videoUrl.includes('-light')
-    ? videoUrl
-    : videoUrl.replace('.mp4', '-light.mp4');
-
-  const isMp4 = activeDemoVideo.endsWith('.mp4') || activeDemoVideo.endsWith('.webm');
+  const isMp4 = videoUrl?.endsWith('.mp4') || videoUrl?.endsWith('.webm');
 
   return (
     <div
@@ -98,22 +93,31 @@ export default function WelcomeModal({ videoUrl = '/trading-diary-demo.mp4' }: W
 
         {/* Scrollable body */}
         <div className="overflow-y-auto flex-1 min-h-0">
-          {/* Hero demo video (16:9), full-bleed */}
-          <div className="w-full flex items-center justify-center bg-card-bg border-b border-card-border">
-            {isMp4 ? (
+          {/* Hero demo video (16:9), full-bleed aspect-ratio fit */}
+          <div className="w-full flex items-center justify-center bg-black/40 border-b border-card-border overflow-hidden">
+            {!videoUrl ? (
+              <WelcomeHeroVideo />
+            ) : isMp4 ? (
               <video
                 key={`main-video-${isDarkMode}`}
-                src={activeDemoVideo}
+                src={videoUrl}
                 autoPlay
                 loop
                 muted
                 playsInline
                 controls
-                className="w-full max-h-[46vh] object-contain"
+                className="w-full aspect-video max-h-[52vh] object-contain"
+              />
+            ) : videoUrl.endsWith('.gif') ? (
+              <img
+                key={`main-gif-${isDarkMode}`}
+                src={videoUrl}
+                alt="Trading Diary Welcome Demo"
+                className="w-full aspect-video max-h-[52vh] object-contain"
               />
             ) : (
               <iframe
-                src={activeDemoVideo.includes('youtube') ? `${activeDemoVideo}?autoplay=1` : activeDemoVideo}
+                src={videoUrl.includes('youtube') ? `${videoUrl}?autoplay=1` : videoUrl}
                 title="Trading Diary Overview Video"
                 className="w-full aspect-video border-0"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
