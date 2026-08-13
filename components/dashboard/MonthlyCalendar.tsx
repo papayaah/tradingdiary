@@ -111,7 +111,7 @@ export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
             >
               <ChevronLeft size={16} />
             </button>
-            <h3 className="text-base font-bold text-foreground">
+            <h3 className="text-xl font-normal text-foreground">
               {viewMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
             </h3>
             <button
@@ -123,7 +123,7 @@ export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
           </div>
           <button
             onClick={goToThisMonth}
-            className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-card-border text-muted hover:text-foreground hover:bg-sidebar-hover transition-all"
+            className="px-2.5 py-1 text-xs font-normal rounded-lg border border-card-border text-muted hover:text-foreground hover:bg-sidebar-hover transition-all"
           >
             Go to Today
           </button>
@@ -178,7 +178,7 @@ function ContiguousRangeView({ startDate, endDate, dataByDate, onDayClick }: Con
         week.push({
           date: dateStr,
           dayNum: currentDate.getDate(),
-          isCurrentMonth: true, // Always true for contiguous view as we only show relevant range
+          isCurrentMonth: true,
           isFirstOfMonth: currentDate.getDate() === 1,
           monthName: currentDate.toLocaleDateString('en-US', { month: 'short' }),
           data: data ?? null,
@@ -193,9 +193,8 @@ function ContiguousRangeView({ startDate, endDate, dataByDate, onDayClick }: Con
       }
       weeks.push({ days: week, weekPnL, weekDays });
 
-      // If we finished a week and we've passed the end date, stop.
       if (currentDate > endDate) break;
-      if (weeks.length > 20) break; // Safety
+      if (weeks.length > 20) break;
     }
     return weeks;
   }, [startDate, endDate, dataByDate]);
@@ -203,11 +202,11 @@ function ContiguousRangeView({ startDate, endDate, dataByDate, onDayClick }: Con
   return (
     <div className="grid grid-cols-[repeat(7,1fr)_auto] gap-px bg-card-border rounded-lg overflow-hidden border border-card-border shadow-inner">
       {DAY_HEADERS.map((day) => (
-        <div key={day} className="bg-table-header-bg px-2 py-2 text-center text-[10px] font-bold text-muted uppercase tracking-widest">
+        <div key={day} className="bg-table-header-bg px-2 py-2 text-center text-[10px] font-normal text-muted uppercase tracking-widest">
           {day}
         </div>
       ))}
-      <div className="bg-table-header-bg px-3 py-2 text-center text-[10px] font-bold text-muted uppercase tracking-widest">
+      <div className="bg-table-header-bg px-3 py-2 text-center text-[10px] font-normal text-muted uppercase tracking-widest">
         Week
       </div>
 
@@ -284,11 +283,11 @@ function MonthView({ year, month, dataByDate, onDayClick }: MonthViewProps) {
   return (
     <div className="grid grid-cols-[repeat(7,1fr)_auto] gap-px bg-card-border rounded-lg overflow-hidden border border-card-border shadow-inner">
       {DAY_HEADERS.map((day) => (
-        <div key={day} className="bg-table-header-bg px-2 py-2 text-center text-[10px] font-bold text-muted uppercase tracking-widest">
+        <div key={day} className="bg-table-header-bg px-2 py-2 text-center text-[10px] font-normal text-muted uppercase tracking-widest">
           {day}
         </div>
       ))}
-      <div className="bg-table-header-bg px-3 py-2 text-center text-[10px] font-bold text-muted uppercase tracking-widest">
+      <div className="bg-table-header-bg px-3 py-2 text-center text-[10px] font-normal text-muted uppercase tracking-widest">
         Week
       </div>
 
@@ -345,27 +344,27 @@ function DayCell({ day, showMonthLabel, onClick }: { day: GridDay; showMonthLabe
     >
       <div className="flex justify-between items-start">
         {showMonthLabel ? (
-          <span className="text-[10px] font-black uppercase text-white bg-accent px-1.5 py-0.5 rounded shadow-xs tracking-wider">
+          <span className="text-[10px] font-normal uppercase text-white bg-accent px-1.5 py-0.5 rounded shadow-xs tracking-wider">
             {day.monthName}
           </span>
         ) : (
           <span />
         )}
-        <span className={`text-xs ${showMonthLabel ? 'font-bold text-foreground' : 'text-muted'} group-hover:text-foreground font-medium`}>
+        <span className="text-xs font-normal text-muted group-hover:text-foreground">
           {day.dayNum}
         </span>
       </div>
 
       {hasData && (
         <div className="flex-1 flex flex-col items-center justify-center gap-0.5 mt-1">
-          <span className={`text-sm font-bold ${pnlColorClass(pnl)}`}>
+          <span className={`text-sm font-normal tabular-nums ${pnlColorClass(pnl)}`}>
             {formatPnLShort(pnl)}
           </span>
           <div className="flex flex-col items-center leading-tight">
-            <span className="text-[9px] text-muted opacity-80">
+            <span className="text-[9px] text-muted opacity-80 font-normal">
               {day.data!.tradeCount} trades
             </span>
-            <span className="text-[9px] text-muted font-bold">
+            <span className="text-[9px] text-muted font-normal">
               {day.data!.winRate.toFixed(0)}%
             </span>
           </div>
@@ -386,11 +385,11 @@ function WeekSummary({
 }) {
   return (
     <div className="bg-card-bg min-h-[90px] px-3 py-2 flex flex-col items-center justify-center w-[90px]">
-      <span className="text-[10px] text-muted">Week {weekNum}</span>
-      <span className={`text-sm font-bold ${pnlColorClass(pnl)}`}>
+      <span className="text-[10px] text-muted font-normal">Week {weekNum}</span>
+      <span className={`text-sm font-normal tabular-nums ${pnlColorClass(pnl)}`}>
         {days > 0 ? formatPnLShort(pnl) : '$0'}
       </span>
-      <span className="text-[10px] text-accent">
+      <span className="text-[10px] text-accent font-normal">
         {days} day{days !== 1 ? 's' : ''}
       </span>
     </div>

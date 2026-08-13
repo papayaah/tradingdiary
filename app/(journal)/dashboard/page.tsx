@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { Upload, LayoutDashboard, Calendar, Filter, Sparkles } from 'lucide-react';
+import { Upload, LayoutDashboard, Calendar, Filter, Sparkles, ChevronDown, Check } from 'lucide-react';
 import { getTradeDateCutoff } from '@/lib/settings';
 import { aggregateByDay, type DailySummary } from '@/lib/trading/aggregator';
 import { computeDashboard } from '@/lib/trading/dashboard';
@@ -48,6 +48,7 @@ export default function DashboardPage() {
   const [rangeType, setRangeType] = useState<string>('all');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
+  const [showPicker, setShowPicker] = useState(false);
 
   const rangeLabel = useMemo(() => {
     switch (rangeType) {
@@ -282,53 +283,86 @@ export default function DashboardPage() {
     <div className="p-2 sm:p-6 space-y-4 sm:space-y-8 w-full">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-6">
         <div>
-          <h1 className="hidden sm:block text-2xl sm:text-3xl font-black text-foreground tracking-tight mb-1">Trading Dashboard</h1>
-          <p className="text-sm text-muted font-medium">Analyze your performance and trading patterns.</p>
+          <h1 className="hidden sm:block text-2xl sm:text-3xl font-normal text-foreground tracking-tight mb-1">Trading Dashboard</h1>
+          <p className="text-sm text-muted font-normal">Analyze your performance and trading patterns.</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 bg-card-bg/50 backdrop-blur-sm border border-card-border p-1.5 rounded-2xl shadow-sm">
-          <div className="flex items-center gap-1.5 px-3 border-r border-card-border mr-1 text-muted">
-            <Filter size={14} className="text-accent" />
-            <span className="text-[10px] font-bold uppercase tracking-widest">Time Range</span>
-          </div>
+        {/* Compact Time Range Selector */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowPicker((prev) => !prev)}
+            className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl border border-card-border bg-card-bg/80 hover:bg-sidebar-hover text-xs font-normal text-foreground transition-all shadow-sm"
+          >
+            <Calendar size={14} className="text-accent" />
+            <span>{rangeLabel}</span>
+            <ChevronDown size={14} className={`text-muted transition-transform duration-200 ${showPicker ? 'rotate-180' : ''}`} />
+          </button>
 
-          {[
-            { id: 'all', label: 'All Time' },
-            { id: '7d', label: '7D' },
-            { id: '30d', label: '30D' },
-            { id: 'quarter', label: 'This Quarter' },
-            { id: 'lastquarter', label: 'Last Quarter' },
-            { id: 'mtd', label: 'MTD' },
-            { id: 'ytd', label: 'YTD' },
-            { id: 'custom', label: 'Custom' },
-          ].map((r) => (
-            <button
-              key={r.id}
-              onClick={() => setRangeType(r.id)}
-              className={`px-4 py-2 text-[11px] font-bold rounded-xl transition-all duration-200 ${rangeType === r.id
-                ? 'bg-accent text-white shadow-lg shadow-accent/20'
-                : 'text-muted hover:text-foreground hover:bg-sidebar-hover'
-                }`}
-            >
-              {r.label}
-            </button>
-          ))}
+          {showPicker && (
+            <div className="absolute right-0 top-full mt-2 z-30 w-72 rounded-2xl border border-card-border bg-card-bg p-2.5 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+              <div className="text-[10px] font-normal uppercase tracking-wider text-muted px-2 py-1 mb-1 border-b border-card-border">
+                Select Time Range
+              </div>
+              <div className="grid grid-cols-2 gap-1 py-1">
+                {[
+                  { id: 'all', label: 'All Time' },
+                  { id: '7d', label: '7 Days' },
+                  { id: '30d', label: '30 Days' },
+                  { id: 'quarter', label: 'This Quarter' },
+                  { id: 'lastquarter', label: 'Last Quarter' },
+                  { id: 'mtd', label: 'Month to Date' },
+                  { id: 'ytd', label: 'Year to Date' },
+                  { id: 'custom', label: 'Custom' },
+                ].map((r) => (
+                  <button
+                    key={r.id}
+                    onClick={() => {
+                      setRangeType(r.id);
+                      if (r.id !== 'custom') setShowPicker(false);
+                    }}
+                    className={`flex items-center justify-between rounded-xl px-3 py-2 text-xs font-normal transition-all ${
+                      rangeType === r.id
+                        ? 'bg-accent text-white shadow-sm font-normal'
+                        : 'text-muted hover:bg-sidebar-hover hover:text-foreground'
+                    }`}
+                  >
+                    <span>{r.label}</span>
+                    {rangeType === r.id && <Check size={14} />}
+                  </button>
+                ))}
+              </div>
 
-          {rangeType === 'custom' && (
-            <div className="flex items-center gap-2 ml-2 pl-3 border-l border-card-border animate-in fade-in slide-in-from-left-2 duration-300">
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="bg-background/50 border border-card-border rounded-lg px-2 py-1.5 text-[11px] font-medium outline-none focus:border-accent transition-colors"
-              />
-              <span className="text-muted text-[10px] uppercase font-black">to</span>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="bg-background/50 border border-card-border rounded-lg px-2 py-1.5 text-[11px] font-medium outline-none focus:border-accent transition-colors"
-              />
+              {rangeType === 'custom' && (
+                <div className="mt-2 pt-2 border-t border-card-border space-y-2 px-1">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] font-normal text-muted block mb-1">From</label>
+                      <input
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                        className="w-full bg-background border border-card-border rounded-lg px-2 py-1 text-xs text-foreground outline-none focus:border-accent"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-normal text-muted block mb-1">To</label>
+                      <input
+                        type="date"
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                        className="w-full bg-background border border-card-border rounded-lg px-2 py-1 text-xs text-foreground outline-none focus:border-accent"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowPicker(false)}
+                    className="w-full py-1.5 bg-accent text-white rounded-lg text-xs font-normal hover:bg-accent/90 transition-colors"
+                  >
+                    Apply Range
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -344,8 +378,8 @@ export default function DashboardPage() {
 
         return (
           <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs text-muted font-medium px-1">
-              <span>Showing metrics for <strong className="text-foreground font-bold">{rangeLabel}</strong></span>
+            <div className="flex items-center justify-between text-xs text-muted font-normal px-1">
+              <span>Showing metrics for <span className="text-foreground font-normal">{rangeLabel}</span></span>
               <span>{summaries.length} trading day{summaries.length === 1 ? '' : 's'}</span>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
@@ -356,8 +390,8 @@ export default function DashboardPage() {
                 { label: 'Avg Trade', value: avgTrade, prefix: '$', color: avgTrade >= 0 ? 'text-profit' : 'text-loss' },
               ].map((item, i) => (
                 <div key={i} className="bg-card-bg/50 backdrop-blur-sm border border-card-border p-3 sm:p-5 rounded-2xl shadow-sm hover:shadow-md transition-all">
-                  <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-1">{item.label}</p>
-                  <p className={`text-xl font-black ${item.color}`}>
+                  <p className="text-xs font-normal text-muted uppercase tracking-wider mb-1">{item.label}</p>
+                  <p className={`text-2xl sm:text-3xl font-normal tabular-nums ${item.color}`}>
                     {item.prefix}{Math.abs(item.value).toLocaleString('en-US', { minimumFractionDigits: item.prefix ? 2 : 0, maximumFractionDigits: item.prefix ? 2 : 1 })}{item.suffix}
                   </p>
                 </div>
