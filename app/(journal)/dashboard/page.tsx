@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { Upload, LayoutDashboard, Calendar, Filter } from 'lucide-react';
+import { Upload, LayoutDashboard, Calendar, Filter, Sparkles } from 'lucide-react';
 import { getTradeDateCutoff } from '@/lib/settings';
 import { aggregateByDay, type DailySummary } from '@/lib/trading/aggregator';
 import { computeDashboard } from '@/lib/trading/dashboard';
@@ -20,6 +20,8 @@ import OpenPositionsCard from '@/components/dashboard/OpenPositionsCard';
 import { useAccount } from '@/contexts/AccountContext';
 import { getTransactionsByAccount } from '@/lib/db/trades';
 import { formatCurrency } from '@/lib/currency';
+import { loadDemoSampleData } from '@/lib/import/sample-loader';
+import { toast } from 'sonner';
 
 function formatMinutes(minutes: number): string {
   if (minutes < 60) return `${minutes} minutes`;
@@ -39,7 +41,7 @@ interface LatestDayTimeline {
 }
 
 export default function DashboardPage() {
-  const { accounts, selectedAccountId } = useAccount();
+  const { accounts, selectedAccountId, setSelectedAccountId } = useAccount();
   const activeAccount = accounts.find(a => a.accountId === selectedAccountId);
   const baseCurrency = activeAccount?.currency || 'USD';
 
@@ -229,13 +231,32 @@ export default function DashboardPage() {
           <p className="text-xs text-muted max-w-sm">
             Import your broker trade history to populate your calendar, analytics, and win-rate charts.
           </p>
-          <Link
-            href="/import"
-            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl bg-accent text-white hover:bg-accent/90 transition-colors"
-          >
-            <Upload size={14} />
-            Import Trades
-          </Link>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const res = await loadDemoSampleData();
+                  setSelectedAccountId(res.accountId);
+                  setRefreshKey((k) => k + 1);
+                  toast.success(`Loaded ${res.transactionCount} sample IBKR trades!`);
+                } catch (err: any) {
+                  toast.error(err.message || 'Failed to load sample data.');
+                }
+              }}
+              className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-xl bg-accent text-white hover:bg-accent/90 transition-colors"
+            >
+              <Sparkles size={14} />
+              Load Sample Trades
+            </button>
+            <Link
+              href="/import"
+              className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-xl border border-card-border bg-card-bg text-foreground hover:bg-sidebar-hover transition-colors"
+            >
+              <Upload size={14} />
+              Import Trades
+            </Link>
+          </div>
         </div>
       </div>
     );

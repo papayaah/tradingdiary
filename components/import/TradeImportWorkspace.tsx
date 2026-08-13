@@ -2,6 +2,8 @@
 
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { Sparkles } from 'lucide-react';
+import { loadDemoSampleData } from '@/lib/import/sample-loader';
 import DropZone from '@/components/import/DropZone';
 import ColumnMapper from '@/components/import/ColumnMapper';
 import ImportPreview from '@/components/import/ImportPreview';
@@ -276,7 +278,9 @@ export default function TradeImportWorkspace() {
       let detectedMapping = {} as ColumnMapping;
       let detectedSideMap: SideValueMapping = {};
 
-      if (activeKey) {
+      // Image extraction already consumed one hosted AI action; map its output
+      // locally so a single import gesture never spends a second product credit.
+      if (activeKey || (config?.type === 'hosted-api' && processedType !== 'image')) {
         try {
           const response = await mapColumnsWithLLM(parsedHeaders, parsedRows.slice(0, 3), {
             apiKey: activeKey,
@@ -611,11 +615,36 @@ export default function TradeImportWorkspace() {
             </button>
           </div>
 
-          {error && (
-            <div className="p-4 bg-loss/10 border border-loss/20 rounded-lg text-loss text-sm text-center">
-              {error}
+          {/* Quick Demo Sample Data Banner */}
+          <div className="p-5 bg-card-bg/60 border border-card-border rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 max-w-xl mx-auto w-full shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-accent/10 text-accent">
+                <Sparkles size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm text-foreground">Want to test the app first?</h3>
+                <p className="text-xs text-muted">Load demo sample trades (AAPL, NVDA, SPY, QQQ) in 1-click.</p>
+              </div>
             </div>
-          )}
+            <button
+              onClick={() => {
+                startProcessing(async () => {
+                  try {
+                    const res = await loadDemoSampleData();
+                    await refreshAccounts(res.accountId);
+                    toast.success(`Loaded ${res.transactionCount} sample IBKR trades!`);
+                    router.push('/journal');
+                  } catch (err: any) {
+                    toast.error(err.message || 'Failed to load sample data');
+                  }
+                });
+              }}
+              disabled={isProcessing}
+              className="px-4 py-2.5 bg-accent text-white rounded-xl text-xs font-bold hover:bg-accent/90 transition-all shadow-sm shrink-0 disabled:opacity-50"
+            >
+              Load Sample Trades
+            </button>
+          </div>
 
           {/* IBKR TradeLog Tutorial Video & Guide */}
           <IBKRExportGuide />

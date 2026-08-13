@@ -12,9 +12,22 @@ interface DayGroupProps {
   accountId: string;
   focusSymbol?: string;
   openNotes?: boolean;
+  onPrevDay?: () => void;
+  onNextDay?: () => void;
+  hasPrevDay?: boolean;
+  hasNextDay?: boolean;
 }
 
-export default function DayGroup({ summary, accountId, focusSymbol, openNotes = false }: DayGroupProps) {
+export default function DayGroup({
+  summary,
+  accountId,
+  focusSymbol,
+  openNotes = false,
+  onPrevDay,
+  onNextDay,
+  hasPrevDay = false,
+  hasNextDay = false,
+}: DayGroupProps) {
   const { accounts } = useAccount();
   const [isNotesOpen, setIsNotesOpen] = useState(openNotes);
   const activeAccount = accounts.find(a => a.accountId === accountId);
@@ -28,6 +41,10 @@ export default function DayGroup({ summary, accountId, focusSymbol, openNotes = 
         currency={currency} 
         isNotesOpen={isNotesOpen}
         onToggleNotes={() => setIsNotesOpen(!isNotesOpen)}
+        onPrevDay={onPrevDay}
+        onNextDay={onNextDay}
+        hasPrevDay={hasPrevDay}
+        hasNextDay={hasNextDay}
       />
       <DayStats summary={summary} currency={currency} />
       {isNotesOpen && (

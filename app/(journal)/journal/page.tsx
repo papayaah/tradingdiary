@@ -3,13 +3,15 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Upload, BookOpen, ArrowLeft, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { Upload, BookOpen, ArrowLeft, ChevronLeft, ChevronRight, Plus, Sparkles } from 'lucide-react';
 import { getTradeDateCutoff } from '@/lib/settings';
 import { aggregateByDay, applyMarketPrices, type DailySummary } from '@/lib/trading/aggregator';
 import DayGroup from '@/components/journal/DayGroup';
 import { useAccount } from '@/contexts/AccountContext';
 import { getTransactionsByAccount } from '@/lib/db/trades';
 import { ManualTradePanel } from '@/components/trades/manual-entry/ManualTradePanel';
+import { loadDemoSampleData } from '@/lib/import/sample-loader';
+import { toast } from 'sonner';
 
 export default function JournalPage() {
   const router = useRouter();
@@ -17,10 +19,11 @@ export default function JournalPage() {
   const filterDate = searchParams.get('date');
   const focusSymbol = searchParams.get('symbol')?.toUpperCase();
   const openDailyNotes = searchParams.get('notes') === 'open';
-  const { selectedAccountId } = useAccount();
+  const { selectedAccountId, setSelectedAccountId } = useAccount();
 
   const [summaries, setSummaries] = useState<DailySummary[] | null>(null);
   const [showManualEntry, setShowManualEntry] = useState(false);
+  const [loadingSample, setLoadingSample] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const manualEntryVisible = showManualEntry || searchParams.get('action') === 'add-trade';
@@ -89,18 +92,35 @@ export default function JournalPage() {
     load();
   }, [selectedAccountId, refreshKey]);
 
+  const normalizedFilterDate = useMemo(() => {
+    return filterDate?.replace(/-/g, '');
+  }, [filterDate]);
+
   const displaySummaries = useMemo(() => {
-    if (!summaries || !filterDate) return summaries;
-    return summaries.filter(s => s.date === filterDate);
-  }, [summaries, filterDate]);
+    if (!summaries || !normalizedFilterDate) return summaries;
+    return summaries.filter(s => s.date === normalizedFilterDate);
+  }, [summaries, normalizedFilterDate]);
 
   const currentDayIndex = useMemo(() => {
-    if (!summaries || !filterDate) return -1;
-    return summaries.findIndex((summary) => summary.date === filterDate);
-  }, [summaries, filterDate]);
+    if (!summaries || !normalizedFilterDate) return -1;
+    return summaries.findIndex((summary) => summary.date === normalizedFilterDate);
+  }, [summaries, normalizedFilterDate]);
 
-  const previousDay = currentDayIndex >= 0 ? summaries?.[currentDayIndex + 1] : undefined;
-  const nextDay = currentDayIndex > 0 ? summaries?.[currentDayIndex - 1] : undefined;
+  const previousDay = useMemo(() => {
+    if (!summaries || summaries.length === 0) return undefined;
+    if (currentDayIndex === -1) {
+      return summaries.length > 1 ? summaries[1] : undefined;
+    }
+    return currentDayIndex < summaries.length - 1 ? summaries[currentDayIndex + 1] : undefined;
+  }, [summaries, currentDayIndex]);
+
+  const nextDay = useMemo(() => {
+    if (!summaries || summaries.length === 0) return undefined;
+    if (currentDayIndex === -1) {
+      return summaries[0];
+    }
+    return currentDayIndex > 0 ? summaries[currentDayIndex - 1] : undefined;
+  }, [summaries, currentDayIndex]);
 
   const navigateToDay = useCallback((date: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -109,9 +129,9 @@ export default function JournalPage() {
   }, [router, searchParams]);
 
   useEffect(() => {
-    if (!filterDate) return;
-
     function handleKeyDown(event: KeyboardEvent) {
+      if (manualEntryVisible) return;
+
       const target = event.target;
       if (
         target instanceof HTMLElement
@@ -134,7 +154,21 @@ export default function JournalPage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [filterDate, navigateToDay, nextDay, previousDay]);
+  }, [navigateToDay, nextDay, previousDay, manualEntryVisible]);
+
+  const handleLoadSample = async () => {
+    try {
+      setLoadingSample(true);
+      const res = await loadDemoSampleData();
+      setSelectedAccountId(res.accountId);
+      setRefreshKey((k) => k + 1);
+      toast.success(`Loaded ${res.transactionCount} sample IBKR trades!`);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to load sample data.');
+    } finally {
+      setLoadingSample(false);
+    }
+  };
 
   if (summaries === null) {
     // ... animation placeholder
@@ -159,15 +193,26 @@ export default function JournalPage() {
           </div>
           <h2 className="mt-4 text-xl font-semibold text-foreground">No trades yet</h2>
           <p className="mx-auto mt-2 max-w-sm text-sm text-muted">
-            Add one manually below, or import your existing trading history.
+            Add one manually below, try out sample data, or import your existing trading history.
           </p>
-          <Link
-            href="/import"
-            className="mt-4 inline-flex items-center gap-2 text-sm font-bold text-accent hover:underline"
-          >
-            <Upload size={15} />
-            Import instead
-          </Link>
+          <div className="mt-5 flex items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={handleLoadSample}
+              disabled={loadingSample}
+              className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-xs font-bold text-white transition hover:bg-accent/90 disabled:opacity-50"
+            >
+              <Sparkles size={15} />
+              {loadingSample ? 'Loading sample data...' : 'Load Sample Trades'}
+            </button>
+            <Link
+              href="/import"
+              className="inline-flex items-center gap-2 rounded-xl border border-card-border bg-card-bg px-4 py-2.5 text-xs font-bold text-foreground transition hover:bg-sidebar-hover"
+            >
+              <Upload size={15} />
+              Import File
+            </Link>
+          </div>
         </div>
         <ManualTradePanel
           title="Add your first trade"
@@ -252,15 +297,25 @@ export default function JournalPage() {
         </div>
       )}
 
-      {displaySummaries?.map((summary) => (
-        <DayGroup
-          key={`${summary.date}-${focusSymbol || 'all'}-${openDailyNotes ? 'notes' : 'closed'}`}
-          summary={summary}
-          accountId={selectedAccountId || ''}
-          focusSymbol={summary.date === filterDate ? focusSymbol : undefined}
-          openNotes={summary.date === filterDate && openDailyNotes}
-        />
-      ))}
+      {displaySummaries?.map((summary) => {
+        const indexInAll = summaries?.findIndex(s => s.date === summary.date) ?? -1;
+        const prev = indexInAll >= 0 && indexInAll < (summaries?.length || 0) - 1 ? summaries?.[indexInAll + 1] : undefined;
+        const next = indexInAll > 0 ? summaries?.[indexInAll - 1] : undefined;
+
+        return (
+          <DayGroup
+            key={`${summary.date}-${focusSymbol || 'all'}-${openDailyNotes ? 'notes' : 'closed'}`}
+            summary={summary}
+            accountId={selectedAccountId || ''}
+            focusSymbol={summary.date === filterDate ? focusSymbol : undefined}
+            openNotes={summary.date === filterDate && openDailyNotes}
+            onPrevDay={prev ? () => navigateToDay(prev.date) : undefined}
+            onNextDay={next ? () => navigateToDay(next.date) : undefined}
+            hasPrevDay={Boolean(prev)}
+            hasNextDay={Boolean(next)}
+          />
+        );
+      })}
 
       {filterDate && displaySummaries?.length === 0 && (
         <div className="py-20 text-center">
