@@ -90,7 +90,7 @@ local-extrema, or line/curve-fitting helper anywhere in the codebase.
 
 Detected patterns feed the server-side watchlist scanner
 (`lib/scanner/worker.ts` → alerts). The Watch page draws generic directional
-markers for matches and `PatternSelector` contains illustrative mini-previews,
+markers for matches and `PatternGuidePanel` contains illustrative mini-previews,
 but there is no detector-specific overlay contract. The journal and replay
 charts (`components/journal/TradeChart.tsx`,
 `components/replay/ReplayChart.tsx`) still render trade buy/sell markers only.
@@ -122,7 +122,7 @@ cannot currently be returned by a detector or drawn consistently.
 ## Goals
 
 - Establish a stable **category** label for every pattern, usable in the
-  registry, the `PatternSelector` UI, and as a filter.
+  registry, the `PatternGuidePanel` UI, and as a filter.
 - Provide a prioritized catalog of additional patterns with a described
   detection approach for each.
 - Identify the minimal **framework changes** each new pattern family requires
@@ -181,7 +181,7 @@ type PatternCategory =
 ```
 
 Add a required `category: PatternCategory` field to `PatternDefinition` and
-backfill the five existing detectors. `PatternSelector` may filter or group
+backfill the five existing detectors. `PatternGuidePanel` may filter or group
 presets by category, but it should keep the compact, expandable control rather
 than rendering every category card at once.
 
@@ -592,7 +592,7 @@ standalone unit test passes while the server worker uses different parameters.
   coupling the engine to a specific indicator library?
 - Which formations should expose a non-notifying “forming” state in addition
   to the default completion alert?
-- Should `category` be user-facing as a filter in `PatternSelector`, or only
+- Should `category` be user-facing as a filter in `PatternGuidePanel`, or only
   an internal grouping label?
 - Should users select individual detectors, named bundles such as
   “Momentum”/“Breakouts,” or both?
