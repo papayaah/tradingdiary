@@ -15,7 +15,7 @@ import {
   isPatternId,
   type PatternId,
 } from '@/lib/scanner/patterns';
-import { displaySymbol, shortProviderLabel } from '@/lib/utils/format';
+import { displaySymbol, isDelayedMarketDataProvider } from '@/lib/utils/format';
 import { calculateWatchPriceChange } from '@/lib/market/intraday-change';
 
 interface WatchlistRowItem {
@@ -113,12 +113,12 @@ function WatchlistRow({
         title="Click to expand inline session chart"
       >
         {displaySymbol(item.symbol)}
-        {item.provider && (
+        {isDelayedMarketDataProvider(item.provider) && (
           <span
-            className="ml-2 rounded bg-accent/10 px-1.5 py-0.5 text-[9px] font-semibold text-accent align-middle"
-            title={`Data source: ${item.provider}`}
+            className="ml-2 inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-amber-600 align-middle dark:text-amber-400"
+            title="Delayed market data"
           >
-            {shortProviderLabel(item.provider)}
+            <Clock size={10} aria-hidden="true" /> Delayed
           </span>
         )}
         {latestPrice !== undefined && (

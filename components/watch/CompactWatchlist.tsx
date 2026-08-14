@@ -9,7 +9,7 @@ import {
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
-import { displaySymbol, shortProviderLabel } from '@/lib/utils/format';
+import { displaySymbol, isDelayedMarketDataProvider } from '@/lib/utils/format';
 import {
   calculateWatchPriceChange,
 } from '@/lib/market/intraday-change';
@@ -115,12 +115,12 @@ const CompactCard = React.memo(function CompactCard({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="truncate text-sm font-bold text-foreground">{displaySymbol(item.symbol)}</span>
-            {item.provider && (
+            {isDelayedMarketDataProvider(item.provider) && (
               <span
-                className="rounded bg-accent/10 px-1.5 py-0.5 text-xs font-semibold text-accent"
-                title={`Data source: ${item.provider}`}
+                className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400"
+                title="Delayed market data"
               >
-                {shortProviderLabel(item.provider)}
+                <Clock size={11} aria-hidden="true" /> Delayed
               </span>
             )}
           </div>
