@@ -77,7 +77,7 @@ export const scannerConfig = {
   estimatedResponseBytesPerBar: Number(
     process.env.SCANNER_ESTIMATED_BYTES_PER_BAR ?? 110,
   ),
-  budgetHeadroom: Number(process.env.SCANNER_BUDGET_HEADROOM ?? 0.8),
+  budgetHeadroom: Number(process.env.SCANNER_BUDGET_HEADROOM ?? 0.95),
   budgetFloorSeconds: Number(process.env.SCANNER_BUDGET_FLOOR_SECONDS ?? 15),
 
   // Phase 7 physical-request quota gate. `quotaEnabled` counts every real

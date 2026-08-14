@@ -21,6 +21,7 @@ import {
   BarChart3,
   Radio,
   Play,
+  Pause,
   Clock,
 } from 'lucide-react';
 import {
@@ -206,6 +207,8 @@ export default function AdminDashboard() {
   const [livePresence, setLivePresence] = useState<LivePresenceData | null>(null);
   const [aiUsage, setAIUsage] = useState<AIUsageData | null>(null);
   const [allowlistConfigured, setAllowlistConfigured] = useState<boolean>(true);
+  const [scannerPaused, setScannerPaused] = useState(false);
+  const [controlActionPending, setControlActionPending] = useState(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
@@ -239,6 +242,7 @@ export default function AdminDashboard() {
         alertsRes,
         liveRes,
         aiUsageRes,
+        controlsRes,
       ] = await Promise.all([
         fetch('/api/admin/status').then((r) => r.json()).catch(() => null),
         fetch('/api/admin/overview').then((r) => r.json()).catch(() => null),
@@ -251,6 +255,7 @@ export default function AdminDashboard() {
         fetch('/api/admin/alerts?days=30').then((r) => r.json()).catch(() => null),
         fetch('/api/admin/live').then((r) => r.json()).catch(() => null),
         fetch('/api/admin/ai-usage?days=30').then((r) => r.json()).catch(() => null),
+        fetch('/api/admin/controls').then((r) => r.json()).catch(() => null),
       ]);
 
       if (statusRes) setAllowlistConfigured(Boolean(statusRes.allowlistConfigured));
@@ -266,6 +271,7 @@ export default function AdminDashboard() {
       if (alertsRes?.success) setAlertAnalytics(alertsRes);
       if (liveRes?.success) setLivePresence(liveRes);
       if (aiUsageRes?.success) setAIUsage(aiUsageRes);
+      if (controlsRes?.success) setScannerPaused(Boolean(controlsRes.control?.paused));
 
       setLastUpdated(new Date());
     } finally {
@@ -336,6 +342,31 @@ export default function AdminDashboard() {
       setControlActionMsg('Failed to trigger scan');
     }
     setTimeout(() => setControlActionMsg(null), 4000);
+  };
+
+  const handleToggleScanner = async () => {
+    setControlActionPending(true);
+    setControlActionMsg(scannerPaused ? 'Resuming scanner...' : 'Pausing scanner...');
+    try {
+      const res = await fetch('/api/admin/controls', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: scannerPaused ? 'resume-scanner' : 'pause-scanner' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setScannerPaused(Boolean(data.control?.paused));
+        setControlActionMsg(data.message);
+        void fetchAllData();
+      } else {
+        setControlActionMsg(data.error || 'Control action failed');
+      }
+    } catch {
+      setControlActionMsg('Failed to update scanner state');
+    } finally {
+      setControlActionPending(false);
+      setTimeout(() => setControlActionMsg(null), 5000);
+    }
   };
 
   if (loading && !overview) {
@@ -550,10 +581,24 @@ export default function AdminDashboard() {
           )}
           <button
             onClick={handleTriggerGlobalScan}
-            className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold bg-accent text-white hover:opacity-90 rounded-lg transition-all shadow-sm"
+            disabled={scannerPaused || controlActionPending}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold bg-accent text-white hover:opacity-90 rounded-lg transition-all shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Play size={14} />
             Trigger Global Scan Now
+          </button>
+          <button
+            type="button"
+            onClick={handleToggleScanner}
+            disabled={controlActionPending}
+            className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-wait disabled:opacity-60 ${
+              scannerPaused
+                ? 'border-accent/30 bg-accent/10 text-accent hover:bg-accent/15'
+                : 'border-loss/30 bg-loss/10 text-loss hover:bg-loss/15'
+            }`}
+          >
+            {scannerPaused ? <Play size={14} /> : <Pause size={14} />}
+            {scannerPaused ? 'Resume Scanner' : 'Pause Scanner'}
           </button>
         </div>
       </div>

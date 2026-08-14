@@ -5,9 +5,19 @@ import { db } from '@/lib/scanner/db';
 import { serverWatch } from '@/lib/db/server/schema';
 import { eq } from 'drizzle-orm';
 import { evaluateJobId, getScanQueue, type ScanJob } from '@/lib/scanner/queue';
+import { readScannerControl, writeScannerControl } from '@/lib/scanner/control';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+export async function GET(request: Request) {
+  const session = await auth.api.getSession({ headers: request.headers });
+  if (!session?.user || !isAdminEmail(session.user.email)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+  const control = await readScannerControl();
+  return NextResponse.json({ success: true, control });
+}
 
 export async function POST(request: Request) {
   try {
@@ -19,7 +29,22 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const action = body?.action;
 
+    if (action === 'pause-scanner' || action === 'resume-scanner') {
+      const control = await writeScannerControl(action === 'pause-scanner', session.user.email);
+      return NextResponse.json({
+        success: true,
+        control,
+        message: control.paused
+          ? 'Scanner paused globally. In-flight work may finish; no new work will start.'
+          : 'Scanner resumed globally.',
+      });
+    }
+
     if (action === 'trigger-scan-all') {
+      const control = await readScannerControl();
+      if (control.paused) {
+        return NextResponse.json({ success: false, error: 'Scanner is globally paused.' }, { status: 409 });
+      }
       const watches = await db
         .select({ id: serverWatch.id })
         .from(serverWatch)
