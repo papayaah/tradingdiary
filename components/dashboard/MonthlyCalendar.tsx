@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, Fragment, useEffect, useRef } from 'react';
+import { useState, useMemo, Fragment, useEffect, useRef, type ReactNode } from 'react';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import type { DailySummary } from '@/lib/trading/aggregator';
@@ -118,6 +118,74 @@ export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
 
 
 
+  // Full-width day detail, rendered inline INSIDE the grid, directly under the
+  // week row that contains the selected day — so it expands the calendar in
+  // place rather than appearing beneath the whole calendar.
+  const detailPanel: ReactNode = selectedDate ? (
+    <div
+      ref={previewRef}
+      style={{ gridColumn: '1 / -1' }}
+      className="bg-card-bg p-3 border-t border-card-border animate-in fade-in slide-in-from-top-1 duration-200"
+    >
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2 text-sm min-w-0">
+          <span className="font-semibold text-foreground truncate">
+            {selectedSummary?.formattedDate ?? formatDayLabel(selectedDate)}
+          </span>
+          {selectedSummary && (
+            <>
+              <span className={`font-semibold tabular-nums ${pnlColorClass(selectedSummary.totalPnL)}`}>
+                {selectedSummary.totalPnL >= 0 ? '+' : ''}${selectedSummary.totalPnL.toFixed(2)}
+              </span>
+              <span className="text-xs text-muted whitespace-nowrap">· {selectedSummary.totalTrades} trades</span>
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Link
+            href={`/journal?date=${selectedDate}`}
+            className="text-xs font-medium text-accent hover:underline whitespace-nowrap"
+          >
+            Open full day →
+          </Link>
+          <button
+            type="button"
+            onClick={() => setSelectedDate(null)}
+            aria-label="Close day preview"
+            className="p-1 rounded text-muted hover:text-foreground hover:bg-sidebar-hover transition-colors"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      </div>
+
+      {!selectedSummary || selectedSummary.trades.length === 0 ? (
+        <p className="py-2 text-xs text-muted">No trades on this day.</p>
+      ) : (
+        <div className="max-h-64 overflow-y-auto rounded-lg border border-card-border divide-y divide-card-border/60">
+          {selectedSummary.trades.map((t, i) => (
+            <div key={`${t.symbol}-${i}`} className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-semibold text-foreground">{t.symbol}</span>
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                    t.side === 'LONG' ? 'bg-profit/15 text-profit' : 'bg-loss/15 text-loss'
+                  }`}
+                >
+                  {t.side}
+                </span>
+                <span className="text-muted whitespace-nowrap">{t.executions} exec</span>
+              </div>
+              <span className={`font-semibold tabular-nums ${pnlColorClass(t.netPnL)}`}>
+                {t.netPnL >= 0 ? '+' : ''}${t.netPnL.toFixed(2)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  ) : null;
+
   return (
     <div className="space-y-2">
       {!rangeInfo && (
@@ -153,6 +221,8 @@ export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
           startDate={rangeInfo.firstDate}
           endDate={rangeInfo.lastDate}
           dataByDate={dataByDate}
+          selectedDate={selectedDate}
+          detail={detailPanel}
           onDayClick={(date) => setSelectedDate((prev) => (prev === date ? null : date))}
         />
       ) : (
@@ -160,69 +230,10 @@ export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
           year={year}
           month={month}
           dataByDate={dataByDate}
+          selectedDate={selectedDate}
+          detail={detailPanel}
           onDayClick={(date) => setSelectedDate((prev) => (prev === date ? null : date))}
         />
-      )}
-
-      {selectedDate && (
-        <div ref={previewRef} className="pt-3 mt-1 border-t border-card-border animate-in fade-in slide-in-from-top-1 duration-200">
-          <div className="flex items-center justify-between gap-2 mb-2">
-            <div className="flex items-center gap-2 text-sm min-w-0">
-              <span className="font-semibold text-foreground truncate">
-                {selectedSummary?.formattedDate ?? formatDayLabel(selectedDate)}
-              </span>
-              {selectedSummary && (
-                <>
-                  <span className={`font-semibold tabular-nums ${pnlColorClass(selectedSummary.totalPnL)}`}>
-                    {selectedSummary.totalPnL >= 0 ? '+' : ''}${selectedSummary.totalPnL.toFixed(2)}
-                  </span>
-                  <span className="text-xs text-muted whitespace-nowrap">· {selectedSummary.totalTrades} trades</span>
-                </>
-              )}
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Link
-                href={`/journal?date=${selectedDate}`}
-                className="text-xs font-medium text-accent hover:underline whitespace-nowrap"
-              >
-                Open full day →
-              </Link>
-              <button
-                type="button"
-                onClick={() => setSelectedDate(null)}
-                aria-label="Close day preview"
-                className="p-1 rounded text-muted hover:text-foreground hover:bg-sidebar-hover transition-colors"
-              >
-                <X size={14} />
-              </button>
-            </div>
-          </div>
-
-          {!selectedSummary || selectedSummary.trades.length === 0 ? (
-            <p className="py-2 text-xs text-muted">No trades on this day.</p>
-          ) : (
-            <div className="max-h-64 overflow-y-auto rounded-lg border border-card-border divide-y divide-card-border/60">
-              {selectedSummary.trades.map((t, i) => (
-                <div key={`${t.symbol}-${i}`} className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="font-semibold text-foreground">{t.symbol}</span>
-                    <span
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                        t.side === 'LONG' ? 'bg-profit/15 text-profit' : 'bg-loss/15 text-loss'
-                      }`}
-                    >
-                      {t.side}
-                    </span>
-                    <span className="text-muted whitespace-nowrap">{t.executions} exec</span>
-                  </div>
-                  <span className={`font-semibold tabular-nums ${pnlColorClass(t.netPnL)}`}>
-                    {t.netPnL >= 0 ? '+' : ''}${t.netPnL.toFixed(2)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       )}
     </div>
   );
@@ -233,9 +244,11 @@ interface ContiguousRangeViewProps {
   endDate: Date;
   dataByDate: Map<string, DayData>;
   onDayClick: (date: string) => void;
+  selectedDate: string | null;
+  detail: ReactNode;
 }
 
-function ContiguousRangeView({ startDate, endDate, dataByDate, onDayClick }: ContiguousRangeViewProps) {
+function ContiguousRangeView({ startDate, endDate, dataByDate, onDayClick, selectedDate, detail }: ContiguousRangeViewProps) {
   const weeks = useMemo(() => {
     // Start from the Sunday of the week containing the start date
     const gridStart = new Date(startDate);
@@ -305,6 +318,7 @@ function ContiguousRangeView({ startDate, endDate, dataByDate, onDayClick }: Con
             pnl={week.weekPnL}
             days={week.weekDays}
           />
+          {selectedDate && week.days.some((d) => d.date === selectedDate) && detail}
         </Fragment>
       ))}
     </div>
@@ -316,9 +330,11 @@ interface MonthViewProps {
   month: number;
   dataByDate: Map<string, DayData>;
   onDayClick: (date: string) => void;
+  selectedDate: string | null;
+  detail: ReactNode;
 }
 
-function MonthView({ year, month, dataByDate, onDayClick }: MonthViewProps) {
+function MonthView({ year, month, dataByDate, onDayClick, selectedDate, detail }: MonthViewProps) {
   const weeks = useMemo(() => {
     const firstDay = new Date(year, month, 1);
     const startDow = firstDay.getDay();
@@ -386,6 +402,7 @@ function MonthView({ year, month, dataByDate, onDayClick }: MonthViewProps) {
             pnl={week.weekPnL}
             days={week.weekDays}
           />
+          {selectedDate && week.days.some((d) => d.date === selectedDate) && detail}
         </Fragment>
       ))}
     </div>
