@@ -81,16 +81,6 @@ export default function WelcomeModal({ videoUrl }: WelcomeModalProps) {
           <X size={18} />
         </button>
 
-        {/* Work-in-progress ribbon */}
-        <div className="flex-shrink-0 flex items-center justify-center gap-2 px-12 py-2.5 text-center bg-accent/10 text-accent border-b border-accent/20">
-          <span aria-hidden>🚧</span>
-          <p className="text-[11px] sm:text-xs leading-snug">
-            <span className="font-semibold">Work in progress</span>
-            <span className="hidden sm:inline"> — you&apos;re viewing an early preview. Expect rough edges, and please share feedback.</span>
-            <span className="sm:hidden"> — early preview</span>
-          </p>
-        </div>
-
         {/* Scrollable body */}
         <div className="overflow-y-auto flex-1 min-h-0">
           {/* Hero demo video (16:9), full-bleed aspect-ratio fit */}
