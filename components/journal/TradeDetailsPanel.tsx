@@ -25,8 +25,12 @@ function Row({ label, value, valueClass }: { label: string; value: React.ReactNo
 export default function TradeDetailsPanel({ trade, currency = 'USD', className = '' }: TradeDetailsPanelProps) {
   const [showMore, setShowMore] = useState(false);
   const d = computeTradeDetails(trade);
-  const sym = getCurrencySymbol(currency);
-  const price = (v: number) => `${sym}${v.toFixed(2)}`;
+  // Prices and position cost are in the trade's NATIVE currency; the P&L amounts
+  // are already converted to the account base currency. Label each with its own
+  // currency rather than stamping native price numbers with the base symbol.
+  const nativeCurrency = trade.currency || currency;
+  const nativeSym = getCurrencySymbol(nativeCurrency);
+  const price = (v: number) => `${nativeSym}${v.toFixed(2)}`;
   const points = (v: number) => `${v >= 0 ? '+' : '-'}${Math.abs(v).toFixed(2)}`;
   const isLong = d.side === 'LONG';
 
@@ -117,7 +121,7 @@ export default function TradeDetailsPanel({ trade, currency = 'USD', className =
           {d.pointsTotal != null && (
             <Row label="Points Total" value={points(d.pointsTotal)} valueClass={d.pointsTotal >= 0 ? 'text-profit' : 'text-loss'} />
           )}
-          <Row label="Position Cost" value={formatCurrency(d.positionCost, currency)} />
+          <Row label="Position Cost" value={formatCurrency(d.positionCost, nativeCurrency)} />
           <Row label="Gross P&L" value={formatCurrency(d.grossPnL, currency)} valueClass={pnlColorClass(d.grossPnL)} />
           <Row label="Commissions & Fees" value={formatCurrency(d.commissions, currency)} />
           <Row label="Executions" value={d.executions} />
