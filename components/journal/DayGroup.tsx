@@ -16,6 +16,7 @@ interface DayGroupProps {
   onNextDay?: () => void;
   hasPrevDay?: boolean;
   hasNextDay?: boolean;
+  showBaseCurrency?: boolean;
 }
 
 export default function DayGroup({
@@ -27,6 +28,7 @@ export default function DayGroup({
   onNextDay,
   hasPrevDay = false,
   hasNextDay = false,
+  showBaseCurrency = false,
 }: DayGroupProps) {
   const { accounts } = useAccount();
   const [isNotesOpen, setIsNotesOpen] = useState(openNotes);
@@ -38,8 +40,8 @@ export default function DayGroup({
     <section className="rounded-2xl border border-card-border overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 bg-card-bg/50 backdrop-blur-sm mb-8">
       <DayHeader 
         formattedDate={summary.formattedDate} 
-        totalPnL={summary.totalPnL} 
-        currency={currency} 
+        totalPnL={summary.totalPnL}
+        currency={currency}
         isNotesOpen={isNotesOpen}
         onToggleNotes={() => setIsNotesOpen(!isNotesOpen)}
         isStatsOpen={isStatsOpen}
@@ -59,7 +61,13 @@ export default function DayGroup({
           <NotesArea date={summary.date} accountId={accountId} />
         </div>
       )}
-      <TradeTable trades={summary.trades} accountId={accountId} currency={currency} focusSymbol={focusSymbol} />
+      <TradeTable
+        trades={summary.trades}
+        accountId={accountId}
+        currency={currency}
+        focusSymbol={focusSymbol}
+        showBaseCurrency={showBaseCurrency}
+      />
     </section>
   );
 }

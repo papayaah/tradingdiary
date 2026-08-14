@@ -36,6 +36,8 @@ services:
       ADMIN_EMAILS: ${ADMIN_EMAILS}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       POLYGON_API_KEY: ${POLYGON_API_KEY}
+      # Server-side historical FX conversion. Keep this out of client bundles.
+      EXCHANGE_RATE_API_KEY: ${EXCHANGE_RATE_API_KEY:-}
       # IBKR gateway for the browser chart's /api/watch futures fetches. Uses a
       # DISTINCT clientId from the scanner (default 7) so the two connections
       # don't collide on the gateway. Reached over the shared ibkr-net network.

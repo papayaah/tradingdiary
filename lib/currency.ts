@@ -5,12 +5,18 @@ export function getCurrencySymbol(currency: string = 'USD'): string {
         'EUR': '€',
         'GBP': '£',
         'JPY': '¥',
+        'KRW': '₩',
         'CNY': '¥',
         'SGD': 'S$',
         'AUD': 'A$',
         'CAD': 'C$',
+        'TWD': 'NT$',
+        'INR': '₹',
+        'CHF': 'CHF\u00a0',
+        'PHP': '₱',
     };
-    return symbols[currency.toUpperCase()] || '$';
+    const code = currency.toUpperCase();
+    return symbols[code] || `${code}\u00a0`;
 }
 
 export function formatCurrency(value: number, currency: string = 'USD'): string {

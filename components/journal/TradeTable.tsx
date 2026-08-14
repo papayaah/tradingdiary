@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { AggregatedTrade } from '@/lib/trading/aggregator';
 import { pnlColorClass, formatVolume } from '@/lib/utils/format';
 import { formatCurrency } from '@/lib/currency';
+import { getTradePnlDisplay } from '@/lib/trading/pnl-display';
 import {
   getTradeNote,
   addScreenshotToTrade,
@@ -21,9 +22,10 @@ interface TradeTableProps {
   accountId: string;
   currency?: string;
   focusSymbol?: string;
+  showBaseCurrency?: boolean;
 }
 
-export default function TradeTable({ trades, accountId, currency = 'USD', focusSymbol }: TradeTableProps) {
+export default function TradeTable({ trades, accountId, currency = 'USD', focusSymbol, showBaseCurrency = false }: TradeTableProps) {
   const focusedTrade = focusSymbol
     ? trades.find((item) => item.symbol.toUpperCase() === focusSymbol.toUpperCase())
     : undefined;
@@ -67,6 +69,7 @@ export default function TradeTable({ trades, accountId, currency = 'USD', focusS
                   accountId={accountId}
                   currency={currency}
                   isFocused={Boolean(focusSymbol && trade.symbol.toUpperCase() === focusSymbol.toUpperCase())}
+                  showBaseCurrency={showBaseCurrency}
                 />
               );
             })}
@@ -85,6 +88,7 @@ function TradeRow({
   accountId,
   currency,
   isFocused,
+  showBaseCurrency,
 }: {
   trade: AggregatedTrade;
   rowKey: string;
@@ -93,6 +97,7 @@ function TradeRow({
   accountId: string;
   currency: string;
   isFocused: boolean;
+  showBaseCurrency: boolean;
 }) {
   const [screenshotIds, setScreenshotIds] = useState<number[]>([]);
   const rowRef = useRef<HTMLTableRowElement>(null);
@@ -129,7 +134,8 @@ function TradeRow({
   );
 
   const tradeCurrency = trade.currency || currency;
-  const isDifferentCurrency = Boolean(trade.currency && trade.currency.toUpperCase() !== currency.toUpperCase());
+  const pnlDisplay = getTradePnlDisplay(trade, currency, showBaseCurrency);
+  const isDifferentCurrency = pnlDisplay.isConverted;
 
   return (
     <>
@@ -173,9 +179,14 @@ function TradeRow({
           {trade.executions}
         </td>
         <td className="px-2.5 sm:px-4 py-3 text-right shrink-0 whitespace-nowrap">
-          <span className={`text-xs sm:text-sm font-normal tabular-nums ${pnlColorClass(trade.netPnL)}`}>
-            {formatCurrency(trade.netPnL, tradeCurrency)}
+          <span className={`text-xs sm:text-sm font-normal tabular-nums ${pnlColorClass(pnlDisplay.primaryAmount)}`}>
+            {formatCurrency(pnlDisplay.primaryAmount, pnlDisplay.primaryCurrency)}
           </span>
+          {isDifferentCurrency && (
+            <div className="mt-0.5 text-[9px] text-muted tabular-nums">
+              {formatCurrency(pnlDisplay.secondaryAmount ?? 0, pnlDisplay.secondaryCurrency)}
+            </div>
+          )}
           {trade.isOpen && (
             <div className="flex flex-col items-end gap-0.5 mt-0.5">
               <span className="text-[9px] font-normal text-muted/60 uppercase tracking-tighter">
@@ -183,7 +194,12 @@ function TradeRow({
               </span>
               {trade.unrealizedPnL != null && (
                 <span className={`text-[10px] font-normal px-1 rounded bg-muted-bg/50 ${pnlColorClass(trade.unrealizedPnL)}`}>
-                  unrl: {formatCurrency(trade.unrealizedPnL, tradeCurrency)}
+                  unrl: {formatCurrency(
+                    isDifferentCurrency && !showBaseCurrency
+                      ? (trade.nativeUnrealizedPnL ?? trade.unrealizedPnL)
+                      : trade.unrealizedPnL,
+                    isDifferentCurrency && !showBaseCurrency ? tradeCurrency : currency,
+                  )}
                 </span>
               )}
             </div>

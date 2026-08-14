@@ -1,5 +1,31 @@
 import { getDB } from './database';
 import type { TransactionRecord, AccountRecord, PositionRecord } from './schema';
+import { enrichTransactionsWithHistoricalFx } from '@/lib/fx/enrich-transactions';
+
+async function persistFxBackfill(
+  account: AccountRecord | undefined,
+  transactions: TransactionRecord[],
+): Promise<TransactionRecord[]> {
+  if (!account || transactions.length === 0) return transactions;
+  const target = account.currency.toUpperCase();
+  const needsFx = transactions.some((transaction) =>
+    transaction.currency.toUpperCase() !== target &&
+    (
+      !transaction.fxRateToAccount ||
+      transaction.fxAccountCurrency !== target ||
+      transaction.fxRateDate !== transaction.date ||
+      transaction.fxRateProvider !== 'exchange-rate-api'
+    ),
+  );
+  if (!needsFx) return transactions;
+
+  const enriched = await enrichTransactionsWithHistoricalFx(transactions, target);
+  const db = await getDB();
+  const tx = db.transaction('transactions', 'readwrite');
+  await Promise.all(enriched.map((transaction) => tx.store.put(transaction)));
+  await tx.done;
+  return enriched;
+}
 
 export async function importData(
   account: AccountRecord,
@@ -42,7 +68,23 @@ export async function updateAccount(account: AccountRecord) {
 
 export async function getAllTransactions(): Promise<TransactionRecord[]> {
   const db = await getDB();
-  return db.getAll('transactions');
+  const [transactions, accounts] = await Promise.all([
+    db.getAll('transactions'),
+    db.getAll('accounts'),
+  ]);
+  const accountById = new Map(accounts.map((account) => [account.accountId, account]));
+  const byAccount = new Map<string, TransactionRecord[]>();
+  for (const transaction of transactions) {
+    const group = byAccount.get(transaction.accountId) ?? [];
+    group.push(transaction);
+    byAccount.set(transaction.accountId, group);
+  }
+  const enriched = await Promise.all(
+    [...byAccount.entries()].map(([accountId, group]) =>
+      persistFxBackfill(accountById.get(accountId), group),
+    ),
+  );
+  return enriched.flat();
 }
 
 export async function getTransactionCount(): Promise<number> {
@@ -52,7 +94,11 @@ export async function getTransactionCount(): Promise<number> {
 
 export async function getTransactionsByAccount(accountId: string): Promise<TransactionRecord[]> {
   const db = await getDB();
-  return db.getAllFromIndex('transactions', 'by-accountId', accountId);
+  const [account, transactions] = await Promise.all([
+    db.get('accounts', accountId),
+    db.getAllFromIndex('transactions', 'by-accountId', accountId),
+  ]);
+  return persistFxBackfill(account, transactions);
 }
 
 export async function saveManualTransaction(

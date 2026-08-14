@@ -1,5 +1,40 @@
 import { parseTLGFile } from '@/lib/import/brokers/ibkr/tlg-parser';
 import { importData } from '@/lib/db/trades';
+import { enrichTransactionsWithHistoricalFx } from '@/lib/fx/enrich-transactions';
+
+const DAY_MS = 86_400_000;
+
+function parseSampleDate(date: string): Date {
+  return new Date(Date.UTC(
+    Number(date.slice(0, 4)),
+    Number(date.slice(4, 6)) - 1,
+    Number(date.slice(6, 8)),
+  ));
+}
+
+function formatSampleDate(date: Date): string {
+  return [
+    date.getUTCFullYear(),
+    String(date.getUTCMonth() + 1).padStart(2, '0'),
+    String(date.getUTCDate()).padStart(2, '0'),
+  ].join('');
+}
+
+export function recentSampleDateShift(dates: string[], now = new Date()): number {
+  const newest = dates.reduce((latest, date) => date > latest ? date : latest, '');
+  if (!newest) return 0;
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const differenceInDays = Math.floor((today - parseSampleDate(newest).getTime()) / DAY_MS);
+  // Whole-week shifts preserve every sample trade's original weekday. The
+  // newest trade consequently lands today or within the preceding six days.
+  return Math.floor(differenceInDays / 7) * 7;
+}
+
+export function shiftSampleDate(date: string, days: number): string {
+  const shifted = parseSampleDate(date);
+  shifted.setUTCDate(shifted.getUTCDate() + days);
+  return formatSampleDate(shifted);
+}
 
 export async function loadDemoSampleData(): Promise<{
   success: boolean;
@@ -19,39 +54,26 @@ export async function loadDemoSampleData(): Promise<{
     throw new Error('Sample TLG file contains no valid trade records.');
   }
 
-  // Dynamically map sample trades across 3 consecutive months up to the current month
-  const now = new Date();
+  const shiftDays = recentSampleDateShift(parsed.transactions.map((transaction) => transaction.date));
+  const adjustedTransactions = parsed.transactions.map((transaction) => ({
+    ...transaction,
+    date: shiftSampleDate(transaction.date, shiftDays),
+  }));
+  const adjustedPositions = parsed.positions.map((position) => ({
+    ...position,
+    date: shiftSampleDate(position.date, shiftDays),
+  }));
 
-  const getYearMonthForOffset = (offset: number) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    return `${y}${m}`;
-  };
-
-  const monthMap: Record<string, string> = {
-    '202606': getYearMonthForOffset(2), // 2 months ago
-    '202607': getYearMonthForOffset(1), // 1 month ago
-    '202608': getYearMonthForOffset(0), // current month
-  };
-
-  const adjustedTransactions = parsed.transactions.map((t) => {
-    const origYm = t.date.slice(0, 6);
-    const day = t.date.length >= 8 ? t.date.slice(6, 8) : '05';
-    const targetYm = monthMap[origYm] || getYearMonthForOffset(0);
-
-    return {
-      ...t,
-      date: `${targetYm}${day}`,
-    };
-  });
-
-  await importData(parsed.account, adjustedTransactions, parsed.positions);
+  const transactionsWithFx = await enrichTransactionsWithHistoricalFx(
+    adjustedTransactions,
+    parsed.account.currency,
+  );
+  await importData(parsed.account, transactionsWithFx, adjustedPositions);
 
   return {
     success: true,
     accountId: parsed.account.accountId,
     accountName: parsed.account.name,
-    transactionCount: adjustedTransactions.length,
+    transactionCount: transactionsWithFx.length,
   };
 }

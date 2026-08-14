@@ -4,7 +4,11 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Upload, BookOpen, ArrowLeft, ChevronLeft, ChevronRight, Plus, Sparkles } from 'lucide-react';
-import { getTradeDateCutoff } from '@/lib/settings';
+import {
+  getShowPnlInBaseCurrency,
+  getTradeDateCutoff,
+  setShowPnlInBaseCurrency,
+} from '@/lib/settings';
 import { aggregateByDay, applyMarketPrices, type DailySummary } from '@/lib/trading/aggregator';
 import DayGroup from '@/components/journal/DayGroup';
 import { useAccount } from '@/contexts/AccountContext';
@@ -19,12 +23,26 @@ export default function JournalPage() {
   const filterDate = searchParams.get('date');
   const focusSymbol = searchParams.get('symbol')?.toUpperCase();
   const openDailyNotes = searchParams.get('notes') === 'open';
-  const { selectedAccountId, setSelectedAccountId } = useAccount();
+  const { accounts, selectedAccountId, setSelectedAccountId } = useAccount();
+  const baseCurrency = accounts.find((account) => account.accountId === selectedAccountId)?.currency ?? 'USD';
 
   const [summaries, setSummaries] = useState<DailySummary[] | null>(null);
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [loadingSample, setLoadingSample] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [showBaseCurrency, setShowBaseCurrency] = useState(false);
+
+  useEffect(() => {
+    setShowBaseCurrency(getShowPnlInBaseCurrency());
+  }, []);
+
+  const toggleBaseCurrency = useCallback(() => {
+    setShowBaseCurrency((current) => {
+      const next = !current;
+      setShowPnlInBaseCurrency(next);
+      return next;
+    });
+  }, []);
 
   const manualEntryVisible = showManualEntry || searchParams.get('action') === 'add-trade';
 
@@ -163,8 +181,8 @@ export default function JournalPage() {
       setSelectedAccountId(res.accountId);
       setRefreshKey((k) => k + 1);
       toast.success(`Loaded ${res.transactionCount} sample IBKR trades!`);
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to load sample data.');
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Failed to load sample data.');
     } finally {
       setLoadingSample(false);
     }
@@ -224,19 +242,46 @@ export default function JournalPage() {
 
   return (
     <div className="p-4 sm:p-6 space-y-8 w-full">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
         <div>
           <h1 className="hidden sm:block text-3xl font-semibold text-foreground tracking-tight mb-1">Trading Journal</h1>
           <p className="text-sm text-muted font-medium">Capture your trades, thoughts, and market analysis.</p>
         </div>
-        <button
-          type="button"
-          onClick={() => manualEntryVisible ? closeManualEntry() : setShowManualEntry(true)}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 text-sm font-bold text-white transition hover:bg-accent/90"
-        >
-          <Plus size={16} />
-          Add Trade
-        </button>
+        <div className="flex items-center gap-2 self-start md:self-auto">
+          {displaySummaries && displaySummaries.length > 0 && (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={showBaseCurrency}
+              aria-label={`Show P&L in base currency (${baseCurrency})`}
+              title={`Show P&L in base currency (${baseCurrency})`}
+              onClick={toggleBaseCurrency}
+              className={`inline-flex h-11 items-center gap-2 rounded-xl border px-3 text-xs font-semibold transition-colors ${
+                showBaseCurrency
+                  ? 'border-accent/30 bg-accent/10 text-accent'
+                  : 'border-card-border bg-card-bg text-muted hover:bg-muted-bg hover:text-foreground'
+              }`}
+            >
+              <span
+                aria-hidden="true"
+                className={`relative h-4 w-7 rounded-full transition-colors ${showBaseCurrency ? 'bg-accent' : 'bg-muted-bg'}`}
+              >
+                <span
+                  className={`absolute top-0.5 h-3 w-3 rounded-full bg-background shadow-sm transition-transform ${showBaseCurrency ? 'translate-x-3.5' : 'translate-x-0.5'}`}
+                />
+              </span>
+              {baseCurrency}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => manualEntryVisible ? closeManualEntry() : setShowManualEntry(true)}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-accent px-4 text-sm font-bold text-white transition hover:bg-accent/90"
+          >
+            <Plus size={16} />
+            Add Trade
+          </button>
+        </div>
       </div>
 
       {manualEntryVisible && (
@@ -313,6 +358,7 @@ export default function JournalPage() {
             onNextDay={next ? () => navigateToDay(next.date) : undefined}
             hasPrevDay={Boolean(prev)}
             hasNextDay={Boolean(next)}
+            showBaseCurrency={showBaseCurrency}
           />
         );
       })}

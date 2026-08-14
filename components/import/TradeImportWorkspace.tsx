@@ -501,6 +501,7 @@ export default function TradeImportWorkspace() {
     startProcessing(async () => {
       const { toTransactionRecords } = await import('@/lib/import/converter');
       const { importData: dbImport } = await import('@/lib/db/trades');
+      const { enrichTransactionsWithHistoricalFx } = await import('@/lib/fx/enrich-transactions');
 
       let targetAccountId = accountData.id;
       let targetAccount: AccountRecord;
@@ -523,7 +524,8 @@ export default function TradeImportWorkspace() {
         targetAccount = existing;
       }
 
-      const transactions = toTransactionRecords(selectedTransactions, targetAccountId, targetAccount.currency);
+      const converted = toTransactionRecords(selectedTransactions, targetAccountId, targetAccount.currency);
+      const transactions = await enrichTransactionsWithHistoricalFx(converted, targetAccount.currency);
       await dbImport(targetAccount, transactions, []);
 
       if (importFile) importFileToLibrary(importFile).catch(console.error);
@@ -623,7 +625,7 @@ export default function TradeImportWorkspace() {
               </div>
               <div>
                 <h3 className="font-bold text-sm text-foreground">Want to test the app first?</h3>
-                <p className="text-xs text-muted">Load demo sample trades (AAPL, NVDA, SPY, QQQ) in 1-click.</p>
+                <p className="text-xs text-muted">Load USD, Samsung, Toyota, and Tencent sample trades in 1-click.</p>
               </div>
             </div>
             <button

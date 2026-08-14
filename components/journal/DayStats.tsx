@@ -50,24 +50,24 @@ export default function DayStats({ summary, currency = 'USD' }: DayStatsProps) {
         colorClass={winPctRaw >= 50 ? 'text-profit' : winPctRaw > 0 ? 'text-loss' : 'text-muted'}
       />
       <StatCard
-        label="Commissions"
+        label={`Commissions (${currency})`}
         value={formatCurrency(summary.totalCommissions, currency)}
         colorClass="text-loss"
       />
       <StatCard
-        label="Realized P&L"
+        label={`Realized P&L (${currency})`}
         value={formatCurrency(summary.netPnL, currency)}
         colorClass={pnlColorClass(summary.netPnL)}
       />
       {summary.totalPnL !== summary.netPnL ? (
         <StatCard
-          label="Total (Incl. Unrl)"
+          label={`Total (Incl. Unrl) (${currency})`}
           value={formatCurrency(summary.totalPnL, currency)}
           colorClass={pnlColorClass(summary.totalPnL)}
         />
       ) : (
         <StatCard
-          label="Gross P&L"
+          label={`Gross P&L (${currency})`}
           value={formatCurrency(summary.grossPnL, currency)}
           colorClass={pnlColorClass(summary.grossPnL)}
         />
@@ -75,4 +75,3 @@ export default function DayStats({ summary, currency = 'USD' }: DayStatsProps) {
     </div>
   );
 }
-

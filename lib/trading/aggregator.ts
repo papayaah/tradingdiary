@@ -6,6 +6,13 @@ export interface AggregatedTrade {
   date: string;
   firstTradeTime: string;
   currency?: string;
+  accountCurrency?: string;
+  nativeGrossPnL?: number;
+  nativeTotalCommissions?: number;
+  nativeNetPnL?: number;
+  nativeUnrealizedPnL?: number;
+  fxRateToAccount?: number;
+  fxRateDate?: string;
   volume: number;
   executions: number;
   grossPnL: number;
@@ -81,6 +88,14 @@ interface FIFOLot {
   entryPrice: number;
   multiplier: number;
   commission: number;
+  commissionAccount: number;
+}
+
+function fxRate(t: TransactionRecord): number {
+  const source = t.currency?.toUpperCase();
+  const target = t.fxAccountCurrency?.toUpperCase();
+  if (!source || !target || source === target) return 1;
+  return t.fxRateToAccount && t.fxRateToAccount > 0 ? t.fxRateToAccount : 1;
 }
 
 /**
@@ -93,7 +108,10 @@ interface DateAccum {
   transactions: TransactionRecord[];
   realizedGross: number;
   realizedCommission: number;
+  realizedGrossAccount: number;
+  realizedCommissionAccount: number;
   unrealizedPnL?: number; // Capture imported value
+  unrealizedPnLAccount?: number;
   // Snapshot of the running position at the END of this date
   endPosition: number;
   endAvgCost: number;
@@ -157,6 +175,8 @@ export function aggregateByDay(
           transactions: [],
           realizedGross: 0,
           realizedCommission: 0,
+          realizedGrossAccount: 0,
+          realizedCommissionAccount: 0,
           unrealizedPnL: undefined,
           endPosition: 0,
           endAvgCost: 0,
@@ -173,11 +193,13 @@ export function aggregateByDay(
       // If transaction has manual realized P&L, add it directly
       if (t.realizedPnL != null) {
         accum.realizedGross += t.realizedPnL;
+        accum.realizedGrossAccount += t.realizedPnL * fxRate(t);
       }
 
       // Capture imported unrealized P&L
       if (t.unrealizedPnL != null) {
         accum.unrealizedPnL = t.unrealizedPnL;
+        accum.unrealizedPnLAccount = t.unrealizedPnL * fxRate(t);
       }
 
       if (isOpening && qty > 0) {
@@ -186,6 +208,7 @@ export function aggregateByDay(
           entryPrice: Math.abs(t.price),
           multiplier: t.multiplier || 1,
           commission: t.commission,
+          commissionAccount: t.commission * fxRate(t),
         });
         runningPosition += (t.side === 'BUYTOOPEN' ? qty : -qty);
       } else if (!isOpening && qty > 0) {
@@ -198,16 +221,19 @@ export function aggregateByDay(
           const matched = Math.min(remaining, lot.qty);
 
           const isLong = t.side === 'SELLTOCLOSE';
-          if (isLong) {
-            accum.realizedGross += (closePrice - lot.entryPrice) * matched * lot.multiplier;
-          } else {
-            accum.realizedGross += (lot.entryPrice - closePrice) * matched * lot.multiplier;
-          }
+          const matchedGross = isLong
+            ? (closePrice - lot.entryPrice) * matched * lot.multiplier
+            : (lot.entryPrice - closePrice) * matched * lot.multiplier;
+          accum.realizedGross += matchedGross;
+          // Realized profit is recognized using the closing execution day's rate.
+          accum.realizedGrossAccount += matchedGross * fxRate(t);
 
           // Allocate opening lot commission proportionally
           const lotFraction = matched / (matched + (lot.qty - matched));
           accum.realizedCommission += lot.commission * lotFraction;
+          accum.realizedCommissionAccount += lot.commissionAccount * lotFraction;
           lot.commission -= lot.commission * lotFraction;
+          lot.commissionAccount -= lot.commissionAccount * lotFraction;
 
           lot.qty -= matched;
           remaining -= matched;
@@ -219,6 +245,7 @@ export function aggregateByDay(
 
         // Add closing transaction's commission
         accum.realizedCommission += t.commission;
+        accum.realizedCommissionAccount += t.commission * fxRate(t);
         runningPosition += (t.side === 'BUYTOCLOSE' ? qty : -qty);
       }
 
@@ -237,8 +264,13 @@ export function aggregateByDay(
 
   for (const acc of allDateAccums) {
     const volume = acc.transactions.reduce((s, t) => s + Math.abs(t.quantity), 0);
-    const grossPnL = acc.realizedGross;
-    const netPnL = grossPnL + acc.realizedCommission;
+    const nativeGrossPnL = acc.realizedGross;
+    const nativeNetPnL = nativeGrossPnL + acc.realizedCommission;
+    const grossPnL = acc.realizedGrossAccount;
+    const netPnL = grossPnL + acc.realizedCommissionAccount;
+    const representativeFx = [...acc.transactions]
+      .reverse()
+      .find((transaction) => transaction.fxRateToAccount != null);
 
     const trade: AggregatedTrade = {
       symbol: acc.symbol,
@@ -246,12 +278,19 @@ export function aggregateByDay(
       date: acc.date,
       firstTradeTime: acc.transactions[0].time,
       currency: acc.transactions[0]?.currency || 'USD',
+      accountCurrency: representativeFx?.fxAccountCurrency ?? acc.transactions[0]?.currency ?? 'USD',
+      nativeGrossPnL,
+      nativeTotalCommissions: acc.realizedCommission,
+      nativeNetPnL,
+      nativeUnrealizedPnL: acc.unrealizedPnL,
+      fxRateToAccount: representativeFx?.fxRateToAccount,
+      fxRateDate: representativeFx?.fxRateDate,
       volume,
       executions: acc.transactions.length,
       grossPnL,
-      totalCommissions: acc.realizedCommission,
+      totalCommissions: acc.realizedCommissionAccount,
       netPnL,
-      unrealizedPnL: acc.unrealizedPnL,
+      unrealizedPnL: acc.unrealizedPnLAccount,
       side: acc.side,
       isOpen: Math.abs(acc.endPosition) > 0.01,
       netQuantity: acc.endPosition,
@@ -345,11 +384,11 @@ export function applyMarketPrices(
 
       const multiplier = trade.transactions[0]?.multiplier || 1;
 
-      if (trade.side === 'LONG') {
-        trade.unrealizedPnL = (marketPrice - trade.openAvgCost) * Math.abs(trade.netQuantity) * multiplier;
-      } else {
-        trade.unrealizedPnL = (trade.openAvgCost - marketPrice) * Math.abs(trade.netQuantity) * multiplier;
-      }
+      const nativeUnrealized = trade.side === 'LONG'
+        ? (marketPrice - trade.openAvgCost) * Math.abs(trade.netQuantity) * multiplier
+        : (trade.openAvgCost - marketPrice) * Math.abs(trade.netQuantity) * multiplier;
+      trade.nativeUnrealizedPnL = nativeUnrealized;
+      trade.unrealizedPnL = nativeUnrealized * (trade.fxRateToAccount ?? 1);
     }
   }
 }

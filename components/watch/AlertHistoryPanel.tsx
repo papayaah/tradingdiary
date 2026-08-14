@@ -119,7 +119,7 @@ const MiniCandles = React.memo(function MiniCandles({ candles, interval = '5m' }
     pad + (height - pad * 2) - ((price - minValue) / range) * (height - pad * 2);
 
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="overflow-visible select-none">
+    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="block w-full select-none">
       {displayCandles.map((candle, index) => {
         const x = pad + index * step + (step - candleWidth) / 2;
         const color = candle.close >= candle.open ? '#10b981' : '#f43f5e';
@@ -293,7 +293,7 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
 
   return (
     <div
-      className={`p-3 rounded-xl border flex flex-col justify-between gap-2 text-sm transition-all select-none ${
+      className={`@container/card p-3 rounded-xl border flex flex-col justify-between gap-2 text-sm transition-all select-none ${
         alert.type === 'bullish'
           ? 'bg-profit/5 border-profit/25 hover:bg-profit/10 hover:border-profit/40'
           : 'bg-loss/5 border-loss/25 hover:bg-loss/10 hover:border-loss/40'
@@ -310,50 +310,50 @@ const AlertHistoryCard = React.memo(function AlertHistoryCard({
         className="w-full flex flex-col gap-2 text-left cursor-pointer touch-manipulation active:scale-[0.99] active:opacity-80 transition-transform"
         title="Tap to show alert details and chart"
       >
-        <div className="flex items-stretch justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-foreground text-base">{alert.symbol}</span>
-              <span className="bg-muted-bg text-muted px-1.5 py-0.5 rounded text-xs font-mono">
-                {alert.interval}
+        <div className="@md/card:flex @md/card:items-stretch @md/card:justify-between @md/card:gap-3">
+          <div className="min-w-0 @md/card:flex-1">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-foreground text-base">{alert.symbol}</span>
+            <span className="bg-muted-bg text-muted px-1.5 py-0.5 rounded text-xs font-mono">
+              {alert.interval}
+            </span>
+            <span
+              className={`inline-flex items-center ${
+                alert.type === 'bullish' ? 'text-profit' : 'text-loss'
+              }`}
+              title={alert.type === 'bullish' ? 'Bullish alert' : 'Bearish alert'}
+            >
+              {alert.type === 'bullish' ? (
+                <TrendingUp size={15} aria-hidden="true" />
+              ) : (
+                <TrendingDown size={15} aria-hidden="true" />
+              )}
+              <span className="sr-only">
+                {alert.type === 'bullish' ? 'Bullish alert' : 'Bearish alert'}
               </span>
-              <span
-                className={`inline-flex items-center ${
-                  alert.type === 'bullish' ? 'text-profit' : 'text-loss'
-                }`}
-                title={alert.type === 'bullish' ? 'Bullish alert' : 'Bearish alert'}
-              >
-                {alert.type === 'bullish' ? (
-                  <TrendingUp size={15} aria-hidden="true" />
-                ) : (
-                  <TrendingDown size={15} aria-hidden="true" />
-                )}
-                <span className="sr-only">
-                  {alert.type === 'bullish' ? 'Bullish alert' : 'Bearish alert'}
-                </span>
-              </span>
-            </div>
-
-            {alert.patterns && alert.patterns.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                {alert.patterns.map((p, idx) => (
-                  <span
-                    key={p.patternId || idx}
-                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold border ${
-                      alert.type === 'bullish'
-                        ? 'bg-profit/15 text-profit border-profit/30'
-                        : 'bg-loss/15 text-loss border-loss/30'
-                    }`}
-                  >
-                    <span>{p.name}</span>
-                  </span>
-                ))}
-              </div>
-            )}
+            </span>
           </div>
 
+          {alert.patterns && alert.patterns.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 mt-2">
+              {alert.patterns.map((p, idx) => (
+                <span
+                  key={p.patternId || idx}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold border ${
+                    alert.type === 'bullish'
+                      ? 'bg-profit/15 text-profit border-profit/30'
+                      : 'bg-loss/15 text-loss border-loss/30'
+                  }`}
+                >
+                  <span>{p.name}</span>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
           {alert.candles && alert.candles.length > 0 && (
-            <div className="flex shrink-0 items-center self-center rounded border border-card-border bg-muted-bg/70 px-1.5 py-1 shadow-inner">
+            <div className="mt-2 w-full overflow-hidden rounded border border-card-border bg-muted-bg/70 px-2 py-1.5 shadow-inner @md/card:mt-0 @md/card:w-[190px] @md/card:shrink-0 @md/card:self-center">
               <MiniCandles candles={alert.candles} interval={alert.interval} />
             </div>
           )}

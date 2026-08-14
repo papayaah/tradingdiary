@@ -3007,45 +3007,51 @@ export default function MarketWatcher() {
   return (
     <div className="p-3 sm:p-5 md:p-6 w-full max-w-full overflow-x-hidden space-y-5 text-foreground">
 
-      {/* COMPACT HEADER HERO — title lives in the mobile top bar, so this only
-          shows on larger screens where there's no top bar. */}
-      <div className="hidden sm:flex sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-card-border/40">
-        <h1 className="text-xl md:text-2xl font-extrabold tracking-tight text-foreground">
+      {/* HEADER: title (desktop only — mobile shows it in the top bar) with the
+          view tabs as compact icon buttons on the right. */}
+      <div className="flex items-center justify-between gap-3 pb-2 border-b border-card-border/40">
+        <h1 className="hidden sm:block text-xl md:text-2xl font-extrabold tracking-tight text-foreground">
           Market Pattern Watcher
         </h1>
-      </div>
-
-      {/* TABS SELECTION */}
-      <div className="flex flex-wrap gap-2 p-1 bg-muted-bg/30 border border-card-border rounded-xl w-full sm:w-fit max-w-full">
-        <button
-          onClick={() => setActiveTab('watchlist')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-lg transition-all ${
-            activeTab === 'watchlist'
-              ? 'bg-accent text-white shadow-md'
-              : 'text-muted hover:text-foreground'
-          }`}
-        >
-          <Sliders size={14} />
-          Watchlist & Live Monitor
-        </button>
-        <button
-          onClick={() => setActiveTab('tester')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-lg transition-all ${
-            activeTab === 'tester'
-              ? 'bg-accent text-white shadow-md'
-              : 'text-muted hover:text-foreground'
-          }`}
-        >
-          <Search size={14} />
-          Pattern Tester
-        </button>
+        <div className="flex items-center gap-1 p-1 bg-muted-bg/30 border border-card-border rounded-xl">
+          <button
+            type="button"
+            onClick={() => setActiveTab('watchlist')}
+            aria-label="Watchlist & Live Monitor"
+            aria-pressed={activeTab === 'watchlist'}
+            title="Watchlist & Live Monitor"
+            className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all ${
+              activeTab === 'watchlist'
+                ? 'bg-accent text-white shadow-sm'
+                : 'text-muted hover:text-foreground hover:bg-card-bg/60'
+            }`}
+          >
+            <Sliders size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('tester')}
+            aria-label="Pattern Tester"
+            aria-pressed={activeTab === 'tester'}
+            title="Pattern Tester"
+            className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all ${
+              activeTab === 'tester'
+                ? 'bg-accent text-white shadow-sm'
+                : 'text-muted hover:text-foreground hover:bg-card-bg/60'
+            }`}
+          >
+            <Search size={16} />
+          </button>
+        </div>
       </div>
 
       {/* WATCHLIST MONITORS VIEW */}
       {activeTab === 'watchlist' && (
-        <div className="space-y-5 animate-fadeIn">
-          {/* Signal Alerts & Pattern Settings Guide Panel (100% Full-Width) */}
-          <div className="bg-card-bg border border-card-border shadow-xl rounded-2xl p-4 sm:p-5 w-full">
+        <div className="flex flex-col gap-5 animate-fadeIn">
+          {/* Signal Alerts & Pattern Settings Guide Panel (100% Full-Width).
+              On desktop it stays on top; on mobile it drops below the alerts
+              (order-last) so you see recent alerts first, config below. */}
+          <div className="order-last lg:order-none bg-card-bg border border-card-border shadow-xl rounded-2xl p-4 sm:p-5 w-full">
             <PatternGuidePanel
               value={selectedPatternId}
               onChange={handlePatternChange}

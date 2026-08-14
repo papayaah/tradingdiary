@@ -29,6 +29,12 @@ export interface TransactionRecord {
   feeMultiplier: number;
   realizedPnL?: number;
   unrealizedPnL?: number;
+  /** Fixed historical multiplier from transaction currency into account currency. */
+  fxRateToAccount?: number;
+  fxAccountCurrency?: string;
+  /** Provider rate date in YYYYMMDD form. */
+  fxRateDate?: string;
+  fxRateProvider?: 'exchange-rate-api';
 }
 
 export interface PositionRecord {

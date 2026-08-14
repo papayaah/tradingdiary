@@ -195,6 +195,14 @@ interface AIUsageData {
   trend: Array<{ day: string; requests: number; credits: number; costUsd: number }>;
 }
 
+function formatCadence(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '—';
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.round(seconds % 60);
+  return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+}
+
 export default function AdminDashboard() {
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [queueInfo, setQueueInfo] = useState<QueueData | null>(null);
@@ -663,11 +671,13 @@ export default function AdminDashboard() {
 
         {/* Panel B: Governor Cadence */}
         <div className="bg-card-bg border border-card-border rounded-xl p-5 space-y-4">
-          <div className="flex items-center justify-between border-b border-card-border pb-3">
-            <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-              <Gauge size={16} className="text-accent" />
-              Adaptive Governor Cadence
+          <div className="border-b border-card-border pb-3">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <Gauge size={16} className="text-accent" /> Adaptive Governor Cadence
             </h2>
+            <p className="mt-1 text-[11px] text-muted">
+              Full Cycle is the approximate time for every active key to refresh once. Pool Spacing is the average delay between provider requests.
+            </p>
           </div>
 
           {governorItems.length > 0 ? (
@@ -677,21 +687,32 @@ export default function AdminDashboard() {
                   <tr className="border-b border-card-border text-muted font-medium">
                     <th className="py-2 px-2">Provider Scope</th>
                     <th className="py-2 px-2">Keys (N)</th>
-                    <th className="py-2 px-2">Cadence</th>
+                    <th className="py-2 px-2">Full Cycle</th>
+                    <th className="py-2 px-2">Pool Spacing</th>
                     <th className="py-2 px-2">Constraint</th>
                     <th className="py-2 px-2 text-right">Predicted Req/hr</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-card-border/50">
-                  {governorItems.map((gov) => (
-                    <tr key={gov.providerScope} className="hover:bg-muted-bg/40">
-                      <td className="py-2 px-2 font-mono text-foreground">{gov.providerScope}</td>
-                      <td className="py-2 px-2 text-foreground font-medium">{gov.uniqueKeys}</td>
-                      <td className="py-2 px-2 text-accent font-semibold">{gov.cadenceSeconds}s</td>
-                      <td className="py-2 px-2 capitalize text-muted">{gov.bindingTerm}</td>
-                      <td className="py-2 px-2 text-right font-semibold text-foreground">{gov.predictedReqPerHour}</td>
-                    </tr>
-                  ))}
+                  {governorItems.map((gov) => {
+                    const poolSpacingSeconds = gov.uniqueKeys > 0
+                      ? gov.cadenceSeconds / gov.uniqueKeys
+                      : 0;
+                    return (
+                      <tr key={gov.providerScope} className="hover:bg-muted-bg/40">
+                        <td className="py-2 px-2 font-mono text-foreground">{gov.providerScope}</td>
+                        <td className="py-2 px-2 text-foreground font-medium">{gov.uniqueKeys}</td>
+                        <td className="py-2 px-2 text-accent font-semibold" title={`${gov.cadenceSeconds} seconds`}>
+                          {formatCadence(gov.cadenceSeconds)}
+                        </td>
+                        <td className="py-2 px-2 text-foreground" title={`${poolSpacingSeconds.toFixed(2)} seconds`}>
+                          {formatCadence(poolSpacingSeconds)}
+                        </td>
+                        <td className="py-2 px-2 capitalize text-muted">{gov.bindingTerm}</td>
+                        <td className="py-2 px-2 text-right font-semibold text-foreground">{gov.predictedReqPerHour}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

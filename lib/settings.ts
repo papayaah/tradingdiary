@@ -7,10 +7,13 @@ export interface AppSettings {
    * null means no cutoff (use file dates as-is).
    */
   tradeDateCutoff: string | null;
+  /** Show journal trade P&L primarily in the account's base currency. */
+  showPnlInBaseCurrency: boolean;
 }
 
 const defaults: AppSettings = {
   tradeDateCutoff: null,
+  showPnlInBaseCurrency: false,
 };
 
 export function getSettings(): AppSettings {
@@ -36,4 +39,12 @@ export function getTradeDateCutoff(): string | null {
 
 export function setTradeDateCutoff(cutoff: string | null): void {
   saveSettings({ tradeDateCutoff: cutoff });
+}
+
+export function getShowPnlInBaseCurrency(): boolean {
+  return getSettings().showPnlInBaseCurrency;
+}
+
+export function setShowPnlInBaseCurrency(showInBaseCurrency: boolean): void {
+  saveSettings({ showPnlInBaseCurrency: showInBaseCurrency });
 }
