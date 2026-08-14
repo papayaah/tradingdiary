@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useRef, useState } from 'react';
+import { Rocket } from 'lucide-react';
 
 const INTRO_VIDEO = '/welcome/Trader_waving_and_giving_thumbs-up_202608132126.mp4';
 const LOOP_VIDEO = '/welcome/Animate_fire_and_smoke_loop_202608132332.mp4';
@@ -96,7 +97,9 @@ export function WelcomeHeroVideo() {
         {bubble === 'first' && <SpeechBubble>Hi! Everything is fine...</SpeechBubble>}
         {bubble === 'second' && (
           <SpeechBubble>
-            It&apos;s still a work in progress, but hope you&apos;ll stick around and give Trading Diary a shot!
+            Still a work in progress—I&apos;m building it to help you trade more consistently and profitably.
+            Please stick around, help shape it, and let&apos;s go to da moooon!
+            <Rocket aria-hidden className="ml-1 inline-block size-[1em] align-[-0.12em] text-accent" />
           </SpeechBubble>
         )}
       </div>
