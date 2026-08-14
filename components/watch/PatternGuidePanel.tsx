@@ -148,18 +148,23 @@ export function PatternGuidePanel({
   const selectedPreset = PATTERN_PRESETS.find((preset) => preset.id === value) ?? PATTERN_PRESETS[0];
   const alertPatternIds = selectedValues ?? [value];
   const isMultiSelect = !!onSelectionChange;
+  // The panel is "focused" whenever either surface is open. Both dim the page
+  // behind them and lift the section above the backdrop.
+  const isFocused = isOpen || isGuideExpanded;
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isFocused) return;
 
     const handlePointerDown = (event: PointerEvent) => {
       if (!containerRef.current?.contains(event.target as Node)) {
         setIsOpen(false);
+        setIsGuideExpanded(false);
       }
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setIsOpen(false);
+        setIsGuideExpanded(false);
       }
     };
 
@@ -169,7 +174,7 @@ export function PatternGuidePanel({
       document.removeEventListener('pointerdown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen]);
+  }, [isFocused]);
 
   const definition = getPatternDefinition(value);
   const description = customDescription ?? (isMultiSelect
@@ -182,11 +187,25 @@ export function PatternGuidePanel({
     minMovePercent,
   );
   return (
-    <section
-      ref={containerRef}
-      className="relative mb-3 space-y-2 rounded-xl border border-card-border/60 bg-card-bg p-2.5 shadow-sm"
-      aria-labelledby="pattern-selector-title"
-    >
+    <>
+      {isFocused ? (
+        <FocusBackdrop
+          label="Close pattern controls"
+          onDismiss={() => {
+            setIsOpen(false);
+            setIsGuideExpanded(false);
+          }}
+        />
+      ) : null}
+      <section
+        ref={containerRef}
+        className={`relative mb-3 space-y-2 rounded-xl border bg-card-bg p-2.5 transition-shadow ${
+          isFocused
+            ? 'z-[100] border-accent/50 shadow-2xl shadow-background'
+            : 'z-30 border-card-border/60 shadow-sm'
+        }`}
+        aria-labelledby="pattern-selector-title"
+      >
       {/* Compact header: label, selected signal, and an inline-details toggle. */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center justify-between">
         <div>
@@ -373,6 +392,7 @@ export function PatternGuidePanel({
         </div>
       )}
       </section>
+    </>
   );
 }
 

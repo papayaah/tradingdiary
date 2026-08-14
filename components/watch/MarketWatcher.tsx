@@ -3048,29 +3048,29 @@ export default function MarketWatcher() {
       {/* WATCHLIST MONITORS VIEW */}
       {activeTab === 'watchlist' && (
         <div className="flex flex-col gap-5 animate-fadeIn">
-          {/* Signal Alerts & Pattern Settings Guide Panel (100% Full-Width).
-              On desktop it stays on top; on mobile it drops below the alerts
-              (order-last) so you see recent alerts first, config below. */}
-          <div className="order-last lg:order-none bg-card-bg border border-card-border shadow-xl rounded-2xl p-4 sm:p-5 w-full">
-            <PatternGuidePanel
-              value={selectedPatternId}
-              onChange={handlePatternChange}
-              selectedValues={selectedPatternIds}
-              onSelectionChange={handlePatternSelectionChange}
-              minMovePercent={selectedPatternMinMove}
-              requiredCount={requiredCandleCount}
-              maxBodyOverlapPercent={maxBodyOverlapPercent}
-              onMinMoveChange={handleNewMinMoveChange}
-              onRequiredCountChange={handleRequiredCandleCountChange}
-              onMaxBodyOverlapChange={handleMaxBodyOverlapChange}
-              patternSettings={patternSettings}
-              onPatternSettingsChange={handlePatternSettingsChange}
-            />
-          </div>
-
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            {/* Signal Alerts & Pattern Settings Guide Panel (100% Full-Width).
+                On desktop it stays on top (lg:order-1 lg:col-span-12); on mobile it is below the alert history (order-2)
+                but on top of the tradelist (order-3). */}
+            <div className="order-2 lg:order-1 lg:col-span-12 bg-card-bg border border-card-border shadow-xl rounded-2xl p-4 sm:p-5 w-full">
+              <PatternGuidePanel
+                value={selectedPatternId}
+                onChange={handlePatternChange}
+                selectedValues={selectedPatternIds}
+                onSelectionChange={handlePatternSelectionChange}
+                minMovePercent={selectedPatternMinMove}
+                requiredCount={requiredCandleCount}
+                maxBodyOverlapPercent={maxBodyOverlapPercent}
+                onMinMoveChange={handleNewMinMoveChange}
+                onRequiredCountChange={handleRequiredCandleCountChange}
+                onMaxBodyOverlapChange={handleMaxBodyOverlapChange}
+                patternSettings={patternSettings}
+                onPatternSettingsChange={handlePatternSettingsChange}
+              />
+            </div>
+
             {/* Watchlist Panel */}
-            <div className="order-2 lg:order-1 lg:col-span-8 space-y-5">
+            <div className="order-3 lg:order-2 lg:col-span-8 space-y-5">
               <div className="bg-card-bg border border-card-border shadow-xl rounded-2xl p-4 sm:p-5">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div>
@@ -3615,7 +3615,7 @@ export default function MarketWatcher() {
         </div>
       </div>
 
-      <div className="order-1 lg:order-2 lg:col-span-4">
+      <div className="order-1 lg:order-3 lg:col-span-4">
         <AlertHistoryPanel
           alerts={alertLogs}
           onAlertClick={stableHandleAlertCardClick}
