@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useMemo, Fragment, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useState, useMemo, Fragment, useEffect, useRef } from 'react';
+import Link from 'next/link';
+import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import type { DailySummary } from '@/lib/trading/aggregator';
 import { pnlColorClass } from '@/lib/utils/format';
 
@@ -32,8 +32,26 @@ interface DayData {
   winRate: number;
 }
 
+function formatDayLabel(d: string): string {
+  if (d.length !== 8) return d;
+  const dt = new Date(`${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}T00:00:00`);
+  return Number.isNaN(dt.getTime())
+    ? d
+    : dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
-  const router = useRouter();
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const selectedSummary = useMemo(
+    () => (selectedDate ? summaries.find((s) => s.date === selectedDate) ?? null : null),
+    [selectedDate, summaries],
+  );
+  const previewRef = useRef<HTMLDivElement>(null);
+  // The preview renders below a potentially tall grid; scroll it into view so a
+  // click always produces a visible response.
+  useEffect(() => {
+    if (selectedDate) previewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [selectedDate]);
 
   // Build lookup from summaries
   const dataByDate = useMemo(() => {
@@ -135,15 +153,76 @@ export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
           startDate={rangeInfo.firstDate}
           endDate={rangeInfo.lastDate}
           dataByDate={dataByDate}
-          onDayClick={(date) => router.push(`/journal?date=${date}`)}
+          onDayClick={(date) => setSelectedDate((prev) => (prev === date ? null : date))}
         />
       ) : (
         <MonthView
           year={year}
           month={month}
           dataByDate={dataByDate}
-          onDayClick={(date) => router.push(`/journal?date=${date}`)}
+          onDayClick={(date) => setSelectedDate((prev) => (prev === date ? null : date))}
         />
+      )}
+
+      {selectedDate && (
+        <div ref={previewRef} className="pt-3 mt-1 border-t border-card-border animate-in fade-in slide-in-from-top-1 duration-200">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <div className="flex items-center gap-2 text-sm min-w-0">
+              <span className="font-semibold text-foreground truncate">
+                {selectedSummary?.formattedDate ?? formatDayLabel(selectedDate)}
+              </span>
+              {selectedSummary && (
+                <>
+                  <span className={`font-semibold tabular-nums ${pnlColorClass(selectedSummary.totalPnL)}`}>
+                    {selectedSummary.totalPnL >= 0 ? '+' : ''}${selectedSummary.totalPnL.toFixed(2)}
+                  </span>
+                  <span className="text-xs text-muted whitespace-nowrap">· {selectedSummary.totalTrades} trades</span>
+                </>
+              )}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Link
+                href={`/journal?date=${selectedDate}`}
+                className="text-xs font-medium text-accent hover:underline whitespace-nowrap"
+              >
+                Open full day →
+              </Link>
+              <button
+                type="button"
+                onClick={() => setSelectedDate(null)}
+                aria-label="Close day preview"
+                className="p-1 rounded text-muted hover:text-foreground hover:bg-sidebar-hover transition-colors"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+
+          {!selectedSummary || selectedSummary.trades.length === 0 ? (
+            <p className="py-2 text-xs text-muted">No trades on this day.</p>
+          ) : (
+            <div className="max-h-64 overflow-y-auto rounded-lg border border-card-border divide-y divide-card-border/60">
+              {selectedSummary.trades.map((t, i) => (
+                <div key={`${t.symbol}-${i}`} className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-semibold text-foreground">{t.symbol}</span>
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                        t.side === 'LONG' ? 'bg-profit/15 text-profit' : 'bg-loss/15 text-loss'
+                      }`}
+                    >
+                      {t.side}
+                    </span>
+                    <span className="text-muted whitespace-nowrap">{t.executions} exec</span>
+                  </div>
+                  <span className={`font-semibold tabular-nums ${pnlColorClass(t.netPnL)}`}>
+                    {t.netPnL >= 0 ? '+' : ''}${t.netPnL.toFixed(2)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

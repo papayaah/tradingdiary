@@ -10,6 +10,11 @@ import { EngageWidget } from '@reactkits.dev/react-engage';
 import '@reactkits.dev/react-engage/styles.css';
 
 export function ClientProviders({ children }: { children: ReactNode }) {
+    const { data: session } = authClient.useSession();
+    const engageUser = session?.user
+        ? { id: session.user.id, name: session.user.name, email: session.user.email }
+        : undefined;
+
     return (
         <IntegrationProvider authClient={authClient}>
             <AIManagementProvider
@@ -22,7 +27,9 @@ export function ClientProviders({ children }: { children: ReactNode }) {
                     appId="trading-diary"
                     position="bottom-right"
                     theme="inherit"
+                    iconOnly={true}
                     endpointUrl="/api/engage"
+                    user={engageUser}
                 />
             </AIManagementProvider>
         </IntegrationProvider>
