@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Rocket } from 'lucide-react';
 
 const INTRO_VIDEO = '/welcome/Trader_waving_and_giving_thumbs-up_202608132126.mp4';
@@ -10,6 +10,9 @@ const FIRST_BUBBLE_START = 35 / 30;
 const FIRST_BUBBLE_END = 110 / 30;
 const SECOND_BUBBLE_START = 115 / 30;
 const VIDEO_SWAP_TIME = 165 / 30;
+const FIRST_BUBBLE_TEXT = 'Hi! Everything is fine...';
+const SECOND_BUBBLE_TEXT =
+  "Still a work in progress! I'm building it to help you trade smarter, stay consistent, and stop donating money to the market. Stick around, help shape it, and let's go to da moooon!";
 
 type Bubble = 'first' | 'second' | null;
 
@@ -22,6 +25,54 @@ function SpeechBubble({ children }: { children: React.ReactNode }) {
         className="absolute -left-2 bottom-4 h-4 w-4 rotate-45 border-b-2 border-l-2 sm:-left-3 sm:h-6 sm:w-6 sm:border-b-4 sm:border-l-4 border-foreground bg-card-bg"
       />
     </div>
+  );
+}
+
+function TypewriterText({
+  text,
+  speed,
+  showRocket = false,
+}: {
+  text: string;
+  speed: number;
+  showRocket?: boolean;
+}) {
+  const [visibleLength, setVisibleLength] = useState(0);
+
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const frameId = window.requestAnimationFrame(() => setVisibleLength(text.length));
+      return () => window.cancelAnimationFrame(frameId);
+    }
+
+    let nextLength = 0;
+    const intervalId = window.setInterval(() => {
+      nextLength += 1;
+      setVisibleLength(nextLength);
+
+      if (nextLength >= text.length) {
+        window.clearInterval(intervalId);
+      }
+    }, speed);
+
+    return () => window.clearInterval(intervalId);
+  }, [speed, text]);
+
+  const isComplete = visibleLength >= text.length;
+
+  return (
+    <>
+      <span className="sr-only">{text}</span>
+      <span aria-hidden>
+        {text.slice(0, visibleLength)}
+        {!isComplete && (
+          <span className="ml-0.5 inline-block h-[1em] w-0.5 animate-pulse bg-foreground align-[-0.12em]" />
+        )}
+        {showRocket && isComplete && (
+          <Rocket className="ml-1 inline-block size-[1em] align-[-0.12em] text-accent" />
+        )}
+      </span>
+    </>
   );
 }
 
@@ -94,12 +145,14 @@ export function WelcomeHeroVideo() {
       />
 
       <div aria-live="polite">
-        {bubble === 'first' && <SpeechBubble>Hi! Everything is fine...</SpeechBubble>}
+        {bubble === 'first' && (
+          <SpeechBubble>
+            <TypewriterText text={FIRST_BUBBLE_TEXT} speed={42} />
+          </SpeechBubble>
+        )}
         {bubble === 'second' && (
           <SpeechBubble>
-            Still a work in progress—I&apos;m building it to help you trade more consistently and profitably.
-            Please stick around, help shape it, and let&apos;s go to da moooon!
-            <Rocket aria-hidden className="ml-1 inline-block size-[1em] align-[-0.12em] text-accent" />
+            <TypewriterText text={SECOND_BUBBLE_TEXT} speed={36} showRocket />
           </SpeechBubble>
         )}
       </div>
