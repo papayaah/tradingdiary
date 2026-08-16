@@ -1,13 +1,22 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useAccount } from '@/contexts/AccountContext';
 import { clearAllData, deleteAccount, deleteAccountTrades, deleteTradesByDateRange } from '@/lib/db/trades';
-import { Trash2, AlertTriangle, Calendar, RefreshCw, ShieldAlert } from 'lucide-react';
+import { Trash2, AlertTriangle, Calendar, RefreshCw, ShieldAlert, Download, Upload, Database } from 'lucide-react';
 import { toast } from 'sonner';
+import { authClient } from '@/lib/auth-client';
+import { downloadJournalBackup, downloadExecutionsCsv, restoreJournalBackup } from '@/lib/journal/export';
+import { setCursor } from '@/lib/journal/client-sync';
 
 export default function DataManagementSettings() {
   const { accounts, selectedAccountId, refreshAccounts, setSelectedAccountId } = useAccount();
+  const { data: session } = authClient.useSession();
+  const userId = session?.user?.id ?? null;
+
+  const [isExporting, setIsExporting] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const restoreInputRef = useRef<HTMLInputElement>(null);
 
   // Date range delete states
   const now = new Date();
@@ -100,14 +109,66 @@ export default function DataManagementSettings() {
     }
   };
 
+  const handleExportBackup = async () => {
+    setIsExporting(true);
+    try {
+      await downloadJournalBackup();
+      toast.success('Backup downloaded');
+    } catch (err) {
+      console.error('Failed to export backup:', err);
+      toast.error('Failed to export backup');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportCsv = async () => {
+    setIsExporting(true);
+    try {
+      await downloadExecutionsCsv();
+      toast.success('Executions CSV downloaded');
+    } catch (err) {
+      console.error('Failed to export CSV:', err);
+      toast.error('Failed to export CSV');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleRestoreFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setIsRestoring(true);
+      try {
+        const text = await file.text();
+        const result = await restoreJournalBackup(text);
+        await refreshAccounts(selectedAccountId ?? undefined);
+        toast.success(`Restored ${result.transactions} trades across ${result.accounts} account(s)`);
+      } catch (err) {
+        console.error('Failed to restore backup:', err);
+        toast.error(err instanceof Error ? err.message : 'Failed to restore backup');
+      } finally {
+        setIsRestoring(false);
+      }
+    }
+    if (restoreInputRef.current) restoreInputRef.current.value = '';
+  };
+
   const handleConfirmClearAll = async () => {
     setIsClearingAll(true);
     try {
+      // For a signed-in user, also delete server data — otherwise the next sync
+      // would re-hydrate the cleared local store from the server.
+      if (userId) {
+        const res = await fetch('/api/journal', { method: 'DELETE' });
+        if (!res.ok) throw new Error(`Server delete failed: ${res.status}`);
+        setCursor(userId, 0);
+      }
       await clearAllData();
       await refreshAccounts('');
       setSelectedAccountId('');
       setShowClearAllModal(false);
-      toast.success('Successfully cleared all application data');
+      toast.success(userId ? 'Cleared all local and account data' : 'Successfully cleared all application data');
     } catch (err) {
       console.error('Failed to clear all data:', err);
       toast.error('Failed to clear application data');
@@ -125,6 +186,56 @@ export default function DataManagementSettings() {
         <div>
           <h2 className="text-lg font-bold text-foreground">Data Management & Reset</h2>
           <p className="text-xs text-muted font-medium">Manage, prune, or completely reset your imported trading data</p>
+        </div>
+      </div>
+
+      {/* Backup & Export */}
+      <div className="bg-muted-bg/30 border border-card-border p-5 rounded-xl space-y-4">
+        <div className="flex items-center gap-2 text-foreground font-bold text-sm">
+          <Database size={16} className="text-accent" />
+          <span>Backup &amp; Export</span>
+        </div>
+        <p className="text-xs text-muted leading-relaxed">
+          Download a full backup of your accounts, trades, notes, and reviews, or export
+          executions as CSV. Restore re-imports a backup file into this browser
+          {userId ? ' and syncs it to your account.' : '.'}
+        </p>
+        <div className="flex flex-wrap gap-2.5 pt-1">
+          <button
+            onClick={handleExportBackup}
+            disabled={isExporting}
+            className="py-2.5 px-4 bg-card-bg border border-card-border hover:border-accent/40 hover:bg-accent/10 text-foreground rounded-xl text-xs font-semibold transition-all disabled:opacity-50 flex items-center gap-2"
+          >
+            <Download size={14} />
+            Download Backup (JSON)
+          </button>
+          <button
+            onClick={handleExportCsv}
+            disabled={isExporting}
+            className="py-2.5 px-4 bg-card-bg border border-card-border hover:border-accent/40 hover:bg-accent/10 text-foreground rounded-xl text-xs font-semibold transition-all disabled:opacity-50 flex items-center gap-2"
+          >
+            <Download size={14} />
+            Export Executions (CSV)
+          </button>
+          <button
+            onClick={() => restoreInputRef.current?.click()}
+            disabled={isRestoring}
+            className="py-2.5 px-4 bg-card-bg border border-card-border hover:border-accent/40 hover:bg-accent/10 text-foreground rounded-xl text-xs font-semibold transition-all disabled:opacity-50 flex items-center gap-2"
+          >
+            {isRestoring ? (
+              <div className="w-4 h-4 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+            ) : (
+              <Upload size={14} />
+            )}
+            Restore from Backup
+          </button>
+          <input
+            ref={restoreInputRef}
+            type="file"
+            accept="application/json,.json"
+            onChange={handleRestoreFile}
+            className="hidden"
+          />
         </div>
       </div>
 
@@ -217,7 +328,7 @@ export default function DataManagementSettings() {
                   ) : (
                     <>
                       <RefreshCw size={14} />
-                      Clear All Trades for "{activeAccount.name}"
+                      Clear All Trades for &quot;{activeAccount.name}&quot;
                     </>
                   )}
                 </button>
@@ -232,7 +343,7 @@ export default function DataManagementSettings() {
                   ) : (
                     <>
                       <Trash2 size={14} />
-                      Delete Entire Account "{activeAccount.name}"
+                      Delete Entire Account &quot;{activeAccount.name}&quot;
                     </>
                   )}
                 </button>
@@ -257,7 +368,8 @@ export default function DataManagementSettings() {
               <span>Reset Entire Application</span>
             </div>
             <p className="text-xs text-muted">
-              Permanently wipe all accounts, imported transactions, position logs, and custom notes stored locally.
+              Permanently wipe all accounts, imported transactions, position logs, and custom notes stored locally
+              {userId ? ' and delete your synced account data on the server.' : '.'}
             </p>
           </div>
           <button
@@ -284,7 +396,8 @@ export default function DataManagementSettings() {
             </div>
 
             <p className="text-xs text-muted leading-relaxed">
-              Are you sure you want to delete <strong>ALL accounts, trades, positions, and journal notes</strong>? This will restore your trading diary to a completely clean slate.
+              Are you sure you want to delete <strong>ALL accounts, trades, positions, and journal notes</strong>
+              {userId ? ', both on this device and in your synced account' : ''}? This will restore your trading diary to a completely clean slate.
             </p>
 
             <div className="flex gap-3 justify-end pt-2">

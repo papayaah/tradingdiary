@@ -38,7 +38,10 @@ below. See `flat-to-flat-trade-identity.md` and `journal-persistence-and-sync.md
       from the server by design (true server wipe = the pending account-deletion).
 - [~] Fixtures — splitter + trading-day unit tests. **Not yet:** full matrix
       (partial fills, futures multipliers, FX, duplicate imports, scale in/out).
-- [ ] Backup/export, restore, and account deletion.
+- [x] Backup/export, restore, and account deletion — full JSON backup +
+      executions CSV + restore-from-backup (`lib/journal/export.ts`); `DELETE
+      /api/journal` wipes server data; "Clear All" also deletes synced account
+      data for signed-in users. **Not yet:** per-batch import undo/audit.
 - [ ] Cash-flow-aware equity (deposits/withdrawals) or scoped return metrics.
 - [ ] Timestamp display in the viewer's local timezone (Step 2; day boundary
       done, per-timestamp localization pending).

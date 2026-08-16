@@ -10,6 +10,7 @@ import {
   tag,
   tradeTag,
   tradeAiReview,
+  attachment,
   journalEvent,
 } from '../db/server/schema';
 import type { TransactionRecord } from '../db/schema';
@@ -22,6 +23,21 @@ import type {
   SyncConflict,
   SyncEntity,
 } from './sync-types';
+
+/**
+ * Permanently delete all of a user's journal data from the server. Deleting the
+ * accounts cascades to executions, trade groups, memberships, daily/trade notes,
+ * and reviews (FK onDelete cascade); tags, attachments, and the event log are
+ * user-scoped and removed explicitly.
+ */
+export async function deleteAllJournal(userId: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.delete(tag).where(eq(tag.userId, userId)); // cascades trade_tag
+    await tx.delete(attachment).where(eq(attachment.userId, userId));
+    await tx.delete(tradingAccount).where(eq(tradingAccount.userId, userId)); // cascades the rest
+    await tx.delete(journalEvent).where(eq(journalEvent.userId, userId));
+  });
+}
 
 /** Map an execution DB row back to the TransactionRecord shape the splitter and
  * clients expect. `accountClientId` is used as `accountId` so the splitter's
