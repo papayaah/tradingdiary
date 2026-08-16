@@ -310,3 +310,249 @@ export const engageBroadcasts = pgTable("engage_broadcasts", {
     sentAt: timestamp("sent_at", { mode: 'string' }).notNull().defaultNow(),
 });
 
+// ============================================================================
+// Journal Persistence & Sync (Postgres)
+// See docs/specs/journal-persistence-and-sync.md and
+// docs/specs/flat-to-flat-trade-identity.md.
+//
+// Server-authoritative journal for authenticated users. Guests stay local
+// (IndexedDB); on sign-in their data is adopted here and every device on the
+// login syncs from these tables. Every user-owned row carries:
+//   - a stable UUID `id` (never a date/symbol/account composite),
+//   - `rev` (bumped on every write) as the basis for conflict detection,
+//   - `deletedAt` tombstone so deletions propagate,
+//   - createdAt/updatedAt.
+// ============================================================================
+
+// A trading account. `clientAccountId` is the id the local (IndexedDB) app
+// generated; it is the dedup/adoption key so re-adoption never duplicates.
+export const tradingAccount = pgTable("trading_account", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
+    clientAccountId: text("client_account_id").notNull(),
+    name: text("name").notNull(),
+    type: text("type").notNull(),
+    currency: text("currency").notNull(),
+    address: text("address").notNull().default(''),
+    initialBalance: doublePrecision("initial_balance"),
+    importedAt: timestamp("imported_at", { mode: 'string' }),
+    rev: integer("rev").notNull().default(1),
+    deletedAt: timestamp("deleted_at", { mode: 'string' }),
+    createdAt: timestamp("created_at", { mode: 'string' }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: 'string' }).notNull().defaultNow(),
+}, (t) => [
+    uniqueIndex("trading_account_client_uq").on(t.userId, t.clientAccountId),
+    index("trading_account_user_idx").on(t.userId),
+]);
+
+// One raw execution (fill). Immutable source record. `idempotencyKey` is the
+// content hash used to block duplicate imports and make adoption idempotent.
+export const execution = pgTable("execution", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
+    accountId: uuid("account_id").notNull().references(() => tradingAccount.id, { onDelete: 'cascade' }),
+    idempotencyKey: text("idempotency_key").notNull(),
+    sourceTradeId: text("source_trade_id").notNull(),
+    symbol: text("symbol").notNull(),
+    companyName: text("company_name").notNull().default(''),
+    exchanges: text("exchanges").notNull().default(''),
+    side: text("side").notNull(), // BUYTOOPEN | SELLTOOPEN | BUYTOCLOSE | SELLTOCLOSE
+    orderType: text("order_type").notNull().default(''),
+    date: text("date").notNull(), // YYYYMMDD (raw execution date)
+    time: text("time").notNull(), // HH:MM:SS
+    currency: text("currency").notNull(),
+    quantity: doublePrecision("quantity").notNull(),
+    multiplier: doublePrecision("multiplier").notNull().default(1),
+    price: doublePrecision("price").notNull(),
+    totalValue: doublePrecision("total_value").notNull(),
+    commission: doublePrecision("commission").notNull().default(0),
+    feeMultiplier: doublePrecision("fee_multiplier").notNull().default(1),
+    realizedPnL: doublePrecision("realized_pnl"),
+    unrealizedPnL: doublePrecision("unrealized_pnl"),
+    fxRateToAccount: doublePrecision("fx_rate_to_account"),
+    fxAccountCurrency: text("fx_account_currency"),
+    fxRateDate: text("fx_rate_date"),
+    fxRateProvider: text("fx_rate_provider"),
+    rev: integer("rev").notNull().default(1),
+    deletedAt: timestamp("deleted_at", { mode: 'string' }),
+    createdAt: timestamp("created_at", { mode: 'string' }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: 'string' }).notNull().defaultNow(),
+}, (t) => [
+    uniqueIndex("execution_idempotency_uq").on(t.userId, t.idempotencyKey),
+    index("execution_account_idx").on(t.accountId),
+    index("execution_user_symbol_idx").on(t.userId, t.symbol),
+]);
+
+// One flat-to-flat round trip (the reviewable trade). Derived from executions by
+// the splitter, persisted so notes/tags/reviews have a stable FK target.
+// `clientKey` is the splitter's deterministic key for idempotent re-splitting.
+export const tradeGroup = pgTable("trade_group", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
+    accountId: uuid("account_id").notNull().references(() => tradingAccount.id, { onDelete: 'cascade' }),
+    clientKey: text("client_key").notNull(),
+    symbol: text("symbol").notNull(),
+    companyName: text("company_name").notNull().default(''),
+    currency: text("currency").notNull(),
+    accountCurrency: text("account_currency").notNull(),
+    side: text("side").notNull(), // LONG | SHORT
+    openedDate: text("opened_date").notNull(), // YYYYMMDD
+    openedTime: text("opened_time").notNull(), // HH:MM:SS
+    closedDate: text("closed_date"),
+    closedTime: text("closed_time"),
+    tradingDay: text("trading_day").notNull(), // cutoff-adjusted opening day
+    entryAvgPrice: doublePrecision("entry_avg_price").notNull().default(0),
+    exitAvgPrice: doublePrecision("exit_avg_price").notNull().default(0),
+    maxPosition: doublePrecision("max_position").notNull().default(0),
+    volume: doublePrecision("volume").notNull().default(0),
+    grossPnL: doublePrecision("gross_pnl").notNull().default(0),
+    totalCommissions: doublePrecision("total_commissions").notNull().default(0),
+    netPnL: doublePrecision("net_pnl").notNull().default(0),
+    nativeGrossPnL: doublePrecision("native_gross_pnl").notNull().default(0),
+    nativeTotalCommissions: doublePrecision("native_total_commissions").notNull().default(0),
+    nativeNetPnL: doublePrecision("native_net_pnl").notNull().default(0),
+    isOpen: boolean("is_open").notNull().default(false),
+    netQuantity: doublePrecision("net_quantity").notNull().default(0),
+    openAvgCost: doublePrecision("open_avg_cost").notNull().default(0),
+    fxRateToAccount: doublePrecision("fx_rate_to_account"),
+    fxRateDate: text("fx_rate_date"),
+    rev: integer("rev").notNull().default(1),
+    deletedAt: timestamp("deleted_at", { mode: 'string' }),
+    createdAt: timestamp("created_at", { mode: 'string' }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: 'string' }).notNull().defaultNow(),
+}, (t) => [
+    uniqueIndex("trade_group_client_uq").on(t.userId, t.clientKey),
+    index("trade_group_account_idx").on(t.accountId),
+    index("trade_group_user_day_idx").on(t.userId, t.tradingDay),
+    index("trade_group_user_symbol_idx").on(t.userId, t.symbol),
+]);
+
+// Execution ↔ trade-group membership. Many-to-many because a reversal fill
+// belongs to the trade it closes and the trade it opens; `sliceQuantity` is the
+// portion of the fill attributed to this group and `role` which side.
+export const tradeGroupExecution = pgTable("trade_group_execution", {
+    tradeGroupId: uuid("trade_group_id").notNull().references(() => tradeGroup.id, { onDelete: 'cascade' }),
+    executionId: uuid("execution_id").notNull().references(() => execution.id, { onDelete: 'cascade' }),
+    role: text("role").notNull(), // open | close
+    sliceQuantity: doublePrecision("slice_quantity").notNull(),
+}, (t) => [
+    primaryKey({ columns: [t.tradeGroupId, t.executionId, t.role] }),
+    index("trade_group_execution_exec_idx").on(t.executionId),
+]);
+
+// A note on a journal day (per account). Keyed by account + tradingDay.
+export const dailyNote = pgTable("daily_note", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
+    accountId: uuid("account_id").notNull().references(() => tradingAccount.id, { onDelete: 'cascade' }),
+    tradingDay: text("trading_day").notNull(), // YYYYMMDD
+    content: text("content").notNull().default(''),
+    rev: integer("rev").notNull().default(1),
+    deletedAt: timestamp("deleted_at", { mode: 'string' }),
+    createdAt: timestamp("created_at", { mode: 'string' }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: 'string' }).notNull().defaultNow(),
+}, (t) => [
+    uniqueIndex("daily_note_identity_uq").on(t.userId, t.accountId, t.tradingDay),
+    index("daily_note_user_idx").on(t.userId),
+]);
+
+// A note on one trade (per trade_group). Per the resolved decision, notes attach
+// per trade, not per day+symbol.
+export const tradeNote = pgTable("trade_note", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
+    tradeGroupId: uuid("trade_group_id").notNull().references(() => tradeGroup.id, { onDelete: 'cascade' }),
+    content: text("content").notNull().default(''),
+    rev: integer("rev").notNull().default(1),
+    deletedAt: timestamp("deleted_at", { mode: 'string' }),
+    createdAt: timestamp("created_at", { mode: 'string' }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: 'string' }).notNull().defaultNow(),
+}, (t) => [
+    uniqueIndex("trade_note_identity_uq").on(t.userId, t.tradeGroupId),
+]);
+
+// A reusable, categorized tag.
+export const tag = pgTable("tag", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
+    label: text("label").notNull(),
+    category: text("category").notNull().default('general'), // setup | mistake | emotion | ...
+    color: text("color"),
+    archivedAt: timestamp("archived_at", { mode: 'string' }),
+    rev: integer("rev").notNull().default(1),
+    deletedAt: timestamp("deleted_at", { mode: 'string' }),
+    createdAt: timestamp("created_at", { mode: 'string' }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: 'string' }).notNull().defaultNow(),
+}, (t) => [
+    uniqueIndex("tag_identity_uq").on(t.userId, t.category, t.label),
+    index("tag_user_idx").on(t.userId),
+]);
+
+// Trade ↔ tag join.
+export const tradeTag = pgTable("trade_tag", {
+    tradeGroupId: uuid("trade_group_id").notNull().references(() => tradeGroup.id, { onDelete: 'cascade' }),
+    tagId: uuid("tag_id").notNull().references(() => tag.id, { onDelete: 'cascade' }),
+}, (t) => [
+    primaryKey({ columns: [t.tradeGroupId, t.tagId] }),
+    index("trade_tag_tag_idx").on(t.tagId),
+]);
+
+// A persisted AI trade review, tied to a real trade_group.
+export const tradeAiReview = pgTable("trade_ai_review", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
+    tradeGroupId: uuid("trade_group_id").notNull().references(() => tradeGroup.id, { onDelete: 'cascade' }),
+    summary: text("summary").notNull(),
+    observations: jsonb("observations").notNull().default('[]'),
+    executionReview: text("execution_review"),
+    riskReview: text("risk_review"),
+    questionsForTrader: jsonb("questions_for_trader"),
+    takeaway: text("takeaway"),
+    evidenceConfidence: text("evidence_confidence").notNull().default('low'),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    promptVersion: text("prompt_version").notNull(),
+    contextHash: text("context_hash").notNull(),
+    rev: integer("rev").notNull().default(1),
+    deletedAt: timestamp("deleted_at", { mode: 'string' }),
+    createdAt: timestamp("created_at", { mode: 'string' }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: 'string' }).notNull().defaultNow(),
+}, (t) => [
+    index("trade_ai_review_group_idx").on(t.tradeGroupId),
+    index("trade_ai_review_user_idx").on(t.userId),
+]);
+
+// Attachment (screenshot/media) metadata. Binary blobs live in object storage
+// under `storageKey`; Postgres holds metadata only. `linkType`/`linkId`
+// associate it with a trade_group or a journal day.
+export const attachment = pgTable("attachment", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
+    storageKey: text("storage_key"),
+    mime: text("mime"),
+    bytes: integer("bytes"),
+    linkType: text("link_type"), // trade | day
+    linkId: text("link_id"),
+    rev: integer("rev").notNull().default(1),
+    deletedAt: timestamp("deleted_at", { mode: 'string' }),
+    createdAt: timestamp("created_at", { mode: 'string' }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: 'string' }).notNull().defaultNow(),
+}, (t) => [
+    index("attachment_user_idx").on(t.userId),
+    index("attachment_link_idx").on(t.linkType, t.linkId),
+]);
+
+// Per-user monotonic change log for sync catch-up (mirrors watch_event). Clients
+// pull events after their last `seq`. Payload carries record id + rev only.
+export const journalEvent = pgTable("journal_event", {
+    seq: bigserial("seq", { mode: 'number' }).primaryKey(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
+    entity: text("entity").notNull(), // account | execution | trade_group | daily_note | trade_note | tag | review | attachment
+    entityId: uuid("entity_id").notNull(),
+    op: text("op").notNull(), // upsert | delete
+    rev: integer("rev").notNull(),
+    createdAt: timestamp("created_at", { mode: 'string' }).notNull().defaultNow(),
+}, (t) => [
+    index("journal_event_user_seq_idx").on(t.userId, t.seq),
+]);
+
