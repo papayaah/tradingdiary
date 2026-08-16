@@ -24,13 +24,18 @@ below. See `flat-to-flat-trade-identity.md` and `journal-persistence-and-sync.md
 - [~] Import integrity — execution idempotency key in schema/sync; import no
       longer fabricates dates; P&L-summary files rejected. **Not yet:** import
       batch records, checksums, per-batch undo, execution audit view.
-- [~] Server persistence — Postgres tables (`trading_account`, `execution`,
-      `trade_group`, notes, tags, review, attachment, `journal_event`) with rev +
-      tombstones; `/api/journal/sync` push/pull with rev conflict detection;
-      server-side splitter rebuild. Tables applied (`db:schema:push`).
-      **Not yet:** client sync engine (hydrate-on-login, write-through,
-      sync-state indicator) and guest→account adoption — so multi-device sync is
-      not live end-to-end yet.
+- [x] Server persistence + live cross-device sync — Postgres tables
+      (`trading_account`, `execution`, `trade_group`, notes, tags, review,
+      attachment, `journal_event`) with rev + tombstones; `/api/journal/sync`
+      push/pull with rev conflict detection and server-side splitter rebuild;
+      client sync engine (`JournalSyncProvider`: pull→push on sign-in, debounced
+      write-through, pull on focus, sync-state indicator) with guest→account
+      adoption. Accounts, executions, and daily notes sync across devices;
+      **deletes propagate** via authoritative-snapshot reconciliation.
+      **Not yet synced:** trade notes / tags / AI reviews (wait on the journal UI
+      adopting the flat-to-flat `trade_group` identity); daily notes are
+      last-write-wins (no conflict UI yet); clearing all local data re-hydrates
+      from the server by design (true server wipe = the pending account-deletion).
 - [~] Fixtures — splitter + trading-day unit tests. **Not yet:** full matrix
       (partial fills, futures multipliers, FX, duplicate imports, scale in/out).
 - [ ] Backup/export, restore, and account deletion.

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { Upload, LayoutDashboard, Calendar, Filter, Sparkles, ChevronDown, Check } from 'lucide-react';
+import { Upload, LayoutDashboard, Calendar, Sparkles, ChevronDown, Check } from 'lucide-react';
 import { aggregateByDay, type DailySummary } from '@/lib/trading/aggregator';
 import { onJournalSynced } from '@/lib/journal/sync-bus';
 import { computeDashboard } from '@/lib/trading/dashboard';
@@ -244,8 +244,8 @@ export default function DashboardPage() {
                   setSelectedAccountId(res.accountId);
                   setRefreshKey((k) => k + 1);
                   toast.success(`Loaded ${res.transactionCount} sample IBKR trades!`);
-                } catch (err: any) {
-                  toast.error(err.message || 'Failed to load sample data.');
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : 'Failed to load sample data.');
                 }
               }}
               className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-xl bg-accent text-white hover:bg-accent/90 transition-colors"

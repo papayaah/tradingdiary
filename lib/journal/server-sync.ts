@@ -163,17 +163,51 @@ export async function pushJournal(
       }
     }
 
-    // ── 3. Re-derive trade groups from the full server execution set ──
     // Resolve client ids for every account the user owns (not only those in this
     // push), so executions from earlier pushes still map for the splitter.
     const accountRows = await tx.select().from(tradingAccount).where(eq(tradingAccount.userId, userId));
     for (const a of accountRows) clientIdByUuid.set(a.id, a.clientAccountId);
 
+    // ── Reconcile deletes ──
+    // When the client sends an authoritative snapshot (reconcile), tombstone any
+    // account/execution/daily-note the user owns that is absent from it, so local
+    // deletes propagate. Skipped for an empty snapshot as a wipe guard.
+    const doReconcile =
+      payload.reconcile === true &&
+      (payload.accounts.length > 0 || payload.executions.length > 0);
+    const deletedExecutionIds = new Set<string>();
+    if (doReconcile) {
+      const pushedAccountKeys = new Set(payload.accounts.map((a) => a.accountId));
+      for (const a of accountRows) {
+        if (a.deletedAt) continue;
+        if (!pushedAccountKeys.has(a.clientAccountId)) {
+          const nextRev = a.rev + 1;
+          await tx.update(tradingAccount).set({ deletedAt: nowIso, rev: nextRev }).where(eq(tradingAccount.id, a.id));
+          events.push({ entity: 'account', entityId: a.id, op: 'delete', rev: nextRev });
+        }
+      }
+    }
+
     const allExecutions = await tx.select().from(execution).where(eq(execution.userId, userId));
+
+    if (doReconcile) {
+      const pushedExecKeys = new Set(payload.executions.map((t) => executionIdempotencyKey(t)));
+      for (const row of allExecutions) {
+        if (row.deletedAt) continue;
+        if (!pushedExecKeys.has(row.idempotencyKey)) {
+          const nextRev = row.rev + 1;
+          await tx.update(execution).set({ deletedAt: nowIso, rev: nextRev }).where(eq(execution.id, row.id));
+          deletedExecutionIds.add(row.id);
+          events.push({ entity: 'execution', entityId: row.id, op: 'delete', rev: nextRev });
+        }
+      }
+    }
+
+    // ── 3. Re-derive trade groups from the remaining (non-deleted) executions ──
     const execIdByIdemKey = new Map<string, string>();
     const transactions: TransactionRecord[] = [];
     for (const row of allExecutions) {
-      if (row.deletedAt) continue;
+      if (row.deletedAt || deletedExecutionIds.has(row.id)) continue;
       const clientId = clientIdByUuid.get(row.accountId);
       if (!clientId) continue;
       execIdByIdemKey.set(row.idempotencyKey, row.id);
@@ -272,6 +306,22 @@ export async function pushJournal(
         const nextRev = existing[0].rev + 1;
         await tx.update(dailyNote).set({ content: n.content, rev: nextRev, deletedAt: null, updatedAt: nowIso }).where(eq(dailyNote.id, existing[0].id));
         events.push({ entity: 'daily_note', entityId: existing[0].id, op: 'upsert', rev: nextRev });
+      }
+    }
+
+    // Reconcile daily-note deletes against the authoritative snapshot.
+    if (doReconcile) {
+      const pushedDailyKeys = new Set(payload.dailyNotes.map((n) => `${n.accountId}:${n.tradingDay}`));
+      const dailyRows = await tx.select().from(dailyNote).where(eq(dailyNote.userId, userId));
+      for (const n of dailyRows) {
+        if (n.deletedAt) continue;
+        const clientId = clientIdByUuid.get(n.accountId);
+        if (!clientId) continue;
+        if (!pushedDailyKeys.has(`${clientId}:${n.tradingDay}`)) {
+          const nextRev = n.rev + 1;
+          await tx.update(dailyNote).set({ deletedAt: nowIso, rev: nextRev }).where(eq(dailyNote.id, n.id));
+          events.push({ entity: 'daily_note', entityId: n.id, op: 'delete', rev: nextRev });
+        }
       }
     }
 
@@ -448,8 +498,16 @@ export async function pullJournal(userId: string, since: number): Promise<Journa
   const tagPart = inChanged(tagRows, 'tag');
   const reviewPart = inChanged(reviewRows, 'review');
 
+  // Execution tombstones only flow on delta pulls (a fresh device has nothing to
+  // delete). The client removes local transactions by their tradeId (sourceTradeId).
+  const execChangedIds = changedIds('execution');
+  const execDeletes = execChangedIds
+    ? execRows.filter((r) => r.deletedAt && execChangedIds.has(r.id))
+    : [];
+
   const deletes: JournalPullResponse['deletes'] = [
     ...accountsPart.deletes.map((a) => ({ entity: 'account' as const, clientKey: a.clientAccountId, baseRev: a.rev })),
+    ...execDeletes.map((r) => ({ entity: 'execution' as const, clientKey: r.sourceTradeId, baseRev: r.rev })),
     ...dailyPart.deletes.map((n) => ({ entity: 'daily_note' as const, clientKey: `${clientIdByUuid.get(n.accountId)}:${n.tradingDay}`, baseRev: n.rev })),
     ...tradeNotePart.deletes.map((n) => ({ entity: 'trade_note' as const, clientKey: groupKeyByUuid.get(n.tradeGroupId) ?? '', baseRev: n.rev })),
     ...tagPart.deletes.map((t) => ({ entity: 'tag' as const, clientKey: t.id, baseRev: t.rev })),

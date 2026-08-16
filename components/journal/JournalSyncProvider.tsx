@@ -40,6 +40,9 @@ export function JournalSyncProvider({ children }: { children: React.ReactNode })
   const pushTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const userIdRef = useRef<string | null>(null);
   userIdRef.current = userId;
+  // Only reconcile (propagate deletes) once this session has pulled at least
+  // once, so a fresh device can't tombstone the server before merging.
+  const hasPulled = useRef(false);
 
   /** Pull remote changes, merge, then push the (now-merged) local snapshot. */
   const fullSync = useCallback(async () => {
@@ -53,13 +56,14 @@ export function JournalSyncProvider({ children }: { children: React.ReactNode })
         setStatus('local');
         return;
       }
+      hasPulled.current = true;
       setCursor(uid, pull.seq);
       if (pull.changed) {
         await refreshAccounts();
         notifyJournalSynced();
       }
 
-      const push = await pushJournalSnapshot();
+      const push = await pushJournalSnapshot(hasPulled.current);
       if (push.authenticated) setCursor(uid, push.seq);
 
       setStatus('synced');
@@ -80,6 +84,7 @@ export function JournalSyncProvider({ children }: { children: React.ReactNode })
     try {
       const pull = await pullAndMerge(getCursor(uid));
       if (!pull.authenticated) return;
+      hasPulled.current = true;
       setCursor(uid, pull.seq);
       if (pull.changed) {
         await refreshAccounts();
@@ -103,7 +108,7 @@ export function JournalSyncProvider({ children }: { children: React.ReactNode })
         running.current = true;
         setStatus('syncing');
         try {
-          const push = await pushJournalSnapshot();
+          const push = await pushJournalSnapshot(hasPulled.current);
           if (push.authenticated) {
             setCursor(uid, push.seq);
             setStatus('synced');

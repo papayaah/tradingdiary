@@ -35,8 +35,13 @@ export interface PushResult {
   seq: number;
 }
 
-/** Push the full local journal snapshot. Idempotent on the server. */
-export async function pushJournalSnapshot(): Promise<PushResult> {
+/**
+ * Push the full local journal snapshot. Idempotent on the server. When
+ * `reconcile` is true the server also tombstones its rows that are absent from
+ * this snapshot (propagating local deletes) — the caller passes true only after
+ * an initial pull has run this session, so a fresh device cannot wipe the server.
+ */
+export async function pushJournalSnapshot(reconcile: boolean): Promise<PushResult> {
   const [accounts, executions, dailyNotesRaw] = await Promise.all([
     getAccounts(),
     getAllTransactions(),
@@ -59,6 +64,7 @@ export async function pushJournalSnapshot(): Promise<PushResult> {
     tradeTags: [],
     reviews: [],
     deletes: [],
+    reconcile,
   };
 
   const res = await fetch('/api/journal/sync', {
@@ -124,8 +130,14 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
     if (d.entity === 'daily_note') {
       const [accountId, day] = d.clientKey.split(':');
       await db.delete('dailyNotes', [day, accountId]);
+    } else if (d.entity === 'execution') {
+      // clientKey is the execution's tradeId (transactions keyPath).
+      await db.delete('transactions', d.clientKey);
     } else if (d.entity === 'account') {
       await db.delete('accounts', d.clientKey);
+      // Cascade: remove the account's local transactions.
+      const txns = await db.getAllFromIndex('transactions', 'by-accountId', d.clientKey);
+      for (const t of txns) await db.delete('transactions', t.tradeId);
     }
   }
 

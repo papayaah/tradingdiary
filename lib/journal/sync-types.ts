@@ -80,6 +80,14 @@ export interface JournalPushRequest {
   tradeTags: SyncTradeTag[];
   reviews: SyncReview[];
   deletes: SyncDelete[];
+  /**
+   * When true, the server treats this push as an authoritative full snapshot and
+   * tombstones any of the user's accounts/executions/daily-notes that are absent
+   * from it (propagating local deletes). The client only sets this after it has
+   * completed at least one pull this session, so a fresh device cannot wipe the
+   * server before it has merged remote data. Ignored when the snapshot is empty.
+   */
+  reconcile?: boolean;
 }
 
 /** A row the server rejected because the client's baseRev was stale. Carries the

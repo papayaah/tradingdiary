@@ -155,6 +155,7 @@ export async function deleteAccount(accountId: string) {
   }
 
   await tx.done;
+  notifyJournalChanged();
 }
 
 export async function deleteAccountTrades(accountId: string) {
@@ -176,6 +177,7 @@ export async function deleteAccountTrades(accountId: string) {
   }
 
   await tx.done;
+  notifyJournalChanged();
 }
 
 export async function deleteTradesByDateRange(
@@ -219,5 +221,6 @@ export async function deleteTradesByDateRange(
   }
 
   await tx.done;
+  if (count > 0) notifyJournalChanged();
   return count;
 }
