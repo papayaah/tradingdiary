@@ -1,5 +1,17 @@
 # Repository Instructions
 
+## Project stage: pre-launch, no production data
+
+- This app has NOT launched and has no real users or production data to protect.
+- Prefer the correct end state over backward compatibility. When adding or
+  changing a feature, do not build data migrations, reconciliation, or
+  compatibility shims for old formats — it is fine to change schemas/storage and
+  have the user re-import.
+- You may be destructive: drop/recreate DB tables or IndexedDB stores, change
+  record shapes, and bump store versions without preserving existing rows.
+- Do not add "legacy"/"v1 vs v2" branching to keep old data working unless the
+  user explicitly asks. Remove this section once the app has launched.
+
 ## Git commits
 
 - Do not commit unless told so
