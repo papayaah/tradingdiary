@@ -279,6 +279,7 @@ export const engageTickets = pgTable("engage_tickets", {
     message: text("message").notNull(),
     userEmail: text("user_email"),
     userName: text("user_name"),
+    attachments: jsonb("attachments"),             // Attached screenshots or logs
     environment: jsonb("environment"),             // URL, browser, OS, screen specs
     createdAt: timestamp("created_at", { mode: 'string' }).notNull().defaultNow(),
 });

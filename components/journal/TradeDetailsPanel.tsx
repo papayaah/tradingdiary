@@ -36,11 +36,10 @@ export default function TradeDetailsPanel({ trade, currency = 'USD', className =
 
   return (
     <div className={`p-4 ${className}`}>
-      {/* Header: symbol, side, net P&L */}
+      {/* Header: side, date, net P&L. The parent trade row already identifies the symbol. */}
       <div className="flex items-start justify-between gap-3 mb-3 pb-3 border-b border-card-border/50">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-sm font-normal text-foreground tracking-tight">{trade.symbol}</span>
             <span
               className={`px-1.5 py-0.5 text-[9px] font-normal uppercase tracking-wider rounded-md border ${
                 isLong ? 'bg-profit/10 text-profit border-profit/20' : 'bg-loss/10 text-loss border-loss/20'

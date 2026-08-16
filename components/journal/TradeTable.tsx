@@ -47,7 +47,7 @@ export default function TradeTable({ trades, accountId, currency = 'USD', focusS
               <th className="text-left px-2.5 sm:px-4 py-3 text-[10px] font-normal uppercase tracking-wider">Time</th>
               <th className="text-left px-2.5 sm:px-4 py-3 text-[10px] font-normal uppercase tracking-wider">Symbol</th>
               <th className="text-left px-2.5 sm:px-4 py-3 text-[10px] font-normal uppercase tracking-wider">Side</th>
-              <th className="text-right px-2.5 sm:px-4 py-3 text-[10px] font-normal uppercase tracking-wider">Volume</th>
+              <th className="hidden sm:table-cell text-right px-4 py-3 text-[10px] font-normal uppercase tracking-wider">Volume</th>
               <th className="hidden md:table-cell text-right px-2.5 sm:px-4 py-3 text-[10px] font-normal uppercase tracking-wider">Execs</th>
               <th className="text-right px-2.5 sm:px-4 py-3 text-[10px] font-normal uppercase tracking-wider">P&amp;L</th>
               <th className="hidden lg:table-cell text-left px-2.5 sm:px-4 py-3 text-[10px] font-normal uppercase tracking-wider">Notes</th>
@@ -153,14 +153,7 @@ function TradeRow({
           {trade.firstTradeTime.substring(0, 8)}
         </td>
         <td className="px-2.5 sm:px-4 py-3 font-normal text-foreground text-xs sm:text-sm tracking-tight capitalize whitespace-nowrap">
-          <div className="flex items-center gap-1.5">
-            <span>{trade.symbol}</span>
-            {isDifferentCurrency && (
-              <span className="px-1 py-0.5 text-[9px] font-normal uppercase tracking-wider bg-accent/10 text-accent border border-accent/20 rounded">
-                {tradeCurrency}
-              </span>
-            )}
-          </div>
+          {trade.symbol}
         </td>
         <td className="px-2.5 sm:px-4 py-3 whitespace-nowrap">
           <span
@@ -172,7 +165,7 @@ function TradeRow({
             {trade.side}
           </span>
         </td>
-        <td className="px-2.5 sm:px-4 py-3 text-right font-normal text-foreground tabular-nums whitespace-nowrap text-xs sm:text-sm">
+        <td className="hidden sm:table-cell px-4 py-3 text-right font-normal text-foreground tabular-nums whitespace-nowrap text-sm">
           {formatVolume(trade.volume)}
         </td>
         <td className="hidden md:table-cell px-2.5 sm:px-4 py-3 text-right text-muted tabular-nums text-xs whitespace-nowrap">

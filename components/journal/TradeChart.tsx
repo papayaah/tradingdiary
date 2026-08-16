@@ -33,17 +33,6 @@ function getETOffsetSeconds(dateStr: string): number {
   return (etHourAtNoonUTC - 12) * 3600;
 }
 
-function formatChartDate(dateStr: string): string {
-  const y = parseInt(dateStr.substring(0, 4));
-  const m = parseInt(dateStr.substring(4, 6)) - 1;
-  const d = parseInt(dateStr.substring(6, 8));
-  return new Date(y, m, d).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-}
-
 export default function TradeChart({ symbol, date, transactions, interval: defaultInterval = '5m' }: TradeChartProps) {
   const { openReplay } = useReplay();
   const [loading, setLoading] = useState(true);
@@ -114,8 +103,7 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
         autoPatternsEnabled={autoPatternsEnabled}
         onTogglePatterns={() => setAutoPatternsEnabled(!autoPatternsEnabled)}
         onReplayTrade={() => openReplay({ date, symbol })}
-        title={symbol}
-        subtitle={formatChartDate(date)}
+        showChartIdentity={false}
         loading={loading}
         error={error}
         flat={true}

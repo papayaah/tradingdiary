@@ -59,6 +59,8 @@ export interface SharedTradingChartProps {
   title?: string;
   subtitle?: string;
   providerBadge?: string;
+  showChartIdentity?: boolean;
+  showSymbolIcon?: boolean;
   currentDayOnly?: boolean;
   onToggleCurrentDayOnly?: (val: boolean) => void;
   loading?: boolean;
@@ -360,6 +362,8 @@ export default function SharedTradingChart({
   title,
   subtitle,
   providerBadge,
+  showChartIdentity = true,
+  showSymbolIcon = true,
   currentDayOnly = false,
   onToggleCurrentDayOnly,
   loading = false,
@@ -1162,28 +1166,31 @@ export default function SharedTradingChart({
 
   return (
     <div className={`relative w-full overflow-hidden flex flex-col ${flat ? '' : 'rounded-2xl border border-card-border bg-card-bg shadow-2xl'}`}>
-      {/* Top Chart Header & Timeline Toolbar */}
-      <div className="flex flex-col gap-2 px-3 sm:px-5 py-2.5 border-b border-card-border/60 bg-muted-bg/40 backdrop-blur-md">
-        {/* Row 1: Symbol/Date + Overlays & Replay */}
+      {/* Chart identity and controls share one compact toolbar row. */}
+      <div className="px-3 sm:px-5 py-2.5 border-b border-card-border/60 bg-muted-bg/40 backdrop-blur-md">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-7 h-7 rounded-lg bg-accent/10 flex items-center justify-center text-accent shadow-inner shrink-0">
-              <span className="text-xs font-normal uppercase">{symbol.substring(0, 1)}</span>
-            </div>
-            <div className="flex items-baseline gap-2 min-w-0">
-              <span className="text-sm sm:text-base font-normal text-foreground tracking-tight truncate">{title || displaySymbol(symbol)}</span>
-              {subtitle && (
-                <span className="text-xs font-normal text-muted truncate">{subtitle}</span>
+          {showChartIdentity && (
+            <div className="flex items-center gap-2.5 min-w-0">
+              {showSymbolIcon && (
+                <div className="w-7 h-7 rounded-lg bg-accent/10 flex items-center justify-center text-accent shadow-inner shrink-0">
+                  <span className="text-xs font-normal uppercase">{symbol.substring(0, 1)}</span>
+                </div>
               )}
-              {providerBadge && (
-                <span className="px-1.5 py-0.5 text-[10px] font-normal uppercase tracking-wider bg-card-bg text-muted border border-card-border rounded-md shrink-0">
-                  {providerBadge}
-                </span>
-              )}
+              <div className="flex items-baseline gap-2 min-w-0">
+                <span className="text-sm sm:text-base font-normal text-foreground tracking-tight truncate">{title || displaySymbol(symbol)}</span>
+                {subtitle && (
+                  <span className="text-xs font-normal text-muted truncate">{subtitle}</span>
+                )}
+                {providerBadge && (
+                  <span className="px-1.5 py-0.5 text-[10px] font-normal uppercase tracking-wider bg-card-bg text-muted border border-card-border rounded-md shrink-0">
+                    {providerBadge}
+                  </span>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
-          <div className="flex items-center gap-1.5 ml-auto flex-wrap">
+          <div className="flex flex-1 items-center gap-1.5 flex-wrap">
             <div className="flex items-center gap-0.5 rounded-xl border border-card-border/40 bg-muted-bg/50 p-0.5" aria-label="Chart overlays">
               <button
                 type="button"
@@ -1263,36 +1270,33 @@ export default function SharedTradingChart({
                 Replay
               </button>
             )}
+
+            {onIntervalChange && availableIntervals.length > 0 && (
+              <div
+                className="ml-auto flex items-center gap-0.5 bg-muted-bg/50 p-0.5 rounded-lg border border-card-border/40"
+                title="Candlestick Bar Interval (Bar Resolution)"
+              >
+                {availableIntervals.map((iv) => (
+                  <button
+                    key={iv}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onIntervalChange(iv);
+                    }}
+                    className={`px-2 py-0.5 text-[11px] font-normal uppercase rounded transition-all ${
+                      interval === iv
+                        ? 'bg-accent text-white shadow-sm'
+                        : 'text-muted hover:text-foreground hover:bg-card-bg/60'
+                    }`}
+                  >
+                    {iv}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
-
-        {/* Row 2: Timeframe / Interval Toolbar Pills */}
-        {onIntervalChange && availableIntervals.length > 0 && (
-          <div className="flex items-center justify-end border-t border-card-border/30 pt-1.5">
-            <div
-              className="flex items-center gap-0.5 bg-muted-bg/50 p-0.5 rounded-lg border border-card-border/40"
-              title="Candlestick Bar Interval (Bar Resolution)"
-            >
-              {availableIntervals.map((iv) => (
-                <button
-                  key={iv}
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onIntervalChange(iv);
-                  }}
-                  className={`px-2 py-0.5 text-[11px] font-normal uppercase rounded transition-all ${
-                    interval === iv
-                      ? 'bg-accent text-white shadow-sm'
-                      : 'text-muted hover:text-foreground hover:bg-card-bg/60'
-                  }`}
-                >
-                  {iv}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Chart Canvas Area */}
