@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { AggregatedTrade } from '@/lib/trading/aggregator';
 import { pnlColorClass, formatVolume } from '@/lib/utils/format';
+import { formatExchangeTime } from '@/lib/trading/exchange-time';
 import { formatCurrency } from '@/lib/currency';
 import { getTradePnlDisplay } from '@/lib/trading/pnl-display';
 import {
@@ -150,7 +151,7 @@ function TradeRow({
           </div>
         </td>
         <td className="px-2.5 sm:px-4 py-3 text-muted font-mono text-[11px] font-normal tracking-tight whitespace-nowrap">
-          {trade.firstTradeTime.substring(0, 8)}
+          {formatExchangeTime(trade.firstTradeTime, trade.date)}
         </td>
         <td className="px-2.5 sm:px-4 py-3 font-normal text-foreground text-xs sm:text-sm tracking-tight capitalize whitespace-nowrap">
           {trade.symbol}

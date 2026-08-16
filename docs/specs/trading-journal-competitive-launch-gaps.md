@@ -43,8 +43,9 @@ below. See `flat-to-flat-trade-identity.md` and `journal-persistence-and-sync.md
       /api/journal` wipes server data; "Clear All" also deletes synced account
       data for signed-in users. **Not yet:** per-batch import undo/audit.
 - [ ] Cash-flow-aware equity (deposits/withdrawals) or scoped return metrics.
-- [ ] Timestamp display in the viewer's local timezone (Step 2; day boundary
-      done, per-timestamp localization pending).
+- [x] Trade times displayed in exchange time with an EST/EDT label
+      (`lib/trading/exchange-time.ts`), e.g. "1:06 PM EDT" — aligned to the
+      market session rather than the viewer's local clock.
 
 **Milestone B — Complete the review loop:** not started (tags/playbooks, planned
 risk/R, reports + shared filters, drill-down, supported-asset matrix).
