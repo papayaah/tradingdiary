@@ -5,7 +5,7 @@ let dbPromise: Promise<IDBPDatabase<TradingDiaryDB>> | null = null;
 
 export function getDB(): Promise<IDBPDatabase<TradingDiaryDB>> {
   if (!dbPromise) {
-    dbPromise = openDB<TradingDiaryDB>('tradingdiary', 2, {
+    dbPromise = openDB<TradingDiaryDB>('tradingdiary', 3, {
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           db.createObjectStore('accounts', { keyPath: 'accountId' });
@@ -29,9 +29,19 @@ export function getDB(): Promise<IDBPDatabase<TradingDiaryDB>> {
 
         if (oldVersion < 2) {
           // AI trade reviews — stored separately from human notes so they never clobber
-          // user input. Indexed by derived tradeGroupId (`${date}:${symbol}:${accountId}`).
+          // user input. Indexed by tradeGroupId (now the flat-to-flat trade-group key).
           const reviewStore = db.createObjectStore('tradeAIReviews', { keyPath: 'id' });
           reviewStore.createIndex('by-tradeGroup', 'tradeGroupId');
+        }
+
+        if (oldVersion < 3) {
+          // Trade notes move from a day+symbol key to one note per flat-to-flat
+          // round trip (keyed by the trade-group key). Recreate the store; prior
+          // notes were keyed at day+symbol granularity and are not carried over.
+          if (db.objectStoreNames.contains('tradeNotes')) {
+            db.deleteObjectStore('tradeNotes');
+          }
+          db.createObjectStore('tradeNotes', { keyPath: 'tradeGroupKey' });
         }
       },
     });

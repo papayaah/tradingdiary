@@ -61,6 +61,9 @@ export interface DailyNoteRecord {
 }
 
 export interface TradeNoteRecord {
+  /** Flat-to-flat trade-group key — the note's identity (one note per round trip). */
+  tradeGroupKey: string;
+  // Denormalized for display/search; not the identity.
   date: string;
   symbol: string;
   accountId: string;
@@ -131,7 +134,7 @@ export interface TradingDiaryDB extends DBSchema {
     value: DailyNoteRecord;
   };
   tradeNotes: {
-    key: [string, string, string];
+    key: string;
     value: TradeNoteRecord;
   };
   tradeAIReviews: {

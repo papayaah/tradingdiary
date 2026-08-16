@@ -25,7 +25,7 @@ function trade(overrides: Partial<AggregatedTrade> = {}): AggregatedTrade {
 const index = {
   trades: [trade(), trade({ symbol: 'NVDA', companyName: 'Nvidia', netPnL: 120, grossPnL: 122, side: 'SHORT', isOpen: true })],
   dailyNotes: [{ date: '20260805', accountId: 'account-1', content: 'Waited patiently for confirmation', updatedAt: 1 }],
-  tradeNotes: [{ date: '20260805', symbol: 'AAPL', accountId: 'account-1', content: 'Chased the breakout', tags: ['revenge'], updatedAt: 1 }],
+  tradeNotes: [{ tradeGroupKey: 'account-1 AAPL 20260805 09:30:00 0', date: '20260805', symbol: 'AAPL', accountId: 'account-1', content: 'Chased the breakout', tags: ['revenge'], updatedAt: 1 }],
 };
 
 describe('global search', () => {

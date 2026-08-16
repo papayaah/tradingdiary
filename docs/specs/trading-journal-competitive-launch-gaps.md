@@ -19,10 +19,11 @@ below. See `flat-to-flat-trade-identity.md` and `journal-persistence-and-sync.md
       spec, and tests (reversal, overnight, open, FX, aggregator reconciliation).
       **Now rendered in the journal UI**: `aggregateTradeGroupsByDay` makes each
       round trip its own row (3 same-day AAPL trades → 3 rows) ordered by entry
-      time — the per-day trade timeline. **Interim:** trade notes still key by
-      day+symbol (shared across a symbol's round trips until per-trade notes land);
-      the dashboard, replay, and global search still use the legacy day+symbol
-      aggregation, so their trade counts differ from the journal until migrated.
+      time — the per-day trade timeline. Trade notes, screenshots, and AI reviews
+      now key **per round trip** (by the trade-group key), so each trade has its
+      own note. **Interim:** the dashboard, replay, and global search still use
+      the legacy day+symbol aggregation, so their trade counts differ from the
+      journal until migrated; per-trade notes are keyed but not yet synced.
 - [x] Automatic exchange trading-day boundary (`lib/trading/trading-day.ts`):
       equities on ET date, CME futures roll 18:00 ET. Manual "Trade Date Cutoff"
       setting removed. (Addresses the shared calc rule "record timezone and

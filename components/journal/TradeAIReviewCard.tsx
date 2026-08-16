@@ -16,7 +16,7 @@ import {
   getTradeAIReviews,
   saveTradeAIReview,
   deleteTradeAIReview,
-  tradeGroupId,
+  tradeRef,
 } from '@/lib/db/notes';
 import type { TradeAIReviewRecord } from '@/lib/db/schema';
 
@@ -301,6 +301,7 @@ function analysisToText(a: TradeAnalysis): string {
 }
 
 export default function TradeAIReviewCard({ trade, accountId, currency }: TradeAIReviewCardProps) {
+  const groupKey = tradeRef(trade, accountId).tradeGroupKey;
   const aiContext = useAIManagementContextOptional();
   const [ctx, setCtx] = useState<TradeAnalysisContext | null>(null);
   const [result, setResult] = useState<TradeReviewResult | null>(null);
@@ -329,8 +330,8 @@ export default function TradeAIReviewCard({ trade, accountId, currency }: TradeA
 
   // Load persisted reviews for this trade group
   useEffect(() => {
-    getTradeAIReviews(trade.date, trade.symbol, accountId).then(setSaved);
-  }, [trade.date, trade.symbol, accountId]);
+    getTradeAIReviews(groupKey).then(setSaved);
+  }, [groupKey]);
 
   const currentHash = ctx ? hashTradeContext(ctx) : '';
   const freshExists = saved.some((r) => r.contextHash === currentHash);
@@ -363,7 +364,7 @@ export default function TradeAIReviewCard({ trade, accountId, currency }: TradeA
       date: trade.date,
       symbol: trade.symbol,
       accountId,
-      tradeGroupId: tradeGroupId(trade.date, trade.symbol, accountId),
+      tradeGroupId: groupKey,
       summary: result.analysis.summary,
       observations: result.analysis.observations,
       executionReview: result.analysis.executionReview,
@@ -378,9 +379,9 @@ export default function TradeAIReviewCard({ trade, accountId, currency }: TradeA
       createdAt: Date.now(),
     };
     await saveTradeAIReview(record);
-    setSaved(await getTradeAIReviews(trade.date, trade.symbol, accountId));
+    setSaved(await getTradeAIReviews(groupKey));
     setResult(null);
-  }, [result, trade, accountId, saved.length, currentHash]);
+  }, [result, trade, accountId, groupKey, saved.length, currentHash]);
 
   const handleCopy = useCallback(() => {
     if (!result) return;
@@ -392,9 +393,9 @@ export default function TradeAIReviewCard({ trade, accountId, currency }: TradeA
   const handleDelete = useCallback(
     async (id: string) => {
       await deleteTradeAIReview(id);
-      setSaved(await getTradeAIReviews(trade.date, trade.symbol, accountId));
+      setSaved(await getTradeAIReviews(groupKey));
     },
-    [trade.date, trade.symbol, accountId]
+    [groupKey]
   );
 
   return (

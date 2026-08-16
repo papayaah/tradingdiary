@@ -544,7 +544,8 @@ export async function pullJournal(userId: string, since: number): Promise<Journa
     })),
     tradeNotes: tradeNotePart.upserts.map((n) => ({
       tradeGroupClientKey: groupKeyByUuid.get(n.tradeGroupId) ?? '',
-      // Legacy TradeNoteRecord shape fields are derived on the client from the key.
+      // date/symbol/accountId are denormalized on the client from the trade group.
+      tradeGroupKey: groupKeyByUuid.get(n.tradeGroupId) ?? '',
       date: '', symbol: '', accountId: '', content: n.content, tags: [],
       updatedAt: Date.parse(n.updatedAt), rev: n.rev,
     })),

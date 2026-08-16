@@ -1,28 +1,26 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { getTradeNote, saveTradeNoteContent } from '@/lib/db/notes';
+import { getTradeNote, saveTradeNoteContent, type TradeRef } from '@/lib/db/notes';
 
 interface TradeNotesEditorProps {
-  date: string;
-  symbol: string;
-  accountId: string;
+  tradeRef: TradeRef;
 }
 
 /**
  * Auto-saving textarea for the trader's personal reflections. Debounced; patches
  * only note content (screenshots/tags preserved by saveTradeNoteContent).
  */
-export default function TradeNotesEditor({ date, symbol, accountId }: TradeNotesEditorProps) {
+export default function TradeNotesEditor({ tradeRef }: TradeNotesEditorProps) {
   const [value, setValue] = useState('');
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const loadedFor = useRef<string>('');
+  const key = tradeRef.tradeGroupKey;
 
   useEffect(() => {
-    const key = `${date}:${symbol}:${accountId}`;
     loadedFor.current = key;
-    getTradeNote(date, symbol, accountId).then((note) => {
+    getTradeNote(key).then((note) => {
       // Guard against races if props change before load resolves.
       if (loadedFor.current === key) {
         setValue(note?.content ?? '');
@@ -32,14 +30,14 @@ export default function TradeNotesEditor({ date, symbol, accountId }: TradeNotes
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [date, symbol, accountId]);
+  }, [key]);
 
   const handleChange = (next: string) => {
     setValue(next);
     setStatus('saving');
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(async () => {
-      await saveTradeNoteContent(date, symbol, accountId, next);
+      await saveTradeNoteContent(tradeRef, next);
       setStatus('saved');
     }, 600);
   };

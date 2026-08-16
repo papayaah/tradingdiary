@@ -11,6 +11,7 @@ import {
   getTradeNote,
   addScreenshotToTrade,
   removeScreenshotFromTrade,
+  tradeRef,
 } from '@/lib/db/notes';
 import TradeChart from './TradeChart';
 import TradeDetailsPanel from './TradeDetailsPanel';
@@ -104,6 +105,8 @@ function TradeRow({
 }) {
   const [screenshotIds, setScreenshotIds] = useState<number[]>([]);
   const rowRef = useRef<HTMLTableRowElement>(null);
+  const ref = tradeRef(trade, accountId);
+  const groupKey = ref.tradeGroupKey;
 
   useEffect(() => {
     if (!isFocused) return;
@@ -115,25 +118,26 @@ function TradeRow({
 
   useEffect(() => {
     if (!isExpanded) return;
-    getTradeNote(trade.date, trade.symbol, accountId).then((note) => {
+    getTradeNote(groupKey).then((note) => {
       setScreenshotIds(note?.screenshotIds ?? []);
     });
-  }, [isExpanded, trade.date, trade.symbol, accountId]);
+  }, [isExpanded, groupKey]);
 
   const handleAddScreenshot = useCallback(
     async (assetId: number) => {
-      await addScreenshotToTrade(trade.date, trade.symbol, accountId, assetId);
+      await addScreenshotToTrade(ref, assetId);
       setScreenshotIds((prev) => [...prev, assetId]);
     },
-    [trade.date, trade.symbol, accountId]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [groupKey]
   );
 
   const handleRemoveScreenshot = useCallback(
     async (assetId: number) => {
-      await removeScreenshotFromTrade(trade.date, trade.symbol, accountId, assetId);
+      await removeScreenshotFromTrade(groupKey, assetId);
       setScreenshotIds((prev) => prev.filter((id) => id !== assetId));
     },
-    [trade.date, trade.symbol, accountId]
+    [groupKey]
   );
 
   const tradeCurrency = trade.currency || currency;
@@ -236,11 +240,7 @@ function TradeRow({
           </tr>
           <tr>
             <td colSpan={9} className="px-5 py-4 border-t border-card-border">
-              <TradeNotesEditor
-                date={trade.date}
-                symbol={trade.symbol}
-                accountId={accountId}
-              />
+              <TradeNotesEditor tradeRef={ref} />
             </td>
           </tr>
           <tr>
