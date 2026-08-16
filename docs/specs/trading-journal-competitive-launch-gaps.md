@@ -8,6 +8,41 @@ Draft
 
 August 14, 2026
 
+## Implementation progress
+
+Updated August 16, 2026. Tracks build status against the delivery milestones
+below. See `flat-to-flat-trade-identity.md` and `journal-persistence-and-sync.md`.
+
+**Milestone A — Trust the data**
+
+- [x] Canonical trade identity — flat-to-flat splitter (`lib/trading/trade-groups.ts`),
+      spec, and tests (reversal, overnight, open, FX, aggregator reconciliation).
+- [x] Automatic exchange trading-day boundary (`lib/trading/trading-day.ts`):
+      equities on ET date, CME futures roll 18:00 ET. Manual "Trade Date Cutoff"
+      setting removed. (Addresses the shared calc rule "record timezone and
+      trading-day cutoff with every derived day grouping.")
+- [~] Import integrity — execution idempotency key in schema/sync; import no
+      longer fabricates dates; P&L-summary files rejected. **Not yet:** import
+      batch records, checksums, per-batch undo, execution audit view.
+- [~] Server persistence — Postgres tables (`trading_account`, `execution`,
+      `trade_group`, notes, tags, review, attachment, `journal_event`) with rev +
+      tombstones; `/api/journal/sync` push/pull with rev conflict detection;
+      server-side splitter rebuild. Tables applied (`db:schema:push`).
+      **Not yet:** client sync engine (hydrate-on-login, write-through,
+      sync-state indicator) and guest→account adoption — so multi-device sync is
+      not live end-to-end yet.
+- [~] Fixtures — splitter + trading-day unit tests. **Not yet:** full matrix
+      (partial fills, futures multipliers, FX, duplicate imports, scale in/out).
+- [ ] Backup/export, restore, and account deletion.
+- [ ] Cash-flow-aware equity (deposits/withdrawals) or scoped return metrics.
+- [ ] Timestamp display in the viewer's local timezone (Step 2; day boundary
+      done, per-timestamp localization pending).
+
+**Milestone B — Complete the review loop:** not started (tags/playbooks, planned
+risk/R, reports + shared filters, drill-down, supported-asset matrix).
+
+Legend: [x] done · [~] partial · [ ] not started.
+
 ## Summary
 
 Trading Diary already covers the beginning of the core journaling loop: users can
