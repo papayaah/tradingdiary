@@ -29,7 +29,7 @@ Theme values live in `app/globals.css`. Components consume semantic Tailwind uti
 4. Cards use `bg-card-bg border border-card-border`; secondary panels use `bg-muted-bg`.
 5. Primary actions use the accent token. Destructive actions use the loss token.
 6. Page components compose feature components; they should not contain large reusable forms or domain logic.
-7. Prefer the established spacing and shape vocabulary: `rounded-xl` or `rounded-2xl`, compact `text-sm`, and bounded page widths.
+7. Prefer the established spacing and shape vocabulary: crisp sharp edges (`--radius: 0px`), compact `text-sm`, and bounded page widths.
 8. Verify every new interface in light and dark mode.
 
 ## Reusable package integration
@@ -42,7 +42,14 @@ For the media library:
 <MediaGrid theme="inherit" />
 ```
 
-The package also supports standalone `system`, `light`, and `dark` themes for other applications.
+For the engage widget and admin panel:
+
+```tsx
+<FeedbackWidget theme="inherit" corners="sharp" />
+<EngageAdminPanel defaultTab="inbox" />
+```
+
+The packages also support standalone `system`, `light`, and `dark` themes for other applications.
 
 ## Navigation
 
