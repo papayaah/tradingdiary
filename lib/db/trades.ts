@@ -1,6 +1,7 @@
 import { getDB } from './database';
 import type { TransactionRecord, AccountRecord, PositionRecord } from './schema';
 import { enrichTransactionsWithHistoricalFx } from '@/lib/fx/enrich-transactions';
+import { notifyJournalChanged } from '@/lib/journal/sync-bus';
 
 async function persistFxBackfill(
   account: AccountRecord | undefined,
@@ -54,6 +55,7 @@ export async function importData(
   }
 
   await tx.done;
+  notifyJournalChanged();
 }
 
 export async function getAccounts(): Promise<AccountRecord[]> {
@@ -64,6 +66,7 @@ export async function getAccounts(): Promise<AccountRecord[]> {
 export async function updateAccount(account: AccountRecord) {
   const db = await getDB();
   await db.put('accounts', account);
+  notifyJournalChanged();
 }
 
 export async function getAllTransactions(): Promise<TransactionRecord[]> {
@@ -114,6 +117,7 @@ export async function saveManualTransaction(
   }
   await tx.objectStore('transactions').put(transaction);
   await tx.done;
+  notifyJournalChanged();
 }
 
 export async function clearAllData() {

@@ -10,6 +10,7 @@ import { AuthOverlayProvider } from '@/components/auth/AuthOverlayProvider';
 import { MediaLibraryProvider } from '@/packages/react-media-library/src/components/MediaLibraryProvider';
 import { ImportProvider } from '@/contexts/ImportContext';
 import { AccountProvider } from '@/contexts/AccountContext';
+import { JournalSyncProvider } from '@/components/journal/JournalSyncProvider';
 import { WelcomeProvider } from '@/components/welcome/WelcomeContext';
 import WelcomeModal from '@/components/welcome/WelcomeModal';
 
@@ -58,6 +59,7 @@ export default function JournalLayout({
 
   return (
     <AccountProvider>
+      <JournalSyncProvider>
       <MediaLibraryProvider>
         <ImportProvider>
           <AuthOverlayProvider>
@@ -79,6 +81,7 @@ export default function JournalLayout({
           </AuthOverlayProvider>
         </ImportProvider>
       </MediaLibraryProvider>
+      </JournalSyncProvider>
     </AccountProvider>
   );
 }

@@ -1,0 +1,140 @@
+import { getDB } from '../db/database';
+import type { AccountRecord } from '../db/schema';
+import { getAccounts, getAllTransactions } from '../db/trades';
+import { getAllDailyNotes } from '../db/notes';
+import type { JournalPushRequest, JournalPullResponse } from './sync-types';
+
+/**
+ * Client sync engine (v1). Executions, accounts, and daily notes sync across
+ * devices for a signed-in user. Executions are immutable and idempotent, so
+ * cross-device merge can never duplicate them. Daily notes use last-write-wins
+ * for now (see baseRev below). Trade notes/tags/reviews are not yet synced —
+ * they wait on the journal UI adopting the flat-to-flat trade_group identity.
+ *
+ * See docs/specs/journal-persistence-and-sync.md.
+ */
+
+const CURSOR_PREFIX = 'journal-sync-cursor:';
+
+export function getCursor(userId: string): number {
+  if (typeof window === 'undefined') return 0;
+  const raw = localStorage.getItem(CURSOR_PREFIX + userId);
+  const n = raw ? Number(raw) : 0;
+  return Number.isFinite(n) ? n : 0;
+}
+
+export function setCursor(userId: string, seq: number): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(CURSOR_PREFIX + userId, String(seq));
+}
+
+export interface PushResult {
+  authenticated: boolean;
+  adopted: number;
+  conflicts: number;
+  seq: number;
+}
+
+/** Push the full local journal snapshot. Idempotent on the server. */
+export async function pushJournalSnapshot(): Promise<PushResult> {
+  const [accounts, executions, dailyNotesRaw] = await Promise.all([
+    getAccounts(),
+    getAllTransactions(),
+    getAllDailyNotes(),
+  ]);
+
+  const body: JournalPushRequest = {
+    accounts,
+    executions,
+    dailyNotes: dailyNotesRaw.map((n) => ({
+      accountId: n.accountId,
+      tradingDay: n.date,
+      content: n.content,
+      updatedAt: n.updatedAt ?? 0,
+      // v1: last-write-wins. Proper rev tracking + conflict UI is a follow-up.
+      baseRev: Number.MAX_SAFE_INTEGER,
+    })),
+    tradeNotes: [],
+    tags: [],
+    tradeTags: [],
+    reviews: [],
+    deletes: [],
+  };
+
+  const res = await fetch('/api/journal/sync', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`journal push failed: ${res.status}`);
+  const data = await res.json();
+  if (!data.authenticated) return { authenticated: false, adopted: 0, conflicts: 0, seq: 0 };
+  return {
+    authenticated: true,
+    adopted: data.adoptedExecutions ?? 0,
+    conflicts: Array.isArray(data.conflicts) ? data.conflicts.length : 0,
+    seq: data.seq ?? 0,
+  };
+}
+
+export interface PullResult {
+  authenticated: boolean;
+  changed: boolean;
+  seq: number;
+}
+
+/** Pull server changes since `cursor` and merge them into IndexedDB. */
+export async function pullAndMerge(cursor: number): Promise<PullResult> {
+  const res = await fetch(`/api/journal/sync?since=${cursor}`);
+  if (!res.ok) throw new Error(`journal pull failed: ${res.status}`);
+  const data = (await res.json()) as JournalPullResponse & { authenticated: boolean };
+  if (!data.authenticated) return { authenticated: false, changed: false, seq: cursor };
+
+  const db = await getDB();
+
+  for (const a of data.accounts) {
+    const account: AccountRecord = {
+      accountId: a.accountId,
+      name: a.name,
+      type: a.type,
+      currency: a.currency,
+      address: a.address,
+      importedAt: a.importedAt,
+      initialBalance: a.initialBalance,
+    };
+    await db.put('accounts', account);
+  }
+
+  for (const t of data.executions) {
+    await db.put('transactions', t);
+  }
+
+  for (const n of data.dailyNotes) {
+    const existing = await db.get('dailyNotes', [n.date, n.accountId]);
+    await db.put('dailyNotes', {
+      date: n.date,
+      accountId: n.accountId,
+      content: n.content,
+      screenshotIds: existing?.screenshotIds,
+      updatedAt: n.updatedAt,
+    });
+  }
+
+  for (const d of data.deletes) {
+    if (d.entity === 'daily_note') {
+      const [accountId, day] = d.clientKey.split(':');
+      await db.delete('dailyNotes', [day, accountId]);
+    } else if (d.entity === 'account') {
+      await db.delete('accounts', d.clientKey);
+    }
+  }
+
+  // seq only advances when the server recorded new events. A first sync
+  // (cursor 0) that returned data, or a later seq, means the local store changed.
+  const hasRows =
+    data.accounts.length > 0 || data.executions.length > 0 ||
+    data.dailyNotes.length > 0 || data.deletes.length > 0;
+  const changed = cursor === 0 ? hasRows : data.seq > cursor;
+
+  return { authenticated: true, changed, seq: data.seq };
+}

@@ -4,6 +4,7 @@ import type {
   TradeNoteRecord,
   TradeAIReviewRecord,
 } from './schema';
+import { notifyJournalChanged } from '@/lib/journal/sync-bus';
 
 /**
  * Derived single-string reference for a trade group. Pure function of the
@@ -35,6 +36,7 @@ export async function saveDailyNote(
     screenshotIds: existing?.screenshotIds,
     updatedAt: Date.now(),
   });
+  notifyJournalChanged();
 }
 
 export async function getAllDailyNotes(): Promise<DailyNoteRecord[]> {

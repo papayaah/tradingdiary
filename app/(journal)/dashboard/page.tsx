@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { Upload, LayoutDashboard, Calendar, Filter, Sparkles, ChevronDown, Check } from 'lucide-react';
 import { aggregateByDay, type DailySummary } from '@/lib/trading/aggregator';
+import { onJournalSynced } from '@/lib/journal/sync-bus';
 import { computeDashboard } from '@/lib/trading/dashboard';
 import { timeToSeconds, computePnLTimeline } from '@/lib/replay/engine';
 import type { TransactionRecord } from '@/lib/db/schema';
@@ -72,6 +73,9 @@ export default function DashboardPage() {
   const [empty, setEmpty] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Reload the dashboard when a sync merged remote changes into IndexedDB.
+  useEffect(() => onJournalSynced(() => setRefreshKey((k) => k + 1)), []);
 
   useEffect(() => {
     async function load() {

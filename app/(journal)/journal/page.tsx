@@ -9,6 +9,8 @@ import {
   setShowPnlInBaseCurrency,
 } from '@/lib/settings';
 import { aggregateByDay, applyMarketPrices, type DailySummary } from '@/lib/trading/aggregator';
+import { onJournalSynced } from '@/lib/journal/sync-bus';
+import SyncStatusIndicator from '@/components/journal/SyncStatusIndicator';
 import DayGroup from '@/components/journal/DayGroup';
 import { useAccount } from '@/contexts/AccountContext';
 import { getTransactionsByAccount } from '@/lib/db/trades';
@@ -34,6 +36,9 @@ export default function JournalPage() {
   useEffect(() => {
     setShowBaseCurrency(getShowPnlInBaseCurrency());
   }, []);
+
+  // Reload the journal when a sync merged remote changes into IndexedDB.
+  useEffect(() => onJournalSynced(() => setRefreshKey((k) => k + 1)), []);
 
   const toggleBaseCurrency = useCallback(() => {
     setShowBaseCurrency((current) => {
@@ -247,6 +252,7 @@ export default function JournalPage() {
           <p className="text-sm text-muted font-medium">Capture your trades, thoughts, and market analysis.</p>
         </div>
         <div className="flex items-center gap-2 self-start md:self-auto">
+          <SyncStatusIndicator />
           {displaySummaries && displaySummaries.length > 0 && (
             <button
               type="button"
