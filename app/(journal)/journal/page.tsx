@@ -8,7 +8,7 @@ import {
   getShowPnlInBaseCurrency,
   setShowPnlInBaseCurrency,
 } from '@/lib/settings';
-import { aggregateByDay, applyMarketPrices, type DailySummary } from '@/lib/trading/aggregator';
+import { aggregateTradeGroupsByDay, applyMarketPrices, type DailySummary } from '@/lib/trading/aggregator';
 import { onJournalSynced } from '@/lib/journal/sync-bus';
 import SyncStatusIndicator from '@/components/journal/SyncStatusIndicator';
 import DayGroup from '@/components/journal/DayGroup';
@@ -70,7 +70,7 @@ export default function JournalPage() {
       const transactions = await getTransactionsByAccount(selectedAccountId);
 
       if (transactions.length > 0) {
-        const agg = aggregateByDay(transactions);
+        const agg = aggregateTradeGroupsByDay(transactions);
 
         // --- 1. SET INITIAL DATA IMMEDIATELY ---
         setSummaries([...agg]);

@@ -1,7 +1,11 @@
 import type { TransactionRecord } from '../db/schema';
 import { tradingDayFor } from './trading-day';
+import { splitIntoTradeGroups } from './trade-groups';
 
 export interface AggregatedTrade {
+  /** Stable flat-to-flat trade-group key (present when built by
+   * aggregateTradeGroupsByDay); unique per round trip within a day+symbol. */
+  groupKey?: string;
   symbol: string;
   companyName: string;
   date: string;
@@ -290,7 +294,14 @@ export function aggregateByDay(
     }
   }
 
-  // ── Step 4: Build DailySummary per date ──
+  return buildDailySummaries(byDate);
+}
+
+/**
+ * Build day summaries from trades already grouped by day. Trades within a day are
+ * ordered by entry time (the per-day timeline); days are ordered newest first.
+ */
+function buildDailySummaries(byDate: Map<string, AggregatedTrade[]>): DailySummary[] {
   const summaries: DailySummary[] = [];
 
   for (const [date, trades] of byDate) {
@@ -325,6 +336,60 @@ export function aggregateByDay(
   }
 
   return summaries.sort((a, b) => b.date.localeCompare(a.date));
+}
+
+/**
+ * Flat-to-flat day aggregation: each round trip is its own trade (see
+ * docs/specs/flat-to-flat-trade-identity.md). Same-symbol round trips on one day
+ * become separate rows ordered by entry time — the per-day trade timeline.
+ */
+export function aggregateTradeGroupsByDay(
+  transactions: TransactionRecord[],
+): DailySummary[] {
+  const groups = splitIntoTradeGroups(transactions);
+  const byDate = new Map<string, AggregatedTrade[]>();
+
+  for (const g of groups) {
+    // De-duplicate executions shared across a reversal's two legs.
+    const seen = new Set<string>();
+    const txns: TransactionRecord[] = [];
+    for (const leg of g.legs) {
+      if (seen.has(leg.transaction.tradeId)) continue;
+      seen.add(leg.transaction.tradeId);
+      txns.push(leg.transaction);
+    }
+
+    const trade: AggregatedTrade = {
+      groupKey: g.key,
+      symbol: g.symbol,
+      companyName: g.companyName,
+      date: g.tradingDay,
+      firstTradeTime: g.openedTime,
+      currency: g.currency,
+      accountCurrency: g.accountCurrency,
+      nativeGrossPnL: g.nativeGrossPnL,
+      nativeTotalCommissions: g.nativeTotalCommissions,
+      nativeNetPnL: g.nativeNetPnL,
+      fxRateToAccount: g.fxRateToAccount,
+      fxRateDate: g.fxRateDate,
+      volume: g.volume,
+      executions: g.executions,
+      grossPnL: g.grossPnL,
+      totalCommissions: g.totalCommissions,
+      netPnL: g.netPnL,
+      side: g.side,
+      isOpen: g.isOpen,
+      netQuantity: g.netQuantity,
+      openAvgCost: g.openAvgCost,
+      transactions: txns,
+    };
+
+    const arr = byDate.get(g.tradingDay);
+    if (arr) arr.push(trade);
+    else byDate.set(g.tradingDay, [trade]);
+  }
+
+  return buildDailySummaries(byDate);
 }
 
 /**

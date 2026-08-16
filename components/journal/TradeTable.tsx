@@ -56,8 +56,10 @@ export default function TradeTable({ trades, accountId, currency = 'USD', focusS
             </tr>
           </thead>
           <tbody>
-            {trades.map((trade) => {
-              const key = `${trade.date}-${trade.symbol}`;
+            {trades.map((trade, idx) => {
+              // Flat-to-flat rows share date+symbol, so key by the unique trade
+              // group; fall back to a positional key for legacy aggregation.
+              const key = trade.groupKey ?? `${trade.date}-${trade.symbol}-${idx}`;
               const isExpanded = expanded === key;
 
               return (
