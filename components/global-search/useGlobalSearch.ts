@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAccount } from '@/contexts/AccountContext';
 import { getAllDailyNotes, getAllTradeNotes } from '@/lib/db/notes';
 import { getTransactionsByAccount } from '@/lib/db/trades';
-import { getTradeDateCutoff } from '@/lib/settings';
 import { aggregateByDay } from '@/lib/trading/aggregator';
 import { searchIndex } from '@/lib/search/search';
 import type { SearchIndex } from '@/lib/search/types';
@@ -28,7 +27,7 @@ export function useGlobalSearch(query: string, enabled: boolean) {
     ])
       .then(([transactions, dailyNotes, tradeNotes]) => {
         if (!active) return;
-        const trades = aggregateByDay(transactions, getTradeDateCutoff())
+        const trades = aggregateByDay(transactions)
           .flatMap((summary) => summary.trades);
         setIndexedData({
           accountId: selectedAccountId,

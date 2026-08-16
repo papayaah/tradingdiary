@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Upload, BookOpen, ArrowLeft, ChevronLeft, ChevronRight, Plus, Sparkles } from 'lucide-react';
 import {
   getShowPnlInBaseCurrency,
-  getTradeDateCutoff,
   setShowPnlInBaseCurrency,
 } from '@/lib/settings';
 import { aggregateByDay, applyMarketPrices, type DailySummary } from '@/lib/trading/aggregator';
@@ -66,7 +65,7 @@ export default function JournalPage() {
       const transactions = await getTransactionsByAccount(selectedAccountId);
 
       if (transactions.length > 0) {
-        const agg = aggregateByDay(transactions, getTradeDateCutoff());
+        const agg = aggregateByDay(transactions);
 
         // --- 1. SET INITIAL DATA IMMEDIATELY ---
         setSummaries([...agg]);
@@ -256,7 +255,7 @@ export default function JournalPage() {
               aria-label={`Show P&L in base currency (${baseCurrency})`}
               title={`Show P&L in base currency (${baseCurrency})`}
               onClick={toggleBaseCurrency}
-              className={`inline-flex h-11 items-center gap-2 rounded-xl border px-3 text-xs font-semibold transition-colors ${
+              className={`inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl border px-3 text-xs font-semibold transition-colors ${
                 showBaseCurrency
                   ? 'border-accent/30 bg-accent/10 text-accent'
                   : 'border-card-border bg-card-bg text-muted hover:bg-muted-bg hover:text-foreground'
@@ -264,10 +263,10 @@ export default function JournalPage() {
             >
               <span
                 aria-hidden="true"
-                className={`relative h-4 w-7 rounded-full transition-colors ${showBaseCurrency ? 'bg-accent' : 'bg-muted-bg'}`}
+                className={`relative inline-flex h-5 w-9 shrink-0 overflow-hidden rounded-full transition-colors ${showBaseCurrency ? 'bg-accent' : 'bg-muted-bg'}`}
               >
                 <span
-                  className={`absolute top-0.5 h-3 w-3 rounded-full bg-background shadow-sm transition-transform ${showBaseCurrency ? 'translate-x-3.5' : 'translate-x-0.5'}`}
+                  className={`absolute left-0.5 top-0.5 block h-4 w-4 rounded-full bg-background shadow-sm transition-transform ${showBaseCurrency ? 'translate-x-4' : 'translate-x-0'}`}
                 />
               </span>
               {baseCurrency}

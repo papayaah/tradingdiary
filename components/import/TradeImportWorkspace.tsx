@@ -129,8 +129,15 @@ export default function TradeImportWorkspace() {
       const pnl = parseAmount(get('realizedPnL'));
       const total = get('totalValue') ? parseAmount(get('totalValue')) : undefined;
 
+      // A trade must carry its own execution date. Never fabricate one from
+      // "today" — a P&L-summary export (no date/quantity columns) would otherwise
+      // stamp every row with the import day and invent trades on a closed-market
+      // day. Rows without a date are dropped and reported as skipped.
+      const rawDate = (get('date') || '').trim();
+      if (!rawDate) return [];
+
       return [{
-        date: normalizeDate(get('date') || new Date().toISOString().split('T')[0]),
+        date: normalizeDate(rawDate),
         time: normalizeTime(get('time') || '00:00:00'),
         symbol: symbol,
         side,
@@ -378,6 +385,13 @@ export default function TradeImportWorkspace() {
       }
     } else {
       detectedMapping = mapColumnsOffline(parsedHeaders);
+    }
+
+    // A realized-P&L summary (symbol + P&L, but no per-trade date) is not
+    // execution data. Reject it clearly instead of stamping every row with the
+    // import day — that used to invent trades on a market-closed day.
+    if (detectedMapping.symbol && detectedMapping.realizedPnL && !detectedMapping.date) {
+      return { skippedReason: `${file.name} (looks like a P&L summary — no trade dates. Import an activity/executions file instead.)` };
     }
 
     const hasRequired =

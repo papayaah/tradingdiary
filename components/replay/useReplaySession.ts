@@ -9,7 +9,6 @@ import {
   timeToSeconds,
   type PnLSnapshot,
 } from '@/lib/replay/engine';
-import { getTradeDateCutoff } from '@/lib/settings';
 import { aggregateByDay } from '@/lib/trading/aggregator';
 
 interface ReplayDay {
@@ -40,7 +39,7 @@ export function useReplaySession(date?: string | null, symbol?: string | null) {
       const allTransactions = await getTransactionsByAccount(selectedAccountId);
       if (cancelled) return;
 
-      const summaries = aggregateByDay(allTransactions, getTradeDateCutoff());
+      const summaries = aggregateByDay(allTransactions);
       const days = summaries.map((summary) => ({
         date: summary.date,
         formattedDate: summary.formattedDate,

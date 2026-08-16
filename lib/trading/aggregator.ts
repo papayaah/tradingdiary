@@ -1,4 +1,5 @@
 import type { TransactionRecord } from '../db/schema';
+import { tradingDayFor } from './trading-day';
 
 export interface AggregatedTrade {
   symbol: string;
@@ -66,23 +67,6 @@ function timeToMinutes(time: string): number {
   return h * 3600 + m * 60 + s;
 }
 
-function nextTradingDay(dateStr: string): string {
-  const y = parseInt(dateStr.substring(0, 4));
-  const m = parseInt(dateStr.substring(4, 6)) - 1;
-  const d = parseInt(dateStr.substring(6, 8));
-  const next = new Date(y, m, d);
-  do {
-    next.setDate(next.getDate() + 1);
-  } while (next.getDay() === 0 || next.getDay() === 6); // skip Sun/Sat
-  return `${next.getFullYear()}${String(next.getMonth() + 1).padStart(2, '0')}${String(next.getDate()).padStart(2, '0')}`;
-}
-
-function effectiveDate(t: TransactionRecord, cutoffTime?: string | null): string {
-  if (!cutoffTime) return t.date;
-  if (t.time >= cutoffTime) return nextTradingDay(t.date);
-  return t.date;
-}
-
 interface FIFOLot {
   qty: number;
   entryPrice: number;
@@ -120,14 +104,13 @@ interface DateAccum {
 }
 
 export function aggregateByDay(
-  transactions: TransactionRecord[],
-  cutoffTime?: string | null
+  transactions: TransactionRecord[]
 ): DailySummary[] {
   // ── Step 1: Group transactions by symbol ──
   const bySymbol = new Map<string, { t: TransactionRecord; eDate: string }[]>();
 
   for (const t of transactions) {
-    const eDate = effectiveDate(t, cutoffTime);
+    const eDate = tradingDayFor(t.date, t.time, t.symbol);
     const existing = bySymbol.get(t.symbol);
     if (existing) {
       existing.push({ t, eDate });
@@ -141,10 +124,10 @@ export function aggregateByDay(
 
   for (const [symbol, entries] of bySymbol) {
     // FIFO must follow TRUE execution order (raw file date+time), never the
-    // cutoff-shifted date. The cutoff only decides which day a realized amount
+    // trading-day date. The trading day only decides which day a realized amount
     // is *attributed* to — reordering the matching itself pairs closes with the
     // wrong lots and produces nonsensical P&L. Sort by raw timestamp here and
-    // bucket each closing trade's realized P&L into its effective date below.
+    // bucket each closing trade's realized P&L into its trading day below.
     entries.sort((a, b) => {
       const dateCmp = a.t.date.localeCompare(b.t.date);
       if (dateCmp !== 0) return dateCmp;
@@ -162,7 +145,7 @@ export function aggregateByDay(
     const openLots: FIFOLot[] = [];
     let runningPosition = 0;
 
-    // One accumulator per effective (cutoff-shifted) date, keyed by that date.
+    // One accumulator per trading day, keyed by that day.
     const accumsByDate = new Map<string, DateAccum>();
 
     for (const { t, eDate } of entries) {
@@ -249,9 +232,10 @@ export function aggregateByDay(
         runningPosition += (t.side === 'BUYTOCLOSE' ? qty : -qty);
       }
 
-      // Snapshot open-lot state after this trade. Since the cutoff only shifts
-      // dates forward, effective dates are non-decreasing in execution order,
-      // so the last write for a given date reflects its end-of-day position.
+      // Snapshot open-lot state after this trade. Since the trading day only
+      // shifts dates forward (futures Globex roll), trading days are
+      // non-decreasing in execution order, so the last write for a given day
+      // reflects its end-of-day position.
       const openQty = openLots.reduce((s, l) => s + l.qty, 0);
       const openCost = openLots.reduce((s, l) => s + l.qty * l.entryPrice, 0);
       accum.endPosition = Math.round(runningPosition * 100) / 100;

@@ -100,7 +100,7 @@ export default function ImportPreview({
         // If no explicit PnL found, attempt basic position aggregation PnL estimation
         if (totalPnL === 0 && wins === 0 && losses === 0) {
             const tempRecords = toTransactionRecords(selectedTransactions, 'preview-acc', 'USD');
-            const daily = aggregateByDay(tempRecords, null);
+            const daily = aggregateByDay(tempRecords);
             daily.forEach(d => {
                 totalPnL += d.totalPnL;
                 wins += d.winCount;

@@ -3,7 +3,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { Upload, LayoutDashboard, Calendar, Filter, Sparkles, ChevronDown, Check } from 'lucide-react';
-import { getTradeDateCutoff } from '@/lib/settings';
 import { aggregateByDay, type DailySummary } from '@/lib/trading/aggregator';
 import { computeDashboard } from '@/lib/trading/dashboard';
 import { timeToSeconds, computePnLTimeline } from '@/lib/replay/engine';
@@ -92,7 +91,7 @@ export default function DashboardPage() {
         setLoading(false);
         return;
       }
-      const agg = aggregateByDay(transactions, getTradeDateCutoff());
+      const agg = aggregateByDay(transactions);
       setAllSummaries(agg);
       setLoading(false);
 
