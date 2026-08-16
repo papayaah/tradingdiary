@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { NormalizedTransaction, ColumnMapping, SideValueMapping } from '@/lib/import/types';
 
 interface ColumnMapperProps {
@@ -39,7 +40,7 @@ export default function ColumnMapper({
     onCancel
 }: ColumnMapperProps) {
     const [mapping, setMapping] = useState<ColumnMapping>(initialMapping);
-    const [sideMap, setSideMap] = useState<SideValueMapping>(initialSideMap);
+    const [sideMap] = useState<SideValueMapping>(initialSideMap);
 
     const handleFieldChange = (scKey: keyof NormalizedTransaction, headerName: string | '') => {
         setMapping(prev => {
@@ -61,60 +62,66 @@ export default function ColumnMapper({
 
     return (
         <div className="space-y-6">
-            <div className="flex justify-between items-center bg-card-bg p-6 rounded-2xl border border-card-border shadow-sm">
+            <div className="flex flex-col gap-4 bg-card-bg p-6 rounded-2xl border border-card-border shadow-sm sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <h2 className="text-2xl font-bold text-foreground">Map Columns</h2>
-                    <p className="text-sm text-muted">Match your file's columns to the journal fields.</p>
+                    <p className="text-sm text-muted">Match your file&apos;s columns to the journal fields.</p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex w-full gap-2 sm:w-auto sm:shrink-0">
                     <button
                         onClick={onCancel}
-                        className="px-4 py-2 border border-card-border rounded-xl bg-card-bg hover:bg-muted/50 text-foreground transition-all text-sm font-semibold"
+                        className="flex-1 px-4 py-2 border border-card-border rounded-xl bg-card-bg hover:bg-muted-bg text-foreground transition-all text-sm font-semibold sm:flex-none"
                     >
                         Cancel
                     </button>
                     <button
                         onClick={() => onConfirm(mapping, sideMap)}
                         disabled={!isValid()}
-                        className="px-6 py-2 bg-accent text-white rounded-xl hover:bg-accent/90 transition-all shadow-sm disabled:opacity-50 font-semibold text-sm"
+                        className="flex-1 px-6 py-2 bg-accent text-white rounded-xl hover:bg-accent/90 transition-all shadow-sm disabled:opacity-50 font-semibold text-sm sm:flex-none"
                     >
                         Preview Import
                     </button>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-2 xl:gap-8">
                 {/* Mapping Form */}
-                <div className="space-y-4 bg-card-bg p-6 rounded-2xl border border-card-border shadow-sm">
+                <div className="min-w-0 space-y-4 bg-card-bg p-6 rounded-2xl border border-card-border shadow-sm">
                     {SCHEMA_FIELDS.map(({ key, label, recommended, defaultLabel }) => (
-                        <div key={key} className="grid grid-cols-[140px_1fr] items-center gap-4">
+                        <div key={key} className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[140px_minmax(0,1fr)] sm:items-center sm:gap-4">
                             <label className={`text-sm font-medium ${recommended ? 'text-foreground font-semibold' : 'text-muted'}`}>
                                 {label} {recommended && <span className="text-loss">*</span>}
                                 {defaultLabel && !mapping[key] && <div className="text-[10px] text-muted font-normal leading-tight">{defaultLabel}</div>}
                             </label>
-                            <select
-                                className="p-2.5 border border-card-border rounded-xl bg-card-bg text-foreground text-sm outline-none focus:border-accent"
-                                value={mapping[key] || ''}
-                                onChange={(e) => handleFieldChange(key, e.target.value)}
-                            >
-                                <option value="">-- Skip --</option>
-                                {headers.map(h => (
-                                    <option key={h} value={h}>
-                                        {h} {initialMapping[key] === h ? '(Auto)' : ''}
-                                    </option>
-                                ))}
-                            </select>
+                            <div className="relative min-w-0">
+                                <select
+                                    className="w-full min-w-0 max-w-full appearance-none border border-card-border rounded-xl bg-card-bg py-2.5 pl-2.5 pr-10 text-foreground text-sm outline-none focus:border-accent"
+                                    value={mapping[key] || ''}
+                                    onChange={(e) => handleFieldChange(key, e.target.value)}
+                                >
+                                    <option value="">-- Skip --</option>
+                                    {headers.map(h => (
+                                        <option key={h} value={h}>
+                                            {h} {initialMapping[key] === h ? '(Auto)' : ''}
+                                        </option>
+                                    ))}
+                                </select>
+                                <ChevronDown
+                                    aria-hidden="true"
+                                    className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted"
+                                />
+                            </div>
                         </div>
                     ))}
                 </div>
 
                 {/* Live Preview */}
-                <div className="border border-card-border rounded-2xl overflow-hidden bg-card-bg shadow-sm">
+                <div className="min-w-0 self-start border border-card-border rounded-2xl overflow-hidden bg-card-bg shadow-sm">
                     <div className="bg-table-header-bg p-3.5 text-xs uppercase tracking-wider font-semibold text-muted border-b border-card-border">
                         Sample Preview (First 5 Rows)
                     </div>
                     <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
+                        <table className="w-full min-w-max text-sm">
                             <thead className="bg-table-header-bg text-muted border-b border-card-border text-xs uppercase tracking-wider">
                                 <tr>
                                     {SCHEMA_FIELDS.filter(f => mapping[f.key]).map(f => (
@@ -149,4 +156,3 @@ export default function ColumnMapper({
         </div>
     );
 }
-
