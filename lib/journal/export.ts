@@ -6,6 +6,7 @@ import type {
   TradeNoteRecord,
   TradeAIReviewRecord,
   CashFlowRecord,
+  TagRecord,
 } from '../db/schema';
 import { notifyJournalChanged } from './sync-bus';
 
@@ -23,6 +24,7 @@ export interface JournalBackup {
   accounts: AccountRecord[];
   transactions: TransactionRecord[];
   cashFlows: CashFlowRecord[];
+  tags: TagRecord[];
   dailyNotes: DailyNoteRecord[];
   tradeNotes: TradeNoteRecord[];
   reviews: TradeAIReviewRecord[];
@@ -30,10 +32,11 @@ export interface JournalBackup {
 
 export async function buildJournalBackup(): Promise<JournalBackup> {
   const db = await getDB();
-  const [accounts, transactions, cashFlows, dailyNotes, tradeNotes, reviews] = await Promise.all([
+  const [accounts, transactions, cashFlows, tags, dailyNotes, tradeNotes, reviews] = await Promise.all([
     db.getAll('accounts'),
     db.getAll('transactions'),
     db.getAll('cashFlows'),
+    db.getAll('tags'),
     db.getAll('dailyNotes'),
     db.getAll('tradeNotes'),
     db.getAll('tradeAIReviews'),
@@ -44,6 +47,7 @@ export async function buildJournalBackup(): Promise<JournalBackup> {
     accounts,
     transactions,
     cashFlows,
+    tags,
     dailyNotes,
     tradeNotes,
     reviews,
@@ -122,18 +126,20 @@ export async function restoreJournalBackup(json: string): Promise<RestoreResult>
   const accounts = parsed.accounts ?? [];
   const transactions = parsed.transactions ?? [];
   const cashFlows = parsed.cashFlows ?? [];
+  const tags = parsed.tags ?? [];
   const dailyNotes = parsed.dailyNotes ?? [];
   const tradeNotes = parsed.tradeNotes ?? [];
   const reviews = parsed.reviews ?? [];
 
   const tx = db.transaction(
-    ['accounts', 'transactions', 'cashFlows', 'dailyNotes', 'tradeNotes', 'tradeAIReviews'],
+    ['accounts', 'transactions', 'cashFlows', 'tags', 'dailyNotes', 'tradeNotes', 'tradeAIReviews'],
     'readwrite',
   );
   await Promise.all([
     ...accounts.map((a) => tx.objectStore('accounts').put(a)),
     ...transactions.map((t) => tx.objectStore('transactions').put(t)),
     ...cashFlows.map((c) => tx.objectStore('cashFlows').put(c)),
+    ...tags.map((t) => tx.objectStore('tags').put(t)),
     ...dailyNotes.map((n) => tx.objectStore('dailyNotes').put(n)),
     ...tradeNotes.map((n) => tx.objectStore('tradeNotes').put(n)),
     ...reviews.map((r) => tx.objectStore('tradeAIReviews').put(r)),

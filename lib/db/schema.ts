@@ -53,6 +53,20 @@ export interface PositionRecord {
 }
 
 /**
+ * A reusable, categorized label applied to trades. Categories group tags
+ * (setup, mistake, emotion, market-condition, or user-defined). Archived tags
+ * stay attached to historical trades but are hidden from new-tag pickers.
+ */
+export interface TagRecord {
+  id: string;
+  label: string;
+  category: string;
+  color?: string;
+  archivedAt?: number;
+  updatedAt: number;
+}
+
+/**
  * A non-trade change to account capital or balance. Kept separate from trading
  * P&L so account equity and return are not conflated with deposits/withdrawals.
  * See docs/specs P0 #6. `amount` is signed in the account currency (deposits,
@@ -93,7 +107,10 @@ export interface TradeNoteRecord {
   symbol: string;
   accountId: string;
   content: string;
+  /** Legacy free-text tags (pre-categorized-tags); retained for back-compat. */
   tags: string[];
+  /** Stable ids of applied TagRecords. */
+  tagIds?: string[];
   screenshotIds?: number[];
   updatedAt: number;
 }
@@ -164,6 +181,10 @@ export interface TradingDiaryDB extends DBSchema {
     indexes: {
       'by-accountId': string;
     };
+  };
+  tags: {
+    key: string;
+    value: TagRecord;
   };
   tradeNotes: {
     key: string;
