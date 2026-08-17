@@ -6,6 +6,9 @@ import { Upload, LayoutDashboard, Calendar, Sparkles, ChevronDown, Check } from 
 import { aggregateTradeGroupsByDay, type DailySummary } from '@/lib/trading/aggregator';
 import { onJournalSynced } from '@/lib/journal/sync-bus';
 import { computeDashboard } from '@/lib/trading/dashboard';
+import { getCashFlows } from '@/lib/db/cash-flows';
+import { computeAccountEquity } from '@/lib/trading/cash-flows';
+import type { CashFlowRecord } from '@/lib/db/schema';
 import { timeToSeconds, computePnLTimeline } from '@/lib/replay/engine';
 import type { TransactionRecord } from '@/lib/db/schema';
 import MonthlyCalendar from '@/components/dashboard/MonthlyCalendar';
@@ -69,6 +72,7 @@ export default function DashboardPage() {
   }, [rangeType, startDate, endDate]);
 
   const [allSummaries, setAllSummaries] = useState<DailySummary[]>([]);
+  const [cashFlows, setCashFlows] = useState<CashFlowRecord[]>([]);
   const [latestDay, setLatestDay] = useState<LatestDayTimeline | null>(null);
   const [empty, setEmpty] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -90,6 +94,7 @@ export default function DashboardPage() {
       setEmpty(false);
 
       const transactions = await getTransactionsByAccount(selectedAccountId);
+      setCashFlows(await getCashFlows(selectedAccountId));
       if (transactions.length === 0) {
         setEmpty(true);
         setLoading(false);
@@ -144,6 +149,12 @@ export default function DashboardPage() {
     }
     load();
   }, [selectedAccountId, refreshKey]);
+
+  // Account equity uses all-time trading P&L + all cash flows (equity is a
+  // point-in-time figure, not range-filtered), keeping deposits/withdrawals
+  // distinct from trading performance. (React Compiler memoizes this.)
+  const allTimePnL = allSummaries.reduce((sum, d) => sum + d.netPnL, 0);
+  const equity = computeAccountEquity(activeAccount?.initialBalance, cashFlows, allTimePnL);
 
   const filteredData = useMemo(() => {
     if (!allSummaries.length) return null;
@@ -411,6 +422,27 @@ export default function DashboardPage() {
         );
       })()}
 
+      {/* Cash-flow-aware account equity (shown once capital/cash flows exist). */}
+      {(activeAccount?.initialBalance != null || cashFlows.length > 0) && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
+          {[
+            { label: 'Account Equity', value: formatCurrency(equity.equity, baseCurrency), color: 'text-foreground' },
+            {
+              label: 'Trading Return',
+              value: equity.tradingReturnPct != null ? `${equity.tradingReturnPct.toFixed(2)}%` : '—',
+              color: equity.tradingReturnPct != null && equity.tradingReturnPct < 0 ? 'text-loss' : 'text-profit',
+            },
+            { label: 'Net Deposits', value: formatCurrency(equity.contributions, baseCurrency), color: 'text-foreground' },
+            { label: 'Non-Trading Income', value: formatCurrency(equity.nonTradingIncome, baseCurrency), color: 'text-foreground' },
+          ].map((item, i) => (
+            <div key={i} className="bg-card-bg/50 backdrop-blur-sm border border-card-border p-3 sm:p-4 rounded-2xl shadow-sm">
+              <p className="text-[10px] font-normal text-muted uppercase tracking-wider mb-1">{item.label}</p>
+              <p className={`text-lg sm:text-xl font-normal tabular-nums ${item.color}`}>{item.value}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
       <MonthlyCalendar summaries={summaries} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 items-stretch">
@@ -424,7 +456,7 @@ export default function DashboardPage() {
         <div className="sm:col-span-2 h-full">
           <CumulativePnLChart
             data={stats.cumulativePnL}
-            initialBalance={activeAccount?.initialBalance}
+            initialBalance={equity.capitalBase > 0 ? equity.capitalBase : activeAccount?.initialBalance}
           />
         </div>
         <WinLossDonut
