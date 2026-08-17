@@ -5,6 +5,8 @@ import { findTagByIdentity, normalizeTagLabel, tagKey } from '@/lib/trading/tags
 
 export async function getAllTags(): Promise<TagRecord[]> {
   const db = await getDB();
+  // Stale connection (older IndexedDB version in another tab) may lack this store.
+  if (!db.objectStoreNames.contains('tags')) return [];
   return db.getAll('tags');
 }
 
