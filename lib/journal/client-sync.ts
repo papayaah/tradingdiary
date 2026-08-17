@@ -1,7 +1,7 @@
 import { getDB } from '../db/database';
 import type { AccountRecord } from '../db/schema';
 import { getAccounts, getAllTransactions } from '../db/trades';
-import { getAllDailyNotes } from '../db/notes';
+import { getAllDailyNotes, getAllTradeNotes } from '../db/notes';
 import type { JournalPushRequest, JournalPullResponse } from './sync-types';
 
 /**
@@ -42,10 +42,11 @@ export interface PushResult {
  * an initial pull has run this session, so a fresh device cannot wipe the server.
  */
 export async function pushJournalSnapshot(reconcile: boolean): Promise<PushResult> {
-  const [accounts, executions, dailyNotesRaw] = await Promise.all([
+  const [accounts, executions, dailyNotesRaw, tradeNotesRaw] = await Promise.all([
     getAccounts(),
     getAllTransactions(),
     getAllDailyNotes(),
+    getAllTradeNotes(),
   ]);
 
   const body: JournalPushRequest = {
@@ -59,7 +60,17 @@ export async function pushJournalSnapshot(reconcile: boolean): Promise<PushResul
       // v1: last-write-wins. Proper rev tracking + conflict UI is a follow-up.
       baseRev: Number.MAX_SAFE_INTEGER,
     })),
-    tradeNotes: [],
+    // Notes with a real trade-group key sync; legacy fallback keys
+    // (date:symbol:account) won't match a server trade group and are skipped
+    // server-side. Empty content = deletion, still sent so it can clear.
+    tradeNotes: tradeNotesRaw
+      .filter((n) => n.tradeGroupKey.includes(' '))
+      .map((n) => ({
+        tradeGroupClientKey: n.tradeGroupKey,
+        content: n.content,
+        updatedAt: n.updatedAt ?? 0,
+        baseRev: Number.MAX_SAFE_INTEGER,
+      })),
     tags: [],
     tradeTags: [],
     reviews: [],
@@ -126,10 +137,31 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
     });
   }
 
+  for (const n of data.tradeNotes) {
+    const key = n.tradeGroupClientKey;
+    if (!key) continue;
+    const existing = await db.get('tradeNotes', key);
+    // The trade-group key is "accountId symbol openedDate openedTime seq" —
+    // derive display/search fields from it when we have no local record.
+    const [acctId, sym, dt] = key.split(' ');
+    await db.put('tradeNotes', {
+      tradeGroupKey: key,
+      date: existing?.date ?? dt ?? '',
+      symbol: existing?.symbol ?? sym ?? '',
+      accountId: existing?.accountId ?? acctId ?? '',
+      content: n.content,
+      tags: existing?.tags ?? [],
+      screenshotIds: existing?.screenshotIds,
+      updatedAt: n.updatedAt ?? existing?.updatedAt ?? 0,
+    });
+  }
+
   for (const d of data.deletes) {
     if (d.entity === 'daily_note') {
       const [accountId, day] = d.clientKey.split(':');
       await db.delete('dailyNotes', [day, accountId]);
+    } else if (d.entity === 'trade_note') {
+      await db.delete('tradeNotes', d.clientKey);
     } else if (d.entity === 'execution') {
       // clientKey is the execution's tradeId (transactions keyPath).
       await db.delete('transactions', d.clientKey);
@@ -145,7 +177,7 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
   // (cursor 0) that returned data, or a later seq, means the local store changed.
   const hasRows =
     data.accounts.length > 0 || data.executions.length > 0 ||
-    data.dailyNotes.length > 0 || data.deletes.length > 0;
+    data.dailyNotes.length > 0 || data.tradeNotes.length > 0 || data.deletes.length > 0;
   const changed = cursor === 0 ? hasRows : data.seq > cursor;
 
   return { authenticated: true, changed, seq: data.seq };

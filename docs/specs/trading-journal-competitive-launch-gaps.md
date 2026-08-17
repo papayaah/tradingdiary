@@ -23,7 +23,7 @@ below. See `flat-to-flat-trade-identity.md` and `journal-persistence-and-sync.md
       now key **per round trip** (by the trade-group key), so each trade has its
       own note. **Interim:** the dashboard, replay, and global search still use
       the legacy day+symbol aggregation, so their trade counts differ from the
-      journal until migrated; per-trade notes are keyed but not yet synced.
+      journal until migrated.
 - [x] Automatic exchange trading-day boundary (`lib/trading/trading-day.ts`):
       equities on ET date, CME futures roll 18:00 ET. Manual "Trade Date Cutoff"
       setting removed. (Addresses the shared calc rule "record timezone and
@@ -39,10 +39,10 @@ below. See `flat-to-flat-trade-identity.md` and `journal-persistence-and-sync.md
       write-through, pull on focus, sync-state indicator) with guest→account
       adoption. Accounts, executions, and daily notes sync across devices;
       **deletes propagate** via authoritative-snapshot reconciliation.
-      **Not yet synced:** trade notes / tags / AI reviews — the client now keys
-      these per trade (unblocked), so only the push/pull wiring remains; daily
-      notes are last-write-wins (no conflict UI yet); clearing all local data
-      re-hydrates from the server by design (true server wipe = account-deletion).
+      Trade notes now sync per round trip (last-write-wins). **Not yet synced:**
+      tags / AI reviews; daily and trade notes are last-write-wins (no conflict UI
+      yet); clearing all local data re-hydrates from the server by design (true
+      server wipe = account-deletion).
 - [~] Fixtures — splitter + trading-day unit tests. **Not yet:** full matrix
       (partial fills, futures multipliers, FX, duplicate imports, scale in/out).
 - [x] Backup/export, restore, and account deletion — full JSON backup +
