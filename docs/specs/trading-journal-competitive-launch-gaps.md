@@ -64,8 +64,19 @@ below. See `flat-to-flat-trade-identity.md` and `journal-persistence-and-sync.md
       (`lib/trading/exchange-time.ts`), e.g. "1:06 PM EDT" — aligned to the
       market session rather than the viewer's local clock.
 
-**Milestone B — Complete the review loop:** not started (tags/playbooks, planned
-risk/R, reports + shared filters, drill-down, supported-asset matrix).
+**Milestone B — Complete the review loop:** in progress.
+
+- [~] Categorized tags — `TagRecord` (category + label, color, archive), tag store
+      + helpers (`lib/trading/tags.ts`), a tag editor in the trade panel
+      (create/attach/remove, quick-pick), tag chips in the journal's Tags column,
+      and backup/restore. **Not yet:** cross-device sync (server tag/tradeTag
+      tables exist but key by category+label vs the client's uuid — needs a
+      clientId on the server tag table to avoid duplicate tags across devices);
+      global-search tag filter still reads the legacy free-text tags.
+- [ ] Strategy/playbook entities + rule adherence.
+- [ ] Planned stop/target/risk & realized R-multiple.
+- [ ] Core report set + shared filters + drill-down.
+- [ ] Supported broker/asset matrix.
 
 Legend: [x] done · [~] partial · [ ] not started.
 
