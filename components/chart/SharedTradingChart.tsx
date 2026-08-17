@@ -323,7 +323,10 @@ class TradeExecutionPaneRenderer implements IPrimitivePaneRenderer {
           y = series.priceToCoordinate(t.price);
         }
 
-        if (y === null) {
+        // Anchor to the candle at this time when the trade price is missing OR
+        // falls outside the visible range — otherwise the arrow would be skipped
+        // (e.g. placeholder/demo prices, or a fill outside the fetched candles).
+        if (y === null || y < 0 || y > height) {
           const matchedCandle = sortedCandles.find((c) => c.time === tradeTime);
           if (matchedCandle) {
             y = series.priceToCoordinate(matchedCandle.close);
