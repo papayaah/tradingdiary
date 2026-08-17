@@ -5,7 +5,7 @@ import { parseTLGFile } from './brokers/ibkr/tlg-parser';
 import { aggregateTradeGroupsByDay, aggregateByDay } from '@/lib/trading/aggregator';
 
 // Verifies the shipped demo sample exercises the flat-to-flat journal: the
-// 2026-08-10 AAPL day is a scale in/out win, a short win, a small loss, a
+// 2026-08-14 AAPL day is a scale in/out win, a short win, a small loss, a
 // reversal (long->short) that splits into two trades, and one still-open trade.
 describe('demo sample flat-to-flat day', () => {
   const content = readFileSync(
@@ -16,7 +16,7 @@ describe('demo sample flat-to-flat day', () => {
 
   it('parses and produces the multi-round-trip AAPL day', () => {
     const days = aggregateTradeGroupsByDay(parsed.transactions);
-    const day = days.find((d) => d.date === '20260810');
+    const day = days.find((d) => d.date === '20260814');
     expect(day).toBeDefined();
 
     const aapl = day!.trades.filter((t) => t.symbol === 'AAPL');
@@ -44,8 +44,8 @@ describe('demo sample flat-to-flat day', () => {
   });
 
   it('captures the reversal round trip that legacy day+symbol aggregation drops', () => {
-    const flat = aggregateTradeGroupsByDay(parsed.transactions).find((d) => d.date === '20260810')!;
-    const legacy = aggregateByDay(parsed.transactions).find((d) => d.date === '20260810')!;
+    const flat = aggregateTradeGroupsByDay(parsed.transactions).find((d) => d.date === '20260814')!;
+    const legacy = aggregateByDay(parsed.transactions).find((d) => d.date === '20260814')!;
     // Legacy FIFO cannot open a short from a sell-through, so it loses the short
     // leg of the reversal; flat-to-flat records both legs, so its day P&L is
     // higher by that recovered round trip.
