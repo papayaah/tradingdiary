@@ -5,7 +5,7 @@ let dbPromise: Promise<IDBPDatabase<TradingDiaryDB>> | null = null;
 
 export function getDB(): Promise<IDBPDatabase<TradingDiaryDB>> {
   if (!dbPromise) {
-    dbPromise = openDB<TradingDiaryDB>('tradingdiary', 3, {
+    dbPromise = openDB<TradingDiaryDB>('tradingdiary', 4, {
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           db.createObjectStore('accounts', { keyPath: 'accountId' });
@@ -42,6 +42,13 @@ export function getDB(): Promise<IDBPDatabase<TradingDiaryDB>> {
             db.deleteObjectStore('tradeNotes');
           }
           db.createObjectStore('tradeNotes', { keyPath: 'tradeGroupKey' });
+        }
+
+        if (oldVersion < 4) {
+          // Cash flows (deposits/withdrawals/interest/dividends/fees) — tracked
+          // separately from trades so account equity isn't conflated with them.
+          const cashStore = db.createObjectStore('cashFlows', { keyPath: 'id' });
+          cashStore.createIndex('by-accountId', 'accountId');
         }
       },
       // This tab holds an older DB version and is blocking another tab that wants

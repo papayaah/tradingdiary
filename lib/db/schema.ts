@@ -158,6 +158,13 @@ export interface TradingDiaryDB extends DBSchema {
     key: [string, string];
     value: DailyNoteRecord;
   };
+  cashFlows: {
+    key: string;
+    value: CashFlowRecord;
+    indexes: {
+      'by-accountId': string;
+    };
+  };
   tradeNotes: {
     key: string;
     value: TradeNoteRecord;

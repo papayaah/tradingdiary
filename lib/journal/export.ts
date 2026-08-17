@@ -5,6 +5,7 @@ import type {
   DailyNoteRecord,
   TradeNoteRecord,
   TradeAIReviewRecord,
+  CashFlowRecord,
 } from '../db/schema';
 import { notifyJournalChanged } from './sync-bus';
 
@@ -21,6 +22,7 @@ export interface JournalBackup {
   exportedAt: string;
   accounts: AccountRecord[];
   transactions: TransactionRecord[];
+  cashFlows: CashFlowRecord[];
   dailyNotes: DailyNoteRecord[];
   tradeNotes: TradeNoteRecord[];
   reviews: TradeAIReviewRecord[];
@@ -28,9 +30,10 @@ export interface JournalBackup {
 
 export async function buildJournalBackup(): Promise<JournalBackup> {
   const db = await getDB();
-  const [accounts, transactions, dailyNotes, tradeNotes, reviews] = await Promise.all([
+  const [accounts, transactions, cashFlows, dailyNotes, tradeNotes, reviews] = await Promise.all([
     db.getAll('accounts'),
     db.getAll('transactions'),
+    db.getAll('cashFlows'),
     db.getAll('dailyNotes'),
     db.getAll('tradeNotes'),
     db.getAll('tradeAIReviews'),
@@ -40,6 +43,7 @@ export async function buildJournalBackup(): Promise<JournalBackup> {
     exportedAt: new Date().toISOString(),
     accounts,
     transactions,
+    cashFlows,
     dailyNotes,
     tradeNotes,
     reviews,
@@ -100,6 +104,7 @@ export async function downloadExecutionsCsv(): Promise<void> {
 export interface RestoreResult {
   accounts: number;
   transactions: number;
+  cashFlows: number;
   dailyNotes: number;
   tradeNotes: number;
   reviews: number;
@@ -116,17 +121,19 @@ export async function restoreJournalBackup(json: string): Promise<RestoreResult>
   const db = await getDB();
   const accounts = parsed.accounts ?? [];
   const transactions = parsed.transactions ?? [];
+  const cashFlows = parsed.cashFlows ?? [];
   const dailyNotes = parsed.dailyNotes ?? [];
   const tradeNotes = parsed.tradeNotes ?? [];
   const reviews = parsed.reviews ?? [];
 
   const tx = db.transaction(
-    ['accounts', 'transactions', 'dailyNotes', 'tradeNotes', 'tradeAIReviews'],
+    ['accounts', 'transactions', 'cashFlows', 'dailyNotes', 'tradeNotes', 'tradeAIReviews'],
     'readwrite',
   );
   await Promise.all([
     ...accounts.map((a) => tx.objectStore('accounts').put(a)),
     ...transactions.map((t) => tx.objectStore('transactions').put(t)),
+    ...cashFlows.map((c) => tx.objectStore('cashFlows').put(c)),
     ...dailyNotes.map((n) => tx.objectStore('dailyNotes').put(n)),
     ...tradeNotes.map((n) => tx.objectStore('tradeNotes').put(n)),
     ...reviews.map((r) => tx.objectStore('tradeAIReviews').put(r)),
@@ -137,6 +144,7 @@ export async function restoreJournalBackup(json: string): Promise<RestoreResult>
   return {
     accounts: accounts.length,
     transactions: transactions.length,
+    cashFlows: cashFlows.length,
     dailyNotes: dailyNotes.length,
     tradeNotes: tradeNotes.length,
     reviews: reviews.length,
