@@ -456,6 +456,29 @@ export const dailyNote = pgTable("daily_note", {
     index("daily_note_user_idx").on(t.userId),
 ]);
 
+// A non-trade change to account capital/balance (deposit/withdrawal/interest/
+// dividend/fee/adjustment). Kept separate from executions so equity/return are
+// not conflated with cash flows. `clientId` is the client's uuid (adoption key).
+export const cashFlow = pgTable("cash_flow", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
+    accountId: uuid("account_id").notNull().references(() => tradingAccount.id, { onDelete: 'cascade' }),
+    clientId: text("client_id").notNull(),
+    date: text("date").notNull(), // YYYYMMDD
+    type: text("type").notNull(), // deposit | withdrawal | interest | dividend | fee | adjustment
+    amount: doublePrecision("amount").notNull(), // signed, account currency
+    currency: text("currency").notNull(),
+    note: text("note"),
+    rev: integer("rev").notNull().default(1),
+    deletedAt: timestamp("deleted_at", { mode: 'string' }),
+    createdAt: timestamp("created_at", { mode: 'string' }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: 'string' }).notNull().defaultNow(),
+}, (t) => [
+    uniqueIndex("cash_flow_client_uq").on(t.userId, t.clientId),
+    index("cash_flow_account_idx").on(t.accountId),
+    index("cash_flow_user_idx").on(t.userId),
+]);
+
 // A note on one trade (per trade_group). Per the resolved decision, notes attach
 // per trade, not per day+symbol.
 export const tradeNote = pgTable("trade_note", {

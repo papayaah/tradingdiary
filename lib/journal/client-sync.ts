@@ -1,7 +1,8 @@
 import { getDB } from '../db/database';
-import type { AccountRecord } from '../db/schema';
+import type { AccountRecord, CashFlowRecord } from '../db/schema';
 import { getAccounts, getAllTransactions } from '../db/trades';
 import { getAllDailyNotes, getAllTradeNotes } from '../db/notes';
+import { getAllCashFlows } from '../db/cash-flows';
 import type { JournalPushRequest, JournalPullResponse } from './sync-types';
 
 /**
@@ -42,9 +43,10 @@ export interface PushResult {
  * an initial pull has run this session, so a fresh device cannot wipe the server.
  */
 export async function pushJournalSnapshot(reconcile: boolean): Promise<PushResult> {
-  const [accounts, executions, dailyNotesRaw, tradeNotesRaw] = await Promise.all([
+  const [accounts, executions, cashFlowsRaw, dailyNotesRaw, tradeNotesRaw] = await Promise.all([
     getAccounts(),
     getAllTransactions(),
+    getAllCashFlows(),
     getAllDailyNotes(),
     getAllTradeNotes(),
   ]);
@@ -52,6 +54,17 @@ export async function pushJournalSnapshot(reconcile: boolean): Promise<PushResul
   const body: JournalPushRequest = {
     accounts,
     executions,
+    cashFlows: cashFlowsRaw.map((c) => ({
+      clientId: c.id,
+      accountId: c.accountId,
+      date: c.date,
+      type: c.type,
+      amount: c.amount,
+      currency: c.currency,
+      note: c.note,
+      updatedAt: c.updatedAt ?? 0,
+      baseRev: Number.MAX_SAFE_INTEGER,
+    })),
     dailyNotes: dailyNotesRaw.map((n) => ({
       accountId: n.accountId,
       tradingDay: n.date,
@@ -126,6 +139,19 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
     await db.put('transactions', t);
   }
 
+  for (const c of data.cashFlows) {
+    await db.put('cashFlows', {
+      id: c.clientId,
+      accountId: c.accountId,
+      date: c.date,
+      type: c.type as CashFlowRecord['type'],
+      amount: c.amount,
+      currency: c.currency,
+      note: c.note,
+      updatedAt: c.updatedAt,
+    });
+  }
+
   for (const n of data.dailyNotes) {
     const existing = await db.get('dailyNotes', [n.date, n.accountId]);
     await db.put('dailyNotes', {
@@ -162,6 +188,8 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
       await db.delete('dailyNotes', [day, accountId]);
     } else if (d.entity === 'trade_note') {
       await db.delete('tradeNotes', d.clientKey);
+    } else if (d.entity === 'cash_flow') {
+      await db.delete('cashFlows', d.clientKey);
     } else if (d.entity === 'execution') {
       // clientKey is the execution's tradeId (transactions keyPath).
       await db.delete('transactions', d.clientKey);
@@ -176,7 +204,7 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
   // seq only advances when the server recorded new events. A first sync
   // (cursor 0) that returned data, or a later seq, means the local store changed.
   const hasRows =
-    data.accounts.length > 0 || data.executions.length > 0 ||
+    data.accounts.length > 0 || data.executions.length > 0 || data.cashFlows.length > 0 ||
     data.dailyNotes.length > 0 || data.tradeNotes.length > 0 || data.deletes.length > 0;
   const changed = cursor === 0 ? hasRows : data.seq > cursor;
 

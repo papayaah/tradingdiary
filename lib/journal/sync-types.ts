@@ -53,10 +53,23 @@ export interface SyncReview extends Omit<TradeAIReviewRecord, 'tradeGroupId'> {
   baseRev: number;
 }
 
+export interface SyncCashFlow {
+  clientId: string;
+  accountId: string; // client account id
+  date: string;
+  type: string;
+  amount: number;
+  currency: string;
+  note?: string;
+  updatedAt: number;
+  baseRev: number;
+}
+
 export type SyncEntity =
   | 'account'
   | 'execution'
   | 'trade_group'
+  | 'cash_flow'
   | 'daily_note'
   | 'trade_note'
   | 'tag'
@@ -74,6 +87,7 @@ export interface SyncDelete {
 export interface JournalPushRequest {
   accounts: AccountRecord[];
   executions: TransactionRecord[];
+  cashFlows: SyncCashFlow[];
   dailyNotes: SyncDailyNote[];
   tradeNotes: SyncTradeNote[];
   tags: SyncTag[];
@@ -113,6 +127,7 @@ export interface JournalPullResponse {
   seq: number;
   accounts: (AccountRecord & { rev: number })[];
   executions: TransactionRecord[];
+  cashFlows: (SyncCashFlow & { rev: number })[];
   dailyNotes: (DailyNoteRecord & { rev: number })[];
   tradeNotes: (TradeNoteRecord & { tradeGroupClientKey: string; rev: number })[];
   tags: (SyncTag & { rev: number })[];

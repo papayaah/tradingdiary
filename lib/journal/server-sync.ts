@@ -11,6 +11,7 @@ import {
   tradeTag,
   tradeAiReview,
   attachment,
+  cashFlow,
   journalEvent,
 } from '../db/server/schema';
 import type { TransactionRecord } from '../db/schema';
@@ -341,6 +342,46 @@ export async function pushJournal(
       }
     }
 
+    // ── Cash flows (last-write-wins), keyed by client id ──
+    for (const c of payload.cashFlows) {
+      const accountUuid = accountUuidByClientId.get(c.accountId)
+        ?? accountRows.find((a) => a.clientAccountId === c.accountId)?.id;
+      if (!accountUuid) continue;
+      const existing = await tx
+        .select({ id: cashFlow.id, rev: cashFlow.rev })
+        .from(cashFlow)
+        .where(and(eq(cashFlow.userId, userId), eq(cashFlow.clientId, c.clientId)))
+        .limit(1);
+      const values = {
+        accountId: accountUuid, date: c.date, type: c.type, amount: c.amount,
+        currency: c.currency, note: c.note ?? null, updatedAt: nowIso,
+      };
+      if (existing.length === 0) {
+        const [ins] = await tx.insert(cashFlow).values({
+          userId, clientId: c.clientId, ...values,
+        }).returning({ id: cashFlow.id, rev: cashFlow.rev });
+        events.push({ entity: 'cash_flow', entityId: ins.id, op: 'upsert', rev: ins.rev });
+      } else if (existing[0].rev <= c.baseRev) {
+        const nextRev = existing[0].rev + 1;
+        await tx.update(cashFlow).set({ ...values, rev: nextRev, deletedAt: null }).where(eq(cashFlow.id, existing[0].id));
+        events.push({ entity: 'cash_flow', entityId: existing[0].id, op: 'upsert', rev: nextRev });
+      }
+    }
+
+    // Reconcile cash-flow deletes against the authoritative snapshot.
+    if (doReconcile) {
+      const pushedCashIds = new Set(payload.cashFlows.map((c) => c.clientId));
+      const rows = await tx.select().from(cashFlow).where(eq(cashFlow.userId, userId));
+      for (const r of rows) {
+        if (r.deletedAt) continue;
+        if (!pushedCashIds.has(r.clientId)) {
+          const nextRev = r.rev + 1;
+          await tx.update(cashFlow).set({ deletedAt: nowIso, rev: nextRev }).where(eq(cashFlow.id, r.id));
+          events.push({ entity: 'cash_flow', entityId: r.id, op: 'delete', rev: nextRev });
+        }
+      }
+    }
+
     // ── 5. Tags (rev-checked), keyed by (category,label) identity ──
     const tagUuidByClientId = new Map<string, string>();
     for (const tg of payload.tags) {
@@ -496,6 +537,7 @@ export async function pullJournal(userId: string, since: number): Promise<Journa
   };
 
   const execRows = await db.select().from(execution).where(eq(execution.userId, userId));
+  const cashRows = await db.select().from(cashFlow).where(eq(cashFlow.userId, userId));
   const groupRows = await db.select().from(tradeGroup).where(eq(tradeGroup.userId, userId));
   const groupKeyByUuid = new Map(groupRows.map((g) => [g.id, g.clientKey]));
   const dailyRows = await db.select().from(dailyNote).where(eq(dailyNote.userId, userId));
@@ -509,6 +551,7 @@ export async function pullJournal(userId: string, since: number): Promise<Journa
     .where(eq(tradeGroup.userId, userId));
 
   const accountsPart = inChanged(accountRows, 'account');
+  const cashPart = inChanged(cashRows, 'cash_flow');
   const dailyPart = inChanged(dailyRows, 'daily_note');
   const tradeNotePart = inChanged(tradeNoteRows, 'trade_note');
   const tagPart = inChanged(tagRows, 'tag');
@@ -524,6 +567,7 @@ export async function pullJournal(userId: string, since: number): Promise<Journa
   const deletes: JournalPullResponse['deletes'] = [
     ...accountsPart.deletes.map((a) => ({ entity: 'account' as const, clientKey: a.clientAccountId, baseRev: a.rev })),
     ...execDeletes.map((r) => ({ entity: 'execution' as const, clientKey: r.sourceTradeId, baseRev: r.rev })),
+    ...cashPart.deletes.map((c) => ({ entity: 'cash_flow' as const, clientKey: c.clientId, baseRev: c.rev })),
     ...dailyPart.deletes.map((n) => ({ entity: 'daily_note' as const, clientKey: `${clientIdByUuid.get(n.accountId)}:${n.tradingDay}`, baseRev: n.rev })),
     ...tradeNotePart.deletes.map((n) => ({ entity: 'trade_note' as const, clientKey: groupKeyByUuid.get(n.tradeGroupId) ?? '', baseRev: n.rev })),
     ...tagPart.deletes.map((t) => ({ entity: 'tag' as const, clientKey: t.id, baseRev: t.rev })),
@@ -538,6 +582,12 @@ export async function pullJournal(userId: string, since: number): Promise<Journa
       initialBalance: a.initialBalance ?? undefined, rev: a.rev,
     })),
     executions: execRows.filter((r) => !r.deletedAt).map((r) => rowToTransaction(r, clientIdByUuid.get(r.accountId) ?? r.accountId)),
+    cashFlows: cashPart.upserts.map((c) => ({
+      clientId: c.clientId,
+      accountId: clientIdByUuid.get(c.accountId) ?? c.accountId,
+      date: c.date, type: c.type, amount: c.amount, currency: c.currency,
+      note: c.note ?? undefined, updatedAt: Date.parse(c.updatedAt), baseRev: c.rev, rev: c.rev,
+    })),
     dailyNotes: dailyPart.upserts.map((n) => ({
       accountId: clientIdByUuid.get(n.accountId) ?? n.accountId, date: n.tradingDay, content: n.content,
       updatedAt: Date.parse(n.updatedAt), rev: n.rev,

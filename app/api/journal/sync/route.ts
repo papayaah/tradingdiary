@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
 }
 
 const emptyArrays: JournalPushRequest = {
-  accounts: [], executions: [], dailyNotes: [], tradeNotes: [],
+  accounts: [], executions: [], cashFlows: [], dailyNotes: [], tradeNotes: [],
   tags: [], tradeTags: [], reviews: [], deletes: [],
 };
 
@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
     const payload: JournalPushRequest = {
       accounts: Array.isArray(body.accounts) ? body.accounts : emptyArrays.accounts,
       executions: Array.isArray(body.executions) ? body.executions : emptyArrays.executions,
+      cashFlows: Array.isArray(body.cashFlows) ? body.cashFlows : emptyArrays.cashFlows,
       dailyNotes: Array.isArray(body.dailyNotes) ? body.dailyNotes : emptyArrays.dailyNotes,
       tradeNotes: Array.isArray(body.tradeNotes) ? body.tradeNotes : emptyArrays.tradeNotes,
       tags: Array.isArray(body.tags) ? body.tags : emptyArrays.tags,

@@ -51,7 +51,15 @@ below. See `flat-to-flat-trade-identity.md` and `journal-persistence-and-sync.md
       executions CSV + restore-from-backup (`lib/journal/export.ts`); `DELETE
       /api/journal` wipes server data; "Clear All" also deletes synced account
       data for signed-in users. **Not yet:** per-batch import undo/audit.
-- [ ] Cash-flow-aware equity (deposits/withdrawals) or scoped return metrics.
+- [x] Cash-flow-aware equity — `CashFlowRecord` (deposit/withdrawal/interest/
+      dividend/fee/adjustment) with a pure equity/return calc
+      (`lib/trading/cash-flows.ts`): equity = initial balance + contributions +
+      non-trading income + trading P&L; trading return % uses the capital base
+      (never a misleading figure), trading P&L kept distinct from cash flows.
+      Managed in a Cash Flows settings card; shown on the dashboard (equity,
+      trading return, net deposits, non-trading income); persisted in IndexedDB,
+      backup, and synced to the server per user. Requires `db:schema:push` for the
+      new `cash_flow` table.
 - [x] Trade times displayed in exchange time with an EST/EDT label
       (`lib/trading/exchange-time.ts`), e.g. "1:06 PM EDT" — aligned to the
       market session rather than the viewer's local clock.
