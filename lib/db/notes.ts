@@ -125,6 +125,24 @@ export async function saveTradeNoteContent(ref: TradeRef, content: string) {
   notifyJournalChanged();
 }
 
+/** Set the tag ids applied to a trade, preserving content/screenshots. */
+export async function setTradeTags(ref: TradeRef, tagIds: string[]) {
+  const db = await getDB();
+  const existing = await db.get('tradeNotes', ref.tradeGroupKey);
+  await db.put('tradeNotes', {
+    tradeGroupKey: ref.tradeGroupKey,
+    date: ref.date,
+    symbol: ref.symbol,
+    accountId: ref.accountId,
+    content: existing?.content ?? '',
+    tags: existing?.tags ?? [],
+    tagIds,
+    screenshotIds: existing?.screenshotIds,
+    updatedAt: Date.now(),
+  });
+  notifyJournalChanged();
+}
+
 /** All AI reviews for a trade group, newest first. */
 export async function getTradeAIReviews(
   tradeGroupKey: string

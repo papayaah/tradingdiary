@@ -9,12 +9,16 @@ import { formatCurrency } from '@/lib/currency';
 import { getTradePnlDisplay } from '@/lib/trading/pnl-display';
 import {
   getTradeNote,
+  getAllTradeNotes,
   addScreenshotToTrade,
   removeScreenshotFromTrade,
   tradeRef,
 } from '@/lib/db/notes';
+import { getAllTags } from '@/lib/db/tags';
+import type { TagRecord } from '@/lib/db/schema';
 import TradeChart from './TradeChart';
 import TradeDetailsPanel from './TradeDetailsPanel';
+import TradeTagsEditor from './TradeTagsEditor';
 import ScreenshotAttachment from './ScreenshotAttachment';
 import TradeNotesEditor from './TradeNotesEditor';
 import TradeAIReviewCard from './TradeAIReviewCard';
@@ -39,6 +43,24 @@ export default function TradeTable({ trades, accountId, currency = 'USD', focusS
     setExpanded((prev) => (prev === key ? null : key));
   };
 
+  // Tag chips for the collapsed rows: resolve each trade's tagIds to TagRecords.
+  const [tagsById, setTagsById] = useState<Map<string, TagRecord>>(new Map());
+  const [tagIdsByKey, setTagIdsByKey] = useState<Map<string, string[]>>(new Map());
+  const [tagsVersion, setTagsVersion] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const [tags, notes] = await Promise.all([getAllTags(), getAllTradeNotes()]);
+      if (!active) return;
+      setTagsById(new Map(tags.map((t) => [t.id, t])));
+      setTagIdsByKey(new Map(notes.filter((n) => n.tagIds?.length).map((n) => [n.tradeGroupKey, n.tagIds ?? []])));
+    })();
+    return () => { active = false; };
+  }, [tagsVersion]);
+
+  const bumpTags = useCallback(() => setTagsVersion((v) => v + 1), []);
+
   return (
     <div className="bg-card-bg/20 rounded-b-2xl overflow-hidden">
       <div className="overflow-x-auto overflow-y-hidden">
@@ -62,6 +84,9 @@ export default function TradeTable({ trades, accountId, currency = 'USD', focusS
               // group; fall back to a positional key for legacy aggregation.
               const key = trade.groupKey ?? `${trade.date}-${trade.symbol}-${idx}`;
               const isExpanded = expanded === key;
+              const rowTags = (tagIdsByKey.get(key) ?? [])
+                .map((id) => tagsById.get(id))
+                .filter((t): t is TagRecord => Boolean(t));
 
               return (
                 <TradeRow
@@ -74,6 +99,8 @@ export default function TradeTable({ trades, accountId, currency = 'USD', focusS
                   currency={currency}
                   isFocused={Boolean(focusSymbol && trade.symbol.toUpperCase() === focusSymbol.toUpperCase())}
                   showBaseCurrency={showBaseCurrency}
+                  tags={rowTags}
+                  onTagsChange={bumpTags}
                 />
               );
             })}
@@ -93,6 +120,8 @@ function TradeRow({
   currency,
   isFocused,
   showBaseCurrency,
+  tags,
+  onTagsChange,
 }: {
   trade: AggregatedTrade;
   rowKey: string;
@@ -102,6 +131,8 @@ function TradeRow({
   currency: string;
   isFocused: boolean;
   showBaseCurrency: boolean;
+  tags: TagRecord[];
+  onTagsChange: () => void;
 }) {
   const [screenshotIds, setScreenshotIds] = useState<number[]>([]);
   const rowRef = useRef<HTMLTableRowElement>(null);
@@ -206,7 +237,27 @@ function TradeRow({
           )}
         </td>
         <td className="hidden lg:table-cell px-2.5 sm:px-4 py-3 text-muted/40 font-normal italic text-xs truncate max-w-[120px]">No notes</td>
-        <td className="hidden xl:table-cell px-2.5 sm:px-4 py-3 text-muted/40 font-normal italic text-xs">-</td>
+        <td className="hidden xl:table-cell px-2.5 sm:px-4 py-3 text-xs">
+          {tags.length === 0 ? (
+            <span className="text-muted/40 italic">-</span>
+          ) : (
+            <div className="flex flex-wrap gap-1 max-w-[200px]">
+              {tags.map((t) => (
+                <span
+                  key={t.id}
+                  className="inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium border whitespace-nowrap"
+                  style={{
+                    color: t.color ?? undefined,
+                    borderColor: (t.color ?? '#64748b') + '55',
+                    backgroundColor: (t.color ?? '#64748b') + '18',
+                  }}
+                >
+                  {t.label}
+                </span>
+              ))}
+            </div>
+          )}
+        </td>
       </tr>
       {isExpanded && (
         <>
@@ -236,6 +287,11 @@ function TradeRow({
                 onAdd={handleAddScreenshot}
                 onRemove={handleRemoveScreenshot}
               />
+            </td>
+          </tr>
+          <tr>
+            <td colSpan={9} className="px-5 py-4 border-t border-card-border">
+              <TradeTagsEditor tradeRef={ref} onChange={onTagsChange} />
             </td>
           </tr>
           <tr>
