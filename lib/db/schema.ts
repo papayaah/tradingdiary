@@ -52,6 +52,31 @@ export interface PositionRecord {
   feeMultiplier: number;
 }
 
+/**
+ * A non-trade change to account capital or balance. Kept separate from trading
+ * P&L so account equity and return are not conflated with deposits/withdrawals.
+ * See docs/specs P0 #6. `amount` is signed in the account currency (deposits,
+ * interest, dividends positive; withdrawals, fees negative; adjustment either).
+ */
+export type CashFlowType =
+  | 'deposit'
+  | 'withdrawal'
+  | 'interest'
+  | 'dividend'
+  | 'fee'
+  | 'adjustment';
+
+export interface CashFlowRecord {
+  id: string;
+  accountId: string;
+  date: string; // YYYYMMDD
+  type: CashFlowType;
+  amount: number; // signed, account currency
+  currency: string;
+  note?: string;
+  updatedAt: number;
+}
+
 export interface DailyNoteRecord {
   date: string;
   accountId: string;
