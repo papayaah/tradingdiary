@@ -1,7 +1,7 @@
 import { getDB } from './database';
 import type { TagRecord } from './schema';
 import { notifyJournalChanged } from '@/lib/journal/sync-bus';
-import { findTagByIdentity, normalizeTagLabel } from '@/lib/trading/tags';
+import { findTagByIdentity, normalizeTagLabel, tagKey } from '@/lib/trading/tags';
 
 export async function getAllTags(): Promise<TagRecord[]> {
   const db = await getDB();
@@ -24,7 +24,8 @@ export async function createTag(
   const dup = findTagByIdentity(existing, category, label);
   if (dup) return dup;
   const tag: TagRecord = {
-    id: crypto.randomUUID(),
+    // Deterministic id so the same tag is identical across devices and server.
+    id: tagKey(category, label),
     label: normalizeTagLabel(label),
     category: category.trim().toLowerCase(),
     color,

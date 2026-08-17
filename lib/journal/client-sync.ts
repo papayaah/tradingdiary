@@ -3,6 +3,7 @@ import type { AccountRecord, CashFlowRecord } from '../db/schema';
 import { getAccounts, getAllTransactions } from '../db/trades';
 import { getAllDailyNotes, getAllTradeNotes } from '../db/notes';
 import { getAllCashFlows } from '../db/cash-flows';
+import { getAllTags } from '../db/tags';
 import type { JournalPushRequest, JournalPullResponse } from './sync-types';
 
 /**
@@ -43,12 +44,13 @@ export interface PushResult {
  * an initial pull has run this session, so a fresh device cannot wipe the server.
  */
 export async function pushJournalSnapshot(reconcile: boolean): Promise<PushResult> {
-  const [accounts, executions, cashFlowsRaw, dailyNotesRaw, tradeNotesRaw] = await Promise.all([
+  const [accounts, executions, cashFlowsRaw, dailyNotesRaw, tradeNotesRaw, tagsRaw] = await Promise.all([
     getAccounts(),
     getAllTransactions(),
     getAllCashFlows(),
     getAllDailyNotes(),
     getAllTradeNotes(),
+    getAllTags(),
   ]);
 
   const body: JournalPushRequest = {
@@ -84,8 +86,21 @@ export async function pushJournalSnapshot(reconcile: boolean): Promise<PushResul
         updatedAt: n.updatedAt ?? 0,
         baseRev: Number.MAX_SAFE_INTEGER,
       })),
-    tags: [],
-    tradeTags: [],
+    tags: tagsRaw.map((t) => ({
+      clientId: t.id,
+      label: t.label,
+      category: t.category,
+      color: t.color,
+      archived: !!t.archivedAt,
+      updatedAt: t.updatedAt ?? 0,
+      baseRev: Number.MAX_SAFE_INTEGER,
+    })),
+    tradeTags: tradeNotesRaw.flatMap((n) =>
+      (n.tagIds ?? []).map((tagClientId) => ({
+        tradeGroupClientKey: n.tradeGroupKey,
+        tagClientId,
+      })),
+    ),
     reviews: [],
     deletes: [],
     reconcile,
@@ -152,6 +167,17 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
     });
   }
 
+  for (const t of data.tags) {
+    await db.put('tags', {
+      id: t.clientId,
+      label: t.label,
+      category: t.category,
+      color: t.color,
+      archivedAt: t.archived ? (t.updatedAt || Date.now()) : undefined,
+      updatedAt: t.updatedAt,
+    });
+  }
+
   for (const n of data.dailyNotes) {
     const existing = await db.get('dailyNotes', [n.date, n.accountId]);
     await db.put('dailyNotes', {
@@ -177,9 +203,36 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
       accountId: existing?.accountId ?? acctId ?? '',
       content: n.content,
       tags: existing?.tags ?? [],
+      tagIds: existing?.tagIds,
       screenshotIds: existing?.screenshotIds,
       updatedAt: n.updatedAt ?? existing?.updatedAt ?? 0,
     });
+  }
+
+  // Apply trade↔tag links to each trade's note (last-write-wins from the server).
+  if (data.tradeTags.length > 0) {
+    const byGroup = new Map<string, string[]>();
+    for (const tt of data.tradeTags) {
+      if (!tt.tradeGroupClientKey) continue;
+      const arr = byGroup.get(tt.tradeGroupClientKey) ?? [];
+      arr.push(tt.tagClientId);
+      byGroup.set(tt.tradeGroupClientKey, arr);
+    }
+    for (const [key, tagIds] of byGroup) {
+      const existing = await db.get('tradeNotes', key);
+      const [acctId, sym, dt] = key.split(' ');
+      await db.put('tradeNotes', {
+        tradeGroupKey: key,
+        date: existing?.date ?? dt ?? '',
+        symbol: existing?.symbol ?? sym ?? '',
+        accountId: existing?.accountId ?? acctId ?? '',
+        content: existing?.content ?? '',
+        tags: existing?.tags ?? [],
+        tagIds,
+        screenshotIds: existing?.screenshotIds,
+        updatedAt: existing?.updatedAt ?? 0,
+      });
+    }
   }
 
   for (const d of data.deletes) {
@@ -190,6 +243,8 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
       await db.delete('tradeNotes', d.clientKey);
     } else if (d.entity === 'cash_flow') {
       await db.delete('cashFlows', d.clientKey);
+    } else if (d.entity === 'tag') {
+      await db.delete('tags', d.clientKey);
     } else if (d.entity === 'execution') {
       // clientKey is the execution's tradeId (transactions keyPath).
       await db.delete('transactions', d.clientKey);
@@ -205,6 +260,7 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
   // (cursor 0) that returned data, or a later seq, means the local store changed.
   const hasRows =
     data.accounts.length > 0 || data.executions.length > 0 || data.cashFlows.length > 0 ||
+    data.tags.length > 0 || data.tradeTags.length > 0 ||
     data.dailyNotes.length > 0 || data.tradeNotes.length > 0 || data.deletes.length > 0;
   const changed = cursor === 0 ? hasRows : data.seq > cursor;
 

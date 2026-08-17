@@ -1,4 +1,4 @@
-import { and, desc, eq, gt } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray } from 'drizzle-orm';
 import { db } from '../db/server';
 import {
   tradingAccount,
@@ -16,6 +16,7 @@ import {
 } from '../db/server/schema';
 import type { TransactionRecord } from '../db/schema';
 import { splitIntoTradeGroups } from '../trading/trade-groups';
+import { tagKey } from '../trading/tags';
 import { executionIdempotencyKey } from './execution-key';
 import type {
   JournalPushRequest,
@@ -433,6 +434,14 @@ export async function pushJournal(
     }
 
     // ── 7. Trade↔tag joins ──
+    // On an authoritative snapshot, reset the current groups' joins so tag
+    // removals (and emptied trades) propagate, not just additions.
+    if (doReconcile) {
+      const groupIds = [...groupUuidByClientKey.values()];
+      if (groupIds.length > 0) {
+        await tx.delete(tradeTag).where(inArray(tradeTag.tradeGroupId, groupIds));
+      }
+    }
     for (const tt of payload.tradeTags) {
       const groupId = groupUuidByClientKey.get(tt.tradeGroupClientKey);
       const tagId = tagUuidByClientId.get(tt.tagClientId);
@@ -545,9 +554,10 @@ export async function pullJournal(userId: string, since: number): Promise<Journa
   const tagRows = await db.select().from(tag).where(eq(tag.userId, userId));
   const reviewRows = await db.select().from(tradeAiReview).where(eq(tradeAiReview.userId, userId));
   const tradeTagRows = await db
-    .select({ groupId: tradeTag.tradeGroupId, tagId: tradeTag.tagId })
+    .select({ groupId: tradeTag.tradeGroupId, category: tag.category, label: tag.label })
     .from(tradeTag)
     .innerJoin(tradeGroup, eq(tradeTag.tradeGroupId, tradeGroup.id))
+    .innerJoin(tag, eq(tradeTag.tagId, tag.id))
     .where(eq(tradeGroup.userId, userId));
 
   const accountsPart = inChanged(accountRows, 'account');
@@ -570,7 +580,7 @@ export async function pullJournal(userId: string, since: number): Promise<Journa
     ...cashPart.deletes.map((c) => ({ entity: 'cash_flow' as const, clientKey: c.clientId, baseRev: c.rev })),
     ...dailyPart.deletes.map((n) => ({ entity: 'daily_note' as const, clientKey: `${clientIdByUuid.get(n.accountId)}:${n.tradingDay}`, baseRev: n.rev })),
     ...tradeNotePart.deletes.map((n) => ({ entity: 'trade_note' as const, clientKey: groupKeyByUuid.get(n.tradeGroupId) ?? '', baseRev: n.rev })),
-    ...tagPart.deletes.map((t) => ({ entity: 'tag' as const, clientKey: t.id, baseRev: t.rev })),
+    ...tagPart.deletes.map((t) => ({ entity: 'tag' as const, clientKey: tagKey(t.category, t.label), baseRev: t.rev })),
   ];
 
   return {
@@ -600,12 +610,12 @@ export async function pullJournal(userId: string, since: number): Promise<Journa
       updatedAt: Date.parse(n.updatedAt), rev: n.rev,
     })),
     tags: tagPart.upserts.map((t) => ({
-      clientId: t.id, label: t.label, category: t.category, color: t.color ?? undefined,
+      clientId: tagKey(t.category, t.label), label: t.label, category: t.category, color: t.color ?? undefined,
       archived: !!t.archivedAt, updatedAt: Date.parse(t.updatedAt), baseRev: t.rev, rev: t.rev,
     })),
     tradeTags: tradeTagRows.map((tt) => ({
       tradeGroupClientKey: groupKeyByUuid.get(tt.groupId) ?? '',
-      tagClientId: tt.tagId,
+      tagClientId: tagKey(tt.category, tt.label),
     })),
     reviews: reviewPart.upserts.map((r) => ({
       id: r.id, date: '', symbol: '', accountId: '', tradeGroupClientKey: groupKeyByUuid.get(r.tradeGroupId) ?? '',

@@ -66,13 +66,14 @@ below. See `flat-to-flat-trade-identity.md` and `journal-persistence-and-sync.md
 
 **Milestone B — Complete the review loop:** in progress.
 
-- [~] Categorized tags — `TagRecord` (category + label, color, archive), tag store
+- [x] Categorized tags — `TagRecord` (category + label, color, archive), tag store
       + helpers (`lib/trading/tags.ts`), a tag editor in the trade panel
       (create/attach/remove, quick-pick), tag chips in the journal's Tags column,
-      and backup/restore. **Not yet:** cross-device sync (server tag/tradeTag
-      tables exist but key by category+label vs the client's uuid — needs a
-      clientId on the server tag table to avoid duplicate tags across devices);
-      global-search tag filter still reads the legacy free-text tags.
+      backup/restore, and **cross-device sync**. Tag ids are deterministic from
+      category+label (`tagKey`), so tags de-duplicate across devices with no
+      schema change. **Minor gaps:** removing *all* tags from a trade may not
+      clear on other devices until they re-sync; the global-search tag filter
+      still reads the legacy free-text tags, not tag ids.
 - [ ] Strategy/playbook entities + rule adherence.
 - [ ] Planned stop/target/risk & realized R-multiple.
 - [ ] Core report set + shared filters + drill-down.
