@@ -1,5 +1,6 @@
 import APIKeyInput from '@/components/settings/APIKeyInput';
 import AccountSettings from '@/components/settings/AccountSettings';
+import CashFlowSettings from '@/components/settings/CashFlowSettings';
 import MarketDataSettings from '@/components/settings/MarketDataSettings';
 import BullMQStatusCard from '@/components/settings/BullMQStatusCard';
 import ProviderStatsCard from '@/components/settings/ProviderStatsCard';
@@ -13,6 +14,7 @@ export default function SettingsPage() {
 
             <div className="space-y-8">
                 <AccountSettings />
+                <CashFlowSettings />
                 <DataManagementSettings />
                 <PushNotificationToggle />
                 <BullMQStatusCard />
