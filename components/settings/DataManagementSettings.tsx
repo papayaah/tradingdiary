@@ -157,18 +157,32 @@ export default function DataManagementSettings() {
   const handleConfirmClearAll = async () => {
     setIsClearingAll(true);
     try {
-      // For a signed-in user, also delete server data — otherwise the next sync
-      // would re-hydrate the cleared local store from the server.
-      if (userId) {
-        const res = await fetch('/api/journal', { method: 'DELETE' });
-        if (!res.ok) throw new Error(`Server delete failed: ${res.status}`);
-        setCursor(userId, 0);
-      }
+      // Clear locally first — this is instant and gives immediate feedback.
       await clearAllData();
       await refreshAccounts('');
       setSelectedAccountId('');
       setShowClearAllModal(false);
-      toast.success(userId ? 'Cleared all local and account data' : 'Successfully cleared all application data');
+
+      if (!userId) {
+        toast.success('Successfully cleared all application data');
+        return;
+      }
+
+      // Signed in: also delete the server copy so the next sync doesn't
+      // re-hydrate. Time-boxed so a slow/unreachable server can't hang the reset;
+      // the local store is already cleared either way.
+      try {
+        const res = await fetch('/api/journal', {
+          method: 'DELETE',
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        setCursor(userId, 0);
+        toast.success('Cleared all local and account data');
+      } catch (err) {
+        console.error('Server journal delete failed:', err);
+        toast.error('Local data cleared, but deleting your synced account data failed — it may re-sync. Try again.');
+      }
     } catch (err) {
       console.error('Failed to clear all data:', err);
       toast.error('Failed to clear application data');
