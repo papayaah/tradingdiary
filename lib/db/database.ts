@@ -44,6 +44,22 @@ export function getDB(): Promise<IDBPDatabase<TradingDiaryDB>> {
           db.createObjectStore('tradeNotes', { keyPath: 'tradeGroupKey' });
         }
       },
+      // This tab holds an older DB version and is blocking another tab that wants
+      // to upgrade — release our connection so the upgrade can proceed instead of
+      // hanging every DB operation across tabs.
+      blocking() {
+        console.warn('Trading Diary: closing DB connection so another tab can upgrade.');
+        dbPromise?.then((db) => db.close()).catch(() => {});
+        dbPromise = null;
+      },
+      // This tab cannot open because another tab holds an older version open.
+      blocked() {
+        console.warn('Trading Diary: database upgrade is blocked by another open tab — close other tabs to continue.');
+      },
+      // The connection was closed unexpectedly (e.g. by the block handler above).
+      terminated() {
+        dbPromise = null;
+      },
     });
   }
   return dbPromise;
