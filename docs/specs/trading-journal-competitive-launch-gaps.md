@@ -21,9 +21,11 @@ below. See `flat-to-flat-trade-identity.md` and `journal-persistence-and-sync.md
       round trip its own row (3 same-day AAPL trades → 3 rows) ordered by entry
       time — the per-day trade timeline. Trade notes, screenshots, and AI reviews
       now key **per round trip** (by the trade-group key), so each trade has its
-      own note. **Interim:** the dashboard, replay, and global search still use
-      the legacy day+symbol aggregation, so their trade counts differ from the
-      journal until migrated.
+      own note. The dashboard now uses flat-to-flat too, so its counts/win-rate
+      match the journal and its P&L is correct on reversal days. Replay (day-level
+      execution playback) and global search (navigation keyed by date+symbol)
+      intentionally keep the day+symbol grouping — both are correct as-is and
+      flat-to-flat would double-count a reversal fill / produce duplicate results.
 - [x] Automatic exchange trading-day boundary (`lib/trading/trading-day.ts`):
       equities on ET date, CME futures roll 18:00 ET. Manual "Trade Date Cutoff"
       setting removed. (Addresses the shared calc rule "record timezone and

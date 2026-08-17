@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { Upload, LayoutDashboard, Calendar, Sparkles, ChevronDown, Check } from 'lucide-react';
-import { aggregateByDay, type DailySummary } from '@/lib/trading/aggregator';
+import { aggregateTradeGroupsByDay, type DailySummary } from '@/lib/trading/aggregator';
 import { onJournalSynced } from '@/lib/journal/sync-bus';
 import { computeDashboard } from '@/lib/trading/dashboard';
 import { timeToSeconds, computePnLTimeline } from '@/lib/replay/engine';
@@ -95,16 +95,23 @@ export default function DashboardPage() {
         setLoading(false);
         return;
       }
-      const agg = aggregateByDay(transactions);
+      const agg = aggregateTradeGroupsByDay(transactions);
       setAllSummaries(agg);
       setLoading(false);
 
-      // Build timeline data for the most recent day
+      // Build timeline data for the most recent day. De-duplicate executions:
+      // a reversal fill belongs to two flat-to-flat trades, so it appears in
+      // both trades' transactions.
       if (agg.length > 0) {
         const latest = agg[0]; // sorted desc by date
         const dayTxns: TransactionRecord[] = [];
+        const seenTxn = new Set<string>();
         for (const trade of latest.trades) {
-          dayTxns.push(...trade.transactions);
+          for (const t of trade.transactions) {
+            if (seenTxn.has(t.tradeId)) continue;
+            seenTxn.add(t.tradeId);
+            dayTxns.push(t);
+          }
         }
         const sorted = dayTxns.sort(
           (a, b) => timeToSeconds(a.time) - timeToSeconds(b.time)
