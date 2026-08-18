@@ -180,6 +180,19 @@ export interface TradeNoteRecord {
   strategyId?: string;
   /** Per-rule adherence for the linked playbook. */
   ruleChecks?: RuleCheck[];
+  /** Trade plan — planned risk inputs the trader recorded. All optional and
+   * native to the instrument's price. Used to derive planned/realized R. */
+  plannedEntry?: number;
+  initialStop?: number;
+  targets?: number[];
+  plannedRiskAmount?: number;
+  plannedRiskPercent?: number;
+  /** When the plan was created relative to the trade. */
+  planTiming?: 'before' | 'during' | 'after';
+  /** Optional 1–5 self-ratings; execution and process are kept distinct so a
+   * profitable rule-breaking trade can still score a low process rating. */
+  executionRating?: number;
+  processRating?: number;
   screenshotIds?: number[];
   updatedAt: number;
 }

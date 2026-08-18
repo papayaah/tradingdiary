@@ -107,7 +107,19 @@ and a pre-confirm file-overlap warning), both noted inline below.
       (rename/archive/reorder UI), a journal-column chip, cross-device sync of
       playbooks/adherence, and playbook/adherence reporting (folds into the report
       set item below).
-- [ ] Planned stop/target/risk & realized R-multiple.
+- [~] Planned stop/target/risk & realized R-multiple — a persisted trade plan on
+      the per-round-trip record (planned entry, initial stop, target, planned risk
+      amount + %, plan timing before/during/after, and distinct execution/process
+      ratings). Pure, tested helpers derive **planned R** (reward-to-risk of the
+      plan) and **realized R** (actual outcome in units of initial risk), never
+      inventing a stop (`lib/trading/trade-plan.ts`). Edited via an embedded
+      `TradePlanEditor` in the trade panel with live R read-outs. All per-trade
+      writers now go through a `patchTradeNote` read-modify-write helper, and the
+      sync pull-merge preserves local-only fields by spread — so new fields can't
+      silently wipe siblings. **Not yet:** timestamped stop/target revision
+      history (currently overwrites), MAE/MFE as first-class persisted fields,
+      best-exit/EOD-exit comparisons, points/ticks display modes, report-wide R
+      mode, and cross-device sync of the plan (local-only for now).
 - [ ] Core report set + shared filters + drill-down.
 - [ ] Supported broker/asset matrix.
 

@@ -107,74 +107,68 @@ export async function getTradeNote(
 }
 
 /**
- * Patch ONLY the note content, preserving screenshotIds and tags. Read-modify-write
- * so a debounced auto-save cannot clobber a concurrently attached screenshot.
+ * Read-modify-write a trade's note record, preserving every field not in the
+ * patch. All per-trade writers go through this so adding a new field can never
+ * silently wipe a sibling (tags, playbook link, plan, screenshots, …). Also
+ * makes a debounced auto-save safe against a concurrently attached screenshot.
  */
-export async function saveTradeNoteContent(ref: TradeRef, content: string) {
+async function patchTradeNote(ref: TradeRef, patch: Partial<TradeNoteRecord>): Promise<void> {
   const db = await getDB();
   const existing = await db.get('tradeNotes', ref.tradeGroupKey);
-  await db.put('tradeNotes', {
+  const merged: TradeNoteRecord = {
+    content: '',
+    tags: [],
+    ...(existing ?? {}),
+    ...patch,
+    // Identity + denormalized display fields stay authoritative.
     tradeGroupKey: ref.tradeGroupKey,
-    date: ref.date,
-    symbol: ref.symbol,
-    accountId: ref.accountId,
-    content,
-    tags: existing?.tags ?? [],
-    tagIds: existing?.tagIds,
-    strategyId: existing?.strategyId,
-    ruleChecks: existing?.ruleChecks,
-    screenshotIds: existing?.screenshotIds,
+    date: existing?.date ?? ref.date,
+    symbol: existing?.symbol ?? ref.symbol,
+    accountId: existing?.accountId ?? ref.accountId,
     updatedAt: Date.now(),
-  });
+  };
+  await db.put('tradeNotes', merged);
   notifyJournalChanged();
 }
 
-/** Set the tag ids applied to a trade, preserving content/screenshots. */
+/** Patch ONLY the note content, preserving everything else. */
+export async function saveTradeNoteContent(ref: TradeRef, content: string) {
+  await patchTradeNote(ref, { content });
+}
+
+/** Set the tag ids applied to a trade. */
 export async function setTradeTags(ref: TradeRef, tagIds: string[]) {
-  const db = await getDB();
-  const existing = await db.get('tradeNotes', ref.tradeGroupKey);
-  await db.put('tradeNotes', {
-    tradeGroupKey: ref.tradeGroupKey,
-    date: ref.date,
-    symbol: ref.symbol,
-    accountId: ref.accountId,
-    content: existing?.content ?? '',
-    tags: existing?.tags ?? [],
-    tagIds,
-    strategyId: existing?.strategyId,
-    ruleChecks: existing?.ruleChecks,
-    screenshotIds: existing?.screenshotIds,
-    updatedAt: Date.now(),
-  });
-  notifyJournalChanged();
+  await patchTradeNote(ref, { tagIds });
 }
 
 /**
- * Link a playbook to a trade and record its rule adherence, preserving
- * content/tags/screenshots. Passing strategyId = undefined unlinks the playbook
- * and clears its rule checks.
+ * Link a playbook to a trade and record its rule adherence. Passing
+ * strategyId = undefined unlinks the playbook and clears its rule checks.
  */
 export async function setTradePlaybook(
   ref: TradeRef,
   strategyId: string | undefined,
   ruleChecks: RuleCheck[],
 ) {
-  const db = await getDB();
-  const existing = await db.get('tradeNotes', ref.tradeGroupKey);
-  await db.put('tradeNotes', {
-    tradeGroupKey: ref.tradeGroupKey,
-    date: ref.date,
-    symbol: ref.symbol,
-    accountId: ref.accountId,
-    content: existing?.content ?? '',
-    tags: existing?.tags ?? [],
-    tagIds: existing?.tagIds,
-    strategyId,
-    ruleChecks: strategyId ? ruleChecks : undefined,
-    screenshotIds: existing?.screenshotIds,
-    updatedAt: Date.now(),
-  });
-  notifyJournalChanged();
+  await patchTradeNote(ref, { strategyId, ruleChecks: strategyId ? ruleChecks : undefined });
+}
+
+/** Fields of the trade plan (planned risk / R inputs and self-ratings). */
+export type TradePlanPatch = Pick<
+  TradeNoteRecord,
+  | 'plannedEntry'
+  | 'initialStop'
+  | 'targets'
+  | 'plannedRiskAmount'
+  | 'plannedRiskPercent'
+  | 'planTiming'
+  | 'executionRating'
+  | 'processRating'
+>;
+
+/** Save the trade plan, preserving notes/tags/playbook/screenshots. */
+export async function setTradePlan(ref: TradeRef, plan: TradePlanPatch) {
+  await patchTradeNote(ref, plan);
 }
 
 /** All AI reviews for a trade group, newest first. */

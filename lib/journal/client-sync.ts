@@ -197,6 +197,9 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
     // derive display/search fields from it when we have no local record.
     const [acctId, sym, dt] = key.split(' ');
     await db.put('tradeNotes', {
+      // Preserve local-only fields not synced yet (playbook link, rule checks,
+      // trade plan) — a pull must never wipe them.
+      ...(existing ?? {}),
       tradeGroupKey: key,
       date: existing?.date ?? dt ?? '',
       symbol: existing?.symbol ?? sym ?? '',
@@ -204,10 +207,6 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
       content: n.content,
       tags: existing?.tags ?? [],
       tagIds: existing?.tagIds,
-      // Playbook link + rule checks are not synced yet; preserve them so a pull
-      // never wipes locally-recorded adherence.
-      strategyId: existing?.strategyId,
-      ruleChecks: existing?.ruleChecks,
       screenshotIds: existing?.screenshotIds,
       updatedAt: n.updatedAt ?? existing?.updatedAt ?? 0,
     });
@@ -226,6 +225,7 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
       const existing = await db.get('tradeNotes', key);
       const [acctId, sym, dt] = key.split(' ');
       await db.put('tradeNotes', {
+        ...(existing ?? {}),
         tradeGroupKey: key,
         date: existing?.date ?? dt ?? '',
         symbol: existing?.symbol ?? sym ?? '',
@@ -233,8 +233,6 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
         content: existing?.content ?? '',
         tags: existing?.tags ?? [],
         tagIds,
-        strategyId: existing?.strategyId,
-        ruleChecks: existing?.ruleChecks,
         screenshotIds: existing?.screenshotIds,
         updatedAt: existing?.updatedAt ?? 0,
       });

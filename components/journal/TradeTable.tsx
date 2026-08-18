@@ -20,6 +20,7 @@ import TradeChart from './TradeChart';
 import TradeDetailsPanel from './TradeDetailsPanel';
 import TradeTagsEditor from './TradeTagsEditor';
 import TradePlaybookEditor from './TradePlaybookEditor';
+import TradePlanEditor from './TradePlanEditor';
 import ScreenshotAttachment from './ScreenshotAttachment';
 import TradeNotesEditor from './TradeNotesEditor';
 import TradeAIReviewCard from './TradeAIReviewCard';
@@ -298,6 +299,11 @@ function TradeRow({
           <tr>
             <td colSpan={9} className="px-5 py-4 border-t border-card-border">
               <TradePlaybookEditor tradeRef={ref} onChange={onTagsChange} />
+            </td>
+          </tr>
+          <tr>
+            <td colSpan={9} className="px-5 py-4 border-t border-card-border">
+              <TradePlanEditor tradeRef={ref} trade={trade} onChange={onTagsChange} />
             </td>
           </tr>
           <tr>
