@@ -10,10 +10,12 @@ August 14, 2026
 
 ## Implementation progress
 
-Updated August 17, 2026. Tracks build status against the delivery milestones
+Updated August 18, 2026. Tracks build status against the delivery milestones
 below. See `flat-to-flat-trade-identity.md` and `journal-persistence-and-sync.md`.
 
-**Milestone A — Trust the data**
+**Milestone A — Trust the data:** effectively complete. Every item is done except
+two non-corrupting import refinements (raw-source-row capture in the audit view,
+and a pre-confirm file-overlap warning), both noted inline below.
 
 - [x] Canonical trade identity — flat-to-flat splitter (`lib/trading/trade-groups.ts`),
       spec, and tests (reversal, overnight, open, FX, aggregator reconciliation).
@@ -60,8 +62,12 @@ below. See `flat-to-flat-trade-identity.md` and `journal-persistence-and-sync.md
       tags / AI reviews; daily and trade notes are last-write-wins (no conflict UI
       yet); clearing all local data re-hydrates from the server by design (true
       server wipe = account-deletion).
-- [~] Fixtures — splitter + trading-day unit tests. **Not yet:** full matrix
-      (partial fills, futures multipliers, FX, duplicate imports, scale in/out).
+- [x] Fixtures — splitter + trading-day unit tests, plus an end-to-end fixture
+      matrix (`trade-fixtures.test.ts`): scale in/out, average-down-to-break-even
+      (long and short), partial fills, futures multipliers (single and scaled-in
+      FIFO), partially-open positions with realized + open legs, commissions, and
+      duplicate re-imports deduping to nothing. FX conversion is covered in
+      `aggregator-fx.test.ts` and the trade-groups FX case.
 - [x] Backup/export, restore, and account deletion — full JSON backup +
       executions CSV + restore-from-backup (`lib/journal/export.ts`); `DELETE
       /api/journal` wipes server data; "Clear All" also deletes synced account
