@@ -91,6 +91,34 @@ export interface CashFlowRecord {
   updatedAt: number;
 }
 
+/**
+ * A record of one import action. Captures what was imported (source, counts,
+ * warnings) and — critically — the exact execution ids the batch created, so the
+ * batch can be undone later without touching executions that came from other
+ * imports. Local-only (import history is per-device); the executions it created
+ * still sync normally, and undoing removes them (which propagates as deletes).
+ */
+export interface ImportBatchRecord {
+  id: string;
+  accountId: string;
+  createdAt: number;
+  /** Source filename, or a label for pasted/URL/multi-file imports. */
+  source: string;
+  /** Detected broker/source label, when known. */
+  brokerName?: string;
+  /** Fingerprint of the imported execution set (see executionSetChecksum). */
+  checksum: string;
+  /** Executions parsed from the source. */
+  parsedCount: number;
+  /** New executions actually written (parsed minus duplicates). */
+  importedCount: number;
+  /** Executions skipped because they were already present. */
+  duplicateCount: number;
+  /** Execution ids this batch created — the undo target. */
+  tradeIds: string[];
+  warnings?: string[];
+}
+
 export interface DailyNoteRecord {
   date: string;
   accountId: string;
@@ -195,6 +223,13 @@ export interface TradingDiaryDB extends DBSchema {
     value: TradeAIReviewRecord;
     indexes: {
       'by-tradeGroup': string;
+    };
+  };
+  importBatches: {
+    key: string;
+    value: ImportBatchRecord;
+    indexes: {
+      'by-accountId': string;
     };
   };
 }

@@ -5,7 +5,7 @@ let dbPromise: Promise<IDBPDatabase<TradingDiaryDB>> | null = null;
 
 export function getDB(): Promise<IDBPDatabase<TradingDiaryDB>> {
   if (!dbPromise) {
-    dbPromise = openDB<TradingDiaryDB>('tradingdiary', 5, {
+    dbPromise = openDB<TradingDiaryDB>('tradingdiary', 6, {
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           db.createObjectStore('accounts', { keyPath: 'accountId' });
@@ -54,6 +54,13 @@ export function getDB(): Promise<IDBPDatabase<TradingDiaryDB>> {
         if (oldVersion < 5) {
           // Reusable categorized tags applied to trades.
           db.createObjectStore('tags', { keyPath: 'id' });
+        }
+
+        if (oldVersion < 6) {
+          // Import history — one record per import action, holding the exact
+          // execution ids it created so a batch can be undone in isolation.
+          const batchStore = db.createObjectStore('importBatches', { keyPath: 'id' });
+          batchStore.createIndex('by-accountId', 'accountId');
         }
       },
       // This tab holds an older DB version and is blocking another tab that wants

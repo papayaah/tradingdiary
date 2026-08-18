@@ -517,6 +517,8 @@ export default function TradeImportWorkspace() {
       const { toTransactionRecords } = await import('@/lib/import/converter');
       const { importData: dbImport, getExistingTradeIds } = await import('@/lib/db/trades');
       const { enrichTransactionsWithHistoricalFx } = await import('@/lib/fx/enrich-transactions');
+      const { recordImportBatch } = await import('@/lib/db/import-batches');
+      const { executionSetChecksum } = await import('@/lib/import/hash');
 
       let targetAccountId = accountData.id;
       let targetAccount: AccountRecord;
@@ -563,6 +565,21 @@ export default function TradeImportWorkspace() {
 
       const transactions = await enrichTransactionsWithHistoricalFx(fresh, targetAccount.currency);
       await dbImport(targetAccount, transactions, []);
+
+      // Record this import as a batch so it appears in import history and can be
+      // undone in isolation later (Data Management → Recent Imports).
+      await recordImportBatch({
+        id: `batch-${Date.now()}`,
+        accountId: targetAccountId,
+        createdAt: Date.now(),
+        source: importFile?.name || 'Imported data',
+        brokerName: detectedBrokerName || undefined,
+        checksum: executionSetChecksum(converted.map((t) => t.tradeId)),
+        parsedCount: converted.length,
+        importedCount: transactions.length,
+        duplicateCount,
+        tradeIds: transactions.map((t) => t.tradeId),
+      }).catch(console.error);
 
       if (importFile) importFileToLibrary(importFile).catch(console.error);
 

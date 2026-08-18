@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { authClient } from '@/lib/auth-client';
 import { downloadJournalBackup, downloadExecutionsCsv, restoreJournalBackup } from '@/lib/journal/export';
 import { setCursor } from '@/lib/journal/client-sync';
+import RecentImportsPanel from './RecentImportsPanel';
 
 export default function DataManagementSettings() {
   const { accounts, selectedAccountId, refreshAccounts, setSelectedAccountId } = useAccount();
@@ -252,6 +253,9 @@ export default function DataManagementSettings() {
           />
         </div>
       </div>
+
+      {/* Import history + per-batch undo */}
+      <RecentImportsPanel />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
         {/* Date Range / Monthly Data Pruning */}

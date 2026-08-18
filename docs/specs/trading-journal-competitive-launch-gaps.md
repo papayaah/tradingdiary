@@ -36,8 +36,13 @@ below. See `flat-to-flat-trade-identity.md` and `journal-persistence-and-sync.md
       **duplicate detection**: re-importing the same file is now an explicit
       no-op instead of doubling trades, and the confirm step reports how many
       duplicates were skipped (`lib/import/converter.ts`,
-      `getExistingTradeIds`). **Not yet:** import batch records, file checksums,
-      per-batch undo, execution audit view.
+      `getExistingTradeIds`). **Import-batch records + per-batch undo**: every
+      import is recorded (`importBatches` store, DB v6) with source, counts,
+      warnings, an execution-set checksum, and the exact ids it created;
+      Data Management → Recent Imports lists them and can undo one in isolation,
+      removing only that batch's executions (`lib/db/import-batches.ts`,
+      `RecentImportsPanel`). **Not yet:** execution audit view (raw-vs-normalized
+      per execution); pre-confirm file-overlap warning.
 - [x] Server persistence + live cross-device sync — Postgres tables
       (`trading_account`, `execution`, `trade_group`, notes, tags, review,
       attachment, `journal_event`) with rev + tombstones; `/api/journal/sync`
