@@ -84,7 +84,7 @@ export default function WelcomeModal({ videoUrl }: WelcomeModalProps) {
         {/* Scrollable body */}
         <div className="overflow-y-auto flex-1 min-h-0">
           {/* Hero demo video (16:9), full-bleed aspect-ratio fit */}
-          <div className="w-full flex items-center justify-center bg-black/40 border-b border-card-border overflow-hidden">
+          <div className="w-full flex items-center justify-center bg-muted-bg border-b border-card-border overflow-hidden">
             {!videoUrl ? (
               <WelcomeHeroVideo />
             ) : isMp4 ? (

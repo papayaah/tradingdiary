@@ -116,7 +116,7 @@ export function WelcomeHeroVideo() {
   };
 
   return (
-    <div className="relative w-full aspect-video max-h-[52vh] overflow-hidden bg-black">
+    <div className="relative w-full aspect-video max-h-[52vh] overflow-hidden bg-muted-bg">
       <video
         src={INTRO_VIDEO}
         autoPlay
