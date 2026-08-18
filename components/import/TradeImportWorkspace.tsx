@@ -8,6 +8,7 @@ import DropZone from '@/components/import/DropZone';
 import ColumnMapper from '@/components/import/ColumnMapper';
 import ImportPreview from '@/components/import/ImportPreview';
 import IBKRExportGuide from '@/components/import/IBKRExportGuide';
+import ESignalExportGuide from '@/components/import/ESignalExportGuide';
 import { useAIManagementContextOptional } from '@/packages/ai-connect/src/components';
 import { parseCSVOrText } from '@/lib/import/utils/csv-extractor';
 import { mapColumnsWithLLM } from '@/lib/import/utils/llm-mapper';
@@ -514,11 +515,12 @@ export default function TradeImportWorkspace() {
   ) => {
     startProcessing(async () => {
       const { toTransactionRecords } = await import('@/lib/import/converter');
-      const { importData: dbImport } = await import('@/lib/db/trades');
+      const { importData: dbImport, getExistingTradeIds } = await import('@/lib/db/trades');
       const { enrichTransactionsWithHistoricalFx } = await import('@/lib/fx/enrich-transactions');
 
       let targetAccountId = accountData.id;
       let targetAccount: AccountRecord;
+      const isExistingAccount = Boolean(accountData.id);
 
       if (!targetAccountId) {
         // Create new account
@@ -539,13 +541,35 @@ export default function TradeImportWorkspace() {
       }
 
       const converted = toTransactionRecords(selectedTransactions, targetAccountId, targetAccount.currency);
-      const transactions = await enrichTransactionsWithHistoricalFx(converted, targetAccount.currency);
+
+      // Duplicate detection: execution ids are deterministic (content-derived), so
+      // any converted execution already present in the account is a re-import.
+      // Skip those instead of writing them again — re-importing the same file is a
+      // no-op rather than silently doubling the trades.
+      const existingIds = isExistingAccount
+        ? await getExistingTradeIds(targetAccountId)
+        : new Set<string>();
+      const fresh = converted.filter((t) => !existingIds.has(t.tradeId));
+      const duplicateCount = converted.length - fresh.length;
+
+      if (fresh.length === 0) {
+        toast.info('Nothing new to import', {
+          description: `All ${converted.length} trade${converted.length === 1 ? '' : 's'} are already in "${targetAccount.name}".`,
+        });
+        clearImportState();
+        router.push('/journal');
+        return;
+      }
+
+      const transactions = await enrichTransactionsWithHistoricalFx(fresh, targetAccount.currency);
       await dbImport(targetAccount, transactions, []);
 
       if (importFile) importFileToLibrary(importFile).catch(console.error);
 
-      toast.success(`Successfully imported ${transactions.length} trades!`, {
-        description: `Imported to account "${targetAccount.name}" (${targetAccount.currency})`,
+      toast.success(`Successfully imported ${transactions.length} trade${transactions.length === 1 ? '' : 's'}!`, {
+        description: duplicateCount > 0
+          ? `To "${targetAccount.name}". Skipped ${duplicateCount} already-imported duplicate${duplicateCount === 1 ? '' : 's'}.`
+          : `Imported to account "${targetAccount.name}" (${targetAccount.currency})`,
       });
 
       await refreshAccounts(targetAccountId);
@@ -662,8 +686,11 @@ export default function TradeImportWorkspace() {
             </button>
           </div>
 
-          {/* IBKR TradeLog Tutorial Video & Guide */}
-          <IBKRExportGuide />
+          {/* Broker export guides — collapsed by default, expand on request. */}
+          <div className="space-y-3">
+            <IBKRExportGuide />
+            <ESignalExportGuide />
+          </div>
         </div>
       )}
 

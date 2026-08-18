@@ -31,8 +31,13 @@ below. See `flat-to-flat-trade-identity.md` and `journal-persistence-and-sync.md
       setting removed. (Addresses the shared calc rule "record timezone and
       trading-day cutoff with every derived day grouping.")
 - [~] Import integrity — execution idempotency key in schema/sync; import no
-      longer fabricates dates; P&L-summary files rejected. **Not yet:** import
-      batch records, checksums, per-batch undo, execution audit view.
+      longer fabricates dates; P&L-summary files rejected. **Deterministic
+      execution ids** (content-derived, never `Date.now()`) plus import-time
+      **duplicate detection**: re-importing the same file is now an explicit
+      no-op instead of doubling trades, and the confirm step reports how many
+      duplicates were skipped (`lib/import/converter.ts`,
+      `getExistingTradeIds`). **Not yet:** import batch records, file checksums,
+      per-batch undo, execution audit view.
 - [x] Server persistence + live cross-device sync — Postgres tables
       (`trading_account`, `execution`, `trade_group`, notes, tags, review,
       attachment, `journal_event`) with rev + tombstones; `/api/journal/sync`

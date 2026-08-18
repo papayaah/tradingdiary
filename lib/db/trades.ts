@@ -95,6 +95,17 @@ export async function getTransactionCount(): Promise<number> {
   return db.count('transactions');
 }
 
+/**
+ * Deterministic execution ids already stored for an account. Used at import time
+ * to skip re-importing the same executions (duplicate detection). Reads keys only
+ * — no records, no FX backfill.
+ */
+export async function getExistingTradeIds(accountId: string): Promise<Set<string>> {
+  const db = await getDB();
+  const keys = await db.getAllKeysFromIndex('transactions', 'by-accountId', accountId);
+  return new Set(keys.map((key) => String(key)));
+}
+
 export async function getTransactionsByAccount(accountId: string): Promise<TransactionRecord[]> {
   const db = await getDB();
   const [account, transactions] = await Promise.all([
