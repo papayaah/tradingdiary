@@ -7,6 +7,7 @@ import type {
   TradeAIReviewRecord,
   CashFlowRecord,
   TagRecord,
+  StrategyRecord,
 } from '../db/schema';
 import { notifyJournalChanged } from './sync-bus';
 
@@ -28,19 +29,22 @@ export interface JournalBackup {
   dailyNotes: DailyNoteRecord[];
   tradeNotes: TradeNoteRecord[];
   reviews: TradeAIReviewRecord[];
+  strategies: StrategyRecord[];
 }
 
 export async function buildJournalBackup(): Promise<JournalBackup> {
   const db = await getDB();
-  const [accounts, transactions, cashFlows, tags, dailyNotes, tradeNotes, reviews] = await Promise.all([
-    db.getAll('accounts'),
-    db.getAll('transactions'),
-    db.getAll('cashFlows'),
-    db.getAll('tags'),
-    db.getAll('dailyNotes'),
-    db.getAll('tradeNotes'),
-    db.getAll('tradeAIReviews'),
-  ]);
+  const [accounts, transactions, cashFlows, tags, dailyNotes, tradeNotes, reviews, strategies] =
+    await Promise.all([
+      db.getAll('accounts'),
+      db.getAll('transactions'),
+      db.getAll('cashFlows'),
+      db.getAll('tags'),
+      db.getAll('dailyNotes'),
+      db.getAll('tradeNotes'),
+      db.getAll('tradeAIReviews'),
+      db.objectStoreNames.contains('strategies') ? db.getAll('strategies') : Promise.resolve([]),
+    ]);
   return {
     version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
@@ -51,6 +55,7 @@ export async function buildJournalBackup(): Promise<JournalBackup> {
     dailyNotes,
     tradeNotes,
     reviews,
+    strategies,
   };
 }
 
@@ -130,11 +135,14 @@ export async function restoreJournalBackup(json: string): Promise<RestoreResult>
   const dailyNotes = parsed.dailyNotes ?? [];
   const tradeNotes = parsed.tradeNotes ?? [];
   const reviews = parsed.reviews ?? [];
+  // Older backups predate playbooks; default to none.
+  const strategies = parsed.strategies ?? [];
+  const hasStrategies = db.objectStoreNames.contains('strategies');
 
-  const tx = db.transaction(
-    ['accounts', 'transactions', 'cashFlows', 'tags', 'dailyNotes', 'tradeNotes', 'tradeAIReviews'],
-    'readwrite',
-  );
+  const stores: Parameters<typeof db.transaction>[0] = hasStrategies
+    ? ['accounts', 'transactions', 'cashFlows', 'tags', 'dailyNotes', 'tradeNotes', 'tradeAIReviews', 'strategies']
+    : ['accounts', 'transactions', 'cashFlows', 'tags', 'dailyNotes', 'tradeNotes', 'tradeAIReviews'];
+  const tx = db.transaction(stores, 'readwrite');
   await Promise.all([
     ...accounts.map((a) => tx.objectStore('accounts').put(a)),
     ...transactions.map((t) => tx.objectStore('transactions').put(t)),
@@ -143,6 +151,7 @@ export async function restoreJournalBackup(json: string): Promise<RestoreResult>
     ...dailyNotes.map((n) => tx.objectStore('dailyNotes').put(n)),
     ...tradeNotes.map((n) => tx.objectStore('tradeNotes').put(n)),
     ...reviews.map((r) => tx.objectStore('tradeAIReviews').put(r)),
+    ...(hasStrategies ? strategies.map((s) => tx.objectStore('strategies').put(s)) : []),
   ]);
   await tx.done;
   notifyJournalChanged();

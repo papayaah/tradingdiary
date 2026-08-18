@@ -95,7 +95,18 @@ and a pre-confirm file-overlap warning), both noted inline below.
       schema change. **Minor gaps:** removing *all* tags from a trade may not
       clear on other devices until they re-sync; the global-search tag filter
       still reads the legacy free-text tags, not tag ids.
-- [ ] Strategy/playbook entities + rule adherence.
+- [~] Strategy/playbook entities + rule adherence — `StrategyRecord` (name,
+      thesis, direction, editable rules with stable ids) in a `strategies` store
+      (DB v7), local CRUD + helpers (`lib/db/strategies.ts`,
+      `lib/trading/strategies.ts`, tested). A trade links one primary playbook and
+      records per-rule adherence (followed/violated/N-A) on its per-round-trip
+      record (`strategyId`/`ruleChecks`), edited via an embedded
+      `TradePlaybookEditor` in the trade panel (pick or create-inline, rule
+      checklist, adherence summary). Pull-merge and backup/restore preserve the
+      new fields + the strategies store. **Not yet:** a dedicated playbook manager
+      (rename/archive/reorder UI), a journal-column chip, cross-device sync of
+      playbooks/adherence, and playbook/adherence reporting (folds into the report
+      set item below).
 - [ ] Planned stop/target/risk & realized R-multiple.
 - [ ] Core report set + shared filters + drill-down.
 - [ ] Supported broker/asset matrix.

@@ -66,6 +66,43 @@ export interface TagRecord {
   updatedAt: number;
 }
 
+/** One rule inside a playbook. `id` is stable across edits so per-trade rule
+ * checks survive renames/reordering of the rule text. */
+export interface StrategyRule {
+  id: string;
+  text: string;
+}
+
+/**
+ * A reusable strategy / playbook: the repeatable setup a trade belongs to, with
+ * its rules. Linked to trades by stable `id` (not name), so renaming a playbook
+ * preserves historical linkage. Archived playbooks stay attached to past trades
+ * but are hidden from new-link pickers. See docs/specs P0 #3.
+ */
+export interface StrategyRecord {
+  id: string;
+  name: string;
+  thesis?: string;
+  /** Which directions the setup applies to. */
+  direction?: 'long' | 'short' | 'both';
+  rules: StrategyRule[];
+  archivedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Whether a trade followed a given playbook rule. */
+export type RuleAdherenceStatus = 'followed' | 'violated' | 'not-applicable';
+
+/** A trade's adherence to one playbook rule. `source` distinguishes a trader's
+ * self-report from a deterministically-evaluated rule (all 'trader' for now). */
+export interface RuleCheck {
+  ruleId: string;
+  status: RuleAdherenceStatus;
+  source: 'trader' | 'deterministic';
+  note?: string;
+}
+
 /**
  * A non-trade change to account capital or balance. Kept separate from trading
  * P&L so account equity and return are not conflated with deposits/withdrawals.
@@ -139,6 +176,10 @@ export interface TradeNoteRecord {
   tags: string[];
   /** Stable ids of applied TagRecords. */
   tagIds?: string[];
+  /** Primary playbook linked to this trade (StrategyRecord id). */
+  strategyId?: string;
+  /** Per-rule adherence for the linked playbook. */
+  ruleChecks?: RuleCheck[];
   screenshotIds?: number[];
   updatedAt: number;
 }
@@ -213,6 +254,10 @@ export interface TradingDiaryDB extends DBSchema {
   tags: {
     key: string;
     value: TagRecord;
+  };
+  strategies: {
+    key: string;
+    value: StrategyRecord;
   };
   tradeNotes: {
     key: string;

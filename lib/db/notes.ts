@@ -3,6 +3,7 @@ import type {
   DailyNoteRecord,
   TradeNoteRecord,
   TradeAIReviewRecord,
+  RuleCheck,
 } from './schema';
 import { notifyJournalChanged } from '@/lib/journal/sync-bus';
 
@@ -119,6 +120,9 @@ export async function saveTradeNoteContent(ref: TradeRef, content: string) {
     accountId: ref.accountId,
     content,
     tags: existing?.tags ?? [],
+    tagIds: existing?.tagIds,
+    strategyId: existing?.strategyId,
+    ruleChecks: existing?.ruleChecks,
     screenshotIds: existing?.screenshotIds,
     updatedAt: Date.now(),
   });
@@ -137,6 +141,36 @@ export async function setTradeTags(ref: TradeRef, tagIds: string[]) {
     content: existing?.content ?? '',
     tags: existing?.tags ?? [],
     tagIds,
+    strategyId: existing?.strategyId,
+    ruleChecks: existing?.ruleChecks,
+    screenshotIds: existing?.screenshotIds,
+    updatedAt: Date.now(),
+  });
+  notifyJournalChanged();
+}
+
+/**
+ * Link a playbook to a trade and record its rule adherence, preserving
+ * content/tags/screenshots. Passing strategyId = undefined unlinks the playbook
+ * and clears its rule checks.
+ */
+export async function setTradePlaybook(
+  ref: TradeRef,
+  strategyId: string | undefined,
+  ruleChecks: RuleCheck[],
+) {
+  const db = await getDB();
+  const existing = await db.get('tradeNotes', ref.tradeGroupKey);
+  await db.put('tradeNotes', {
+    tradeGroupKey: ref.tradeGroupKey,
+    date: ref.date,
+    symbol: ref.symbol,
+    accountId: ref.accountId,
+    content: existing?.content ?? '',
+    tags: existing?.tags ?? [],
+    tagIds: existing?.tagIds,
+    strategyId,
+    ruleChecks: strategyId ? ruleChecks : undefined,
     screenshotIds: existing?.screenshotIds,
     updatedAt: Date.now(),
   });
