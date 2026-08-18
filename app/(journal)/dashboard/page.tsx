@@ -25,6 +25,11 @@ import { getTransactionsByAccount } from '@/lib/db/trades';
 import { formatCurrency } from '@/lib/currency';
 import { loadDemoSampleData } from '@/lib/import/sample-loader';
 import { toast } from 'sonner';
+import {
+  getDashboardRangePreference,
+  setDashboardRangePreference,
+  type DashboardRangeType,
+} from '@/lib/settings';
 
 function formatMinutes(minutes: number): string {
   if (minutes < 60) return `${minutes} minutes`;
@@ -48,10 +53,27 @@ export default function DashboardPage() {
   const activeAccount = accounts.find(a => a.accountId === selectedAccountId);
   const baseCurrency = activeAccount?.currency || 'USD';
 
-  const [rangeType, setRangeType] = useState<string>('all');
+  const [rangeType, setRangeType] = useState<DashboardRangeType>('mtd');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
+  const [rangePreferenceLoaded, setRangePreferenceLoaded] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
+
+  useEffect(() => {
+    const saved = getDashboardRangePreference();
+    const frame = window.requestAnimationFrame(() => {
+      setRangeType(saved.rangeType);
+      setStartDate(saved.startDate);
+      setEndDate(saved.endDate);
+      setRangePreferenceLoaded(true);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
+    if (!rangePreferenceLoaded) return;
+    setDashboardRangePreference({ rangeType, startDate, endDate });
+  }, [rangePreferenceLoaded, rangeType, startDate, endDate]);
 
   const rangeLabel = useMemo(() => {
     switch (rangeType) {
@@ -326,7 +348,7 @@ export default function DashboardPage() {
                 Select Time Range
               </div>
               <div className="grid grid-cols-2 gap-1 py-1">
-                {[
+                {([
                   { id: 'all', label: 'All Time' },
                   { id: '7d', label: '7 Days' },
                   { id: '30d', label: '30 Days' },
@@ -335,7 +357,7 @@ export default function DashboardPage() {
                   { id: 'mtd', label: 'Month to Date' },
                   { id: 'ytd', label: 'Year to Date' },
                   { id: 'custom', label: 'Custom' },
-                ].map((r) => (
+                ] satisfies { id: DashboardRangeType; label: string }[]).map((r) => (
                   <button
                     key={r.id}
                     onClick={() => {
