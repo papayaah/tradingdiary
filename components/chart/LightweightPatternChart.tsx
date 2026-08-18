@@ -11,6 +11,11 @@ interface LightweightPatternChartProps {
   height?: number;
   autoPatternsEnabled?: boolean;
   onTogglePatterns?: () => void;
+  levelsEnabled?: boolean;
+  onToggleLevels?: () => void;
+  trendlinesEnabled?: boolean;
+  onToggleTrendlines?: () => void;
+  showOverlayControls?: boolean;
   interval?: string;
   onIntervalChange?: (newInterval: string) => void;
   currentDayOnly?: boolean;
@@ -35,6 +40,11 @@ export default function LightweightPatternChart({
   height = 360,
   autoPatternsEnabled = true,
   onTogglePatterns,
+  levelsEnabled,
+  onToggleLevels,
+  trendlinesEnabled,
+  onToggleTrendlines,
+  showOverlayControls,
   interval,
   onIntervalChange,
   currentDayOnly,
@@ -59,6 +69,11 @@ export default function LightweightPatternChart({
       height={height}
       autoPatternsEnabled={autoPatternsEnabled}
       onTogglePatterns={onTogglePatterns}
+      levelsEnabled={levelsEnabled}
+      onToggleLevels={onToggleLevels}
+      trendlinesEnabled={trendlinesEnabled}
+      onToggleTrendlines={onToggleTrendlines}
+      showOverlayControls={showOverlayControls}
       interval={interval}
       onIntervalChange={onIntervalChange}
       availableIntervals={availableIntervals}

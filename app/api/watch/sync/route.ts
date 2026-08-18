@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { eq } from 'drizzle-orm';
 import { auth } from '@/lib/auth';
+import { isAdminEmail } from '@/lib/admin';
 import { db } from '@/lib/db/server';
 import { serverWatch, userWatchlists } from '@/lib/db/server/schema';
 import {
@@ -12,14 +13,29 @@ import {
 } from '@/lib/scanner/patterns';
 import type { AssetClass, WatchSession } from '@/lib/scanner/sessions';
 import {
-  AUTHENTICATED_WATCHLIST_LIMIT,
+  ADMIN_WATCHLIST_LIMIT,
   GUEST_WATCHLIST_LIMIT,
   canPersistAuthenticatedWatchlist,
+  getWatchlistLimit,
 } from '@/lib/watch/watchlist-limits';
 
 const MIN_SCAN_FREQUENCY_SECONDS = 15;
 const DEFAULT_SCAN_FREQUENCY_SECONDS = MIN_SCAN_FREQUENCY_SECONDS;
 const VALID_SESSIONS = new Set<WatchSession>(['rth', 'pre', 'ext', 'all']);
+
+const configuredAdminWatchlistLimit = (): number => {
+  const configured = Number(process.env.ADMIN_WATCHLIST_LIMIT);
+  return Number.isInteger(configured) && configured > 0
+    ? configured
+    : ADMIN_WATCHLIST_LIMIT;
+};
+
+const accountWatchlistLimit = (email?: string | null): number =>
+  getWatchlistLimit(
+    true,
+    isAdminEmail(email),
+    configuredAdminWatchlistLimit(),
+  );
 
 interface SyncedWatch {
   symbol: string;
@@ -129,6 +145,7 @@ export async function GET(request: NextRequest) {
         watchlistLimit: GUEST_WATCHLIST_LIMIT,
       }, { status: 200 });
     }
+    const watchlistLimit = accountWatchlistLimit(session.user.email);
 
     const records = await db
       .select()
@@ -152,7 +169,7 @@ export async function GET(request: NextRequest) {
         patternSettings: normalizePatternSettings(null, 0.25),
         disabledAssetClasses,
         authenticated: true,
-        watchlistLimit: AUTHENTICATED_WATCHLIST_LIMIT,
+        watchlistLimit,
       });
     }
 
@@ -169,7 +186,7 @@ export async function GET(request: NextRequest) {
       scanFrequencySeconds: record.scanFrequencySeconds,
       disabledAssetClasses,
       authenticated: true,
-      watchlistLimit: AUTHENTICATED_WATCHLIST_LIMIT,
+      watchlistLimit,
     });
   } catch (error) {
     console.error('Failed to fetch user watchlist from DB:', error);
@@ -187,6 +204,7 @@ export async function POST(request: NextRequest) {
         watchlistLimit: GUEST_WATCHLIST_LIMIT,
       }, { status: 200 });
     }
+    const watchlistLimit = accountWatchlistLimit(session.user.email);
 
     const body = await request.json();
     if (!Array.isArray(body.watchlist)) {
@@ -218,11 +236,11 @@ export async function POST(request: NextRequest) {
     const currentWatchlist = currentRecords[0]?.watchlist;
     const currentCount = Array.isArray(currentWatchlist) ? currentWatchlist.length : 0;
 
-    if (!canPersistAuthenticatedWatchlist(watchlist.length, currentCount)) {
+    if (!canPersistAuthenticatedWatchlist(watchlist.length, currentCount, watchlistLimit)) {
       return NextResponse.json({
-        error: `Signed-in watchlists are limited to ${AUTHENTICATED_WATCHLIST_LIMIT} symbols.`,
+        error: `Your watchlist is limited to ${watchlistLimit} symbols.`,
         code: 'WATCHLIST_LIMIT_EXCEEDED',
-        limit: AUTHENTICATED_WATCHLIST_LIMIT,
+        limit: watchlistLimit,
         count: watchlist.length,
       }, { status: 422 });
     }
@@ -331,7 +349,7 @@ export async function POST(request: NextRequest) {
       requiredCandleCount,
       maxBodyOverlapPercent,
       patternSettings,
-      watchlistLimit: AUTHENTICATED_WATCHLIST_LIMIT,
+      watchlistLimit,
     });
   } catch (error) {
     console.error('Failed to sync watchlist to DB:', error);

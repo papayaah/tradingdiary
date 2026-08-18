@@ -47,6 +47,8 @@ import {
 } from './watchAnalysis';
 import PatternGuidePanel from './PatternGuidePanel';
 import PatternTesterSection from './PatternTesterSection';
+import ChartOverlayControls from './ChartOverlayControls';
+import FocusBackdrop from './FocusBackdrop';
 import { formatCandlesTimespan } from '@/lib/utils/format';
 import WatchlistRow from './WatchlistRow';
 import CompactWatchlist, {
@@ -357,6 +359,17 @@ export default function MarketWatcher() {
   const [newMinMove, setNewMinMove] = useState(0.25);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
 
+  useEffect(() => {
+    if (!showSettingsPanel) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowSettingsPanel(false);
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [showSettingsPanel]);
+
   // Tester State
   const [testSymbol, setTestSymbol] = useState('TSLA');
   const [testInterval, setTestInterval] = useState('10m');
@@ -478,9 +491,12 @@ export default function MarketWatcher() {
 
   const { data: sessionData, isPending: isSessionPending } = authClient.useSession();
   const isAuthenticated = !!sessionData?.user;
+  const [serverWatchlistLimit, setServerWatchlistLimit] = useState<number | null>(null);
   const watchlistLimit = isSessionPending
-    ? AUTHENTICATED_WATCHLIST_LIMIT
-    : getWatchlistLimit(isAuthenticated);
+    ? serverWatchlistLimit ?? AUTHENTICATED_WATCHLIST_LIMIT
+    : isAuthenticated
+      ? serverWatchlistLimit ?? getWatchlistLimit(true)
+      : GUEST_WATCHLIST_LIMIT;
   const isWatchlistAtLimit = watchlist.length >= watchlistLimit;
   // When signed in, the server scanner is authoritative and the browser must be
   // a pure viewer (snapshot + SSE), not a second market-data fetcher. A ref lets
@@ -691,7 +707,30 @@ export default function MarketWatcher() {
       return next;
     });
   }, []);
-  const [filterMode, setFilterMode] = useState<'all' | 'alerts' | 'errors'>('all');
+  const [levelsEnabled, setLevelsEnabled] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    const saved = localStorage.getItem('watcher-chart-levels');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const [trendlinesEnabled, setTrendlinesEnabled] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    const saved = localStorage.getItem('watcher-chart-trendlines');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const handleToggleLevels = React.useCallback(() => {
+    setLevelsEnabled((enabled) => {
+      const next = !enabled;
+      localStorage.setItem('watcher-chart-levels', String(next));
+      return next;
+    });
+  }, []);
+  const handleToggleTrendlines = React.useCallback(() => {
+    setTrendlinesEnabled((enabled) => {
+      const next = !enabled;
+      localStorage.setItem('watcher-chart-trendlines', String(next));
+      return next;
+    });
+  }, []);
   const [watchlistCategory, setWatchlistCategory] = useState<WatchlistCategory>('stocks');
 
   // Auto-switch category tab when searching if current category has no matches but another category does
@@ -1126,13 +1165,6 @@ export default function MarketWatcher() {
       list = list.filter((w) => w.symbol.toUpperCase().includes(term));
     }
 
-    // Apply Filter Mode
-    if (filterMode === 'alerts') {
-      list = list.filter((w) => w.status === 'bullish' || w.status === 'bearish');
-    } else if (filterMode === 'errors') {
-      list = list.filter((w) => w.status === 'error');
-    }
-
     if (!sortColumn) return list;
     return list.sort((a, b) => {
       let aVal: string | number = '';
@@ -1153,12 +1185,12 @@ export default function MarketWatcher() {
       if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [categoryItems, sortColumn, sortDirection, searchTerm, filterMode]);
+  }, [categoryItems, sortColumn, sortDirection, searchTerm]);
 
-  // Reset tablePage when filters/search/category/sort change
+  // Reset tablePage when search/category/sort changes
   useEffect(() => {
     setTablePage(0);
-  }, [searchTerm, filterMode, watchlistCategory, sortColumn, sortDirection]);
+  }, [searchTerm, watchlistCategory, sortColumn, sortDirection]);
 
   // Session windows in America/New_York, as minutes-from-midnight [start, end).
   // Polygon returns equity bars 4:00 AM – 8:00 PM ET, so 'ext' covers all available data.
@@ -1228,6 +1260,9 @@ export default function MarketWatcher() {
     fetch('/api/watch/sync')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
+        if (typeof data?.watchlistLimit === 'number' && data.watchlistLimit > 0) {
+          setServerWatchlistLimit(data.watchlistLimit);
+        }
         if (data?.watchlist && Array.isArray(data.watchlist)) {
           if (data.watchlist.length > 0) {
             const syncedWatchlist: WatchItem[] = data.watchlist.map((item: WatchItem) => ({
@@ -2653,9 +2688,8 @@ export default function MarketWatcher() {
     // 1. Ensure Watchlist tab is active
     setActiveTab('watchlist');
 
-    // 2. Reset active search and status filters so target item is guaranteed to be visible
+    // 2. Reset active search so target item is guaranteed to be visible
     setSearchTerm('');
-    setFilterMode('all');
 
     // 3. Ensure category filter includes the target symbol
     const targetCategory: WatchlistCategory = isFuturesSymbol(log.symbol)
@@ -2991,6 +3025,11 @@ export default function MarketWatcher() {
         height={300}
         autoPatternsEnabled={autoPatternsEnabled}
         onTogglePatterns={handleToggleAutoPatterns}
+        levelsEnabled={levelsEnabled}
+        onToggleLevels={handleToggleLevels}
+        trendlinesEnabled={trendlinesEnabled}
+        onToggleTrendlines={handleToggleTrendlines}
+        showOverlayControls={false}
         interval={testInterval}
         providerBadge={expandedProvider || testResult.provider}
         subtitle={formatCandlesTimespan(testerCandles, testInterval)}
@@ -3013,35 +3052,37 @@ export default function MarketWatcher() {
         <h1 className="hidden sm:block text-xl md:text-2xl font-extrabold tracking-tight text-foreground">
           Market Pattern Watcher
         </h1>
-        <div className="flex items-center gap-1 p-1 bg-muted-bg/30 border border-card-border rounded-xl">
-          <button
-            type="button"
-            onClick={() => setActiveTab('watchlist')}
-            aria-label="Watchlist & Live Monitor"
-            aria-pressed={activeTab === 'watchlist'}
-            title="Watchlist & Live Monitor"
-            className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all ${
-              activeTab === 'watchlist'
-                ? 'bg-accent text-white shadow-sm'
-                : 'text-muted hover:text-foreground hover:bg-card-bg/60'
-            }`}
-          >
-            <Sliders size={16} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('tester')}
-            aria-label="Pattern Tester"
-            aria-pressed={activeTab === 'tester'}
-            title="Pattern Tester"
-            className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all ${
-              activeTab === 'tester'
-                ? 'bg-accent text-white shadow-sm'
-                : 'text-muted hover:text-foreground hover:bg-card-bg/60'
-            }`}
-          >
-            <Search size={16} />
-          </button>
+        <div className="ml-auto flex items-center gap-2">
+          <div className="flex items-center gap-1 p-1 bg-muted-bg/30 border border-card-border rounded-xl">
+            <button
+              type="button"
+              onClick={() => setActiveTab('watchlist')}
+              aria-label="Watchlist & Live Monitor"
+              aria-pressed={activeTab === 'watchlist'}
+              title="Watchlist & Live Monitor"
+              className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all ${
+                activeTab === 'watchlist'
+                  ? 'bg-accent text-white shadow-sm'
+                  : 'text-muted hover:text-foreground hover:bg-card-bg/60'
+              }`}
+            >
+              <Sliders size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('tester')}
+              aria-label="Pattern Tester"
+              aria-pressed={activeTab === 'tester'}
+              title="Pattern Tester"
+              className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all ${
+                activeTab === 'tester'
+                  ? 'bg-accent text-white shadow-sm'
+                  : 'text-muted hover:text-foreground hover:bg-card-bg/60'
+              }`}
+            >
+              <Search size={16} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -3049,26 +3090,6 @@ export default function MarketWatcher() {
       {activeTab === 'watchlist' && (
         <div className="flex flex-col gap-5 animate-fadeIn">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-            {/* Signal Alerts & Pattern Settings Guide Panel (100% Full-Width).
-                On desktop it stays on top (lg:order-1 lg:col-span-12); on mobile it is below the alert history (order-2)
-                but on top of the tradelist (order-3). */}
-            <div className="order-2 lg:order-1 lg:col-span-12 bg-card-bg border border-card-border shadow-xl rounded-2xl p-4 sm:p-5 w-full">
-              <PatternGuidePanel
-                value={selectedPatternId}
-                onChange={handlePatternChange}
-                selectedValues={selectedPatternIds}
-                onSelectionChange={handlePatternSelectionChange}
-                minMovePercent={selectedPatternMinMove}
-                requiredCount={requiredCandleCount}
-                maxBodyOverlapPercent={maxBodyOverlapPercent}
-                onMinMoveChange={handleNewMinMoveChange}
-                onRequiredCountChange={handleRequiredCandleCountChange}
-                onMaxBodyOverlapChange={handleMaxBodyOverlapChange}
-                patternSettings={patternSettings}
-                onPatternSettingsChange={handlePatternSettingsChange}
-              />
-            </div>
-
             {/* Watchlist Panel */}
             <div className="order-3 lg:order-2 lg:col-span-8 space-y-5">
               <div className="bg-card-bg border border-card-border shadow-xl rounded-2xl p-4 sm:p-5">
@@ -3082,130 +3103,74 @@ export default function MarketWatcher() {
 
               </div>
 
-              {/* TOOLBAR: Timeframe/Settings row, then the category tabs as a
-                  full-width left-aligned row that wraps (no right-pinned gap in
-                  the narrow watchlist column). */}
-              <div className="flex flex-col gap-3 mb-4">
-                {/* Left: Global Timeframe Selector & Settings Icon */}
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-2 bg-muted-bg/30 px-3 py-1.5 rounded-xl border border-card-border/50 shrink-0">
-                    <span className="text-xs font-semibold text-muted flex items-center gap-1.5">
-                      <Clock size={14} className="text-accent" /> Timeframe:
-                    </span>
-                    <select
-                      value={newInterval}
-                      onChange={(e) => handleGlobalIntervalChange(e.target.value)}
-                      className="bg-card-bg border border-card-border focus:border-accent focus:ring-1 focus:ring-accent rounded-lg py-1 px-2 text-xs text-foreground font-bold cursor-pointer outline-none transition-all"
-                      title="Select global timeframe interval for all watchlist symbols"
-                    >
-                      <option value="1m">1m (Test)</option>
-                      <option value="2m">2m</option>
-                      <option value="5m">5m</option>
-                      <option value="10m">10m</option>
-                      <option value="15m">15m</option>
-                      <option value="30m">30m</option>
-                      <option value="45m">45m</option>
-                      <option value="1h">1h</option>
-                    </select>
-                  </div>
+              {showSettingsPanel ? (
+                <FocusBackdrop
+                  label="Close Market Watch settings"
+                  onDismiss={() => setShowSettingsPanel(false)}
+                />
+              ) : null}
 
-                  <button
-                    type="button"
-                    onClick={() => setShowSettingsPanel(!showSettingsPanel)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
-                      showSettingsPanel
-                        ? 'bg-accent text-white border-accent shadow-sm'
-                        : 'bg-muted-bg/30 border-card-border/50 text-muted hover:text-foreground hover:bg-card-bg/60'
-                    }`}
-                    title="Market Watch Audio & Notification Settings"
-                  >
-                    <Settings size={14} />
-                    <span>Settings</span>
-                  </button>
-                </div>
-
-                {/* Right: Category Tabs with Integrated Category Mute (Bell) Buttons */}
-                <div className="flex flex-wrap items-center gap-1.5 bg-muted-bg/40 p-1 rounded-xl border border-card-border/50">
-                  {(
-                    [
-                      { id: 'stocks', label: 'Stocks', icon: ChartCandlestick, count: watchlist.filter((w) => !isFuturesSymbol(w.symbol) && !isCryptoSymbol(w.symbol)).length },
-                      { id: 'crypto', label: 'Crypto', icon: Bitcoin, count: watchlist.filter((w) => isCryptoSymbol(w.symbol)).length },
-                      { id: 'futures', label: 'Futures', icon: Zap, count: watchlist.filter((w) => isFuturesSymbol(w.symbol)).length },
-                      { id: 'all', label: 'All Tickers', icon: null, count: watchlist.length },
-                    ] as const
-                  ).map((cat) => {
-                    const active = watchlistCategory === cat.id;
-                    const Icon = cat.icon;
-                    const hasMuteToggle = cat.id === 'stocks' || cat.id === 'crypto' || cat.id === 'futures';
-                    const isOff = hasMuteToggle && disabledCategories.includes(cat.id);
-
-                    return (
-                      <div
-                        key={cat.id}
-                        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
-                          active
-                            ? 'bg-accent text-white shadow-sm font-bold'
-                            : 'text-muted hover:text-foreground'
-                        }`}
+              <div className="relative">
+                {/* Global Timeframe Selector & Settings trigger */}
+                <div className={`flex flex-col ${showSettingsPanel ? 'mb-0' : 'mb-4'}`}>
+                  <div className="flex items-center gap-2">
+                    <div className="flex shrink-0 items-center gap-2 rounded-xl border border-card-border/50 bg-muted-bg/30 px-2 py-1.5">
+                      <span className="text-xs font-semibold text-muted flex items-center gap-1.5">
+                        <Clock size={14} className="text-accent" /> Timeframe:
+                      </span>
+                      <select
+                        value={newInterval}
+                        onChange={(e) => handleGlobalIntervalChange(e.target.value)}
+                        className="cursor-pointer rounded-lg border border-card-border bg-card-bg px-1.5 py-1 text-xs font-bold text-foreground outline-none transition-all focus:border-accent focus:ring-1 focus:ring-accent"
+                        title="Select global timeframe interval for all watchlist symbols"
                       >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setWatchlistCategory(cat.id);
-                            localStorage.setItem('watcher-watchlist-category', cat.id);
-                          }}
-                          className="flex items-center gap-1.5 focus:outline-none"
-                        >
-                          {Icon && <Icon size={14} />}
-                          <span>
-                            {cat.label} ({cat.count})
-                          </span>
-                        </button>
+                        <option value="1m">1m (Test)</option>
+                        <option value="2m">2m</option>
+                        <option value="5m">5m</option>
+                        <option value="10m">10m</option>
+                        <option value="15m">15m</option>
+                        <option value="30m">30m</option>
+                        <option value="45m">45m</option>
+                        <option value="1h">1h</option>
+                      </select>
+                    </div>
 
-                        {hasMuteToggle && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleCategoryScanning(cat.id as 'stocks' | 'crypto' | 'futures');
-                            }}
-                            title={
-                              isOff
-                                ? `${cat.label} background alerts are OFF — click to turn on`
-                                : `${cat.label} background alerts are ON — click to mute`
-                            }
-                            className={`p-0.5 rounded transition-all ml-0.5 ${
-                              isOff
-                                ? 'text-red-400 hover:bg-red-500/20'
-                                : active
-                                  ? 'text-white/80 hover:text-white hover:bg-white/10'
-                                  : 'text-muted hover:text-emerald-400 hover:bg-emerald-500/10'
-                            }`}
-                          >
-                            {isOff ? <BellOff size={13} /> : <Bell size={13} />}
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* EMBEDDED SETTINGS PANEL */}
-              {showSettingsPanel && (
-                <div className="mb-6 p-4 rounded-2xl bg-muted-bg/40 border border-card-border/60 shadow-md space-y-3 animate-fadeIn text-xs">
-                  <div className="flex items-center justify-between font-bold text-foreground pb-2 border-b border-card-border/40">
-                    <span className="flex items-center gap-2">
-                      <Settings size={15} className="text-accent" />
-                      Market Watch Settings & Alerts
-                    </span>
                     <button
-                      onClick={() => setShowSettingsPanel(false)}
-                      className="text-muted hover:text-foreground text-xs font-semibold px-2 py-0.5 rounded hover:bg-card-bg/60"
+                      type="button"
+                      aria-expanded={showSettingsPanel}
+                      aria-controls="market-watch-settings-panel"
+                      onClick={() => setShowSettingsPanel(!showSettingsPanel)}
+                      className={`flex self-stretch items-center gap-1.5 rounded-xl border px-2 py-1.5 text-xs font-bold transition-all ${
+                        showSettingsPanel
+                          ? 'relative z-[101] translate-y-px rounded-b-none bg-accent text-white border-accent shadow-sm'
+                          : 'bg-muted-bg/30 border-card-border/50 text-muted hover:text-foreground hover:bg-card-bg/60'
+                      }`}
+                      title="Market Watch settings"
                     >
-                      Close
+                      <Settings size={14} />
+                      <span>Settings</span>
                     </button>
                   </div>
+                </div>
+
+                {/* EMBEDDED SETTINGS PANEL */}
+                {showSettingsPanel && (
+                  <div
+                    id="market-watch-settings-panel"
+                    className="relative z-[100] mb-4 p-4 rounded-2xl bg-card-bg border border-accent/50 shadow-2xl shadow-background space-y-3 animate-fadeIn text-xs"
+                  >
+                    <div className="flex items-center justify-between font-bold text-foreground pb-2 border-b border-card-border/40">
+                      <span className="flex items-center gap-2">
+                        <Settings size={15} className="text-accent" />
+                        Market Watch Settings
+                      </span>
+                      <button
+                        onClick={() => setShowSettingsPanel(false)}
+                        className="text-muted hover:text-foreground text-xs font-semibold px-2 py-0.5 rounded hover:bg-card-bg/60"
+                      >
+                        Close
+                      </button>
+                    </div>
 
                   {watchlistCategory === 'futures' ? (
                     <div className="flex items-center gap-1.5 text-xs text-amber-400 font-semibold bg-amber-500/10 px-3 py-1.5 rounded-lg border border-amber-500/20">
@@ -3342,8 +3307,92 @@ export default function MarketWatcher() {
                       </div>
                     </div>
                   </div>
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-3 mb-4">
+                  <PatternGuidePanel
+                    value={selectedPatternId}
+                    onChange={handlePatternChange}
+                    selectedValues={selectedPatternIds}
+                    onSelectionChange={handlePatternSelectionChange}
+                    minMovePercent={selectedPatternMinMove}
+                    requiredCount={requiredCandleCount}
+                    maxBodyOverlapPercent={maxBodyOverlapPercent}
+                    onMinMoveChange={handleNewMinMoveChange}
+                    onRequiredCountChange={handleRequiredCandleCountChange}
+                    onMaxBodyOverlapChange={handleMaxBodyOverlapChange}
+                    patternSettings={patternSettings}
+                    onPatternSettingsChange={handlePatternSettingsChange}
+                  />
+
+                  {/* Category Tabs with Integrated Category Mute (Bell) Buttons */}
+                  <div className="flex flex-wrap items-center gap-1.5 bg-muted-bg/40 p-1 rounded-xl border border-card-border/50">
+                    {(
+                      [
+                        { id: 'stocks', label: 'Stocks', icon: ChartCandlestick, count: watchlist.filter((w) => !isFuturesSymbol(w.symbol) && !isCryptoSymbol(w.symbol)).length },
+                        { id: 'crypto', label: 'Crypto', icon: Bitcoin, count: watchlist.filter((w) => isCryptoSymbol(w.symbol)).length },
+                        { id: 'futures', label: 'Futures', icon: Zap, count: watchlist.filter((w) => isFuturesSymbol(w.symbol)).length },
+                        { id: 'all', label: 'All Tickers', icon: null, count: watchlist.length },
+                      ] as const
+                    ).map((cat) => {
+                      const active = watchlistCategory === cat.id;
+                      const Icon = cat.icon;
+                      const hasMuteToggle = cat.id === 'stocks' || cat.id === 'crypto' || cat.id === 'futures';
+                      const isOff = hasMuteToggle && disabledCategories.includes(cat.id);
+
+                      return (
+                        <div
+                          key={cat.id}
+                          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
+                            active
+                              ? 'bg-accent text-white shadow-sm font-bold'
+                              : 'text-muted hover:text-foreground'
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setWatchlistCategory(cat.id);
+                              localStorage.setItem('watcher-watchlist-category', cat.id);
+                            }}
+                            className="flex items-center gap-1.5 focus:outline-none"
+                          >
+                            {Icon && <Icon size={14} />}
+                            <span>
+                              {cat.label} ({cat.count})
+                            </span>
+                          </button>
+
+                          {hasMuteToggle && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleCategoryScanning(cat.id as 'stocks' | 'crypto' | 'futures');
+                              }}
+                              title={
+                                isOff
+                                  ? `${cat.label} background alerts are OFF — click to turn on`
+                                  : `${cat.label} background alerts are ON — click to mute`
+                              }
+                              className={`p-0.5 rounded transition-all ml-0.5 ${
+                                isOff
+                                  ? 'text-red-400 hover:bg-red-500/20'
+                                  : active
+                                    ? 'text-white/80 hover:text-white hover:bg-white/10'
+                                    : 'text-muted hover:text-emerald-400 hover:bg-emerald-500/10'
+                              }`}
+                            >
+                              {isOff ? <BellOff size={13} /> : <Bell size={13} />}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              )}
+              </div>
 
 
 
@@ -3445,49 +3494,24 @@ export default function MarketWatcher() {
               ) : (
                 <div className="space-y-4">
                   {/* Search and Filters Bar */}
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 bg-muted-bg/10 p-3 rounded-xl border border-card-border/30">
+                  <div className="flex flex-col gap-2 rounded-xl border border-card-border/30 bg-muted-bg/10 p-2 md:flex-row md:items-center md:justify-between">
                     <WatchlistViewToggle
                       value={watchlistView}
                       onChange={handleWatchlistViewChange}
                     />
-                    <div className="flex items-center gap-1.5 text-xs">
-                      <button
-                        onClick={() => setFilterMode('all')}
-                        className={`px-2.5 py-1 rounded-md transition-all font-semibold ${
-                          filterMode === 'all'
-                            ? 'bg-accent text-white shadow-sm'
-                            : 'bg-card-bg border border-card-border text-muted hover:text-foreground'
-                        }`}
-                      >
-                        All ({categoryItems.length})
-                      </button>
-                      <button
-                        onClick={() => setFilterMode('alerts')}
-                        className={`px-2.5 py-1 rounded-md transition-all font-semibold flex items-center gap-1 ${
-                          filterMode === 'alerts'
-                            ? 'bg-rose-500 text-white shadow-sm'
-                            : 'bg-card-bg border border-card-border text-muted hover:text-rose-400'
-                        }`}
-                      >
-                        Alerts ({categoryItems.filter(w => w.status === 'bullish' || w.status === 'bearish').length})
-                      </button>
-                      <button
-                        onClick={() => setFilterMode('errors')}
-                        className={`px-2.5 py-1 rounded-md transition-all font-semibold ${
-                          filterMode === 'errors'
-                            ? 'bg-amber-500 text-white shadow-sm'
-                            : 'bg-card-bg border border-card-border text-muted hover:text-amber-400'
-                        }`}
-                      >
-                        Errors ({categoryItems.filter(w => w.status === 'error').length})
-                      </button>
-
-                    </div>
+                    <ChartOverlayControls
+                      patternsEnabled={autoPatternsEnabled}
+                      levelsEnabled={levelsEnabled}
+                      trendlinesEnabled={trendlinesEnabled}
+                      onTogglePatterns={handleToggleAutoPatterns}
+                      onToggleLevels={handleToggleLevels}
+                      onToggleTrendlines={handleToggleTrendlines}
+                    />
                   </div>
 
                   {sortedWatchlist.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-card-border px-4 py-10 text-center text-xs text-muted">
-                      No symbols match the current ticker search and status filter.
+                      No symbols match the current ticker search.
                     </div>
                   ) : watchlistView === 'compact' ? (
                     <CompactWatchlist
@@ -3613,6 +3637,7 @@ export default function MarketWatcher() {
             </div>
           )}
         </div>
+
       </div>
 
       <div className="order-1 lg:order-3 lg:col-span-4">
@@ -3650,6 +3675,10 @@ export default function MarketWatcher() {
             hasMore={testerHistoryPanningEnabled && hasMoreHistory}
             autoPatternsEnabled={autoPatternsEnabled}
             onToggleAutoPatterns={handleToggleAutoPatterns}
+            levelsEnabled={levelsEnabled}
+            onToggleLevels={handleToggleLevels}
+            trendlinesEnabled={trendlinesEnabled}
+            onToggleTrendlines={handleToggleTrendlines}
             testCurrentDayOnly={testCurrentDayOnly}
             onToggleCurrentDayOnly={setTestCurrentDayOnly}
             selectedPatternId={selectedPatternId}

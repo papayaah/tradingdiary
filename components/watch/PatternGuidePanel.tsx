@@ -207,8 +207,8 @@ export function PatternGuidePanel({
         aria-labelledby="pattern-selector-title"
       >
       {/* Compact header: label, selected signal, and an inline-details toggle. */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center justify-between">
+        <div className="flex flex-wrap items-center gap-3">
           <div id="pattern-selector-title" className="flex items-center gap-1.5 text-xs font-bold text-foreground">
             <ScanSearch size={14} className="text-accent" />
             {isMultiSelect ? 'Signal Alerts' : 'Pattern'}
@@ -216,7 +216,7 @@ export function PatternGuidePanel({
         </div>
 
         {/* Selected signal and inline-details toggle. */}
-        <div className="flex min-w-0 flex-1 items-center gap-2 sm:max-w-2xl sm:ml-auto">
+        <div className="flex min-w-0 flex-1 items-center gap-2 lg:max-w-2xl lg:ml-auto">
           <button
             type="button"
             aria-haspopup="listbox"

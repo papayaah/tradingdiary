@@ -35,6 +35,7 @@ services:
       AI_USER_MONTHLY_CREDITS: ${AI_USER_MONTHLY_CREDITS:-50}
       ADMIN_EMAILS: ${ADMIN_EMAILS}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_WATCHLIST_LIMIT: ${ADMIN_WATCHLIST_LIMIT:-500}
       POLYGON_API_KEY: ${POLYGON_API_KEY}
       # Server-side historical FX conversion. Keep this out of client bundles.
       EXCHANGE_RATE_API_KEY: ${EXCHANGE_RATE_API_KEY:-}

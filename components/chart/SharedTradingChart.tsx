@@ -55,6 +55,11 @@ export interface SharedTradingChartProps {
   showVolume?: boolean;
   autoPatternsEnabled?: boolean;
   onTogglePatterns?: () => void;
+  levelsEnabled?: boolean;
+  onToggleLevels?: () => void;
+  trendlinesEnabled?: boolean;
+  onToggleTrendlines?: () => void;
+  showOverlayControls?: boolean;
   onReplayTrade?: () => void;
   title?: string;
   subtitle?: string;
@@ -361,6 +366,11 @@ export default function SharedTradingChart({
   showVolume = true,
   autoPatternsEnabled = false,
   onTogglePatterns,
+  levelsEnabled: controlledLevelsEnabled,
+  onToggleLevels,
+  trendlinesEnabled: controlledTrendlinesEnabled,
+  onToggleTrendlines,
+  showOverlayControls = true,
   onReplayTrade,
   title,
   subtitle,
@@ -390,8 +400,24 @@ export default function SharedTradingChart({
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const patternSeriesRef = useRef<ISeriesApi<'Line'>[]>([]);
   const primitiveRef = useRef<TradeExecutionPrimitive | null>(null);
-  const [levelsEnabled, setLevelsEnabled] = useState(true);
-  const [trendlinesEnabled, setTrendlinesEnabled] = useState(true);
+  const [localLevelsEnabled, setLocalLevelsEnabled] = useState(true);
+  const [localTrendlinesEnabled, setLocalTrendlinesEnabled] = useState(true);
+  const levelsEnabled = controlledLevelsEnabled ?? localLevelsEnabled;
+  const trendlinesEnabled = controlledTrendlinesEnabled ?? localTrendlinesEnabled;
+  const handleToggleLevels = useCallback(() => {
+    if (onToggleLevels) {
+      onToggleLevels();
+      return;
+    }
+    setLocalLevelsEnabled((enabled) => !enabled);
+  }, [onToggleLevels]);
+  const handleToggleTrendlines = useCallback(() => {
+    if (onToggleTrendlines) {
+      onToggleTrendlines();
+      return;
+    }
+    setLocalTrendlinesEnabled((enabled) => !enabled);
+  }, [onToggleTrendlines]);
   const [hoveredTrade, setHoveredTrade] = useState<{
     trade: TransactionRecord;
     x: number;
@@ -1194,51 +1220,53 @@ export default function SharedTradingChart({
           )}
 
           <div className="flex flex-1 items-center gap-1.5 flex-wrap">
-            <div className="flex items-center gap-0.5 rounded-xl border border-card-border/40 bg-muted-bg/50 p-0.5" aria-label="Chart overlays">
-              <button
-                type="button"
-                aria-pressed={autoPatternsEnabled}
-                onClick={onTogglePatterns}
-                disabled={!onTogglePatterns}
-                className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-normal transition-colors ${
-                  autoPatternsEnabled
-                    ? 'bg-card-bg text-foreground shadow-sm'
-                    : 'text-muted hover:bg-card-bg/60 hover:text-foreground'
-                } disabled:cursor-default disabled:opacity-50`}
-                title="Toggle geometric chart patterns"
-              >
-                <Sparkles size={12} className="text-amber-500" />
-                Patterns
-              </button>
-              <button
-                type="button"
-                aria-pressed={levelsEnabled}
-                onClick={() => setLevelsEnabled((enabled) => !enabled)}
-                className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-normal transition-colors ${
-                  levelsEnabled
-                    ? 'bg-card-bg text-foreground shadow-sm'
-                    : 'text-muted hover:bg-card-bg/60 hover:text-foreground'
-                }`}
-                title="Toggle horizontal support and resistance levels"
-              >
-                <Minus size={12} className="text-slate-500" />
-                Levels
-              </button>
-              <button
-                type="button"
-                aria-pressed={trendlinesEnabled}
-                onClick={() => setTrendlinesEnabled((enabled) => !enabled)}
-                className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-normal transition-colors ${
-                  trendlinesEnabled
-                    ? 'bg-card-bg text-foreground shadow-sm'
-                    : 'text-muted hover:bg-card-bg/60 hover:text-foreground'
-                }`}
-                title="Toggle diagonal support and resistance trendlines"
-              >
-                <ChartNoAxesCombined size={12} className="text-blue-500" />
-                Trendlines
-              </button>
-            </div>
+            {showOverlayControls && (
+              <div className="flex items-center gap-0.5 rounded-xl border border-card-border/40 bg-muted-bg/50 p-0.5" aria-label="Chart overlays">
+                <button
+                  type="button"
+                  aria-pressed={autoPatternsEnabled}
+                  onClick={onTogglePatterns}
+                  disabled={!onTogglePatterns}
+                  className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-normal transition-colors ${
+                    autoPatternsEnabled
+                      ? 'bg-card-bg text-foreground shadow-sm'
+                      : 'text-muted hover:bg-card-bg/60 hover:text-foreground'
+                  } disabled:cursor-default disabled:opacity-50`}
+                  title="Toggle geometric chart patterns"
+                >
+                  <Sparkles size={12} className="text-amber-500" />
+                  Patterns
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={levelsEnabled}
+                  onClick={handleToggleLevels}
+                  className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-normal transition-colors ${
+                    levelsEnabled
+                      ? 'bg-card-bg text-foreground shadow-sm'
+                      : 'text-muted hover:bg-card-bg/60 hover:text-foreground'
+                  }`}
+                  title="Toggle horizontal support and resistance levels"
+                >
+                  <Minus size={12} className="text-slate-500" />
+                  Levels
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={trendlinesEnabled}
+                  onClick={handleToggleTrendlines}
+                  className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-normal transition-colors ${
+                    trendlinesEnabled
+                      ? 'bg-card-bg text-foreground shadow-sm'
+                      : 'text-muted hover:bg-card-bg/60 hover:text-foreground'
+                  }`}
+                  title="Toggle diagonal support and resistance trendlines"
+                >
+                  <ChartNoAxesCombined size={12} className="text-blue-500" />
+                  Trendlines
+                </button>
+              </div>
+            )}
 
             {/* Current Day Filter Toggle */}
             {onToggleCurrentDayOnly && (
@@ -1308,7 +1336,7 @@ export default function SharedTradingChart({
         <PatternOverlay
           candles={visibleCandles}
           enabled={autoPatternsEnabled}
-          onToggleEnabled={onTogglePatterns}
+          onToggleEnabled={showOverlayControls ? onTogglePatterns : undefined}
         />
 
         {loading && (

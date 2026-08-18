@@ -1,8 +1,14 @@
 export const GUEST_WATCHLIST_LIMIT = 5;
 export const AUTHENTICATED_WATCHLIST_LIMIT = 20;
+export const ADMIN_WATCHLIST_LIMIT = 500;
 
-export function getWatchlistLimit(authenticated: boolean): number {
-  return authenticated ? AUTHENTICATED_WATCHLIST_LIMIT : GUEST_WATCHLIST_LIMIT;
+export function getWatchlistLimit(
+  authenticated: boolean,
+  isAdmin = false,
+  adminLimit = ADMIN_WATCHLIST_LIMIT,
+): number {
+  if (!authenticated) return GUEST_WATCHLIST_LIMIT;
+  return isAdmin ? adminLimit : AUTHENTICATED_WATCHLIST_LIMIT;
 }
 
 /**
@@ -12,6 +18,7 @@ export function getWatchlistLimit(authenticated: boolean): number {
 export function canPersistAuthenticatedWatchlist(
   nextCount: number,
   currentCount: number,
+  limit = AUTHENTICATED_WATCHLIST_LIMIT,
 ): boolean {
-  return nextCount <= AUTHENTICATED_WATCHLIST_LIMIT || nextCount <= currentCount;
+  return nextCount <= limit || nextCount <= currentCount;
 }

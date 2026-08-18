@@ -20,24 +20,24 @@ export const WatchlistViewToggle = React.memo(function WatchlistViewToggle({
   onChange: (value: WatchlistView) => void;
 }) {
   return (
-    <div className="flex items-center rounded-lg border border-card-border bg-card-bg p-0.5">
+    <div className="flex items-center rounded-xl border border-card-border bg-card-bg p-0.5">
       <button
         type="button"
         onClick={() => onChange('compact')}
-        className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-[10px] font-semibold transition-colors ${
+        className={`flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold transition-colors ${
           value === 'compact' ? 'bg-accent text-white' : 'text-muted hover:text-foreground'
         }`}
       >
-        <LayoutGrid size={12} /> Compact
+        <LayoutGrid size={14} /> Compact
       </button>
       <button
         type="button"
         onClick={() => onChange('table')}
-        className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-[10px] font-semibold transition-colors ${
+        className={`flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold transition-colors ${
           value === 'table' ? 'bg-accent text-white' : 'text-muted hover:text-foreground'
         }`}
       >
-        <List size={12} /> Table
+        <List size={14} /> Table
       </button>
     </div>
   );

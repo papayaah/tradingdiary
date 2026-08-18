@@ -42,6 +42,10 @@ export interface PatternTesterSectionProps {
   hasMore?: boolean;
   autoPatternsEnabled: boolean;
   onToggleAutoPatterns: () => void;
+  levelsEnabled: boolean;
+  onToggleLevels: () => void;
+  trendlinesEnabled: boolean;
+  onToggleTrendlines: () => void;
   testCurrentDayOnly: boolean;
   onToggleCurrentDayOnly: (val: boolean) => void;
   selectedPatternId?: PatternId;
@@ -72,6 +76,10 @@ export function PatternTesterSection({
   hasMore = false,
   autoPatternsEnabled,
   onToggleAutoPatterns,
+  levelsEnabled,
+  onToggleLevels,
+  trendlinesEnabled,
+  onToggleTrendlines,
   testCurrentDayOnly,
   onToggleCurrentDayOnly,
   selectedPatternId = 'consecutive',
@@ -267,6 +275,11 @@ export function PatternTesterSection({
               height={380}
               autoPatternsEnabled={autoPatternsEnabled}
               onTogglePatterns={onToggleAutoPatterns}
+              levelsEnabled={levelsEnabled}
+              onToggleLevels={onToggleLevels}
+              trendlinesEnabled={trendlinesEnabled}
+              onToggleTrendlines={onToggleTrendlines}
+              showOverlayControls={false}
               interval={testInterval}
               onIntervalChange={onIntervalChange}
               currentDayOnly={testCurrentDayOnly}
