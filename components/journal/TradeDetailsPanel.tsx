@@ -6,6 +6,7 @@ import type { AggregatedTrade } from '@/lib/trading/aggregator';
 import { computeTradeDetails, formatDuration } from '@/lib/trading/tradeDetails';
 import { formatCurrency, getCurrencySymbol } from '@/lib/currency';
 import { pnlColorClass } from '@/lib/utils/format';
+import ExecutionAuditPanel from './ExecutionAuditPanel';
 
 interface TradeDetailsPanelProps {
   trade: AggregatedTrade;
@@ -24,6 +25,7 @@ function Row({ label, value, valueClass }: { label: string; value: React.ReactNo
 
 export default function TradeDetailsPanel({ trade, currency = 'USD', className = '' }: TradeDetailsPanelProps) {
   const [showMore, setShowMore] = useState(false);
+  const [showAudit, setShowAudit] = useState(false);
   const d = computeTradeDetails(trade);
   // Prices and position cost are in the trade's NATIVE currency; the P&L amounts
   // are already converted to the account base currency. Label each with its own
@@ -125,6 +127,26 @@ export default function TradeDetailsPanel({ trade, currency = 'USD', className =
           <Row label="Commissions & Fees" value={formatCurrency(d.commissions, currency)} />
           <Row label="Executions" value={d.executions} />
         </div>
+      )}
+
+      {/* Execution audit — per-fill stored values and import provenance. */}
+      {trade.transactions.length > 0 && (
+        <>
+          <button
+            type="button"
+            onClick={() => setShowAudit((v) => !v)}
+            className="flex items-center gap-1 mt-2 text-[10px] font-bold text-muted hover:text-foreground uppercase tracking-wider transition-colors"
+          >
+            {showAudit ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            {showAudit ? 'Hide execution audit' : 'Execution audit'}
+          </button>
+
+          {showAudit && (
+            <div className="mt-2 pt-2 border-t border-card-border/30 animate-in fade-in slide-in-from-top-1 duration-200">
+              <ExecutionAuditPanel transactions={trade.transactions} />
+            </div>
+          )}
+        </>
       )}
     </div>
   );

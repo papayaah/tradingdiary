@@ -20,6 +20,28 @@ export async function recordImportBatch(batch: ImportBatchRecord): Promise<void>
   await db.put('importBatches', batch);
 }
 
+/**
+ * Map each of the given execution ids to the import batch that created it, for
+ * the audit view's provenance ("this fill came from file X via broker Y"). Each
+ * execution is created by exactly one batch (dedup guarantees this), so the first
+ * match wins. Executions with no batch (pre-history imports, manual entry) are
+ * simply absent from the map.
+ */
+export async function findImportSources(
+  tradeIds: string[],
+): Promise<Map<string, ImportBatchRecord>> {
+  const db = await getDB();
+  const batches = await db.getAll('importBatches');
+  const wanted = new Set(tradeIds);
+  const out = new Map<string, ImportBatchRecord>();
+  for (const batch of batches) {
+    for (const id of batch.tradeIds) {
+      if (wanted.has(id) && !out.has(id)) out.set(id, batch);
+    }
+  }
+  return out;
+}
+
 /** Import history, newest first. Optionally scoped to one account. */
 export async function getImportBatches(accountId?: string): Promise<ImportBatchRecord[]> {
   const db = await getDB();

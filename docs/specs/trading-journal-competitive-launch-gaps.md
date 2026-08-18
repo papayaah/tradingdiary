@@ -41,8 +41,13 @@ below. See `flat-to-flat-trade-identity.md` and `journal-persistence-and-sync.md
       warnings, an execution-set checksum, and the exact ids it created;
       Data Management → Recent Imports lists them and can undo one in isolation,
       removing only that batch's executions (`lib/db/import-batches.ts`,
-      `RecentImportsPanel`). **Not yet:** execution audit view (raw-vs-normalized
-      per execution); pre-confirm file-overlap warning.
+      `RecentImportsPanel`). **Execution audit view**: each trade's detail panel
+      has an "Execution audit" section showing every fill's stored (normalized)
+      values plus its provenance — the source file/broker/import-date resolved
+      from the batch that created it (`ExecutionAuditPanel`, `findImportSources`).
+      **Not yet:** capturing the *raw* source row per execution (audit currently
+      shows normalized values + source, not the original untransformed cells);
+      pre-confirm file-overlap warning.
 - [x] Server persistence + live cross-device sync — Postgres tables
       (`trading_account`, `execution`, `trade_group`, notes, tags, review,
       attachment, `journal_event`) with rev + tombstones; `/api/journal/sync`
