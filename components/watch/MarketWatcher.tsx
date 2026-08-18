@@ -19,6 +19,7 @@ import {
   ArrowUp,
   ArrowDown,
   Settings,
+  X,
   Loader2,
   ChevronLeft,
   ChevronRight
@@ -3140,11 +3141,7 @@ export default function MarketWatcher() {
                       aria-expanded={showSettingsPanel}
                       aria-controls="market-watch-settings-panel"
                       onClick={() => setShowSettingsPanel(!showSettingsPanel)}
-                      className={`flex self-stretch items-center gap-1.5 rounded-xl border px-2 py-1.5 text-xs font-bold transition-all ${
-                        showSettingsPanel
-                          ? 'relative z-[101] translate-y-px rounded-b-none bg-accent text-white border-accent shadow-sm'
-                          : 'bg-muted-bg/30 border-card-border/50 text-muted hover:text-foreground hover:bg-card-bg/60'
-                      }`}
+                      className={`flex self-stretch items-center gap-1.5 rounded-xl border border-card-border/50 bg-card-bg px-2 py-1.5 text-xs font-bold text-muted transition-colors hover:bg-muted-bg hover:text-foreground ${showSettingsPanel ? 'relative z-[101]' : ''}`}
                       title="Market Watch settings"
                     >
                       <Settings size={14} />
@@ -3157,7 +3154,7 @@ export default function MarketWatcher() {
                 {showSettingsPanel && (
                   <div
                     id="market-watch-settings-panel"
-                    className="relative z-[100] mb-4 p-4 rounded-2xl bg-card-bg border border-accent/50 shadow-2xl shadow-background space-y-3 animate-fadeIn text-xs"
+                    className="relative z-[100] mb-4 space-y-3 rounded-2xl border border-card-border bg-card-bg p-4 text-xs shadow-2xl shadow-background animate-fadeIn"
                   >
                     <div className="flex items-center justify-between font-bold text-foreground pb-2 border-b border-card-border/40">
                       <span className="flex items-center gap-2">
@@ -3165,10 +3162,13 @@ export default function MarketWatcher() {
                         Market Watch Settings
                       </span>
                       <button
+                        type="button"
                         onClick={() => setShowSettingsPanel(false)}
-                        className="text-muted hover:text-foreground text-xs font-semibold px-2 py-0.5 rounded hover:bg-card-bg/60"
+                        aria-label="Close Market Watch settings"
+                        title="Close Market Watch settings (Esc)"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-card-border bg-card-bg/90 text-muted shadow-sm transition-colors hover:bg-muted-bg hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
                       >
-                        Close
+                        <X size={16} />
                       </button>
                     </div>
 

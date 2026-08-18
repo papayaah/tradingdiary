@@ -53,10 +53,9 @@ export default function AuthModal({ callbackURL, onClose }: AuthModalProps) {
           onClick={onClose}
           aria-label="Close sign-in"
           title="Close sign-in (Esc)"
-          className="absolute -right-2 -top-12 inline-flex h-9 items-center gap-2 rounded-xl border border-white/15 bg-slate-900/90 px-3 text-xs font-bold text-slate-200 transition hover:bg-slate-800"
+          className="absolute right-3 top-3 z-30 inline-flex h-9 w-9 items-center justify-center rounded-full border border-card-border bg-card-bg/90 text-muted shadow-lg backdrop-blur-md transition-colors hover:bg-muted-bg hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
         >
-          <X size={16} />
-          Close
+          <X size={18} />
         </button>
 
         <AuthCard
