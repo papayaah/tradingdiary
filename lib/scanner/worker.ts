@@ -312,6 +312,11 @@ export async function writeHeartbeat(status = 'ok', detail?: unknown): Promise<v
     });
 }
 
+/** Remove this worker's heartbeat row so a stopped worker leaves no ghost. */
+export async function deleteHeartbeat(): Promise<void> {
+  await db.delete(scannerHeartbeat).where(eq(scannerHeartbeat.workerId, scannerConfig.workerId));
+}
+
 /** Create the BullMQ worker that consumes scan jobs. */
 export function createScanWorker(): Worker<ScanJob> {
   return new Worker<ScanJob>(

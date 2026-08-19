@@ -5,7 +5,7 @@
 import '@/lib/scanner/load-env';
 import { scannerConfig } from '@/lib/scanner/env';
 import { scheduleDueWatches } from '@/lib/scanner/scheduler';
-import { createScanWorker, writeHeartbeat } from '@/lib/scanner/worker';
+import { createScanWorker, writeHeartbeat, deleteHeartbeat } from '@/lib/scanner/worker';
 import { getSharedCandleService } from '@/lib/scanner/shared/shared-candle-service';
 import { createGovernor, recomputeGovernor } from '@/lib/scanner/shared/governor-runtime';
 import { AcquisitionScheduler } from '@/lib/scanner/acquisition-scheduler';
@@ -180,7 +180,9 @@ async function main() {
     clearInterval(heartbeatTimer);
     clearInterval(controlTimer);
     if (governorTimer) clearInterval(governorTimer);
-    await writeHeartbeat('offline', { event: 'shutdown' }).catch(() => {});
+    // Remove the heartbeat row so a stopped worker leaves no ghost in the admin
+    // "workers" list; an ungraceful exit is still covered by staleness detection.
+    await deleteHeartbeat().catch(() => {});
     await worker.close();
     process.exit(0);
   };

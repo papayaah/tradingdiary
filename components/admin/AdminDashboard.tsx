@@ -982,7 +982,9 @@ export default function AdminDashboard() {
             <div className="grid grid-cols-3 gap-3 text-xs">
               <div className="bg-muted-bg p-3 rounded-lg border border-card-border">
                 <span className="text-muted block mb-1">Worker Instances</span>
-                <span className="text-base font-bold text-foreground">{queueInfo.workers.length}</span>
+                <span className="text-base font-bold text-foreground">
+                  {queueInfo.workers.filter((w) => Date.now() - parseServerTimestampMs(w.lastBeatAt) <= 60_000).length}
+                </span>
               </div>
 
               <div className="bg-muted-bg p-3 rounded-lg border border-card-border">
@@ -1006,16 +1008,23 @@ export default function AdminDashboard() {
 
           {queueInfo?.workers && queueInfo.workers.length > 0 ? (
             <div className="space-y-2">
-              <span className="text-xs font-medium text-muted">Active Scanner Workers</span>
+              <span className="text-xs font-medium text-muted">Scanner Workers</span>
               <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
-                {queueInfo.workers.map((w) => (
-                  <div key={w.workerId} className="flex items-center justify-between text-xs p-2 bg-muted-bg/50 rounded-lg">
-                    <span className="font-mono text-foreground">{w.workerId}</span>
-                    <span className="text-muted text-[11px]">
-                      Beat {new Date(parseServerTimestampMs(w.lastBeatAt)).toLocaleTimeString()}
-                    </span>
-                  </div>
-                ))}
+                {queueInfo.workers.map((w) => {
+                  const stale = Date.now() - parseServerTimestampMs(w.lastBeatAt) > 60_000;
+                  return (
+                    <div key={w.workerId} className="flex items-center justify-between text-xs p-2 bg-muted-bg/50 rounded-lg">
+                      <span className="font-mono text-foreground">
+                        <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle ${stale ? 'bg-loss' : 'bg-profit'}`} />
+                        {w.workerId}
+                      </span>
+                      <span className={`text-[11px] ${stale ? 'text-loss' : 'text-muted'}`}>
+                        {stale ? 'Offline · last beat ' : 'Beat '}
+                        {new Date(parseServerTimestampMs(w.lastBeatAt)).toLocaleTimeString()}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           ) : (
