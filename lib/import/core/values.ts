@@ -38,6 +38,10 @@ export function parseBrokerNumber(value: string): number | undefined {
 
 export function splitBrokerDateTime(value: string): { date: string; time: string } {
   const clean = value.trim();
+  const ibkrCompact = clean.match(/^(\d{8})[;,](\d{6})$/);
+  if (ibkrCompact) {
+    return { date: normalizeDate(ibkrCompact[1]), time: normalizeTime(ibkrCompact[2]) };
+  }
   const match = clean.match(/^(.+?)(?:[ T](\d{1,2}:\d{2}(?::\d{2})?)(?:\s*[A-Z]{2,4})?)?$/i);
   const datePart = match?.[1] || clean;
   const timePart = match?.[2] || '00:00:00';

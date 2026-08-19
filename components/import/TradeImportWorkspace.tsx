@@ -9,6 +9,8 @@ import ColumnMapper from '@/components/import/ColumnMapper';
 import ImportPreview from '@/components/import/ImportPreview';
 import IBKRExportGuide from '@/components/import/IBKRExportGuide';
 import IBKRFlexQueryGuide from '@/components/import/IBKRFlexQueryGuide';
+import IBKRFlexQueryAIGuide from '@/components/import/IBKRFlexQueryAIGuide';
+import IBKRFlexConnectionPanel from '@/components/import/ibkr-flex/IBKRFlexConnectionPanel';
 import ESignalExportGuide from '@/components/import/ESignalExportGuide';
 import { useAIManagementContextOptional } from '@/packages/ai-connect/src/components';
 import { parseCSVOrText } from '@/lib/import/utils/csv-extractor';
@@ -146,6 +148,9 @@ export default function TradeImportWorkspace() {
         quantity: Math.abs(qty),
         price: Math.abs(price),
         orderId: get('orderId'),
+        accountId: get('accountId'),
+        assetClass: get('assetClass'),
+        multiplier: Math.abs(parseAmount(get('multiplier'))) || undefined,
         companyName: companyName ? cleanSymbol(companyName) : symbol,
         currency: get('currency') || 'USD',
         totalValue: total,
@@ -611,7 +616,7 @@ export default function TradeImportWorkspace() {
         <div>
           <h1 className="hidden sm:block text-3xl font-bold text-foreground">Import Trades</h1>
           <p className="text-muted mt-2">
-            Upload CSV, TLG, or drop a screenshot of your trade history.
+            Connect a broker for automatic sync, or upload an export manually.
           </p>
         </div>
 
@@ -633,6 +638,17 @@ export default function TradeImportWorkspace() {
 
       {step === 'upload' && (
         <div className="space-y-6">
+          <IBKRFlexConnectionPanel />
+
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-card-border" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-3 text-muted font-bold tracking-wider">Manual import</span>
+            </div>
+          </div>
+
           <DropZone onData={handleData} onFiles={handleFiles} isProcessing={isProcessing} />
 
           <div className="relative">
@@ -707,6 +723,7 @@ export default function TradeImportWorkspace() {
           {/* Broker export guides — collapsed by default, expand on request. */}
           <div className="space-y-3">
             <IBKRExportGuide />
+            <IBKRFlexQueryAIGuide />
             <IBKRFlexQueryGuide />
             <ESignalExportGuide />
           </div>

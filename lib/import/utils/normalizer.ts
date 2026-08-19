@@ -58,6 +58,7 @@ export function normalizeTime(timeStr: string): string {
         // Maybe just "HHmm"?
         const digits = clean.replace(/\D/g, '');
         if (digits.length === 4) return `${digits.substring(0, 2)}:${digits.substring(2, 4)}:00`;
+        if (digits.length === 6) return `${digits.substring(0, 2)}:${digits.substring(2, 4)}:${digits.substring(4, 6)}`;
         return '00:00:00';
     }
 

@@ -39,6 +39,9 @@ services:
       POLYGON_API_KEY: ${POLYGON_API_KEY}
       TIINGO_API_KEY: ${TIINGO_API_KEY:-}
       EQUITIES_PROVIDER: ${EQUITIES_PROVIDER:-auto}
+      # Encrypts user-owned IBKR Flex tokens at rest. Must be identical in the
+      # web and scanner containers and remain stable across deploys.
+      IBKR_FLEX_ENCRYPTION_KEY: ${IBKR_FLEX_ENCRYPTION_KEY}
       # Server-side historical FX conversion. Keep this out of client bundles.
       EXCHANGE_RATE_API_KEY: ${EXCHANGE_RATE_API_KEY:-}
       # IBKR gateway for the browser chart's /api/watch futures fetches. Uses a
@@ -114,6 +117,10 @@ services:
       POLYGON_API_KEY: ${POLYGON_API_KEY:-}
       TIINGO_API_KEY: ${TIINGO_API_KEY:-}
       EQUITIES_PROVIDER: ${EQUITIES_PROVIDER:-auto}
+      IBKR_FLEX_ENCRYPTION_KEY: ${IBKR_FLEX_ENCRYPTION_KEY}
+      IBKR_FLEX_DAILY_HOUR_ET: ${IBKR_FLEX_DAILY_HOUR_ET:-6}
+      IBKR_FLEX_SYNC_BATCH_SIZE: ${IBKR_FLEX_SYNC_BATCH_SIZE:-10}
+      IBKR_FLEX_SCHEDULER_TICK_MS: ${IBKR_FLEX_SCHEDULER_TICK_MS:-60000}
       # IBKR Gateway (CME futures) — reached over the shared external network, not
       # a host port. 4003 is the container-internal socat bridge for the LIVE API
       # (4001 is the gateway's own loopback bind; 4003 is what other containers use).

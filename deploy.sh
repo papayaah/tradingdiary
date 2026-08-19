@@ -76,6 +76,9 @@ npm run build
 # 2. Prepare remote directory
 echo "Syncing code to server..."
 run "ssh_cmd \"mkdir -p '$REMOTE_BASE'\""
+# Deployment connection details belong only on the operator's machine. Older
+# versions of this script did not exclude this file, so remove any stale copy.
+run "ssh_cmd \"rm -f '$REMOTE_BASE/.env.deploy'\""
 
 # 3. Sync code (excluding artifacts/vcs)
 run "rsync -az --delete \
@@ -87,6 +90,7 @@ run "rsync -az --delete \
   --exclude '.DS_Store' \
   --exclude '.env' \
   --exclude '.env.local' \
+  --exclude '.env.deploy' \
   --exclude '.env.ibkr' \
   --exclude '.env.ibkr.primary' \
   \"$ROOT_DIR/\" \"$REMOTE_HOST:$REMOTE_BASE/\""

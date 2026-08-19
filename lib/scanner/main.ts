@@ -11,6 +11,7 @@ import { createGovernor, recomputeGovernor } from '@/lib/scanner/shared/governor
 import { AcquisitionScheduler } from '@/lib/scanner/acquisition-scheduler';
 import { readScannerControl } from '@/lib/scanner/control';
 import { setRuntimeEquitiesProvider } from '@/lib/chart/providers';
+import { syncDueIbkrFlexConnections } from '@/lib/ibkr-flex/scheduler';
 
 async function main() {
   const initialControl = await readScannerControl();
@@ -146,6 +147,32 @@ async function main() {
     }
   }
 
+  let flexSyncRunning = false;
+  const runFlexSync = async () => {
+    if (flexSyncRunning) return;
+    flexSyncRunning = true;
+    try {
+      const result = await syncDueIbkrFlexConnections();
+      if (result.due > 0) {
+        console.log(
+          `[scanner] IBKR Flex due=${result.due} synced=${result.synced} failed=${result.failed}`,
+        );
+      }
+    } catch (err) {
+      console.error('[scanner] IBKR Flex scheduler error:', err instanceof Error ? err.message : err);
+    } finally {
+      flexSyncRunning = false;
+    }
+  };
+
+  // Flex imports are account maintenance, not market scanning, so they continue
+  // even when the live scanner is globally paused.
+  await runFlexSync();
+  const flexSyncTimer = setInterval(
+    () => void runFlexSync(),
+    Math.max(30_000, Number(process.env.IBKR_FLEX_SCHEDULER_TICK_MS ?? 60_000)),
+  );
+
   const scheduleTimer = setInterval(async () => {
     if (scannerPaused) return;
     try {
@@ -179,6 +206,7 @@ async function main() {
     clearInterval(acquisitionTimer);
     clearInterval(heartbeatTimer);
     clearInterval(controlTimer);
+    clearInterval(flexSyncTimer);
     if (governorTimer) clearInterval(governorTimer);
     // Remove the heartbeat row so a stopped worker leaves no ghost in the admin
     // "workers" list; an ungraceful exit is still covered by staleness detection.

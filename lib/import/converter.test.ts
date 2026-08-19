@@ -75,4 +75,27 @@ describe('toTransactionRecords — deterministic identity', () => {
     expect(records[0].side).toBe('BUYTOOPEN');
     expect(records[1].side).toBe('SELLTOCLOSE');
   });
+
+  it('preserves futures multipliers in the execution value', () => {
+    const [record] = toTransactionRecords(
+      [tx({ symbol: 'MES', quantity: 2, price: 5_000, multiplier: 5, orderId: 'future-1' })],
+      'acc-1',
+      'USD',
+    );
+    expect(record.multiplier).toBe(5);
+    expect(record.totalValue).toBe(50_000);
+  });
+
+  it('keeps identity stable when inferred open/close context changes', () => {
+    const execution = tx({ side: 'SELL', orderId: 'ibkr-transaction-42' });
+    const withoutPriorPosition = toTransactionRecords([execution], 'acc-1', 'USD')[0];
+    const withPriorPosition = toTransactionRecords([
+      tx({ side: 'BUY', time: '09:00:00', orderId: 'prior' }),
+      execution,
+    ], 'acc-1', 'USD')[1];
+
+    expect(withoutPriorPosition.side).toBe('SELLTOOPEN');
+    expect(withPriorPosition.side).toBe('SELLTOCLOSE');
+    expect(withoutPriorPosition.tradeId).toBe(withPriorPosition.tradeId);
+  });
 });

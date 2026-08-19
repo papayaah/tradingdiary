@@ -17,6 +17,7 @@
     "video:gif:consecutive": "npx -p @remotion/cli@4.0.500 remotion render ConsecutiveMove marketing/videos/output/consecutive-pattern-promo.gif --codec=gif --scale=0.5",
     "video:render:ibkr": "npx -p @remotion/cli@4.0.500 remotion render IBKRGuidePromo marketing/videos/output/ibkr-tradelog-tutorial.mp4",
     "video:gif:ibkr": "npx -p @remotion/cli@4.0.500 remotion render IBKRGuidePromo marketing/videos/output/ibkr-tradelog-tutorial.gif --codec=gif --scale=0.5",
+    "video:render:ibkr-flex": "npx -p @remotion/cli@4.0.500 remotion render IBKRFlexGuidePromo marketing/videos/output/ibkr-flex-tutorial.mp4",
     "video:render:import": "npx -p @remotion/cli@4.0.500 remotion render ImportPromo marketing/videos/output/import-promo.mp4",
     "video:gif:import": "npx -p @remotion/cli@4.0.500 remotion render ImportPromo marketing/videos/output/import-promo.gif --codec=gif --scale=0.5",
     "video:render:replay": "npx -p @remotion/cli@4.0.500 remotion render ReplayPromo marketing/videos/output/replay-promo.mp4",

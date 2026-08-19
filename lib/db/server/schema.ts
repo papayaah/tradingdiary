@@ -76,6 +76,32 @@ export const projects = pgTable("projects", {
     updatedAt: timestamp("updated_at", { mode: 'string' }).defaultNow(),
 });
 
+// One encrypted IBKR Flex Web Service connection per user. The browser only
+// receives the non-secret status fields; `encryptedToken` is decrypted inside
+// authenticated routes or the long-lived sync worker immediately before use.
+export const ibkrFlexConnection = pgTable("ibkr_flex_connection", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
+    queryId: text("query_id").notNull(),
+    encryptedToken: text("encrypted_token").notNull(),
+    tokenLastFour: text("token_last_four").notNull(),
+    status: text("status").notNull().default('active'), // active | syncing | error | action_required
+    lastSyncedAt: timestamp("last_synced_at", { mode: 'string' }),
+    nextSyncAt: timestamp("next_sync_at", { mode: 'string' }).notNull().defaultNow(),
+    lastAttemptAt: timestamp("last_attempt_at", { mode: 'string' }),
+    lastImportedCount: integer("last_imported_count").notNull().default(0),
+    totalImportedCount: integer("total_imported_count").notNull().default(0),
+    lastReportCount: integer("last_report_count").notNull().default(0),
+    consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+    lastErrorCode: text("last_error_code"),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { mode: 'string' }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: 'string' }).notNull().defaultNow(),
+}, (t) => [
+    uniqueIndex("ibkr_flex_connection_user_uq").on(t.userId),
+    index("ibkr_flex_connection_due_idx").on(t.status, t.nextSyncAt),
+]);
+
 export const userWatchlists = pgTable("user_watchlists", {
     id: uuid("id").primaryKey().defaultRandom(),
     userId: text("user_id").notNull().references(() => user.id, { onDelete: 'cascade' }),
@@ -578,4 +604,3 @@ export const journalEvent = pgTable("journal_event", {
 }, (t) => [
     index("journal_event_user_seq_idx").on(t.userId, t.seq),
 ]);
-

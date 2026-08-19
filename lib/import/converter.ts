@@ -25,6 +25,7 @@ export function toTransactionRecord(
     const dateStr = n.date;
     const time = n.time || '00:00:00';
     const price = Math.abs(n.price);
+    const multiplier = n.multiplier && n.multiplier > 0 ? n.multiplier : 1;
 
     let side: TransactionRecord['side'];
 
@@ -55,7 +56,7 @@ export function toTransactionRecord(
         accountId,
         n.orderId?.trim() || '',
         symbol,
-        side,
+        n.side,
         dateStr,
         time,
         qty,
@@ -77,9 +78,9 @@ export function toTransactionRecord(
         time,
         currency: n.currency || defaultCurrency,
         quantity: qty,
-        multiplier: 1,
+        multiplier,
         price: Math.abs(n.price),
-        totalValue: n.totalValue ?? (qty * Math.abs(n.price)),
+        totalValue: n.totalValue ?? (qty * Math.abs(n.price) * multiplier),
         commission: n.commission || 0,
         feeMultiplier: 1,
         realizedPnL: n.realizedPnL,

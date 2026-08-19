@@ -8,7 +8,10 @@ export interface NormalizedTransaction {
 
     // Optional
     time?: string;          // HH:MM:SS, defaults to "00:00:00"
+    accountId?: string;     // broker account identifier, used by server-side connectors
     orderId?: string;       // becomes tradeId, auto-generated if missing
+    assetClass?: string;    // e.g. STK or FUT
+    multiplier?: number;    // futures/option contract multiplier
     companyName?: string;   // defaults to symbol
     currency?: string;      // defaults to "USD"
     exchanges?: string;     // defaults to ""

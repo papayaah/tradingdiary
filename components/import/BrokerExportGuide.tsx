@@ -120,9 +120,11 @@ export default function BrokerExportGuide({
                     >
                       {index + 1}
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <h5 className="text-xs font-bold text-foreground">{step.title}</h5>
-                      <p className="text-[11px] text-muted leading-relaxed mt-0.5">{step.body}</p>
+                      <div className="text-[11px] text-muted leading-relaxed mt-0.5">
+                        {step.body}
+                      </div>
                     </div>
                   </div>
                 ))}

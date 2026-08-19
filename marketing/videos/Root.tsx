@@ -3,6 +3,7 @@ import React from 'react';
 import { AnalyticsPromo } from './compositions/AnalyticsPromo';
 import { AutoScanPromo } from './compositions/AutoScanPromo';
 import { IBKRGuidePromo } from './compositions/IBKRGuidePromo';
+import { IBKRFlexGuidePromo } from './compositions/IBKRFlexGuidePromo';
 import { ImportPromo } from './compositions/ImportPromo';
 import { PatternPromo } from './compositions/PatternPromo';
 import { ProductMashupPromo } from './compositions/ProductMashupPromo';
@@ -153,6 +154,14 @@ export function VideoRoot() {
         width={WIDTH}
         height={HEIGHT}
         defaultProps={{ themeMode: 'dark' }}
+      />
+      <Composition
+        id="IBKRFlexGuidePromo"
+        component={IBKRFlexGuidePromo}
+        durationInFrames={720}
+        fps={FPS}
+        width={1920}
+        height={1080}
       />
       {/* Pattern Promo Main */}
       <Composition
