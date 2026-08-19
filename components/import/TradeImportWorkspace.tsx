@@ -8,6 +8,7 @@ import DropZone from '@/components/import/DropZone';
 import ColumnMapper from '@/components/import/ColumnMapper';
 import ImportPreview from '@/components/import/ImportPreview';
 import IBKRExportGuide from '@/components/import/IBKRExportGuide';
+import IBKRFlexQueryGuide from '@/components/import/IBKRFlexQueryGuide';
 import ESignalExportGuide from '@/components/import/ESignalExportGuide';
 import { useAIManagementContextOptional } from '@/packages/ai-connect/src/components';
 import { parseCSVOrText } from '@/lib/import/utils/csv-extractor';
@@ -706,6 +707,7 @@ export default function TradeImportWorkspace() {
           {/* Broker export guides — collapsed by default, expand on request. */}
           <div className="space-y-3">
             <IBKRExportGuide />
+            <IBKRFlexQueryGuide />
             <ESignalExportGuide />
           </div>
         </div>
