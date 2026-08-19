@@ -12,7 +12,7 @@ Tracks the **Suggested implementation sequence** below.
 - ✅ **Step 2 — Pattern detector module.** Shared server-safe engine in `lib/scanner/patterns.ts` (Vitest unit tested).
 - ✅ **Steps 3–5 — Scanner worker daemon.** BullMQ worker, scheduler, Redis rate-limiting, and PostgreSQL scheduling running 24/7 in `tradingdiary-scanner` container.
 - ✅ **Step 6 — Snapshot API & live SSE stream.** `/api/watch/state` (auth'd snapshot) and `/api/watch/events` (auth'd live SSE stream with `pg_notify` bridge).
-- ✅ **Step 7 — BullMQ queue dashboard & health API.** `GET /api/admin/queues` route and `BullMQStatusCard` in Settings page.
+- ✅ **Step 7 — BullMQ queue dashboard & health API.** `GET /api/admin/queues` and the Admin Dashboard provide operator-only queue visibility.
 - ✅ **Step 8 — Client UI snapshot & live SSE integration.** `MarketWatcher.tsx` loads the server snapshot, consumes live SSE events, and triggers high-DPI canvas alerts. The legacy per-symbol round-robin fetch loop is now gated on `!isAuthenticated`, so a signed-in tab is a **pure viewer** (snapshot + SSE only, no browser fetching) — no more double-scanning or duplicate provider load. Settings (pattern, session, scan frequency, category on/off) are server-authoritative: written via sync and hydrated from the server on load. The default session is `all` (was `pre`, which silently muted stocks during regular hours).
 - ✅ **Step 9 — Direct row sync.** Watchlist items sync directly into `server_watch` rows for background scanning.
 - ✅ **Step 10 — Closed-browser Web Push notifications.** VAPID keys, Service Worker (`public/sw.js`), `/api/push/subscribe` endpoint, and `sendWebPushToUser` worker integration for closed-browser mobile & desktop push alerts.

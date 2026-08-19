@@ -22,7 +22,11 @@ function slugifyProvider(name: string): string {
   // Tiingo equity and crypto endpoints consume the same server API key/plan,
   // so they share one entitlement/quota scope. Fetch scope still keeps their
   // snapshots technically isolated.
-  const quotaOwner = name === 'Tiingo Crypto' ? 'Tiingo' : name;
+  const quotaOwner = name === 'Tiingo Crypto'
+    ? 'Tiingo'
+    : name === 'IBKR (Stocks)'
+      ? 'IBKR (CME)'
+      : name;
   return quotaOwner
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')

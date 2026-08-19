@@ -10,8 +10,12 @@ import { getSharedCandleService } from '@/lib/scanner/shared/shared-candle-servi
 import { createGovernor, recomputeGovernor } from '@/lib/scanner/shared/governor-runtime';
 import { AcquisitionScheduler } from '@/lib/scanner/acquisition-scheduler';
 import { readScannerControl } from '@/lib/scanner/control';
+import { setRuntimeEquitiesProvider } from '@/lib/chart/providers';
 
 async function main() {
+  const initialControl = await readScannerControl();
+  setRuntimeEquitiesProvider(initialControl.equitiesProvider);
+
   console.log(
     `[scanner] starting worker=${scannerConfig.workerId} shadow=${scannerConfig.shadow} ` +
       `concurrency=${scannerConfig.concurrency} redis=${scannerConfig.redisUrl}`,
@@ -77,24 +81,38 @@ async function main() {
   });
   worker.on('error', (err) => console.error('[scanner] worker error:', err.message));
 
-  let scannerPaused = false;
+  let scannerPaused = initialControl.paused;
+  let equitiesProvider = initialControl.equitiesProvider;
   let controlCheckRunning = false;
   const syncGlobalControl = async () => {
     if (controlCheckRunning) return;
     controlCheckRunning = true;
     try {
       const control = await readScannerControl();
-      if (control.paused === scannerPaused) return;
-      scannerPaused = control.paused;
-      if (scannerPaused) {
-        await worker.pause();
-        console.warn('[scanner] GLOBALLY PAUSED — acquisitions, scheduling, and evaluations stopped');
-      } else {
-        worker.resume();
-        console.log('[scanner] global pause cleared — scanner resumed');
+      let changed = false;
+      if (control.paused !== scannerPaused) {
+        changed = true;
+        scannerPaused = control.paused;
+        if (scannerPaused) {
+          await worker.pause();
+          console.warn('[scanner] GLOBALLY PAUSED — acquisitions, scheduling, and evaluations stopped');
+        } else {
+          worker.resume();
+          console.log('[scanner] global pause cleared — scanner resumed');
+        }
       }
+      if (control.equitiesProvider !== equitiesProvider) {
+        changed = true;
+        equitiesProvider = control.equitiesProvider;
+        setRuntimeEquitiesProvider(equitiesProvider);
+        acquisitionScheduler.invalidateInventory();
+        await recomputeGovernorCadence();
+        console.log(`[scanner] equities provider changed to ${equitiesProvider}`);
+      }
+      if (!changed) return;
       await writeHeartbeat(scannerPaused ? 'paused' : 'ok', {
-        event: scannerPaused ? 'global-pause' : 'global-resume',
+        event: 'global-control-change',
+        equitiesProvider,
         changedAt: control.changedAt,
       });
     } catch (err) {
@@ -104,14 +122,15 @@ async function main() {
     }
   };
 
-  const initialControl = await readScannerControl();
-  scannerPaused = initialControl.paused;
   if (scannerPaused) {
     await worker.pause();
     console.warn('[scanner] GLOBALLY PAUSED — persisted control restored at startup');
   }
 
-  await writeHeartbeat(scannerPaused ? 'paused' : 'ok', { event: 'startup' });
+  await writeHeartbeat(scannerPaused ? 'paused' : 'ok', {
+    event: 'startup',
+    equitiesProvider,
+  });
 
   // Startup reconciliation: immediately enqueue any already-due watches rather
   // than waiting for the first interval. Because the scheduler reads due watches

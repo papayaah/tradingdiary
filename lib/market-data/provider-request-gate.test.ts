@@ -4,6 +4,7 @@ import { providerCredentialScope, providerScopeForName } from './provider-reques
 describe('provider request credential scopes', () => {
   it('uses one stable server scope for shared owner credentials', () => {
     expect(providerScopeForName('IBKR (CME)')).toBe('ibkr-cme:server');
+    expect(providerScopeForName('IBKR (Stocks)')).toBe('ibkr-cme:server');
     expect(providerCredentialScope('Tiingo', 'server-secret', 'owner')).toBe('tiingo:server');
     expect(providerCredentialScope('Tiingo Crypto', 'server-secret', 'owner')).toBe('tiingo:server');
   });

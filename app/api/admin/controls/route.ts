@@ -5,7 +5,12 @@ import { db } from '@/lib/scanner/db';
 import { serverWatch } from '@/lib/db/server/schema';
 import { eq } from 'drizzle-orm';
 import { evaluateJobId, getScanQueue, type ScanJob } from '@/lib/scanner/queue';
-import { readScannerControl, writeScannerControl } from '@/lib/scanner/control';
+import {
+  isEquitiesProvider,
+  readScannerControl,
+  writeEquitiesProvider,
+  writeScannerControl,
+} from '@/lib/scanner/control';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,7 +21,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
   const control = await readScannerControl();
-  return NextResponse.json({ success: true, control });
+  return NextResponse.json({
+    success: true,
+    control,
+    providerAvailability: {
+      auto: true,
+      ibkr: Boolean(process.env.IBKR_GATEWAY_HOST) || process.env.IBKR_ENABLED === 'true',
+      tiingo: Boolean(process.env.TIINGO_API_KEY),
+      polygon: Boolean(process.env.POLYGON_API_KEY),
+      yahoo: true,
+    },
+  });
 }
 
 export async function POST(request: Request) {
@@ -37,6 +52,18 @@ export async function POST(request: Request) {
         message: control.paused
           ? 'Scanner paused globally. In-flight work may finish; no new work will start.'
           : 'Scanner resumed globally.',
+      });
+    }
+
+    if (action === 'set-equities-provider') {
+      if (!isEquitiesProvider(body?.provider)) {
+        return NextResponse.json({ success: false, error: 'Unsupported equities provider' }, { status: 400 });
+      }
+      const control = await writeEquitiesProvider(body.provider, session.user.email);
+      return NextResponse.json({
+        success: true,
+        control,
+        message: `Equities provider changed to ${body.provider}. Scanner workers will apply it shortly.`,
       });
     }
 

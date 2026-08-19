@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ibkrContractSpecForRoot } from './ibkr-client';
+import { ibkrContractSpecForRoot, ibkrEquityContractSpec } from './ibkr-client';
+import { SecType } from '@stoqey/ib';
 
 describe('IBKR futures contract routing', () => {
   it.each([
@@ -16,6 +17,17 @@ describe('IBKR futures contract routing', () => {
     expect(ibkrContractSpecForRoot('BTC')).toEqual({
       symbol: 'BRR',
       exchange: 'CME',
+      currency: 'USD',
+    });
+  });
+});
+
+describe('IBKR equity contract routing', () => {
+  it('builds a SMART-routed stock contract', () => {
+    expect(ibkrEquityContractSpec(' aapl ')).toEqual({
+      symbol: 'AAPL',
+      secType: SecType.STK,
+      exchange: 'SMART',
       currency: 'USD',
     });
   });

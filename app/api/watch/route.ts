@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getActiveProvider, YahooProvider, effectiveProviderName } from '@/lib/chart/providers';
 import { newYorkTradingDate } from '@/lib/scanner/candles';
+import { parseScannerControl, readScannerControl } from '@/lib/scanner/control';
 
 const newYorkDate = (timestampMs: number) =>
   new Date(timestampMs).toLocaleDateString('en-US', {
@@ -22,21 +23,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const cookies = request.cookies;
-    const preferredProvider = cookies.get('watcher_pref_provider')?.value;
-    const alpacaKeyId = cookies.get('watcher_alpaca_key_id')?.value;
-    const alpacaSecret = cookies.get('watcher_alpaca_secret')?.value;
-    const twelveKey = cookies.get('watcher_twelve_key')?.value;
-    const polygonKey = cookies.get('watcher_polygon_key')?.value;
-    const tiingoKey = cookies.get('watcher_tiingo_key')?.value;
+    const control = await readScannerControl().catch(() => parseScannerControl(null));
 
     const provider = getActiveProvider(symbol, {
-      preferredProvider,
-      alpacaKeyId,
-      alpacaSecret,
-      twelveKey,
-      polygonKey,
-      tiingoKey,
+      preferredEquitiesProvider: control.equitiesProvider,
     });
     const isFutures = symbol.toUpperCase().endsWith('=F')
       || symbol.toUpperCase().includes('.C.0')

@@ -195,6 +195,20 @@ interface AIUsageData {
   trend: Array<{ day: string; requests: number; credits: number; costUsd: number }>;
 }
 
+type AdminEquitiesProvider = 'auto' | 'ibkr' | 'tiingo' | 'polygon' | 'yahoo';
+
+const EQUITIES_PROVIDER_OPTIONS: Array<{
+  id: AdminEquitiesProvider;
+  name: string;
+  description: string;
+}> = [
+  { id: 'auto', name: 'Automatic', description: 'Use the first configured server provider.' },
+  { id: 'ibkr', name: 'IBKR Gateway', description: 'SMART-routed US stocks and ETFs.' },
+  { id: 'tiingo', name: 'Tiingo IEX', description: 'Server-funded Tiingo equities feed.' },
+  { id: 'polygon', name: 'Polygon / Massive', description: 'Server-funded Polygon aggregates.' },
+  { id: 'yahoo', name: 'Yahoo Finance', description: 'Keyless fallback market data.' },
+];
+
 function formatCadence(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return '—';
   if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
@@ -216,6 +230,8 @@ export default function AdminDashboard() {
   const [aiUsage, setAIUsage] = useState<AIUsageData | null>(null);
   const [allowlistConfigured, setAllowlistConfigured] = useState<boolean>(true);
   const [scannerPaused, setScannerPaused] = useState(false);
+  const [equitiesProvider, setEquitiesProvider] = useState<AdminEquitiesProvider>('auto');
+  const [providerAvailability, setProviderAvailability] = useState<Record<string, boolean>>({});
   const [controlActionPending, setControlActionPending] = useState(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
@@ -279,7 +295,11 @@ export default function AdminDashboard() {
       if (alertsRes?.success) setAlertAnalytics(alertsRes);
       if (liveRes?.success) setLivePresence(liveRes);
       if (aiUsageRes?.success) setAIUsage(aiUsageRes);
-      if (controlsRes?.success) setScannerPaused(Boolean(controlsRes.control?.paused));
+      if (controlsRes?.success) {
+        setScannerPaused(Boolean(controlsRes.control?.paused));
+        setEquitiesProvider(controlsRes.control?.equitiesProvider || 'auto');
+        setProviderAvailability(controlsRes.providerAvailability || {});
+      }
 
       setLastUpdated(new Date());
     } finally {
@@ -371,6 +391,31 @@ export default function AdminDashboard() {
       }
     } catch {
       setControlActionMsg('Failed to update scanner state');
+    } finally {
+      setControlActionPending(false);
+      setTimeout(() => setControlActionMsg(null), 5000);
+    }
+  };
+
+  const handleSetEquitiesProvider = async (provider: AdminEquitiesProvider) => {
+    if (provider === equitiesProvider || providerAvailability[provider] === false) return;
+    setControlActionPending(true);
+    setControlActionMsg(`Switching equities to ${provider}...`);
+    try {
+      const res = await fetch('/api/admin/controls', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set-equities-provider', provider }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setEquitiesProvider(data.control?.equitiesProvider || provider);
+        setControlActionMsg(data.message);
+      } else {
+        setControlActionMsg(data.error || 'Provider change failed');
+      }
+    } catch {
+      setControlActionMsg('Failed to change equities provider');
     } finally {
       setControlActionPending(false);
       setTimeout(() => setControlActionMsg(null), 5000);
@@ -572,6 +617,45 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+
+      <div className="bg-card-bg border border-card-border rounded-xl p-5 space-y-4">
+        <div className="flex flex-col gap-1 border-b border-card-border pb-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <Server size={16} className="text-accent" /> Centralized equities provider
+            </h2>
+            <p className="mt-0.5 text-xs text-muted">
+              Controls the shared acquisition scanner for every user. Provider credentials remain server-side.
+            </p>
+          </div>
+          <span className="text-xs font-semibold text-accent">Active: {equitiesProvider}</span>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {EQUITIES_PROVIDER_OPTIONS.map((provider) => {
+            const unavailable = providerAvailability[provider.id] === false;
+            const selected = equitiesProvider === provider.id;
+            return (
+              <button
+                key={provider.id}
+                type="button"
+                onClick={() => void handleSetEquitiesProvider(provider.id)}
+                disabled={unavailable || controlActionPending}
+                className={`rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
+                  selected
+                    ? 'border-accent bg-accent/10'
+                    : 'border-card-border bg-muted-bg hover:border-accent/50'
+                }`}
+              >
+                <span className="block text-xs font-semibold text-foreground">{provider.name}</span>
+                <span className="mt-1 block text-[11px] leading-tight text-muted">
+                  {unavailable ? 'Not configured on this server.' : provider.description}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       {/* Operator Controls Bar (Phase 4) */}
       <div className="bg-card-bg border border-card-border rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">

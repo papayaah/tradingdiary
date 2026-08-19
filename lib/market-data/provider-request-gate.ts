@@ -13,7 +13,11 @@ export class ProviderQuotaError extends Error {
 }
 
 export function providerScopeForName(providerName: string): string {
-  const quotaOwner = providerName === 'Tiingo Crypto' ? 'Tiingo' : providerName;
+  const quotaOwner = providerName === 'Tiingo Crypto'
+    ? 'Tiingo'
+    : providerName === 'IBKR (Stocks)'
+      ? 'IBKR (CME)'
+      : providerName;
   const slug = quotaOwner
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')

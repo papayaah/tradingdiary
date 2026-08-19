@@ -640,6 +640,21 @@ export class IBKRProvider implements ChartProvider {
     }
 }
 
+/** IBKR Gateway provider for SMART-routed US stocks and ETFs. */
+export class IBKREquityProvider implements ChartProvider {
+    name = "IBKR (Stocks)";
+
+    async fetchCandles(symbol: string, _date: string, interval: string): Promise<OHLCCandle[]> {
+        return this.fetchRecentCandles(symbol, interval);
+    }
+
+    async fetchRecentCandles(symbol: string, interval: string): Promise<OHLCCandle[]> {
+        await reserveProviderRequest(this.name);
+        const { getIbkrClient } = await import('./ibkr-client');
+        return getIbkrClient().fetchEquityCandles(symbol, interval);
+    }
+}
+
 /**
  * Tries each provider in order, moving on when one throws or returns no candles.
  * Lets the futures path degrade IBKR -> Yahoo instead of failing a
@@ -714,12 +729,20 @@ export function effectiveProviderName(provider: ChartProvider): string {
 }
 
 export interface UserProviderConfig {
-    preferredProvider?: string;
+    preferredEquitiesProvider?: string;
+    preferredCryptoProvider?: string;
     alpacaKeyId?: string;
     alpacaSecret?: string;
     twelveKey?: string;
     polygonKey?: string;
     tiingoKey?: string;
+}
+
+let runtimeEquitiesProvider: string | undefined;
+
+/** Scanner-process override synchronized from the admin-owned Redis control. */
+export function setRuntimeEquitiesProvider(provider: string | undefined): void {
+    runtimeEquitiesProvider = provider;
 }
 
 /**
@@ -764,12 +787,10 @@ export function getActiveProvider(
             : new FallbackProvider('Futures', chain, isIbkrPrimaryRoot);
     }
 
-    // Handle Equities Data Feed Selection
-    const pref = userConfig?.preferredProvider || 'auto';
-
     // Crypto uses Tiingo's dedicated crypto endpoint, not its equity/IEX
     // endpoints. Yahoo remains the zero-config fallback for crypto symbols.
     if (isCrypto) {
+        const pref = userConfig?.preferredCryptoProvider || 'auto';
         if (pref === 'yahoo') return trackProvider(new YahooProvider(), 'owner');
         if (pref === 'tiingo' || pref === 'auto') {
             const key = userConfig?.tiingoKey || process.env.TIINGO_API_KEY;
@@ -777,6 +798,12 @@ export function getActiveProvider(
         }
         return trackProvider(new YahooProvider(), 'owner');
     }
+
+    // Equities are selected centrally by the scanner/admin control.
+    const pref = userConfig?.preferredEquitiesProvider
+        || runtimeEquitiesProvider
+        || process.env.EQUITIES_PROVIDER
+        || 'auto';
 
     if (pref === 'alpaca') {
         const keyId = userConfig?.alpacaKeyId || process.env.ALPACA_API_KEY_ID || process.env.ALPACA_API_KEY;
@@ -797,6 +824,11 @@ export function getActiveProvider(
     if (pref === 'tiingo') {
         const key = userConfig?.tiingoKey || process.env.TIINGO_API_KEY;
         if (key) return trackProvider(new TiingoProvider(key, owner(userConfig?.tiingoKey)), owner(userConfig?.tiingoKey));
+    }
+
+    if (pref === 'ibkr') {
+        const ibkrConfigured = Boolean(process.env.IBKR_GATEWAY_HOST) || process.env.IBKR_ENABLED === 'true';
+        if (ibkrConfigured) return trackProvider(new IBKREquityProvider(), 'owner');
     }
 
     if (pref === 'yahoo') {

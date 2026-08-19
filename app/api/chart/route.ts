@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getActiveProvider } from '@/lib/chart/providers';
+import { parseScannerControl, readScannerControl } from '@/lib/scanner/control';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
@@ -12,14 +13,9 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const cookies = request.cookies;
+    const control = await readScannerControl().catch(() => parseScannerControl(null));
     const provider = getActiveProvider(symbol, {
-      preferredProvider: cookies.get('watcher_pref_provider')?.value,
-      alpacaKeyId: cookies.get('watcher_alpaca_key_id')?.value,
-      alpacaSecret: cookies.get('watcher_alpaca_secret')?.value,
-      twelveKey: cookies.get('watcher_twelve_key')?.value,
-      polygonKey: cookies.get('watcher_polygon_key')?.value,
-      tiingoKey: cookies.get('watcher_tiingo_key')?.value,
+      preferredEquitiesProvider: control.equitiesProvider,
     });
     const candles = await provider.fetchCandles(symbol, date, interval);
 

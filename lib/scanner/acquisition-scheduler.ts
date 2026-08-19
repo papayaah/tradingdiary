@@ -66,6 +66,12 @@ export class AcquisitionScheduler {
     this.loadSeries = deps.loadSeries ?? ((now) => loadAcquisitionSeries(now));
   }
 
+  /** Force provider-aware inventory to be rebuilt on the next tick. */
+  invalidateInventory(): void {
+    this.inventory = [];
+    this.inventoryLoadedAt = 0;
+  }
+
   private async refreshInventory(): Promise<void> {
     if (this.inventory.length && this.now() - this.inventoryLoadedAt < this.inventoryRefreshMs) return;
     this.inventory = await this.loadSeries(new Date(this.now()));

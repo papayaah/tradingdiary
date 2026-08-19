@@ -36,7 +36,7 @@ describe('Tiingo crypto provider routing', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const provider = getActiveProvider('BTC-USD', {
-      preferredProvider: 'tiingo',
+      preferredCryptoProvider: 'tiingo',
       tiingoKey: 'test-token',
     });
     const candles = await provider.fetchRecentCandles('BTC-USD', '5m');
@@ -60,7 +60,7 @@ describe('Tiingo crypto provider routing', () => {
 
   it('keeps equity symbols on the Tiingo equity provider', () => {
     const provider = getActiveProvider('AAPL', {
-      preferredProvider: 'tiingo',
+      preferredEquitiesProvider: 'tiingo',
       tiingoKey: 'test-token',
     });
 
@@ -69,7 +69,7 @@ describe('Tiingo crypto provider routing', () => {
 
   it('trusts explicit crypto asset class for a concatenated canonical symbol', () => {
     const provider = getActiveProvider('APTUSD', {
-      preferredProvider: 'tiingo',
+      preferredCryptoProvider: 'tiingo',
       tiingoKey: 'test-token',
     }, 'crypto');
 
@@ -92,7 +92,7 @@ describe('Tiingo crypto provider routing', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const provider = getActiveProvider('AAPL', {
-      preferredProvider: 'tiingo',
+      preferredEquitiesProvider: 'tiingo',
       tiingoKey: 'test-token',
     });
     const candles = await provider.fetchRecentCandles('AAPL', '10m');
@@ -120,7 +120,7 @@ describe('Tiingo crypto provider routing', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const provider = getActiveProvider('VNET', {
-      preferredProvider: 'tiingo',
+      preferredEquitiesProvider: 'tiingo',
       tiingoKey: 'test-token',
     });
     const candles = await provider.fetchCandles('VNET', '20260807', '10m');
@@ -146,7 +146,7 @@ describe('Tiingo crypto provider routing', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const provider = getActiveProvider('BILI', {
-      preferredProvider: 'tiingo',
+      preferredEquitiesProvider: 'tiingo',
       tiingoKey: 'test-token',
     });
     const candles = await provider.fetchRecentCandles('BILI', '1d');
@@ -192,5 +192,30 @@ describe('regional futures fallback', () => {
     const provider = new FallbackProvider('Futures', [unavailable]);
 
     await expect(provider.fetchRecentCandles('NQ=F', '10m')).rejects.toThrow('returned no candles');
+  });
+});
+
+describe('IBKR equity provider routing', () => {
+  it('uses IBKR for equities when selected and the gateway is configured', () => {
+    vi.stubEnv('IBKR_ENABLED', 'true');
+
+    expect(getActiveProvider('AAPL', { preferredEquitiesProvider: 'ibkr' }, 'equity').name)
+      .toBe('IBKR (Stocks)');
+  });
+
+  it('falls through to a configured REST provider when the gateway is unavailable', () => {
+    vi.stubEnv('IBKR_ENABLED', 'false');
+    vi.stubEnv('IBKR_GATEWAY_HOST', '');
+    vi.stubEnv('TIINGO_API_KEY', 'server-token');
+
+    expect(getActiveProvider('AAPL', { preferredEquitiesProvider: 'ibkr' }, 'equity').name)
+      .toBe('Tiingo');
+  });
+
+  it('allows a server-wide IBKR equities selection for the scanner', () => {
+    vi.stubEnv('IBKR_ENABLED', 'true');
+    vi.stubEnv('EQUITIES_PROVIDER', 'ibkr');
+
+    expect(getActiveProvider('AAPL', undefined, 'equity').name).toBe('IBKR (Stocks)');
   });
 });

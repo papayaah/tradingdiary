@@ -2,7 +2,9 @@
 
 ## Status
 
-Proposed.
+Provider authority implemented: credentials live in server environment variables,
+the global equities provider is persisted in the admin scanner control, and browser
+routes no longer read provider or credential cookies.
 
 ## Related specification
 
@@ -12,7 +14,12 @@ Extends [Server-Side Market Scanner and Live Watch Clients](./server-side-market
 
 Because pattern matching now runs on the **server**, every setting that affects a scan must be persisted server-side and reach `server_watch`. Today some do and some don't, which produces a confusing "I changed it but nothing happened" experience. Concretely, during a live debugging session we found:
 
-1. **Provider selection and API keys live only in browser cookies.** [components/settings/MarketDataSettings.tsx](../../components/settings/MarketDataSettings.tsx) writes `watcher_pref_provider`, `watcher_tiingo_key`, `watcher_polygon_key`, etc. as cookies. The server scanner reads providers only from `process.env` (via `getActiveProvider` with no user config), so:
+1. **Resolved: provider selection and API keys are server-owned.** The former
+   `MarketDataSettings` browser-cookie controls were removed. Admins select the
+   global equities provider from the Admin Dashboard; the scanner reads that
+   persisted Redis control and provider credentials remain in server environment
+   variables.
+   Previously:
    - The user's UI provider choice (e.g. Tiingo) is **ignored by the scanner**.
    - The scanner used Polygon — the only key present in the server environment — and hit rate limits (429s), even though the UI said Tiingo.
    - The key the user typed into Settings never reached the scanner at all.
@@ -53,12 +60,15 @@ The UI presents both as "settings" with no indication of which is authoritative 
 
 Ordered by impact. Items 1–3 are the ones that caused the observed confusion.
 
-### 1. Move provider configuration server-side
+### 1. Move provider configuration server-side — implemented
 
-- Persist the user's **provider selection** (equities + futures) and **API keys** on the server, not in cookies. For a single-user/self-hosted deployment, server-wide env keys are acceptable; for multi-user, store per-user credentials **encrypted at rest** (the "Provider credentials" section of the scanner spec).
-- The scanner's `getActiveProvider(...)` call must be passed the user's persisted provider preference + credentials, instead of falling through to `process.env` auto-order. Until then, the scanner ignores the UI entirely.
-- Stop writing provider secrets to cookies once the server is authoritative; migrate any existing cookie keys into server storage.
-- **Acceptance:** selecting Tiingo in the UI makes the scanner fetch from Tiingo for that user's equities; the key entered in Settings is the key the scanner uses.
+- The deployment is currently global-provider/single-credential: admins select the
+  equities provider centrally and all users share scanner snapshots acquired with
+  server-owned credentials.
+- The scanner polls the persisted control, changes its runtime provider, and
+  rebuilds provider-aware acquisition inventory without a restart.
+- Browser chart routes read the same centralized control and never read provider
+  secrets from cookies.
 
 ### 2. Guarantee every scan-affecting setting syncs
 

@@ -1,8 +1,7 @@
 // Persistent IBKR Gateway connection for the scanner. Holds ONE socket to the
-// headless IB Gateway (see docker-compose.ibkr.yml), resolves each futures
-// root's active (most-liquid) contract via the continuous future — the same
-// contract TWS charts by default — cached and re-qualified daily for rollover,
-// and pulls recent historical bars. A sliding-window pacing guard keeps us under
+// headless IB Gateway (see docker-compose.ibkr.yml), resolves futures to their
+// active contracts and equities to SMART-routed stock contracts, and pulls
+// historical bars. A sliding-window pacing guard keeps us under
 // IBKR's ~60-requests/10-min historical limit; on breach we throw so the
 // provider factory falls back to Yahoo.
 //
@@ -95,6 +94,16 @@ export function ibkrContractSpecForRoot(root: string): Pick<Contract, 'symbol' |
   };
 }
 
+/** SMART-routed US equity contract used for stock chart data. */
+export function ibkrEquityContractSpec(symbol: string): Pick<Contract, 'symbol' | 'secType' | 'exchange' | 'currency'> {
+  return {
+    symbol: symbol.toUpperCase().trim(),
+    secType: SecType.STK,
+    exchange: 'SMART',
+    currency: 'USD',
+  };
+}
+
 /**
  * Normalize an IBKR historical bar time to epoch seconds. Intraday bars arrive as
  * epoch-second strings (formatDate=2); daily bars arrive as "YYYYMMDD" trading
@@ -154,6 +163,7 @@ class IbkrClient {
   private readonly detailReqs = new Map<number, PendingDetails>();
   private readonly historyReqs = new Map<number, PendingHistory>();
   private readonly contractCache = new Map<string, { contract: Contract; day: string }>();
+  private readonly equityContractCache = new Map<string, Contract>();
   private readonly requestTimes: number[] = [];
   private connectSeq = 0;
 
@@ -252,19 +262,23 @@ class IbkrClient {
     this.requestTimes.push(now);
   }
 
-  /** One reqContractDetails round-trip for a root at a given security type. */
-  private async requestContract(root: string, secType: SecType): Promise<Contract> {
+  /** One reqContractDetails round-trip for an IBKR contract description. */
+  private async requestContractDetails(label: string, contract: Contract): Promise<Contract> {
     await this.connect();
     this.takePacingSlot();
     const reqId = this.nextReqId++;
     return new Promise<Contract>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.detailReqs.delete(reqId);
-        reject(new Error(`IBKR contractDetails timeout for ${root}`));
+        reject(new Error(`IBKR contractDetails timeout for ${label}`));
       }, REQUEST_TIMEOUT_MS);
       this.detailReqs.set(reqId, { contracts: [], resolve, reject, timer });
-      this.ib!.reqContractDetails(reqId, { ...ibkrContractSpecForRoot(root), secType });
+      this.ib!.reqContractDetails(reqId, contract);
     });
+  }
+
+  private requestFuturesContract(root: string, secType: SecType): Promise<Contract> {
+    return this.requestContractDetails(root, { ...ibkrContractSpecForRoot(root), secType });
   }
 
   /**
@@ -284,43 +298,76 @@ class IbkrClient {
 
     let contract: Contract;
     try {
-      contract = await this.requestContract(root, SecType.CONTFUT);
+      contract = await this.requestFuturesContract(root, SecType.CONTFUT);
     } catch {
-      contract = await this.requestContract(root, SecType.FUT);
+      contract = await this.requestFuturesContract(root, SecType.FUT);
     }
     this.contractCache.set(root, { contract, day: today });
     return contract;
   }
 
+  /** Resolve and cache a SMART-routed stock contract. */
+  private async qualifyEquityContract(symbol: string): Promise<Contract> {
+    const normalized = symbol.toUpperCase().trim();
+    const cached = this.equityContractCache.get(normalized);
+    if (cached) return cached;
+
+    const contract = await this.requestContractDetails(normalized, ibkrEquityContractSpec(normalized));
+    this.equityContractCache.set(normalized, contract);
+    return contract;
+  }
+
+  private async fetchHistoricalCandles(
+    contract: Contract,
+    label: string,
+    interval: string,
+    endDateTime = '',
+  ): Promise<OHLCCandle[]> {
+    const barSize = barSizeForInterval(interval);
+    const duration = durationForInterval(interval);
+    await this.connect();
+    this.takePacingSlot();
+    const reqId = this.nextReqId++;
+    const bars = await new Promise<OHLCCandle[]>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.historyReqs.delete(reqId);
+        reject(new Error(`IBKR historicalData timeout for ${label} ${interval}`));
+      }, REQUEST_TIMEOUT_MS);
+      this.historyReqs.set(reqId, { bars: [], resolve, reject, timer });
+      this.ib!.reqHistoricalData(reqId, contract, endDateTime, duration, barSize as BarSizeSetting, 'TRADES', 0, 2, false);
+    });
+    bars.sort((a, b) => a.time - b.time);
+    return bars;
+  }
+
   async fetchRecentCandles(symbol: string, interval: string): Promise<OHLCCandle[]> {
     // Compute bar size first so an unsupported interval fails fast, before we
     // touch (and would then needlessly reset) a healthy connection.
-    const barSize = barSizeForInterval(interval);
-    const duration = durationForInterval(interval);
+    barSizeForInterval(interval);
     const root = futuresRoot(symbol);
     try {
       const contract = await this.qualifyActiveContract(root);
-      await this.connect();
-      this.takePacingSlot();
-      const reqId = this.nextReqId++;
-      const bars = await new Promise<OHLCCandle[]>((resolve, reject) => {
-        const timer = setTimeout(() => {
-          this.historyReqs.delete(reqId);
-          reject(new Error(`IBKR historicalData timeout for ${root} ${interval}`));
-        }, REQUEST_TIMEOUT_MS);
-        this.historyReqs.set(reqId, { bars: [], resolve, reject, timer });
-        // endDateTime '' = up to now; whatToShow TRADES; useRTH 0 = all Globex
-        // hours (scanner applies its own session filter); formatDate 2 = epoch.
-        this.ib!.reqHistoricalData(reqId, contract, '', duration, barSize as BarSizeSetting, 'TRADES', 0, 2, false);
-      });
-      bars.sort((a, b) => a.time - b.time);
-      return bars;
+      return await this.fetchHistoricalCandles(contract, root, interval);
     } catch (err) {
       // Self-heal: a connect/request timeout, disconnect, or stuck socket
       // otherwise leaves a zombie connection (clientId registered but dead) that
       // never recovers without a manual restart — exactly what we hit after a
       // gateway re-auth. Drop it so the NEXT call reconnects fresh. The pacing
       // guard is not a connection fault, so leave a healthy socket alone there.
+      const message = err instanceof Error ? err.message : String(err);
+      if (!message.includes('pacing guard')) this.teardown();
+      throw err;
+    }
+  }
+
+  async fetchEquityCandles(symbol: string, interval: string): Promise<OHLCCandle[]> {
+    // Validate before touching a healthy connection, matching the futures path.
+    barSizeForInterval(interval);
+    const normalized = symbol.toUpperCase().trim();
+    try {
+      const contract = await this.qualifyEquityContract(normalized);
+      return await this.fetchHistoricalCandles(contract, normalized, interval);
+    } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (!message.includes('pacing guard')) this.teardown();
       throw err;
