@@ -143,6 +143,7 @@ interface GovernorItem {
   updatedAt: string | null;
   dailyCap: number;
   floorSeconds: number;
+  overrideSeconds: number | null;
 }
 
 interface ProviderSummaryMap {
@@ -233,6 +234,8 @@ export default function AdminDashboard() {
   const [equitiesProvider, setEquitiesProvider] = useState<AdminEquitiesProvider>('auto');
   const [providerAvailability, setProviderAvailability] = useState<Record<string, boolean>>({});
   const [controlActionPending, setControlActionPending] = useState(false);
+  const [cadenceDrafts, setCadenceDrafts] = useState<Record<string, string>>({});
+  const [cadencePendingScope, setCadencePendingScope] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
@@ -418,6 +421,40 @@ export default function AdminDashboard() {
       setControlActionMsg('Failed to change equities provider');
     } finally {
       setControlActionPending(false);
+      setTimeout(() => setControlActionMsg(null), 5000);
+    }
+  };
+
+  const handleSetCadenceOverride = async (scope: string, seconds: number | null) => {
+    setCadencePendingScope(scope);
+    setControlActionMsg(seconds === null ? `Clearing override for ${scope}...` : `Setting ${scope} to ${seconds}s...`);
+    try {
+      const res = await fetch('/api/admin/controls', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set-cadence-override', scope, seconds }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setControlActionMsg(data.message);
+        // Reflect the new override immediately; the next poll refreshes the rest.
+        setGovernorItems((items) =>
+          items.map((item) =>
+            item.providerScope === scope ? { ...item, overrideSeconds: seconds } : item,
+          ),
+        );
+        setCadenceDrafts((drafts) => {
+          const next = { ...drafts };
+          delete next[scope];
+          return next;
+        });
+      } else {
+        setControlActionMsg(data.error || 'Cadence override failed');
+      }
+    } catch {
+      setControlActionMsg('Failed to update cadence override');
+    } finally {
+      setCadencePendingScope(null);
       setTimeout(() => setControlActionMsg(null), 5000);
     }
   };
@@ -760,7 +797,7 @@ export default function AdminDashboard() {
               <Gauge size={16} className="text-accent" /> Adaptive Governor Cadence
             </h2>
             <p className="mt-1 text-[11px] text-muted">
-              Full Cycle is the approximate time for every active key to refresh once. Pool Spacing is the average delay between provider requests.
+              Full Cycle is the approximate time for every active key to refresh once. Pool Spacing is the average delay between provider requests. Set a Manual cadence to override the governor per provider (clamped to the provider floor); it applies within ~30s with no restart.
             </p>
           </div>
 
@@ -775,6 +812,7 @@ export default function AdminDashboard() {
                     <th className="py-2 px-2">Pool Spacing</th>
                     <th className="py-2 px-2">Constraint</th>
                     <th className="py-2 px-2 text-right">Predicted Req/hr</th>
+                    <th className="py-2 px-2">Manual Cadence</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-card-border/50">
@@ -782,6 +820,12 @@ export default function AdminDashboard() {
                     const poolSpacingSeconds = gov.uniqueKeys > 0
                       ? gov.cadenceSeconds / gov.uniqueKeys
                       : 0;
+                    const draft = cadenceDrafts[gov.providerScope]
+                      ?? (gov.overrideSeconds != null ? String(gov.overrideSeconds) : '');
+                    const rowPending = cadencePendingScope === gov.providerScope;
+                    const parsedDraft = Number(draft);
+                    const canSet = draft.trim() !== '' && Number.isFinite(parsedDraft) && parsedDraft > 0
+                      && parsedDraft !== gov.overrideSeconds;
                     return (
                       <tr key={gov.providerScope} className="hover:bg-muted-bg/40">
                         <td className="py-2 px-2 font-mono text-foreground">{gov.providerScope}</td>
@@ -794,6 +838,42 @@ export default function AdminDashboard() {
                         </td>
                         <td className="py-2 px-2 capitalize text-muted">{gov.bindingTerm}</td>
                         <td className="py-2 px-2 text-right font-semibold text-foreground">{gov.predictedReqPerHour}</td>
+                        <td className="py-2 px-2">
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              min={gov.floorSeconds}
+                              step={1}
+                              inputMode="numeric"
+                              placeholder={`auto (min ${gov.floorSeconds}s)`}
+                              value={draft}
+                              disabled={rowPending || controlActionPending}
+                              onChange={(e) =>
+                                setCadenceDrafts((drafts) => ({ ...drafts, [gov.providerScope]: e.target.value }))
+                              }
+                              className="w-24 rounded-md border border-card-border bg-background px-2 py-1 text-xs text-foreground disabled:opacity-50"
+                            />
+                            <span className="text-[11px] text-muted">s</span>
+                            <button
+                              type="button"
+                              disabled={!canSet || rowPending || controlActionPending}
+                              onClick={() => handleSetCadenceOverride(gov.providerScope, Math.round(parsedDraft))}
+                              className="rounded-md border border-card-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted-bg disabled:opacity-40"
+                            >
+                              Set
+                            </button>
+                            {gov.overrideSeconds != null && (
+                              <button
+                                type="button"
+                                disabled={rowPending || controlActionPending}
+                                onClick={() => handleSetCadenceOverride(gov.providerScope, null)}
+                                className="rounded-md border border-card-border px-2 py-1 text-[11px] font-medium text-loss hover:bg-muted-bg disabled:opacity-40"
+                              >
+                                Clear
+                              </button>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}

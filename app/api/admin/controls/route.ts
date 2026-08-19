@@ -7,7 +7,9 @@ import { eq } from 'drizzle-orm';
 import { evaluateJobId, getScanQueue, type ScanJob } from '@/lib/scanner/queue';
 import {
   isEquitiesProvider,
+  isGovernorScope,
   readScannerControl,
+  writeCadenceOverride,
   writeEquitiesProvider,
   writeScannerControl,
 } from '@/lib/scanner/control';
@@ -64,6 +66,32 @@ export async function POST(request: Request) {
         success: true,
         control,
         message: `Equities provider changed to ${body.provider}. Scanner workers will apply it shortly.`,
+      });
+    }
+
+    if (action === 'set-cadence-override') {
+      if (!isGovernorScope(body?.scope)) {
+        return NextResponse.json({ success: false, error: 'Unknown provider scope' }, { status: 400 });
+      }
+      // seconds null / 0 clears the override and returns the scope to the governor.
+      const rawSeconds = body?.seconds;
+      let seconds: number | null;
+      if (rawSeconds === null || rawSeconds === undefined || rawSeconds === '') {
+        seconds = null;
+      } else {
+        seconds = Number(rawSeconds);
+        if (!Number.isFinite(seconds) || seconds < 0) {
+          return NextResponse.json({ success: false, error: 'Cadence must be a positive number of seconds' }, { status: 400 });
+        }
+        if (seconds === 0) seconds = null;
+      }
+      const control = await writeCadenceOverride(body.scope, seconds, session.user.email);
+      return NextResponse.json({
+        success: true,
+        control,
+        message: seconds === null
+          ? `Cadence override cleared for ${body.scope}; governor resumes control shortly.`
+          : `Cadence override set to ${seconds}s for ${body.scope}; scanner applies it within ~30s.`,
       });
     }
 

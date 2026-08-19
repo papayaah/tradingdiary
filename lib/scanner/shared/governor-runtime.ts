@@ -9,6 +9,7 @@ import { loadScopeInventory } from './acquisition-inventory';
 import { getProviderBudget } from './provider-budget';
 import { CadenceGovernor, computeCadenceSeconds, measuredCadenceSeconds } from './governor';
 import { readUsage } from './request-quota';
+import { readScannerControl } from '@/lib/scanner/control';
 
 /** A governor sized so that, before any recompute, cadence equals today's fixed bucket. */
 export function createGovernor(): CadenceGovernor {
@@ -37,6 +38,7 @@ export async function recomputeGovernor(
   now: Date = new Date(),
 ): Promise<GovernorRecomputeResult[]> {
   const inventory = await loadScopeInventory(now);
+  const { cadenceOverrides } = await readScannerControl();
 
   const results: GovernorRecomputeResult[] = [];
   const store = getSharedCacheStore();
@@ -58,10 +60,16 @@ export async function recomputeGovernor(
       usedToday: usage.daily,
       floorSeconds: budget.floorSeconds,
     });
-    const cadenceSeconds = Math.max(formula, measured);
+    // A manual override wins over the computed cadence, but is clamped to the
+    // scope's floor so it can never fetch faster than the provider's hard pacing.
+    const override = cadenceOverrides[inv.providerScope];
+    const hasOverride = typeof override === 'number' && override > 0;
+    const cadenceSeconds = hasOverride
+      ? Math.max(override, budget.floorSeconds)
+      : Math.max(formula, measured);
     const changed = governor.set(inv.providerScope, cadenceSeconds);
 
-    const bindingTerm = formula >= measured ? 'formula' : 'measured';
+    const bindingTerm = hasOverride ? 'manual' : formula >= measured ? 'formula' : 'measured';
     const predictedReqPerHour = cadenceSeconds > 0 ? Math.round((inv.uniqueKeys * 3600) / cadenceSeconds) : 0;
 
     if (typeof store.hset === 'function') {

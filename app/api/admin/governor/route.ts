@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { isAdminEmail } from '@/lib/admin';
 import { getProviderBudget } from '@/lib/scanner/shared/provider-budget';
+import { readScannerControl } from '@/lib/scanner/control';
 import IORedis from 'ioredis';
 
 export const runtime = 'nodejs';
@@ -24,6 +25,7 @@ export async function GET(request: Request) {
       'ibkr-cme:server',
       'yahoo-finance:server',
     ];
+    const { cadenceOverrides } = await readScannerControl();
     const governorStates: Array<{
       providerScope: string;
       cadenceSeconds: number;
@@ -33,6 +35,7 @@ export async function GET(request: Request) {
       updatedAt: string | null;
       dailyCap: number;
       floorSeconds: number;
+      overrideSeconds: number | null;
     }> = [];
 
     if (redis.status === 'ready') {
@@ -40,6 +43,8 @@ export async function GET(request: Request) {
         for (const scope of scopes) {
           const budget = getProviderBudget(scope);
           const hash = await redis.hgetall(`metrics:governor:${scope}`);
+
+          const overrideSeconds = cadenceOverrides[scope] ?? null;
 
           if (hash && hash.providerScope) {
             governorStates.push({
@@ -51,6 +56,7 @@ export async function GET(request: Request) {
               updatedAt: hash.updatedAt || null,
               dailyCap: budget.dailyCap,
               floorSeconds: budget.floorSeconds,
+              overrideSeconds,
             });
           } else {
             // Default inactive governor state for scope
@@ -63,6 +69,7 @@ export async function GET(request: Request) {
               updatedAt: null,
               dailyCap: budget.dailyCap,
               floorSeconds: budget.floorSeconds,
+              overrideSeconds,
             });
           }
         }

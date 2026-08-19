@@ -84,6 +84,7 @@ async function main() {
 
   let scannerPaused = initialControl.paused;
   let equitiesProvider = initialControl.equitiesProvider;
+  let cadenceOverridesKey = JSON.stringify(initialControl.cadenceOverrides);
   let controlCheckRunning = false;
   const syncGlobalControl = async () => {
     if (controlCheckRunning) return;
@@ -109,6 +110,15 @@ async function main() {
         acquisitionScheduler.invalidateInventory();
         await recomputeGovernorCadence();
         console.log(`[scanner] equities provider changed to ${equitiesProvider}`);
+      }
+      const nextCadenceOverridesKey = JSON.stringify(control.cadenceOverrides);
+      if (nextCadenceOverridesKey !== cadenceOverridesKey) {
+        changed = true;
+        cadenceOverridesKey = nextCadenceOverridesKey;
+        // Recompute immediately so a manual cadence change applies within the 2s
+        // control poll rather than waiting for the next 30s governor tick.
+        await recomputeGovernorCadence();
+        console.log(`[scanner] cadence overrides changed to ${nextCadenceOverridesKey}`);
       }
       if (!changed) return;
       await writeHeartbeat(scannerPaused ? 'paused' : 'ok', {
