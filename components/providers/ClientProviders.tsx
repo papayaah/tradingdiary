@@ -8,6 +8,7 @@ import { Toaster } from 'sonner';
 import { ServiceWorkerRegistrar } from '@/components/providers/ServiceWorkerRegistrar';
 import { EngageWidget } from '@reactkits.dev/react-engage';
 import '@reactkits.dev/react-engage/styles.css';
+import { tradingDiaryEngageContent } from '@/lib/engage-content';
 
 export function ClientProviders({ children }: { children: ReactNode }) {
     const { data: session } = authClient.useSession();
@@ -30,6 +31,7 @@ export function ClientProviders({ children }: { children: ReactNode }) {
                     iconOnly={true}
                     endpointUrl="/api/engage"
                     user={engageUser}
+                    content={tradingDiaryEngageContent}
                 />
             </AIManagementProvider>
         </IntegrationProvider>

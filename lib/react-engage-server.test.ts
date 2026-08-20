@@ -6,6 +6,24 @@ describe('react-engage user ticket access', () => {
   it('returns only the authenticated user tickets', async () => {
     const { GET } = createEngageRouteHandler({
       resolveRequestUser: () => ({ email: 'trader.alex@example.com' }),
+      initialTickets: [
+        {
+          id: 'tkt_001',
+          type: 'bug',
+          status: 'open',
+          message: 'Import issue',
+          userEmail: 'trader.alex@example.com',
+          createdAt: '2026-08-20T00:00:00.000Z',
+        },
+        {
+          id: 'tkt_other',
+          type: 'ticket',
+          status: 'open',
+          message: 'Another user ticket',
+          userEmail: 'someone@example.com',
+          createdAt: '2026-08-20T00:00:00.000Z',
+        },
+      ],
     });
 
     const response = await GET(new NextRequest('http://localhost/api/engage?action=list_user_tickets'));

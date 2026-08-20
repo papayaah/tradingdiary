@@ -4,6 +4,10 @@ import { isAdminEmail } from '@/lib/admin';
 import { headers } from 'next/headers';
 import { EngageAdminPanel } from '@reactkits.dev/react-engage/admin';
 import '@reactkits.dev/react-engage/styles.css';
+import {
+  tradingDiaryEngageTemplates,
+  tradingDiaryInitialBroadcastSubject,
+} from '@/lib/engage-admin-content';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -28,6 +32,8 @@ export default async function EngageAdminPage() {
       <EngageAdminPanel
         apiEndpoint="/api/engage"
         theme="inherit"
+        initialTemplates={tradingDiaryEngageTemplates}
+        initialBroadcastSubject={tradingDiaryInitialBroadcastSubject}
       />
     </div>
   );

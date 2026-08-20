@@ -3,9 +3,12 @@ import { db } from '@/lib/db/server';
 import { engageTickets, engageSubscribers, engageTemplates, engageBroadcasts } from '@/lib/db/server/schema';
 import { auth } from '@/lib/auth';
 import { isAdminEmail } from '@/lib/admin';
+import { tradingDiaryEngageEmailContent } from '@/lib/engage-server-content';
 
 export const { GET, POST } = createEngageRouteHandler({
   db,
+  senderName: 'Trading Diary Support',
+  emailContent: tradingDiaryEngageEmailContent,
   resolveRequestUser: async (request) => {
     const session = await auth.api.getSession({ headers: request.headers });
     if (!session?.user?.email) return null;
