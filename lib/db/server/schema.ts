@@ -307,8 +307,19 @@ export const engageTickets = pgTable("engage_tickets", {
     userName: text("user_name"),
     attachments: jsonb("attachments"),             // Attached screenshots or logs
     environment: jsonb("environment"),             // URL, browser, OS, screen specs
+    upvotes: integer("upvotes").notNull().default(0), // Community upvote counter for feature suggestions
     createdAt: timestamp("created_at", { mode: 'string' }).notNull().defaultNow(),
 });
+
+export const engageSuggestionVotes = pgTable("engage_suggestion_votes", {
+    id: text("id").primaryKey(),
+    suggestionId: text("suggestion_id").notNull().references(() => engageTickets.id, { onDelete: 'cascade' }),
+    userKey: text("user_key").notNull(),            // User ID, email, or device identity
+    createdAt: timestamp("created_at", { mode: 'string' }).notNull().defaultNow(),
+}, (t) => [
+    uniqueIndex("engage_vote_sugg_user_uq").on(t.suggestionId, t.userKey),
+    index("engage_vote_user_idx").on(t.userKey),
+]);
 
 export const engageSubscribers = pgTable("engage_subscribers", {
     id: text("id").primaryKey(),
