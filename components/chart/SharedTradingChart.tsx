@@ -107,7 +107,14 @@ function findClosestCandleTime(candles: CandleData[], transactionTime: string, d
     const year = parseInt(dateStr.substring(0, 4));
     const month = parseInt(dateStr.substring(4, 6)) - 1;
     const day = parseInt(dateStr.substring(6, 8));
-    targetSec = Math.floor(Date.UTC(year, month, day, parts[0], parts[1], parts[2] || 0) / 1000);
+    // Execution times are exchange-local (ET). The candles are positioned on raw
+    // UTC epochs (only the axis LABELS are rendered in ET), so convert the ET
+    // wall-clock execution time to its true UTC epoch before matching — otherwise
+    // every arrow lands ~ET-offset hours early and piles up at the left edge.
+    // Mirrors ReplayChart/TradeChart, which apply the same offset.
+    targetSec =
+      Math.floor(Date.UTC(year, month, day, parts[0], parts[1], parts[2] || 0) / 1000) -
+      getETOffsetSeconds(dateStr);
   } else {
     targetSec = parts[0] * 3600 + parts[1] * 60 + (parts[2] || 0);
   }
