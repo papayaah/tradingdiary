@@ -26,6 +26,9 @@ export interface IbkrFlexClientOptions {
   fetchImpl?: typeof fetch;
   sleep?: (milliseconds: number) => Promise<void>;
   timeoutMs?: number;
+  /** Reports the two slow phases the client controls: sending the initial
+   * request and each poll while IBKR builds the report. */
+  onProgress?: (event: { stage: 'requesting' | 'waiting'; attempt?: number }) => void;
 }
 
 async function requestText(
@@ -78,6 +81,7 @@ export async function retrieveFlexStatement(
   queryId: string,
   options: IbkrFlexClientOptions = {},
 ): Promise<string> {
+  options.onProgress?.({ stage: 'requesting' });
   const sendResponse = await requestText('SendRequest', token, queryId, options);
   if (xmlValue(sendResponse, 'Status').toLowerCase() !== 'success') throwFlexFailure(sendResponse);
   const referenceCode = xmlValue(sendResponse, 'ReferenceCode');
@@ -85,8 +89,10 @@ export async function retrieveFlexStatement(
 
   const sleep = options.sleep ?? ((milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
   const delays = [2_000, 2_000, 3_000, 5_000, 8_000];
+  let attempt = 0;
   for (const delay of delays) {
     await sleep(delay);
+    options.onProgress?.({ stage: 'waiting', attempt: ++attempt });
     const statement = await requestText('GetStatement', token, referenceCode, options);
     const errorCode = xmlValue(statement, 'ErrorCode');
     if (errorCode === '1019') continue;

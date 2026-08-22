@@ -82,7 +82,9 @@ function rowToTransaction(
 export async function pushJournal(
   userId: string,
   payload: JournalPushRequest,
+  onProgress?: (phase: 'executions' | 'trade_groups', done: number, total: number) => void,
 ): Promise<JournalPushResponse> {
+  const PROGRESS_EVERY = 500;
   const conflicts: SyncConflict[] = [];
   let adoptedExecutions = 0;
   const nowIso = new Date().toISOString();
@@ -140,7 +142,13 @@ export async function pushJournal(
     }
 
     // ── 2. Executions — idempotent insert ──
+    const executionTotal = payload.executions.length;
+    let executionsSeen = 0;
     for (const t of payload.executions) {
+      executionsSeen += 1;
+      if (executionsSeen % PROGRESS_EVERY === 0 || executionsSeen === executionTotal) {
+        onProgress?.('executions', executionsSeen, executionTotal);
+      }
       const accountUuid = accountUuidByClientId.get(t.accountId);
       if (!accountUuid) continue; // execution for an unknown account — skip
       const key = executionIdempotencyKey(t);
@@ -235,7 +243,12 @@ export async function pushJournal(
     const groups = splitIntoTradeGroups(transactions);
     const groupUuidByClientKey = new Map<string, string>();
 
+    let groupsSeen = 0;
     for (const g of groups) {
+      groupsSeen += 1;
+      if (groupsSeen % PROGRESS_EVERY === 0 || groupsSeen === groups.length) {
+        onProgress?.('trade_groups', groupsSeen, groups.length);
+      }
       const accountUuid = accountUuidByClientId.get(g.accountId)
         ?? accountRows.find((a) => a.clientAccountId === g.accountId)?.id;
       if (!accountUuid) continue;
@@ -503,8 +516,12 @@ export async function pushJournal(
     }
 
     // ── 10. Emit change events ──
-    if (events.length > 0) {
-      await tx.insert(journalEvent).values(events.map((e) => ({
+    // Insert in batches: a single multi-row insert of tens of thousands of rows
+    // (a full-history import) overflows the SQL query builder's recursion.
+    const EVENT_INSERT_CHUNK = 1_000;
+    for (let i = 0; i < events.length; i += EVENT_INSERT_CHUNK) {
+      const batch = events.slice(i, i + EVENT_INSERT_CHUNK);
+      await tx.insert(journalEvent).values(batch.map((e) => ({
         userId, entity: e.entity, entityId: e.entityId, op: e.op, rev: e.rev, createdAt: nowIso,
       })));
     }

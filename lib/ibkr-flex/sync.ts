@@ -10,7 +10,7 @@ import type { JournalPushRequest } from '@/lib/journal/sync-types';
 import { decryptFlexToken } from './crypto';
 import { IbkrFlexApiError, retrieveFlexStatement } from './client';
 import { nextDailyFlexSync } from './schedule';
-import type { IbkrFlexSyncResult } from './types';
+import type { IbkrFlexSyncProgress, IbkrFlexSyncResult } from './types';
 
 const CLAIM_STALE_MS = 15 * 60 * 1000;
 
@@ -90,6 +90,7 @@ function retryAt(now: Date, consecutiveFailures: number): Date {
 export async function syncIbkrFlexConnection(
   userId: string,
   now = new Date(),
+  onProgress?: (progress: IbkrFlexSyncProgress) => void,
 ): Promise<IbkrFlexSyncResult> {
   const connection = await claimConnection(userId, now);
   if (!connection) {
@@ -98,7 +99,20 @@ export async function syncIbkrFlexConnection(
 
   try {
     const token = decryptFlexToken(connection.encryptedToken);
-    const statement = await retrieveFlexStatement(token, connection.queryId);
+    const statement = await retrieveFlexStatement(token, connection.queryId, {
+      onProgress: (event) => {
+        if (event.stage === 'requesting') {
+          onProgress?.({ stage: 'requesting', message: 'Requesting your report from IBKR…' });
+        } else {
+          onProgress?.({
+            stage: 'waiting',
+            message: 'Waiting for IBKR to build the report…',
+            attempt: event.attempt,
+          });
+        }
+      },
+    });
+    onProgress?.({ stage: 'parsing', message: 'Reading the downloaded report…' });
     const parsed = await detectAndParseBroker({
       content: statement,
       filename: statement.trimStart().startsWith('<') ? 'ibkr-flex.xml' : 'ibkr-flex.csv',
@@ -112,8 +126,20 @@ export async function syncIbkrFlexConnection(
     }
 
     const payload = buildJournalPayload(parsed.transactions);
+    onProgress?.({
+      stage: 'importing',
+      message: 'Importing executions…',
+      done: 0,
+      total: payload.executions.length,
+    });
     const journalResult = payload.executions.length > 0
-      ? await pushJournal(userId, payload)
+      ? await pushJournal(userId, payload, (phase, done, total) => {
+          if (phase === 'executions') {
+            onProgress?.({ stage: 'importing', message: 'Importing executions…', done, total });
+          } else {
+            onProgress?.({ stage: 'building', message: 'Building trades…', done, total });
+          }
+        })
       : { adoptedExecutions: 0 };
     const nextSyncAt = nextDailyFlexSync(now, Number(process.env.IBKR_FLEX_DAILY_HOUR_ET ?? 6));
     const syncedAt = new Date().toISOString();

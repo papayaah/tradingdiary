@@ -14,7 +14,12 @@ import {
 import { toast } from 'sonner';
 import { authClient } from '@/lib/auth-client';
 import { useJournalSync } from '@/components/journal/JournalSyncProvider';
-import type { IbkrFlexConnectionView, IbkrFlexSyncResult } from '@/lib/ibkr-flex/types';
+import type {
+  IbkrFlexConnectionView,
+  IbkrFlexSyncProgress,
+  IbkrFlexSyncResult,
+  IbkrFlexSyncStreamEvent,
+} from '@/lib/ibkr-flex/types';
 
 type ConnectionResponse = {
   connection?: IbkrFlexConnectionView;
@@ -37,6 +42,22 @@ function statusLabel(connection: IbkrFlexConnectionView): string {
   return 'Connected';
 }
 
+function progressView(progress: IbkrFlexSyncProgress): { text: string; percent: number | null } {
+  const countable = progress.stage === 'importing' || progress.stage === 'building';
+  if (countable && progress.total) {
+    const done = progress.done ?? 0;
+    const percent = Math.min(100, Math.round((done / progress.total) * 100));
+    return {
+      text: `${progress.message} ${done.toLocaleString()} / ${progress.total.toLocaleString()}`,
+      percent,
+    };
+  }
+  if (progress.stage === 'waiting' && progress.attempt) {
+    return { text: `${progress.message} (attempt ${progress.attempt})`, percent: null };
+  }
+  return { text: progress.message, percent: null };
+}
+
 export default function IBKRFlexConnectionPanel() {
   const { data: session, isPending: sessionPending } = authClient.useSession();
   const { syncNow: pullJournalNow } = useJournalSync();
@@ -47,6 +68,7 @@ export default function IBKRFlexConnectionPanel() {
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [queryId, setQueryId] = useState('');
   const [token, setToken] = useState('');
+  const [progress, setProgress] = useState<IbkrFlexSyncProgress | null>(null);
 
   const loadConnection = useCallback(async () => {
     if (!session?.user) {
@@ -111,15 +133,48 @@ export default function IBKRFlexConnectionPanel() {
 
   const syncNow = async () => {
     setWorking(true);
+    setProgress({ stage: 'requesting', message: 'Starting sync…' });
     try {
       const response = await fetch('/api/import/ibkr-flex/sync', { method: 'POST' });
-      const result = (await response.json()) as ConnectionResponse;
-      if (result.connection) setConnection(result.connection);
-      if (!response.ok) throw new Error(result.sync?.error || result.error || 'The sync could not complete.');
+
+      // Cooldown / auth / conflict guards return a plain JSON error, not a stream.
+      const contentType = response.headers.get('content-type') ?? '';
+      if (!contentType.includes('ndjson') || !response.body) {
+        const result = (await response.json()) as ConnectionResponse;
+        throw new Error(result.error || result.sync?.error || 'The sync could not complete.');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let final: Extract<IbkrFlexSyncStreamEvent, { type: 'result' }> | null = null;
+
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let newline: number;
+        while ((newline = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, newline).trim();
+          buffer = buffer.slice(newline + 1);
+          if (!line) continue;
+          const event = JSON.parse(line) as IbkrFlexSyncStreamEvent;
+          if (event.type === 'progress') setProgress(event.progress);
+          else final = event;
+        }
+      }
+
+      if (!final) throw new Error('The sync ended before it finished.');
+      if ('error' in final) throw new Error(final.error);
+      if (final.connection) setConnection(final.connection);
+      if (final.sync.status !== 'success') {
+        throw new Error(final.sync.error || 'The sync could not complete.');
+      }
+
       pullJournalNow();
       toast.success('IBKR sync complete', {
-        description: result.sync?.importedCount
-          ? `Imported ${result.sync.importedCount} new execution${result.sync.importedCount === 1 ? '' : 's'}.`
+        description: final.sync.importedCount
+          ? `Imported ${final.sync.importedCount} new execution${final.sync.importedCount === 1 ? '' : 's'}.`
           : 'No new executions were found.',
       });
     } catch (error) {
@@ -128,6 +183,7 @@ export default function IBKRFlexConnectionPanel() {
       });
     } finally {
       setWorking(false);
+      setProgress(null);
     }
   };
 
@@ -219,6 +275,27 @@ export default function IBKRFlexConnectionPanel() {
         )}
       </div>
 
+      {working && progress && (() => {
+        const { text, percent } = progressView(progress);
+        return (
+          <div className="mt-5 rounded-xl border border-accent/30 bg-accent-light/50 p-4">
+            <div className="flex items-center gap-3">
+              <Loader2 className="shrink-0 animate-spin text-accent" size={18} />
+              <p className="text-sm font-semibold text-foreground">{text}</p>
+              {percent != null && <span className="ml-auto text-sm font-semibold text-accent">{percent}%</span>}
+            </div>
+            {percent != null && (
+              <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-card-border">
+                <div className="h-full rounded-full bg-accent transition-all duration-300" style={{ width: `${percent}%` }} />
+              </div>
+            )}
+            <p className="mt-2 text-xs text-muted">
+              A full 365-day import can take a minute or two. You can keep this page open.
+            </p>
+          </div>
+        );
+      })()}
+
       {connection && !showForm && (
         <>
           {connection.lastError && (
@@ -307,7 +384,7 @@ export default function IBKRFlexConnectionPanel() {
               type="button"
               onClick={() => void connect()}
               disabled={working || !queryId.trim() || !token.trim()}
-              className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-medium text-white transition hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {working ? <Loader2 className="animate-spin" size={16} /> : <Link2 size={16} />}
               {connection ? 'Save and test' : 'Connect and import'}
