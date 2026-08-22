@@ -94,9 +94,15 @@ const REGISTRY: Record<string, Omit<ProviderCapability, 'provider'>> = {
   'IBKR (Stocks)': {
     returnsVolume: true,
     nativeIntervals: ['5s', '10s', '15s', '30s', '1m', '2m', '3m', '5m', '10m', '15m', '30m', '1h', '2h', '4h', '1d'],
-    // Keep every interval provider-native: IBKR historical requests have their
-    // own pacing/step-size behavior and should not inherit Tiingo aggregation.
-    aggregatableFrom1m: false,
+    // Aggregate every higher interval from a shared 1m base fetch (same as
+    // Tiingo/Yahoo). Native higher-interval fetches (reqHistoricalData for e.g.
+    // "10 mins") only return COMPLETED bars, so the in-progress candle is never
+    // shown and price/alerts lag a full bar — which read as "stale/off" on IBKR
+    // vs Tiingo. 1m bars have no IBKR hard-pacing limit (that only applies to
+    // <=30s bars), the 1m base is shared across all intervals for a symbol (no
+    // extra request volume), and the aggregator keeps the partially-formed last
+    // bucket so the current candle tracks real time.
+    aggregatableFrom1m: true,
     futuresSymbology: 'root',
     cryptoConcatenated: false,
   },

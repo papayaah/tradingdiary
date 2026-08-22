@@ -30,9 +30,20 @@ const CLIENT_ID_ROTATION = 4;
 // (the persistent singleton pays this once at startup, not per scan).
 const CONNECT_TIMEOUT_MS = 8_000;
 const REQUEST_TIMEOUT_MS = 10_000;
-// Stay well under IBKR's 60/10min. Reject locally before IBKR paces us.
-const PACING_MAX = 50;
 const PACING_WINDOW_MS = 10 * 60 * 1000;
+// IBKR's hard 60/10min historical limit applies ONLY to bars of 30s or smaller;
+// 1-min-and-larger bars have no hard cap, only soft throttling. So gate small
+// bars tightly (stay under 60/10min) but allow a much higher rate for >=1min
+// bars, which is what the scanner uses — otherwise a large watchlist can never
+// refresh often enough to keep candles fresh. This is the final safety valve
+// below the per-scope budget/quota gate.
+const PACING_MAX_SMALL_BARS = 50; // <=30s bars: respect IBKR's hard limit
+const PACING_MAX_LARGE_BARS = 700; // >=1min bars: soft-throttle only
+
+/** IBKR hard-paces only sub-minute bars; treat second-resolution bars as small. */
+function isSmallBarInterval(interval: string | undefined): boolean {
+  return !!interval && interval.endsWith('s');
+}
 
 /** IB "info" codes that are connection-status noise, not real errors. */
 const BENIGN_CODES = new Set([2104, 2106, 2107, 2108, 2158, 2103, 2100, 2119, 2168, 2169]);
@@ -253,11 +264,12 @@ class IbkrClient {
     this.ready = null;
   }
 
-  private takePacingSlot() {
+  private takePacingSlot(interval?: string) {
     const now = Date.now();
     while (this.requestTimes.length && now - this.requestTimes[0] > PACING_WINDOW_MS) this.requestTimes.shift();
-    if (this.requestTimes.length >= PACING_MAX) {
-      throw new Error(`IBKR pacing guard: ${this.requestTimes.length} reqs in window`);
+    const limit = isSmallBarInterval(interval) ? PACING_MAX_SMALL_BARS : PACING_MAX_LARGE_BARS;
+    if (this.requestTimes.length >= limit) {
+      throw new Error(`IBKR pacing guard: ${this.requestTimes.length} reqs in window (limit ${limit})`);
     }
     this.requestTimes.push(now);
   }
@@ -326,7 +338,7 @@ class IbkrClient {
     const barSize = barSizeForInterval(interval);
     const duration = durationForInterval(interval);
     await this.connect();
-    this.takePacingSlot();
+    this.takePacingSlot(interval);
     const reqId = this.nextReqId++;
     const bars = await new Promise<OHLCCandle[]>((resolve, reject) => {
       const timer = setTimeout(() => {

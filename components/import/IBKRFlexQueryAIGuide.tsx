@@ -74,7 +74,7 @@ const STEPS: GuideStep[] = [
   {
     title: 'Copy the Query ID and enable Flex Web Service',
     accent: 'profit',
-    body: 'Open the blue information icon beside the saved query and note its numeric Query ID. Then open Flex Web Service Configuration, enable it, and generate a token. Keep the token private; Trading Diary needs the Query ID and token together for automatic syncing.',
+    body: 'Click the Edit (pencil) icon beside the saved query to view its numeric Query ID. Then open Flex Web Service Configuration, enable it, and generate a token. Keep the token private; Trading Diary needs the Query ID and token together for automatic syncing.',
   },
 ];
 
@@ -90,7 +90,7 @@ export default function IBKRFlexQueryAIGuide() {
         src: '/ibkr-flex-tutorial.mp4',
         caption: (
           <>
-            Watch the complete setup, including the blue information icon, Query ID, 365-day
+            Watch the complete setup, including the Edit button, Query ID, 365-day
             period, and secure Flex Web Service connection.
           </>
         ),

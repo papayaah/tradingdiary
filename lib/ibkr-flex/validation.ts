@@ -12,7 +12,7 @@ export function normalizeFlexToken(value: unknown): string {
 export function normalizeFlexQueryId(value: unknown): string {
   const queryId = typeof value === 'string' ? value.trim() : '';
   if (!QUERY_ID_PATTERN.test(queryId)) {
-    throw new Error('Enter the numeric Query ID from the blue information icon.');
+    throw new Error('Enter the numeric Query ID from your Flex Query details.');
   }
   return queryId;
 }

@@ -24,10 +24,15 @@ function defaultBudget(): ProviderBudget {
 // Built-in per-scope defaults for providers whose limits differ sharply from the
 // env defaults (which model Tiingo). Env SCANNER_PROVIDER_BUDGETS still wins.
 const BUILTIN_OVERRIDES: Record<string, Partial<ProviderBudget>> = {
-  // IBKR historical pacing is ~60 requests / 10 min. Cap the futures scope near
-  // the client-side pacing guard so the governor slows cadence before IBKR paces
-  // us (which would force a Yahoo fallback). IBKR isn't bandwidth-metered.
-  'ibkr-cme:server': { hourlyCap: 300, dailyCap: 7200 },
+  // IBKR's hard historical pacing (60 requests / 10 min) applies ONLY to bars of
+  // 30 seconds or smaller; 1-minute-and-larger bars have no hard cap, only soft
+  // throttling (see https://interactivebrokers.github.io/tws-api/historical_limitations.html).
+  // The scanner uses >=1min bars, so the old 300/hr cap needlessly throttled a
+  // large watchlist to a ~80-minute refresh cycle (candles went stale, alerts
+  // stopped). These caps target a ~3-minute full refresh cycle for ~180 symbols
+  // (~3.5k req/hr). IBKR isn't bandwidth-metered; the client-side pacing guard
+  // in ibkr-client.ts is the final safety valve.
+  'ibkr-cme:server': { hourlyCap: 4000, dailyCap: 100000 },
 };
 
 let overrides: Record<string, Partial<ProviderBudget>> | null = null;
