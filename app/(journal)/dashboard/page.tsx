@@ -182,6 +182,8 @@ export default function DashboardPage() {
     if (!allSummaries.length) return null;
 
     let filtered = allSummaries;
+    let start = '';
+    let end = '';
     if (rangeType !== 'all') {
       // Determine reference date anchor:
       // If dataset's latest trade date (e.g. 20260526) is earlier than system Date.now(),
@@ -205,9 +207,6 @@ export default function DashboardPage() {
         const day = String(dateObj.getDate()).padStart(2, '0');
         return `${y}${m}${day}`;
       };
-
-      let start = '';
-      let end = '';
 
       if (rangeType === '7d') {
         const d = new Date(referenceDate);
@@ -253,7 +252,9 @@ export default function DashboardPage() {
 
     return {
       stats: computeDashboard(filtered),
-      summaries: filtered
+      summaries: filtered,
+      rangeStart: start,
+      rangeEnd: end,
     };
   }, [allSummaries, rangeType, startDate, endDate]);
 
@@ -320,7 +321,7 @@ export default function DashboardPage() {
     );
   }
 
-  const { stats, summaries } = filteredData;
+  const { stats, summaries, rangeStart, rangeEnd } = filteredData;
 
   return (
     <div className="p-2 sm:p-6 space-y-4 sm:space-y-8 w-full">
@@ -465,7 +466,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <MonthlyCalendar summaries={summaries} />
+      <MonthlyCalendar summaries={allSummaries} rangeStart={rangeStart} rangeEnd={rangeEnd} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 items-stretch">
         <DailyWinLossChart summaries={summaries} />

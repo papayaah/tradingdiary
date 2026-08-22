@@ -7,7 +7,13 @@ import type { DailySummary } from '@/lib/trading/aggregator';
 import { pnlColorClass } from '@/lib/utils/format';
 
 interface MonthlyCalendarProps {
+  /** Full trade history — day cells always read from this, so navigating to any
+   * month shows its real trades regardless of the dashboard's date filter. */
   summaries: DailySummary[];
+  /** Selected date-range bounds ('YYYYMMDD', empty when 'All Time'). Used only
+   * to decide the opening month and the contiguous multi-month layout. */
+  rangeStart?: string;
+  rangeEnd?: string;
 }
 
 function toDateKey(d: Date): string {
@@ -40,7 +46,7 @@ function formatDayLabel(d: string): string {
     : dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
+export default function MonthlyCalendar({ summaries, rangeStart = '', rangeEnd = '' }: MonthlyCalendarProps) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const selectedSummary = useMemo(
     () => (selectedDate ? summaries.find((s) => s.date === selectedDate) ?? null : null),
@@ -66,47 +72,40 @@ export default function MonthlyCalendar({ summaries }: MonthlyCalendarProps) {
     return map;
   }, [summaries]);
 
-  // Determine initial month from data (most recent)
-  const defaultMonth = useMemo(() => {
-    if (summaries.length === 0) return new Date();
-    const latest = summaries[0].date; // sorted desc
-    return new Date(
-      parseInt(latest.substring(0, 4)),
-      parseInt(latest.substring(4, 6)) - 1,
-      1
-    );
-  }, [summaries]);
+  // Open on the selected range's end month so changing the top date filter moves
+  // the calendar there; fall back to the latest day we have data for.
+  const anchorMonth = useMemo(() => {
+    const anchor = rangeEnd.length === 8
+      ? rangeEnd
+      : summaries.length > 0 ? summaries[0].date : null; // summaries sorted desc
+    if (!anchor || anchor.length !== 8) return new Date();
+    return new Date(parseInt(anchor.substring(0, 4)), parseInt(anchor.substring(4, 6)) - 1, 1);
+  }, [rangeEnd, summaries]);
 
-  const [viewMonth, setViewMonth] = useState(defaultMonth);
+  const [viewMonth, setViewMonth] = useState(anchorMonth);
 
   useEffect(() => {
-    setViewMonth(defaultMonth);
-  }, [defaultMonth]);
+    setViewMonth(anchorMonth);
+  }, [anchorMonth]);
 
   const year = viewMonth.getFullYear();
   const month = viewMonth.getMonth();
 
-  // If a range is selected that spans 2-4 months, we show a single contiguous grid
+  // A selected range spanning 2-4 months renders as one contiguous grid;
+  // otherwise a single navigable month. Cell data comes from the full history
+  // in both, so navigating never blanks a month that actually has trades.
   const rangeInfo = useMemo(() => {
-    if (summaries.length === 0) return null;
+    if (rangeStart.length !== 8 || rangeEnd.length !== 8) return null;
 
-    const sortedByDateAsc = [...summaries].map(s => s.date).sort();
-    const firstStr = sortedByDateAsc[0];
-    const lastStr = sortedByDateAsc[sortedByDateAsc.length - 1];
+    const d1 = new Date(parseInt(rangeStart.substring(0, 4)), parseInt(rangeStart.substring(4, 6)) - 1, parseInt(rangeStart.substring(6, 8)));
+    const d2 = new Date(parseInt(rangeEnd.substring(0, 4)), parseInt(rangeEnd.substring(4, 6)) - 1, parseInt(rangeEnd.substring(6, 8)));
 
-    const d1 = new Date(parseInt(firstStr.substring(0, 4)), parseInt(firstStr.substring(4, 6)) - 1, parseInt(firstStr.substring(6, 8)));
-    const d2 = new Date(parseInt(lastStr.substring(0, 4)), parseInt(lastStr.substring(4, 6)) - 1, parseInt(lastStr.substring(6, 8)));
-
-    // Calculate months span
     const monthsSpan = (d2.getFullYear() - d1.getFullYear()) * 12 + (d2.getMonth() - d1.getMonth()) + 1;
-
-    // We only use the contiguous view if it spans 2-4 months or is specifically a short range.
-    // If it's more, stick to single month view with nav.
     if (monthsSpan > 1 && monthsSpan <= 4) {
       return { firstDate: d1, lastDate: d2, span: monthsSpan };
     }
     return null;
-  }, [summaries]);
+  }, [rangeStart, rangeEnd]);
 
   const goToThisMonth = () => {
     const now = new Date();
