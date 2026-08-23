@@ -18,6 +18,7 @@ import { getAllTags } from '@/lib/db/tags';
 import type { TagRecord } from '@/lib/db/schema';
 import TradeChart from './TradeChart';
 import TradeDetailsPanel from './TradeDetailsPanel';
+import ExecutionAuditPanel from './ExecutionAuditPanel';
 import TradeTagsEditor from './TradeTagsEditor';
 import TradePlaybookEditor from './TradePlaybookEditor';
 import TradePlanEditor from './TradePlanEditor';
@@ -137,6 +138,7 @@ function TradeRow({
   onTagsChange: () => void;
 }) {
   const [screenshotIds, setScreenshotIds] = useState<number[]>([]);
+  const [showAudit, setShowAudit] = useState(false);
   const rowRef = useRef<HTMLTableRowElement>(null);
   const ref = tradeRef(trade, accountId);
   const groupKey = ref.tradeGroupKey;
@@ -281,6 +283,25 @@ function TradeRow({
               </div>
             </td>
           </tr>
+          {trade.transactions.length > 0 && (
+            <tr>
+              <td colSpan={9} className="px-5 py-3 border-t border-card-border">
+                <button
+                  type="button"
+                  onClick={() => setShowAudit((v) => !v)}
+                  className="flex items-center gap-1 text-[10px] font-bold text-muted hover:text-foreground uppercase tracking-wider transition-colors"
+                >
+                  {showAudit ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                  {showAudit ? 'Hide execution audit' : 'Execution audit'}
+                </button>
+                {showAudit && (
+                  <div className="mt-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                    <ExecutionAuditPanel transactions={trade.transactions} />
+                  </div>
+                )}
+              </td>
+            </tr>
+          )}
           <tr>
             <td colSpan={9} className="px-5 py-3 border-t border-card-border">
               <div className="text-xs text-muted mb-1.5 font-medium uppercase tracking-wider">Screenshots</div>

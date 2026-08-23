@@ -1,14 +1,14 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Upload, BookOpen, ArrowLeft, ChevronLeft, ChevronRight, Plus, Sparkles } from 'lucide-react';
+import { Upload, BookOpen, ArrowLeft, ChevronLeft, ChevronRight, Plus, Sparkles, Link2 } from 'lucide-react';
 import {
   getShowPnlInBaseCurrency,
   setShowPnlInBaseCurrency,
 } from '@/lib/settings';
-import { aggregateTradeGroupsByDay, applyMarketPrices, type DailySummary } from '@/lib/trading/aggregator';
+import { aggregateByDay, applyMarketPrices, type DailySummary } from '@/lib/trading/aggregator';
 import { onJournalSynced } from '@/lib/journal/sync-bus';
 import SyncStatusIndicator from '@/components/journal/SyncStatusIndicator';
 import DayGroup from '@/components/journal/DayGroup';
@@ -40,6 +40,42 @@ export default function JournalPage() {
   // Reload the journal when a sync merged remote changes into IndexedDB.
   useEffect(() => onJournalSynced(() => setRefreshKey((k) => k + 1)), []);
 
+  // Deep-link IN only: an ?account=<id> param selects that account so a shared
+  // /journal?date=...&account=... link opens the right one. This effect ONLY
+  // reads the URL and sets state — it never writes the URL back (that reactive
+  // writeback is what previously caused an infinite navigation loop). The ref
+  // ensures each distinct param value is applied at most once, so setting state
+  // (which re-runs the effect) can't re-fire. Sharing is handled by an explicit
+  // Copy-link button, not by mirroring state into the URL.
+  const appliedAccountParamRef = useRef<string | null>(null);
+  useEffect(() => {
+    const param = searchParams.get('account');
+    if (!param || accounts.length === 0) return;
+    if (param === appliedAccountParamRef.current) return;
+    if (param === selectedAccountId) {
+      appliedAccountParamRef.current = param;
+      return;
+    }
+    if (accounts.some((account) => account.accountId === param)) {
+      appliedAccountParamRef.current = param;
+      setSelectedAccountId(param);
+    }
+  }, [searchParams, accounts, selectedAccountId, setSelectedAccountId]);
+
+  const handleCopyLink = useCallback(async () => {
+    const params = new URLSearchParams();
+    if (filterDate) params.set('date', filterDate);
+    if (selectedAccountId) params.set('account', selectedAccountId);
+    const query = params.toString();
+    const url = `${window.location.origin}/journal${query ? `?${query}` : ''}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success('Journal link copied to clipboard');
+    } catch {
+      toast.error('Could not copy link');
+    }
+  }, [filterDate, selectedAccountId]);
+
   const toggleBaseCurrency = useCallback(() => {
     setShowBaseCurrency((current) => {
       const next = !current;
@@ -70,7 +106,7 @@ export default function JournalPage() {
       const transactions = await getTransactionsByAccount(selectedAccountId);
 
       if (transactions.length > 0) {
-        const agg = aggregateTradeGroupsByDay(transactions);
+        const agg = aggregateByDay(transactions);
 
         // --- 1. SET INITIAL DATA IMMEDIATELY ---
         setSummaries([...agg]);
@@ -253,6 +289,16 @@ export default function JournalPage() {
         </div>
         <div className="flex items-center gap-2 self-start md:self-auto">
           <SyncStatusIndicator />
+          <button
+            type="button"
+            onClick={handleCopyLink}
+            title="Copy a shareable link to this journal view (date + account)"
+            aria-label="Copy link to this journal view"
+            className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-card-border bg-card-bg px-3 text-xs font-semibold text-muted transition-colors hover:bg-muted-bg hover:text-foreground"
+          >
+            <Link2 size={15} />
+            <span className="hidden sm:inline">Copy link</span>
+          </button>
           {displaySummaries && displaySummaries.length > 0 && (
             <button
               type="button"

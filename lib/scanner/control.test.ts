@@ -9,6 +9,7 @@ describe('scanner global control', () => {
     expect(parseScannerControl(null)).toEqual({
       paused: false,
       equitiesProvider: 'auto',
+      cadenceOverrides: {},
       changedAt: null,
       changedBy: null,
     });
@@ -22,6 +23,7 @@ describe('scanner global control', () => {
     }))).toEqual({
       paused: true,
       equitiesProvider: 'auto',
+      cadenceOverrides: {},
       changedAt: '2026-08-14T00:00:00.000Z',
       changedBy: 'admin@example.com',
     });

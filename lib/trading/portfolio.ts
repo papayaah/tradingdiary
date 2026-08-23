@@ -17,7 +17,24 @@ export interface Holding {
 interface FIFOLot {
   qty: number;
   entryPrice: number;
+  /** Cash-per-(unit×price) factor. IBKR quotes bonds/T-bills as a percentage of
+   * par (price 99.77 for 80,000 face = $79,816, not $7.98M), and futures carry a
+   * point multiplier. The flex report omits the multiplier (always 1), so we
+   * derive the true factor from the trade's cash value: |totalValue| / (qty×price).
+   * That yields 1 for ordinary shares, 0.01 for bonds, and the point value for
+   * futures — correcting market value and cost for every instrument type. */
   multiplier: number;
+}
+
+/** Effective cash factor for a fill: |totalValue| / (|qty| × |price|). Falls back
+ * to the reported multiplier when price/qty/value are missing. */
+function priceFactorFor(t: TransactionRecord): number {
+  const absQty = Math.abs(t.quantity);
+  const absPrice = Math.abs(t.price);
+  if (absQty > 0 && absPrice > 0 && t.totalValue) {
+    return Math.abs(t.totalValue) / (absQty * absPrice);
+  }
+  return t.multiplier || 1;
 }
 
 export function computePortfolio(transactions: TransactionRecord[]): Holding[] {
@@ -52,7 +69,7 @@ export function computePortfolio(transactions: TransactionRecord[]): Holding[] {
         openLots.push({
           qty,
           entryPrice: Math.abs(t.price),
-          multiplier: t.multiplier || 1,
+          multiplier: priceFactorFor(t),
         });
         runningPosition += (t.side === 'BUYTOOPEN' ? qty : -qty);
       } else if (!isOpening && qty > 0) {

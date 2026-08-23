@@ -38,6 +38,7 @@ import {
   type PatternSettings,
 } from '@/lib/scanner/patterns';
 import type { TransactionRecord } from '@/lib/db/schema';
+import { getChartOverlayPreferences, setChartOverlayPreference } from '@/lib/settings';
 import { CalendarDays, ChartNoAxesCombined, Loader2, Minus, Play, Sparkles } from 'lucide-react';
 const DEFAULT_INTERVALS = ['1m', '5m', '10m', '15m', '1h', '1d'] as const;
 const LOAD_MORE_THRESHOLD_BARS = 25;
@@ -407,8 +408,17 @@ export default function SharedTradingChart({
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const patternSeriesRef = useRef<ISeriesApi<'Line'>[]>([]);
   const primitiveRef = useRef<TradeExecutionPrimitive | null>(null);
+  // Levels/Trendlines default to the globally-persisted preference so a user's
+  // choice sticks across every chart instead of resetting per chart. Start from
+  // the SSR-safe defaults, then hydrate from localStorage after mount (matching
+  // the base-currency preference pattern) to avoid a hydration mismatch.
   const [localLevelsEnabled, setLocalLevelsEnabled] = useState(true);
   const [localTrendlinesEnabled, setLocalTrendlinesEnabled] = useState(true);
+  useEffect(() => {
+    const prefs = getChartOverlayPreferences();
+    setLocalLevelsEnabled(prefs.levels);
+    setLocalTrendlinesEnabled(prefs.trendlines);
+  }, []);
   const levelsEnabled = controlledLevelsEnabled ?? localLevelsEnabled;
   const trendlinesEnabled = controlledTrendlinesEnabled ?? localTrendlinesEnabled;
   const handleToggleLevels = useCallback(() => {
@@ -416,14 +426,22 @@ export default function SharedTradingChart({
       onToggleLevels();
       return;
     }
-    setLocalLevelsEnabled((enabled) => !enabled);
+    setLocalLevelsEnabled((enabled) => {
+      const next = !enabled;
+      setChartOverlayPreference('levels', next);
+      return next;
+    });
   }, [onToggleLevels]);
   const handleToggleTrendlines = useCallback(() => {
     if (onToggleTrendlines) {
       onToggleTrendlines();
       return;
     }
-    setLocalTrendlinesEnabled((enabled) => !enabled);
+    setLocalTrendlinesEnabled((enabled) => {
+      const next = !enabled;
+      setChartOverlayPreference('trendlines', next);
+      return next;
+    });
   }, [onToggleTrendlines]);
   const [hoveredTrade, setHoveredTrade] = useState<{
     trade: TransactionRecord;

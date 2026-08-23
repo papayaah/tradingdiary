@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { fetchCandles } from '@/lib/chart/fetch';
+import { getChartOverlayPreferences, setChartOverlayPreference } from '@/lib/settings';
 import type { TransactionRecord } from '@/lib/db/schema';
 import { useReplay } from '@/components/replay/ReplayProvider';
 import SharedTradingChart from '@/components/chart/SharedTradingChart';
@@ -39,7 +40,11 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
   const [error, setError] = useState('');
   const [interval, setInterval] = useState(defaultInterval);
   const [candles, setCandles] = useState<CandleData[]>([]);
+  // Persisted globally so the Patterns overlay doesn't reset on every chart.
   const [autoPatternsEnabled, setAutoPatternsEnabled] = useState(false);
+  useEffect(() => {
+    setAutoPatternsEnabled(getChartOverlayPreferences().patterns);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,7 +106,11 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
         height={360}
         showVolume={true}
         autoPatternsEnabled={autoPatternsEnabled}
-        onTogglePatterns={() => setAutoPatternsEnabled(!autoPatternsEnabled)}
+        onTogglePatterns={() => {
+          const next = !autoPatternsEnabled;
+          setAutoPatternsEnabled(next);
+          setChartOverlayPreference('patterns', next);
+        }}
         onReplayTrade={() => openReplay({ date, symbol })}
         showChartIdentity={false}
         loading={loading}

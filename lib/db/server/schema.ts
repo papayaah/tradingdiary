@@ -303,6 +303,8 @@ export const engageTickets = pgTable("engage_tickets", {
     status: text("status").notNull().default("open"), // 'open' | 'in_progress' | 'resolved' | 'closed'
     subject: text("subject"),
     message: text("message").notNull(),
+    adminReply: text("admin_reply"),               // Admin's response message
+    repliedAt: timestamp("replied_at", { mode: 'string' }),
     userEmail: text("user_email"),
     userName: text("user_name"),
     attachments: jsonb("attachments"),             // Attached screenshots or logs

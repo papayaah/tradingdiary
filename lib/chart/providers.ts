@@ -644,7 +644,16 @@ export class IBKRProvider implements ChartProvider {
 export class IBKREquityProvider implements ChartProvider {
     name = "IBKR (Stocks)";
 
-    async fetchCandles(symbol: string, _date: string, interval: string): Promise<OHLCCandle[]> {
+    async fetchCandles(symbol: string, date: string, interval: string): Promise<OHLCCandle[]> {
+        // The journal/replay chart asks for a specific trade DATE — honor it so
+        // IBKR returns that day's candles (previously ignored, so a past trade
+        // showed the most recent session and every execution marker piled onto
+        // the wrong bars). Live/undated views still fetch the recent window.
+        if (date && /^\d{8}$/.test(date)) {
+            await reserveProviderRequest(this.name);
+            const { getIbkrClient } = await import('./ibkr-client');
+            return getIbkrClient().fetchEquityCandlesForDate(symbol, interval, date);
+        }
         return this.fetchRecentCandles(symbol, interval);
     }
 

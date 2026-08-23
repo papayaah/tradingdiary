@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { Upload, LayoutDashboard, Calendar, Sparkles, ChevronDown, Check } from 'lucide-react';
-import { aggregateTradeGroupsByDay, type DailySummary } from '@/lib/trading/aggregator';
+import { aggregateByDay, type DailySummary } from '@/lib/trading/aggregator';
 import { onJournalSynced } from '@/lib/journal/sync-bus';
 import { computeDashboard } from '@/lib/trading/dashboard';
 import { getCashFlows } from '@/lib/db/cash-flows';
@@ -122,7 +122,7 @@ export default function DashboardPage() {
         setLoading(false);
         return;
       }
-      const agg = aggregateTradeGroupsByDay(transactions);
+      const agg = aggregateByDay(transactions);
       setAllSummaries(agg);
       setLoading(false);
 

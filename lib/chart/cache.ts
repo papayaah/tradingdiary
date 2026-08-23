@@ -8,8 +8,10 @@ const STORE_NAME = 'ohlc';
 // existing v1 databases so the missing `ohlc` store gets created. The upgrade
 // is idempotent, so it is safe whether or not the store already exists.
 const DB_VERSION = 2;
-// Bump this when the candle fetch logic changes to invalidate stale cache entries
-const CACHE_VERSION = 2;
+// Bump this when the candle fetch logic changes to invalidate stale cache entries.
+// v3: IBKR now fetches the requested historical DATE (previously it returned the
+// most recent session, so past-date charts were cached with wrong-day candles).
+const CACHE_VERSION = 3;
 
 /**
  * The single opener for the chart cache database. All callers (chart fetch and

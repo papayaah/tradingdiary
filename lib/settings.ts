@@ -16,11 +16,20 @@ export interface DashboardRangePreference {
   endDate: string;
 }
 
+/** Chart overlay toggles, persisted globally so they don't reset per chart. */
+export interface ChartOverlayPreferences {
+  patterns: boolean;
+  levels: boolean;
+  trendlines: boolean;
+}
+
 export interface AppSettings {
   /** Show journal trade P&L primarily in the account's base currency. */
   showPnlInBaseCurrency: boolean;
   /** Last dashboard period selected by this browser. */
   dashboardRange: DashboardRangePreference;
+  /** Chart overlay toggles shared across every chart. */
+  chartOverlays: ChartOverlayPreferences;
 }
 
 const defaults: AppSettings = {
@@ -29,6 +38,11 @@ const defaults: AppSettings = {
     rangeType: 'mtd',
     startDate: '',
     endDate: '',
+  },
+  chartOverlays: {
+    patterns: false,
+    levels: true,
+    trendlines: true,
   },
 };
 
@@ -55,6 +69,16 @@ function normalizeDashboardRange(value: unknown): DashboardRangePreference {
   };
 }
 
+function normalizeChartOverlays(value: unknown): ChartOverlayPreferences {
+  if (!value || typeof value !== 'object') return defaults.chartOverlays;
+  const candidate = value as Partial<ChartOverlayPreferences>;
+  return {
+    patterns: typeof candidate.patterns === 'boolean' ? candidate.patterns : defaults.chartOverlays.patterns,
+    levels: typeof candidate.levels === 'boolean' ? candidate.levels : defaults.chartOverlays.levels,
+    trendlines: typeof candidate.trendlines === 'boolean' ? candidate.trendlines : defaults.chartOverlays.trendlines,
+  };
+}
+
 export function getSettings(): AppSettings {
   if (typeof window === 'undefined') return defaults;
   try {
@@ -65,6 +89,7 @@ export function getSettings(): AppSettings {
       ...defaults,
       ...stored,
       dashboardRange: normalizeDashboardRange(stored.dashboardRange),
+      chartOverlays: normalizeChartOverlays(stored.chartOverlays),
     };
   } catch {
     return defaults;
@@ -91,4 +116,13 @@ export function getDashboardRangePreference(): DashboardRangePreference {
 
 export function setDashboardRangePreference(preference: DashboardRangePreference): void {
   saveSettings({ dashboardRange: normalizeDashboardRange(preference) });
+}
+
+export function getChartOverlayPreferences(): ChartOverlayPreferences {
+  return getSettings().chartOverlays;
+}
+
+export function setChartOverlayPreference(key: keyof ChartOverlayPreferences, value: boolean): void {
+  const current = getChartOverlayPreferences();
+  saveSettings({ chartOverlays: { ...current, [key]: value } });
 }

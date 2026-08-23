@@ -145,6 +145,24 @@ function durationForInterval(interval: string): string {
   return '2 D'; // minute bars
 }
 
+/**
+ * IBKR endDateTime marking the END of a YYYYMMDD trading day in US/Eastern.
+ * Using the "US/Eastern" suffix lets IBKR resolve the wall-clock instant with
+ * DST awareness, so a request for a past date returns THAT day's bars (with
+ * duration "1 D") instead of the most recent session. Date math via Date.UTC
+ * handles month/year rollover.
+ */
+function ibkrEndOfDayEastern(dateStr: string): string {
+  const y = parseInt(dateStr.slice(0, 4));
+  const m = parseInt(dateStr.slice(4, 6)) - 1;
+  const d = parseInt(dateStr.slice(6, 8));
+  const next = new Date(Date.UTC(y, m, d + 1));
+  const yyyy = next.getUTCFullYear();
+  const mm = String(next.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(next.getUTCDate()).padStart(2, '0');
+  return `${yyyy}${mm}${dd} 00:00:00 US/Eastern`;
+}
+
 /** YYYYMMDD in New York, used to detect a new day (front-month rollover). */
 function nyDate(): string {
   const p = new Intl.DateTimeFormat('en-US', {
@@ -334,9 +352,10 @@ class IbkrClient {
     label: string,
     interval: string,
     endDateTime = '',
+    durationOverride?: string,
   ): Promise<OHLCCandle[]> {
     const barSize = barSizeForInterval(interval);
-    const duration = durationForInterval(interval);
+    const duration = durationOverride ?? durationForInterval(interval);
     await this.connect();
     this.takePacingSlot(interval);
     const reqId = this.nextReqId++;
@@ -379,6 +398,26 @@ class IbkrClient {
     try {
       const contract = await this.qualifyEquityContract(normalized);
       return await this.fetchHistoricalCandles(contract, normalized, interval);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!message.includes('pacing guard')) this.teardown();
+      throw err;
+    }
+  }
+
+  /**
+   * Fetch a SPECIFIC trading day's bars (YYYYMMDD, exchange-local). Used by the
+   * journal/replay chart, which must show the candles for a past trade date — not
+   * the most recent session. Anchors reqHistoricalData's endDateTime to the end
+   * of that ET day so IBKR returns that day rather than "now".
+   */
+  async fetchEquityCandlesForDate(symbol: string, interval: string, dateStr: string): Promise<OHLCCandle[]> {
+    barSizeForInterval(interval);
+    const normalized = symbol.toUpperCase().trim();
+    const endDateTime = ibkrEndOfDayEastern(dateStr);
+    try {
+      const contract = await this.qualifyEquityContract(normalized);
+      return await this.fetchHistoricalCandles(contract, normalized, interval, endDateTime, '1 D');
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (!message.includes('pacing guard')) this.teardown();
