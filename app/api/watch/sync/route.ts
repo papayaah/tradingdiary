@@ -18,6 +18,11 @@ import {
   canPersistAuthenticatedWatchlist,
   getWatchlistLimit,
 } from '@/lib/watch/watchlist-limits';
+import {
+  filterEnabledMarketDataItems,
+  isCryptoMarketDataEnabled,
+  isCryptoMarketDataSymbol,
+} from '@/lib/features/market-data';
 
 const MIN_SCAN_FREQUENCY_SECONDS = 15;
 const DEFAULT_SCAN_FREQUENCY_SECONDS = MIN_SCAN_FREQUENCY_SECONDS;
@@ -174,8 +179,9 @@ export async function GET(request: NextRequest) {
     }
 
     const record = records[0];
+    const storedWatchlist = Array.isArray(record.watchlist) ? record.watchlist as SyncedWatch[] : [];
     return NextResponse.json({
-      watchlist: record.watchlist,
+      watchlist: filterEnabledMarketDataItems(storedWatchlist),
       patternId: parsePatternId(record.patternId),
       patternIds: parsePatternIds(record.patternIds, parsePatternId(record.patternId)),
       minMovePercent: parseMinMovePercent(record.minMovePercent),
@@ -209,6 +215,16 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     if (!Array.isArray(body.watchlist)) {
       return NextResponse.json({ error: 'Invalid watchlist format' }, { status: 400 });
+    }
+
+    if (!isCryptoMarketDataEnabled() && body.watchlist.some((item: unknown) => {
+      if (!item || typeof item !== 'object') return false;
+      return isCryptoMarketDataSymbol(String((item as Record<string, unknown>).symbol ?? ''));
+    })) {
+      return NextResponse.json({
+        error: 'Crypto market data is temporarily unavailable',
+        code: 'CRYPTO_MARKET_DATA_DISABLED',
+      }, { status: 422 });
     }
 
     const watchlist = cleanWatchlist(body.watchlist);

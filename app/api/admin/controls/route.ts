@@ -16,6 +16,7 @@ import {
   writeClassProvider,
   writeScannerControl,
 } from '@/lib/scanner/control';
+import { isMarketDataAssetClassEnabled } from '@/lib/features/market-data';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -41,7 +42,9 @@ export async function GET(request: Request) {
     // from futures).
     providerOptions: {
       equity: providerOptionsForClass('equity'),
-      crypto: providerOptionsForClass('crypto'),
+      ...(isMarketDataAssetClassEnabled('crypto')
+        ? { crypto: providerOptionsForClass('crypto') }
+        : {}),
       futures: providerOptionsForClass('futures'),
     },
   });
@@ -72,6 +75,9 @@ export async function POST(request: Request) {
       if (!isMarketAssetClass(body?.assetClass)) {
         return NextResponse.json({ success: false, error: 'Unknown asset class' }, { status: 400 });
       }
+      if (!isMarketDataAssetClassEnabled(body.assetClass)) {
+        return NextResponse.json({ success: false, error: 'Asset class is temporarily disabled' }, { status: 409 });
+      }
       if (!isProviderForClass(body.assetClass, body?.provider)) {
         return NextResponse.json(
           { success: false, error: `Unsupported ${body.assetClass} provider` },
@@ -89,6 +95,9 @@ export async function POST(request: Request) {
     if (action === 'pause-class' || action === 'resume-class') {
       if (!isMarketAssetClass(body?.assetClass)) {
         return NextResponse.json({ success: false, error: 'Unknown asset class' }, { status: 400 });
+      }
+      if (!isMarketDataAssetClassEnabled(body.assetClass)) {
+        return NextResponse.json({ success: false, error: 'Asset class is temporarily disabled' }, { status: 409 });
       }
       const paused = action === 'pause-class';
       const control = await writeClassPause(body.assetClass, paused, session.user.email);

@@ -16,6 +16,7 @@ import { resolveProviderIdentity } from './provider-scope';
 import { getProviderCapability, type ProviderCapability } from './provider-capabilities';
 import { canonicalizeSymbol } from './canonical-symbol';
 import { parseIntervalMinutes, BASE_INTERVAL } from './aggregate';
+import { isMarketDataAssetClassEnabled } from '@/lib/features/market-data';
 
 const HOUR = 3600;
 
@@ -195,6 +196,7 @@ export async function loadScopeInventory(
   const rows = await db.select().from(serverWatch).where(eq(serverWatch.enabled, true));
   const entries: AcquisitionEntry[] = [];
   for (const w of rows) {
+    if (!isMarketDataAssetClassEnabled(w.assetClass)) continue;
     if (!isProviderAcquisitionActive(w.assetClass as AssetClass, now)) continue;
     entries.push(entryForWatch(w, aggregationEnabled));
   }
@@ -210,6 +212,7 @@ export async function loadAcquisitionSeries(
   const unique = new Map<string, AcquisitionEntry>();
   for (const watch of rows) {
     const assetClass = watch.assetClass as AssetClass;
+    if (!isMarketDataAssetClassEnabled(assetClass)) continue;
     if (!isProviderAcquisitionActive(assetClass, now)) continue;
     const entry = entryForWatch(watch, aggregationEnabled);
     const key = `${entry.providerScope}\u0000${entry.canonicalSymbol}\u0000${entry.interval}`;

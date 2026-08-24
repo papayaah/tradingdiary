@@ -13,6 +13,11 @@ import {
 } from '@/lib/db/server/schema';
 import { scannerTimestampToUtcIso } from '@/lib/watch/timestamps';
 import { MAX_ALERT_HISTORY_ITEMS } from '@/lib/watch/alert-history';
+import {
+  isCryptoMarketDataEnabled,
+  isCryptoMarketDataSymbol,
+  isMarketDataAssetClassEnabled,
+} from '@/lib/features/market-data';
 
 const HEARTBEAT_STALE_MS = 60_000;
 
@@ -70,23 +75,27 @@ export async function buildSnapshot(userId: string): Promise<WatchSnapshot> {
     .from(watchEvent)
     .where(eq(watchEvent.userId, userId));
 
-  const normalizedWatches = watches.map((watch) => ({
+  const visibleWatches = watches.filter((watch) => isMarketDataAssetClassEnabled(watch.assetClass));
+  const visibleWatchIds = new Set(visibleWatches.map((watch) => watch.id));
+  const normalizedWatches = visibleWatches.map((watch) => ({
     ...watch,
     nextScanAt: scannerTimestampToUtcIso(watch.nextScanAt),
     createdAt: scannerTimestampToUtcIso(watch.createdAt),
     updatedAt: scannerTimestampToUtcIso(watch.updatedAt),
   }));
-  const normalizedStates = states.map((state) => ({
+  const normalizedStates = states.filter((state) => visibleWatchIds.has(state.watchId)).map((state) => ({
     ...state,
     lastCandleTime: scannerTimestampToUtcIso(state.lastCandleTime),
     lastScannedAt: scannerTimestampToUtcIso(state.lastScannedAt),
     updatedAt: scannerTimestampToUtcIso(state.updatedAt),
   }));
-  const normalizedAlerts = alerts.map((alert) => ({
+  const normalizedAlerts = alerts
+    .filter((alert) => isCryptoMarketDataEnabled() || !isCryptoMarketDataSymbol(alert.symbol))
+    .map((alert) => ({
     ...alert,
     candleTime: scannerTimestampToUtcIso(alert.candleTime),
     createdAt: scannerTimestampToUtcIso(alert.createdAt),
-  }));
+    }));
   const normalizedWorkers = workers.map((worker) => ({
     ...worker,
     lastBeatAt: scannerTimestampToUtcIso(worker.lastBeatAt),

@@ -4,6 +4,7 @@ import {
   isSupportedSymbolSearchCandidate,
   parseSymbolSearchCategory,
 } from '@/lib/market/symbol-search';
+import { isCryptoMarketDataEnabled, isCryptoMarketDataSymbol } from '@/lib/features/market-data';
 
 // Symbol autocomplete backed by Yahoo's free search endpoint (the same one its
 // own site uses). Server-proxied because the browser cannot call Yahoo directly
@@ -33,6 +34,10 @@ export async function GET(request: NextRequest) {
   const category = parseSymbolSearchCategory(
     request.nextUrl.searchParams.get('category'),
   );
+  const cryptoEnabled = isCryptoMarketDataEnabled();
+  if (!cryptoEnabled && category === 'crypto') {
+    return NextResponse.json({ results: [] });
+  }
   // Allow single-character queries so real single-letter tickers (U, W, F, T, X)
   // autocomplete and validate. Empty still returns nothing.
   if (!q) {
@@ -55,6 +60,7 @@ export async function GET(request: NextRequest) {
     const quotes = Array.isArray(data.quotes) ? data.quotes : [];
     const results: SymbolSearchResult[] = quotes
       .filter((quote): quote is YahooQuote & { symbol: string } => typeof quote.symbol === 'string' && quote.symbol.length > 0)
+      .filter((quote) => cryptoEnabled || !isCryptoMarketDataSymbol(quote.symbol))
       .filter((quote) => isSupportedSymbolSearchCandidate({
         symbol: quote.symbol.toUpperCase(),
         exchangeCode: (quote.exchange || '').toUpperCase(),

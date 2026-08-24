@@ -8,6 +8,7 @@ services:
         # Inlined into the client bundle at build time. Must also be set in the
         # server .env so this interpolation resolves during `docker compose build`.
         NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
+        NEXT_PUBLIC_CRYPTO_MARKET_DATA_ENABLED: ${NEXT_PUBLIC_CRYPTO_MARKET_DATA_ENABLED:-false}
     restart: unless-stopped
     depends_on:
       - postgres
@@ -53,6 +54,7 @@ services:
       # Web Push. The web process does not currently send push, but keep the keys
       # symmetric with the scanner so a future route handler cannot fail silently.
       NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
+      NEXT_PUBLIC_CRYPTO_MARKET_DATA_ENABLED: ${NEXT_PUBLIC_CRYPTO_MARKET_DATA_ENABLED:-false}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
       VAPID_SUBJECT: ${VAPID_SUBJECT}
     ports:
@@ -131,6 +133,7 @@ services:
       # Web Push: the scanner is the process that actually sends push, so it needs
       # both keys at runtime (read from process.env by lib/scanner/push.ts).
       NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
+      NEXT_PUBLIC_CRYPTO_MARKET_DATA_ENABLED: ${NEXT_PUBLIC_CRYPTO_MARKET_DATA_ENABLED:-false}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:support@tradingdiary.app}
     networks:

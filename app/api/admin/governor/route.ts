@@ -4,6 +4,8 @@ import { isAdminEmail } from '@/lib/admin';
 import { getProviderBudget } from '@/lib/scanner/shared/provider-budget';
 import { assetClassFromCadence, entitlementScopeFromCadence } from '@/lib/scanner/shared/provider-scope';
 import { readScannerControl } from '@/lib/scanner/control';
+import { applyCadenceOverride } from '@/lib/scanner/shared/governor-display';
+import { isMarketDataAssetClassEnabled } from '@/lib/features/market-data';
 import IORedis from 'ioredis';
 
 export const runtime = 'nodejs';
@@ -48,7 +50,10 @@ export async function GET(request: Request) {
         const scopes = [...new Set<string>([
           ...keys.map((k) => k.replace(/^metrics:governor:/, '')),
           ...Object.keys(cadenceOverrides),
-        ])].filter((scope) => assetClassFromCadence(scope) !== undefined);
+        ])].filter((scope) => {
+          const assetClass = assetClassFromCadence(scope);
+          return assetClass !== undefined && isMarketDataAssetClassEnabled(assetClass);
+        });
 
         for (const scope of scopes) {
           const entitlementScope = entitlementScopeFromCadence(scope);
@@ -57,7 +62,7 @@ export async function GET(request: Request) {
           const overrideSeconds = cadenceOverrides[scope] ?? null;
 
           if (hash && hash.providerScope) {
-            governorStates.push({
+            governorStates.push(applyCadenceOverride({
               providerScope: scope,
               entitlementScope: hash.entitlementScope || entitlementScope,
               assetClass: hash.assetClass || assetClassFromCadence(scope) || '',
@@ -69,7 +74,7 @@ export async function GET(request: Request) {
               dailyCap: budget.dailyCap,
               floorSeconds: budget.floorSeconds,
               overrideSeconds,
-            });
+            }, overrideSeconds));
           } else {
             // Override set but no metrics yet: show an idle row so it's editable.
             governorStates.push({

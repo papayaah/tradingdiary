@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getActiveProvider, YahooProvider, effectiveProviderName } from '@/lib/chart/providers';
 import { newYorkTradingDate } from '@/lib/scanner/candles';
 import { parseScannerControl, readScannerControl } from '@/lib/scanner/control';
+import { isCryptoMarketDataEnabled, isCryptoMarketDataSymbol } from '@/lib/features/market-data';
 
 const newYorkDate = (timestampMs: number) =>
   new Date(timestampMs).toLocaleDateString('en-US', {
@@ -20,6 +21,9 @@ export async function GET(request: NextRequest) {
 
   if (!symbol) {
     return NextResponse.json({ error: 'symbol parameter is required' }, { status: 400 });
+  }
+  if (!isCryptoMarketDataEnabled() && isCryptoMarketDataSymbol(symbol)) {
+    return NextResponse.json({ error: 'Crypto market data is temporarily unavailable' }, { status: 404 });
   }
 
   try {

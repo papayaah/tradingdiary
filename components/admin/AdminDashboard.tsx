@@ -34,6 +34,8 @@ import {
 } from 'recharts';
 import { DueCountdown } from './DueCountdown';
 import { parseServerTimestampMs } from '@/lib/utils/serverTime';
+import { applyCadenceOverride } from '@/lib/scanner/shared/governor-display';
+import { isMarketDataAssetClassEnabled } from '@/lib/features/market-data';
 
 interface OverviewData {
   users: {
@@ -216,11 +218,12 @@ const CLASS_PROVIDER_OPTIONS: Record<MarketAssetClass, string[]> = {
   futures: ['auto', 'ibkr', 'yahoo'],
 };
 
-const CLASS_META: Array<{ id: MarketAssetClass; label: string; description: string }> = [
+const ALL_CLASS_META: Array<{ id: MarketAssetClass; label: string; description: string }> = [
   { id: 'equity', label: 'Equities', description: 'US stocks & ETFs.' },
   { id: 'crypto', label: 'Crypto', description: 'Spot crypto pairs (…-USD).' },
   { id: 'futures', label: 'Futures', description: 'CME futures roots.' },
 ];
+const CLASS_META = ALL_CLASS_META.filter((item) => isMarketDataAssetClassEnabled(item.id));
 
 type ProviderSelectionState = Record<MarketAssetClass, string>;
 type ClassPauseUIState = Record<MarketAssetClass, boolean>;
@@ -490,7 +493,7 @@ export default function AdminDashboard() {
         // Reflect the new override immediately; the next poll refreshes the rest.
         setGovernorItems((items) =>
           items.map((item) =>
-            item.providerScope === scope ? { ...item, overrideSeconds: seconds } : item,
+            item.providerScope === scope ? applyCadenceOverride(item, seconds) : item,
           ),
         );
         setCadenceDrafts((drafts) => {

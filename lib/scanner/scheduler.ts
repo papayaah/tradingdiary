@@ -8,6 +8,7 @@ import { db } from '@/lib/scanner/db';
 import { serverWatch } from '@/lib/db/server/schema';
 import { getScanQueue, scanJobId, type ScanJob } from '@/lib/scanner/queue';
 import { isSessionActive, type AssetClass, type WatchSession } from '@/lib/scanner/sessions';
+import { isMarketDataAssetClassEnabled } from '@/lib/features/market-data';
 
 function advance(fromIso: string, frequencySeconds: number): string {
   const base = Date.parse(fromIso);
@@ -53,7 +54,7 @@ export async function scheduleDueWatches(
     // no provider work happens and the watch resumes cleanly on unpause without
     // a backlog stampede.
     const classPaused = pausedClasses?.has(assetClass) ?? false;
-    const eligible = !classPaused && isSessionActive(
+    const eligible = isMarketDataAssetClassEnabled(assetClass) && !classPaused && isSessionActive(
       w.session as WatchSession,
       assetClass,
       now,

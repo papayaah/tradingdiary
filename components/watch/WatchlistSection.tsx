@@ -6,6 +6,9 @@ import { WatchlistViewToggle, type WatchlistView } from './WatchControls';
 import WatchlistRow from './WatchlistRow';
 import CompactWatchlist, { type CompactWatchlistEntry } from './CompactWatchlist';
 import type { Candle, PatternId } from './watchAnalysis';
+import { isCryptoMarketDataEnabled } from '@/lib/features/market-data';
+
+const cryptoMarketDataEnabled = isCryptoMarketDataEnabled();
 
 export interface WatchItem {
   symbol: string;
@@ -83,7 +86,7 @@ export function WatchlistSection({
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-card-bg/50 backdrop-blur-md p-4 rounded-2xl border border-card-border/60 shadow-sm">
         {/* Category Tabs */}
         <div className="flex items-center gap-1.5 bg-muted-bg/60 p-1 rounded-xl border border-card-border/40">
-          {(['all', 'stocks', 'crypto', 'futures'] as const).map((cat) => (
+          {(['all', 'stocks', ...(cryptoMarketDataEnabled ? ['crypto' as const] : []), 'futures'] as const).map((cat) => (
             <button
               key={cat}
               onClick={() => onCategoryChange(cat)}
@@ -102,7 +105,7 @@ export function WatchlistSection({
         <form onSubmit={onAddSymbol} className="flex items-center gap-2">
           <input
             type="text"
-            placeholder="Add Ticker (e.g. NQ=F, AAPL, BTC-USD)"
+            placeholder="Add Ticker (e.g. AAPL, NQ=F)"
             value={newTicker}
             onChange={(e) => onTickerChange(e.target.value)}
             className="bg-muted-bg border border-card-border focus:border-accent focus:ring-1 focus:ring-accent rounded-xl px-3 py-1.5 text-xs text-foreground outline-none w-48 uppercase font-bold"

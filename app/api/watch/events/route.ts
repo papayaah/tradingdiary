@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { auth } from '@/lib/auth';
 import { subscribe, getEventsAfter, type WatchEventRow } from '@/lib/watch/events-bridge';
+import { isCryptoMarketDataEnabled, isCryptoMarketDataSymbol } from '@/lib/features/market-data';
 
 // Long-lived SSE stream + a persistent LISTEN bridge: Node.js runtime only.
 export const runtime = 'nodejs';
@@ -44,6 +45,17 @@ export async function GET(request: NextRequest) {
 
       const sendEvent = (e: WatchEventRow) => {
         if (e.seq <= cursor) return; // already delivered (dedup vs catch-up)
+        const payload = e.payload && typeof e.payload === 'object'
+          ? e.payload as Record<string, unknown>
+          : null;
+        if (
+          !isCryptoMarketDataEnabled()
+          && typeof payload?.symbol === 'string'
+          && isCryptoMarketDataSymbol(payload.symbol)
+        ) {
+          cursor = e.seq;
+          return;
+        }
         const envelope = {
           seq: e.seq,
           id: e.id,

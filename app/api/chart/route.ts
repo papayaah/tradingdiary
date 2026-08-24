@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getActiveProvider } from '@/lib/chart/providers';
 import { parseScannerControl, readScannerControl } from '@/lib/scanner/control';
+import { isCryptoMarketDataEnabled, isCryptoMarketDataSymbol } from '@/lib/features/market-data';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
@@ -10,6 +11,9 @@ export async function GET(request: NextRequest) {
 
   if (!symbol || !date) {
     return NextResponse.json({ error: 'symbol and date required' }, { status: 400 });
+  }
+  if (!isCryptoMarketDataEnabled() && isCryptoMarketDataSymbol(symbol)) {
+    return NextResponse.json({ error: 'Crypto market data is temporarily unavailable' }, { status: 404 });
   }
 
   try {

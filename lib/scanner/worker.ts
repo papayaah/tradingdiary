@@ -33,6 +33,7 @@ import {
   calculateEquityChangeFromDailyBars,
   calculateFuturesDailyChange,
 } from '@/lib/market/intraday-change';
+import { isMarketDataAssetClassEnabled } from '@/lib/features/market-data';
 
 // The prior equity close / futures settlement changes only once per trading
 // day, so cache daily bars per asset and symbol. The acquisition scheduler owns
@@ -72,6 +73,9 @@ export interface ScanOutcome {
 export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
   const [watch] = await db.select().from(serverWatch).where(eq(serverWatch.id, job.watchId));
   if (!watch || !watch.enabled) return { status: 'idle', alerted: false, skipped: 'missing-or-disabled' };
+  if (!isMarketDataAssetClassEnabled(watch.assetClass)) {
+    return { status: 'idle', alerted: false, skipped: 'asset-class-disabled' };
+  }
 
   // Revalidate session immediately before evaluating (it may have closed since
   // enqueue). Out-of-session => no evaluation; the scheduler already

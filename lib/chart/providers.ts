@@ -2,6 +2,7 @@ import { OHLCCandle } from "./types";
 import type { KeyOwner } from "@/lib/metrics/provider-usage";
 import { fetchWithProviderQuota, providerCredentialScope, reserveProviderRequest } from '@/lib/market-data/provider-request-gate';
 import { parseTiingoDailyCsv, parseTiingoIntradayCsv } from './tiingo-csv';
+import { isCryptoMarketDataEnabled } from '@/lib/features/market-data';
 
 /** Compatibility hook retained around factory results. Physical request quota
  * and audit accounting now live below providers in provider-request-gate.ts so
@@ -763,6 +764,9 @@ export function getActiveProvider(
     // Canonical shared-acquisition symbols may be concatenated (BTCUSD), so the
     // explicit persisted asset class must take precedence over notation sniffing.
     const isCrypto = assetClass === 'crypto' || upperSymbol.endsWith('-USD');
+    if (isCrypto && !isCryptoMarketDataEnabled()) {
+        throw new Error('Crypto market data is temporarily disabled');
+    }
 
     // 'user' when the request will use a user-supplied key (their quota), else
     // 'owner' (the app's env key — this is what costs the owner). Yahoo has no

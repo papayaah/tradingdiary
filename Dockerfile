@@ -21,6 +21,8 @@ ENV DATABASE_URL="postgresql://build:build@localhost:5432/build"
 # The matching private key is supplied at runtime by compose to the scanner.
 ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY=""
 ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
+ARG NEXT_PUBLIC_CRYPTO_MARKET_DATA_ENABLED="false"
+ENV NEXT_PUBLIC_CRYPTO_MARKET_DATA_ENABLED=${NEXT_PUBLIC_CRYPTO_MARKET_DATA_ENABLED}
 # Better Auth is initialized while Next.js evaluates routes. Give that one build
 # command a fresh high-entropy secret without persisting it in an image ENV layer.
 # Runtime containers receive the stable production secret from docker compose.

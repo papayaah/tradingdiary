@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   cadenceScopeFor,
   entitlementScopeFromCadence,
   assetClassFromCadence,
   resolveProviderIdentity,
 } from './provider-scope';
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe('cadence scope helpers', () => {
   it('builds a per-class cadence scope from an entitlement scope', () => {
@@ -29,6 +31,7 @@ describe('cadence scope helpers', () => {
     expect(equity.cadenceScope).toBe(`${equity.providerScope.replace(/:server$/, '')}:equity:server`);
     expect(entitlementScopeFromCadence(equity.cadenceScope)).toBe(equity.providerScope);
 
+    vi.stubEnv('NEXT_PUBLIC_CRYPTO_MARKET_DATA_ENABLED', 'true');
     const crypto = resolveProviderIdentity('BTC-USD', 'crypto');
     expect(assetClassFromCadence(crypto.cadenceScope)).toBe('crypto');
   });

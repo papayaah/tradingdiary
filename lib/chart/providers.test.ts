@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FallbackProvider, getActiveProvider, type ChartProvider } from './providers';
 import type { OHLCCandle } from './types';
 
@@ -15,6 +15,10 @@ afterEach(() => {
 });
 
 describe('Tiingo crypto provider routing', () => {
+  beforeEach(() => {
+    vi.stubEnv('NEXT_PUBLIC_CRYPTO_MARKET_DATA_ENABLED', 'true');
+  });
+
   it('routes BTC-USD through the crypto endpoint and maps nested price data', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -74,6 +78,15 @@ describe('Tiingo crypto provider routing', () => {
     }, 'crypto');
 
     expect(provider.name).toBe('Tiingo Crypto');
+  });
+
+  it('blocks crypto providers before an upstream request when the launch switch is off', () => {
+    vi.stubEnv('NEXT_PUBLIC_CRYPTO_MARKET_DATA_ENABLED', 'false');
+
+    expect(() => getActiveProvider('BTC-USD', {
+      preferredCryptoProvider: 'tiingo',
+      tiingoKey: 'test-token',
+    })).toThrow('temporarily disabled');
   });
 
   it('explicitly requests and maps equity intraday volume', async () => {

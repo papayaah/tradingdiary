@@ -74,6 +74,11 @@ import {
   GUEST_WATCHLIST_LIMIT,
   getWatchlistLimit,
 } from '@/lib/watch/watchlist-limits';
+import {
+  filterEnabledMarketDataItems,
+  isCryptoMarketDataEnabled,
+  isCryptoMarketDataSymbol,
+} from '@/lib/features/market-data';
 
 interface WatchItem {
   symbol: string;
@@ -208,6 +213,7 @@ interface ServerSnapshotState {
 }
 
 type WatchlistCategory = 'stocks' | 'crypto' | 'futures' | 'all';
+const cryptoMarketDataEnabled = isCryptoMarketDataEnabled();
 // Categories that can be switched off for background scanning/alerts. Mapped to
 // the server's asset-class names for the sync payload.
 type ScanCategory = 'stocks' | 'crypto' | 'futures';
@@ -1304,14 +1310,14 @@ export default function MarketWatcher() {
     const savedWatch = localStorage.getItem('watcher-watchlist');
     if (savedWatch) {
       try {
-        const loaded = (JSON.parse(savedWatch) as WatchItem[]).map((item) => ({
+        const loaded = filterEnabledMarketDataItems((JSON.parse(savedWatch) as WatchItem[]).map((item) => ({
           symbol: item.symbol,
           interval: item.interval,
           lastAlertedCandleTime: item.lastAlertedCandleTime,
           lastAlertedType: item.lastAlertedType,
           lastAlertedPatternId: item.lastAlertedPatternId,
           lastAlertedPatternKeys: item.lastAlertedPatternKeys,
-        }));
+        })));
         setWatchlist(loaded);
       } catch (e) {
         console.error(e);
@@ -1332,10 +1338,10 @@ export default function MarketWatcher() {
         }
         if (data?.watchlist && Array.isArray(data.watchlist)) {
           if (data.watchlist.length > 0) {
-            const syncedWatchlist: WatchItem[] = data.watchlist.map((item: WatchItem) => ({
+            const syncedWatchlist: WatchItem[] = filterEnabledMarketDataItems(data.watchlist.map((item: WatchItem) => ({
               symbol: item.symbol,
               interval: item.interval,
-            }));
+            })));
             setWatchlist(syncedWatchlist);
             persistWatchlist(syncedWatchlist);
           }
@@ -1427,7 +1433,7 @@ export default function MarketWatcher() {
     if (savedLogs) {
       try {
         const parsedLogs: AlertLog[] = JSON.parse(savedLogs);
-        const activeLogs = limitAlertHistory(parsedLogs);
+        const activeLogs = limitAlertHistory(filterEnabledMarketDataItems(parsedLogs));
         setAlertLogs(activeLogs);
         localStorage.setItem('watcher-alerts', JSON.stringify(activeLogs));
       } catch (e) {
@@ -1457,7 +1463,7 @@ export default function MarketWatcher() {
     // initializer above, so it isn't re-read here — doing so races with the
     // save effect and can clobber the persisted tab on refresh).
     const savedCategory = localStorage.getItem('watcher-watchlist-category');
-    if (savedCategory === 'stocks' || savedCategory === 'crypto' || savedCategory === 'futures' || savedCategory === 'all') {
+    if (savedCategory === 'stocks' || savedCategory === 'futures' || savedCategory === 'all' || (cryptoMarketDataEnabled && savedCategory === 'crypto')) {
       setWatchlistCategory(savedCategory);
     }
     const savedDisabled = localStorage.getItem('watcher-disabled-categories');
@@ -1481,7 +1487,7 @@ export default function MarketWatcher() {
     }
     const savedTestSymbol = localStorage.getItem('watcher-test-symbol');
     if (savedTestSymbol) {
-      setTestSymbol(savedTestSymbol);
+      setTestSymbol(!cryptoMarketDataEnabled && isCryptoMarketDataSymbol(savedTestSymbol) ? 'TSLA' : savedTestSymbol);
     }
     const savedTestInterval = localStorage.getItem('watcher-test-interval');
     if (savedTestInterval) {
@@ -2453,6 +2459,11 @@ export default function MarketWatcher() {
     let symbol = input.trim().toUpperCase();
     if (!symbol) return false;
 
+    if (!cryptoMarketDataEnabled && isCryptoMarketDataSymbol(symbol)) {
+      showAddNotice('error', 'Crypto market data is temporarily unavailable.');
+      return false;
+    }
+
     let targetCat: WatchlistCategory = 'stocks';
     if (symbol.endsWith('=F') || isFuturesSymbol(symbol)) {
       targetCat = 'futures';
@@ -2796,6 +2807,17 @@ export default function MarketWatcher() {
   const executePatternTest = async (targetSymbol: string, targetInterval: string) => {
     const symbol = targetSymbol.trim().toUpperCase();
     if (!symbol) return;
+    if (!cryptoMarketDataEnabled && isCryptoMarketDataSymbol(symbol)) {
+      setTestResult({
+        success: false,
+        patternMatched: 'none',
+        message: 'Crypto market data is temporarily unavailable.',
+        candles: [],
+        provider: 'Disabled',
+        allMatches: [],
+      });
+      return;
+    }
 
     setIsTesting(true);
     setTestResult(null);
@@ -3397,7 +3419,9 @@ export default function MarketWatcher() {
                     {(
                       [
                         { id: 'stocks', label: 'Stocks', icon: ChartCandlestick, count: watchlist.filter((w) => !isFuturesSymbol(w.symbol) && !isCryptoSymbol(w.symbol)).length },
-                        { id: 'crypto', label: 'Crypto', icon: Bitcoin, count: watchlist.filter((w) => isCryptoSymbol(w.symbol)).length },
+                        ...(cryptoMarketDataEnabled
+                          ? [{ id: 'crypto' as const, label: 'Crypto', icon: Bitcoin, count: watchlist.filter((w) => isCryptoSymbol(w.symbol)).length }]
+                          : []),
                         { id: 'futures', label: 'Futures', icon: Zap, count: watchlist.filter((w) => isFuturesSymbol(w.symbol)).length },
                         { id: 'all', label: 'All Tickers', icon: null, count: watchlist.length },
                       ] as const
