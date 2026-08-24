@@ -5,6 +5,7 @@ import { FileSearch } from 'lucide-react';
 import type { TransactionRecord, ImportBatchRecord } from '@/lib/db/schema';
 import { findImportSources } from '@/lib/db/import-batches';
 import { getCurrencySymbol } from '@/lib/currency';
+import { compareExecutionOrder } from '@/lib/trading/execution-order';
 
 interface ExecutionAuditPanelProps {
   transactions: TransactionRecord[];
@@ -25,11 +26,11 @@ interface AuditRow {
  * reducing leaves the average untouched; crossing through zero re-bases it.
  */
 function buildAuditRows(transactions: TransactionRecord[]): AuditRow[] {
-  const sorted = [...transactions].sort((a, b) => {
-    const ka = `${a.date} ${a.time}`;
-    const kb = `${b.date} ${b.time}`;
-    return ka < kb ? -1 : ka > kb ? 1 : 0;
-  });
+  // Same canonical order as the splitter so the audit's running position matches
+  // how the trade's side was derived (same-second fills tie-break on tradeId).
+  const sorted = [...transactions].sort((a, b) =>
+    compareExecutionOrder(a, b, a.tradeId, b.tradeId),
+  );
 
   let netQty = 0;
   let avgCost = 0;

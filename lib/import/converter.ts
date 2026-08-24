@@ -1,6 +1,7 @@
 import { NormalizedTransaction } from './types';
 import { TransactionRecord } from '@/lib/db/schema';
 import { cyrb53 } from './hash';
+import { compareExecutionOrder } from '@/lib/trading/execution-order';
 
 export interface ConversionState {
     positions: Record<string, number>; // symbol -> running qty
@@ -94,12 +95,12 @@ export function toTransactionRecords(
     defaultCurrency: string = 'USD'
 ): TransactionRecord[] {
     const state: ConversionState = { positions: {}, occurrences: new Map() };
-    // Sort chronologically just in case to ensure side tracking works
-    const sorted = [...normalized].sort((a, b) => {
-        const dateCmp = a.date.localeCompare(b.date);
-        if (dateCmp !== 0) return dateCmp;
-        return (a.time || '').localeCompare(b.time || '');
-    });
+    // Chronological order drives the open/close (position) derivation. Same-second
+    // fills tie-break on the broker order id so the derivation is deterministic and
+    // never flips a fill between open/close on re-import.
+    const sorted = [...normalized].sort((a, b) =>
+        compareExecutionOrder(a, b, a.orderId, b.orderId),
+    );
 
     return sorted.map((n) => toTransactionRecord(n, accountId, state, defaultCurrency));
 }

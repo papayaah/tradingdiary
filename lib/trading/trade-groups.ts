@@ -1,5 +1,6 @@
 import type { TransactionRecord } from '../db/schema';
 import { tradingDayFor } from './trading-day';
+import { compareExecutionOrder } from './execution-order';
 
 /**
  * Flat-to-flat trade identity.
@@ -143,11 +144,10 @@ export function splitIntoTradeGroups(
   const groups: TradeGroup[] = [];
 
   for (const [, entries] of byKey) {
-    entries.sort((a, b) => {
-      const dateCmp = a.date.localeCompare(b.date);
-      if (dateCmp !== 0) return dateCmp;
-      return timeToMinutes(a.time) - timeToMinutes(b.time);
-    });
+    // Deterministic total order: same-second fills tie-break on the broker
+    // transaction id (tradeId) so the position walk — and therefore each group's
+    // side — never depends on array/query order.
+    entries.sort((a, b) => compareExecutionOrder(a, b, a.tradeId, b.tradeId));
 
     let runningPosition = 0;
     let builder: GroupBuilder | null = null;

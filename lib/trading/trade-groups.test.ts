@@ -191,3 +191,31 @@ describe('flat-to-flat trade groups', () => {
     expect(groupNet).toBeCloseTo(day.trades[0].nativeNetPnL!);
   });
 });
+
+describe('same-second fills — deterministic side (regression)', () => {
+  // A long round trip whose buy and sell share the same timestamp. The broker
+  // transaction id (tradeId) is the true order: buy (1) then sell (2). Feeding
+  // the fills sell-first must NOT open a SHORT — the tiebreaker restores order.
+  const buyThenSell: TransactionRecord[] = [
+    tx({ tradeId: '1', side: 'BUYTOOPEN', time: '09:30:00', quantity: 100, price: 100 }),
+    tx({ tradeId: '2', side: 'SELLTOCLOSE', time: '09:30:00', quantity: 100, price: 101 }),
+  ];
+
+  it('labels the trade LONG regardless of input array order', () => {
+    const forward = splitIntoTradeGroups([buyThenSell[0], buyThenSell[1]]);
+    const reversed = splitIntoTradeGroups([buyThenSell[1], buyThenSell[0]]);
+
+    for (const groups of [forward, reversed]) {
+      expect(groups).toHaveLength(1);
+      expect(groups[0].side).toBe('LONG');
+      expect(groups[0].isOpen).toBe(false);
+      expect(groups[0].nativeGrossPnL).toBeCloseTo(100); // bought 100, sold 101
+    }
+  });
+
+  it('produces identical output for any input ordering of same-second fills', () => {
+    const a = JSON.stringify(splitIntoTradeGroups([buyThenSell[0], buyThenSell[1]]));
+    const b = JSON.stringify(splitIntoTradeGroups([buyThenSell[1], buyThenSell[0]]));
+    expect(a).toBe(b);
+  });
+});
