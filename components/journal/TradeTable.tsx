@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import type { AggregatedTrade } from '@/lib/trading/aggregator';
 import { pnlColorClass, formatVolume } from '@/lib/utils/format';
 import { formatExchangeTime } from '@/lib/trading/exchange-time';
@@ -32,9 +32,10 @@ interface TradeTableProps {
   currency?: string;
   focusSymbol?: string;
   showBaseCurrency?: boolean;
+  pricesLoading?: boolean;
 }
 
-export default function TradeTable({ trades, accountId, currency = 'USD', focusSymbol, showBaseCurrency = false }: TradeTableProps) {
+export default function TradeTable({ trades, accountId, currency = 'USD', focusSymbol, showBaseCurrency = false, pricesLoading = false }: TradeTableProps) {
   const focusedTrade = focusSymbol
     ? trades.find((item) => item.symbol.toUpperCase() === focusSymbol.toUpperCase())
     : undefined;
@@ -102,6 +103,7 @@ export default function TradeTable({ trades, accountId, currency = 'USD', focusS
                   currency={currency}
                   isFocused={Boolean(focusSymbol && trade.symbol.toUpperCase() === focusSymbol.toUpperCase())}
                   showBaseCurrency={showBaseCurrency}
+                  pricesLoading={pricesLoading}
                   tags={rowTags}
                   onTagsChange={bumpTags}
                 />
@@ -123,6 +125,7 @@ function TradeRow({
   currency,
   isFocused,
   showBaseCurrency,
+  pricesLoading,
   tags,
   onTagsChange,
 }: {
@@ -134,11 +137,13 @@ function TradeRow({
   currency: string;
   isFocused: boolean;
   showBaseCurrency: boolean;
+  pricesLoading: boolean;
   tags: TagRecord[];
   onTagsChange: () => void;
 }) {
   const [screenshotIds, setScreenshotIds] = useState<number[]>([]);
   const [showAudit, setShowAudit] = useState(false);
+  const [highlightedExecutionId, setHighlightedExecutionId] = useState<string | null>(null);
   const rowRef = useRef<HTMLTableRowElement>(null);
   const ref = tradeRef(trade, accountId);
   const groupKey = ref.tradeGroupKey;
@@ -227,7 +232,7 @@ function TradeRow({
               <span className="text-[9px] font-normal text-muted/60 uppercase tracking-tighter">
                 {formatVolume(Math.abs(trade.netQuantity))} held
               </span>
-              {trade.unrealizedPnL != null && (
+              {trade.unrealizedPnL != null ? (
                 <span className={`text-[10px] font-normal px-1 rounded bg-muted-bg/50 ${pnlColorClass(trade.unrealizedPnL)}`}>
                   unrl: {formatCurrency(
                     isDifferentCurrency && !showBaseCurrency
@@ -236,7 +241,11 @@ function TradeRow({
                     isDifferentCurrency && !showBaseCurrency ? tradeCurrency : currency,
                   )}
                 </span>
-              )}
+              ) : pricesLoading ? (
+                <span className="inline-flex items-center gap-1 text-[10px] font-normal px-1 rounded bg-muted-bg/50 text-muted">
+                  <Loader2 size={9} className="animate-spin" /> unrl
+                </span>
+              ) : null}
             </div>
           )}
         </td>
@@ -278,6 +287,7 @@ function TradeRow({
                     symbol={trade.symbol}
                     date={trade.date}
                     transactions={trade.transactions}
+                    highlightedExecutionId={highlightedExecutionId}
                   />
                 </div>
               </div>
@@ -288,7 +298,10 @@ function TradeRow({
               <td colSpan={9} className="px-5 py-3 border-t border-card-border">
                 <button
                   type="button"
-                  onClick={() => setShowAudit((v) => !v)}
+                  onClick={() => {
+                    setHighlightedExecutionId(null);
+                    setShowAudit((v) => !v);
+                  }}
                   className="flex items-center gap-1 text-[10px] font-bold text-muted hover:text-foreground uppercase tracking-wider transition-colors"
                 >
                   {showAudit ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -296,7 +309,11 @@ function TradeRow({
                 </button>
                 {showAudit && (
                   <div className="mt-2 animate-in fade-in slide-in-from-top-1 duration-200">
-                    <ExecutionAuditPanel transactions={trade.transactions} />
+                    <ExecutionAuditPanel
+                      transactions={trade.transactions}
+                      highlightedExecutionId={highlightedExecutionId}
+                      onExecutionHover={setHighlightedExecutionId}
+                    />
                   </div>
                 )}
               </td>

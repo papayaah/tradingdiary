@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import type { TradeAnalysisContext } from './trade-analysis';
+import { formatEtTimestamp12Hour, normalizeReviewTextValues } from './review-time';
 
 /** Bump when the prompt template or schema meaningfully changes. */
-export const TRADE_REVIEW_PROMPT_VERSION = '2';
+export const TRADE_REVIEW_PROMPT_VERSION = '4';
 
 // ============================================================================
 // AI output contract (see docs/specs/trade-ai-assistant-notes.md §4)
@@ -49,6 +50,8 @@ Rules (in priority order):
 5. Do NOT infer profit = good trade or loss = bad trade. Quality = plan adherence and risk control.
 6. Do NOT infer intent from execution alone. Describe observable actions; classify as planned/reactive/
    disciplined/undisciplined ONLY when trader rules or pre-trade intent provide evidence.
+7. Clearly distinguish prices from timestamps. Format prices using the supplied trade currency. Use the
+   "ET" timezone suffix only after an actual clock time, never after a price.
 
 evidenceConfidence reflects DATA COMPLETENESS, not your opinion strength. You may LOWER the provided
 ceiling but never raise it. If multipleRoundTrips is true, the excursion metrics span more than one
@@ -67,21 +70,16 @@ function displayDuration(ms?: number): string | undefined {
   return `${remainder}s`;
 }
 
-function displayEtTimestamp(ms?: number): string | undefined {
-  if (ms == null) return undefined;
-  return `${new Date(ms).toISOString().replace('T', ' ').slice(0, 19)} ET`;
-}
-
 function buildDisplayContext(ctx: TradeAnalysisContext) {
   return {
     trade: {
       ...ctx.trade,
-      openedAt: displayEtTimestamp(ctx.trade.openedAt),
-      closedAt: displayEtTimestamp(ctx.trade.closedAt),
+      openedAt: formatEtTimestamp12Hour(ctx.trade.openedAt),
+      closedAt: formatEtTimestamp12Hour(ctx.trade.closedAt),
     },
     executions: ctx.executions.map((execution) => ({
       ...execution,
-      timestamp: displayEtTimestamp(execution.timestamp),
+      timestamp: formatEtTimestamp12Hour(execution.timestamp),
     })),
     risk: ctx.risk,
     marketContext: ctx.marketContext,
@@ -95,7 +93,7 @@ function buildDisplayContext(ctx: TradeAnalysisContext) {
     },
     events: ctx.events.map((event) => ({
       ...event,
-      timestamp: displayEtTimestamp(event.timestamp),
+      timestamp: formatEtTimestamp12Hour(event.timestamp),
     })),
     flags: ctx.flags,
     evidenceConfidence: ctx.evidenceConfidence,
@@ -124,14 +122,37 @@ Return a JSON object with this exact shape:
 
 Ground every observation in a metric or event from the data. Do not invent prices, times, or levels.
 Use human-readable durations (for example, "45m"), never milliseconds. Use friendly metric names,
-never internal property paths. Round displayed percentages to at most one decimal place.`;
+never internal property paths. Use 12-hour clock timestamps with AM/PM (for example,
+"1:58:29 PM ET"), never 24-hour or military time. Clearly label prices using the supplied currency;
+never append "ET" to a price. Round displayed percentages to at most one decimal place.`;
+}
+
+function normalizeAnalysisValues(analysis: TradeAnalysis, currency: string): TradeAnalysis {
+  const normalize = (text: string) => normalizeReviewTextValues(text, currency);
+  const normalizeOptional = (text?: string) => text ? normalize(text) : text;
+  return {
+    ...analysis,
+    summary: normalize(analysis.summary),
+    observations: analysis.observations.map((observation) => ({
+      ...observation,
+      detail: normalize(observation.detail),
+      evidence: observation.evidence?.map((evidence) => ({
+        ...evidence,
+        value: normalize(evidence.value),
+      })),
+    })),
+    executionReview: normalizeOptional(analysis.executionReview),
+    riskReview: normalizeOptional(analysis.riskReview),
+    questionsForTrader: analysis.questionsForTrader?.map(normalize),
+    takeaway: normalizeOptional(analysis.takeaway),
+  };
 }
 
 /**
  * Parse+validate a raw model string into TradeAnalysis. Tolerates accidental code
  * fences. Returns null on failure so the caller can fall back or repair.
  */
-export function parseTradeAnalysis(raw: string): TradeAnalysis | null {
+export function parseTradeAnalysis(raw: string, currency = 'USD'): TradeAnalysis | null {
   const cleaned = raw
     .trim()
     .replace(/^```(?:json)?/i, '')
@@ -140,7 +161,7 @@ export function parseTradeAnalysis(raw: string): TradeAnalysis | null {
   try {
     const json = JSON.parse(cleaned);
     const result = tradeAnalysisSchema.safeParse(json);
-    return result.success ? result.data : null;
+    return result.success ? normalizeAnalysisValues(result.data, currency) : null;
   } catch {
     return null;
   }

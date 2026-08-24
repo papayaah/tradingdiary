@@ -44,6 +44,7 @@ export type TradeAnalysisContext = {
   trade: {
     tradeGroupId: string;
     symbol: string;
+    currency: string;
     side: 'LONG' | 'SHORT';
     openedAt: number;
     closedAt?: number;
@@ -367,6 +368,7 @@ export function buildTradeAnalysisContext(
     trade: {
       tradeGroupId,
       symbol: trade.symbol,
+      currency: trade.currency || 'USD',
       side,
       openedAt,
       closedAt,

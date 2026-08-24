@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
       maxTokens: 1200,
     });
 
-    let analysis = parseTradeAnalysis(first.text);
+    let analysis = parseTradeAnalysis(first.text, context.trade.currency);
     let usage = first.usage;
 
     // One repair retry on invalid JSON
@@ -85,7 +85,7 @@ Previous response:
 ${first.text}`,
         maxTokens: 1200,
       });
-      analysis = parseTradeAnalysis(repair.text);
+      analysis = parseTradeAnalysis(repair.text, context.trade.currency);
       usage = {
         promptTokens: (first.usage?.promptTokens ?? 0) + (repair.usage?.promptTokens ?? 0),
         completionTokens: (first.usage?.completionTokens ?? 0) + (repair.usage?.completionTokens ?? 0),

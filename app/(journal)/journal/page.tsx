@@ -32,6 +32,12 @@ export default function JournalPage() {
   const [loadingSample, setLoadingSample] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [showBaseCurrency, setShowBaseCurrency] = useState(false);
+  // True while open-position quotes are in flight, so their P&L cells can show a
+  // per-cell loading indicator instead of blocking the whole page.
+  const [pricesLoading, setPricesLoading] = useState(false);
+  // Tracks the open-position scope we've already priced, so applying quotes
+  // (which re-renders) can't re-trigger the quotes effect into a loop.
+  const pricedScopeRef = useRef<string>('');
 
   useEffect(() => {
     setShowBaseCurrency(getShowPnlInBaseCurrency());
@@ -95,57 +101,20 @@ export default function JournalPage() {
     router.replace(query ? `/journal?${query}` : '/journal', { scroll: false });
   }, [router, searchParams]);
 
+  // Load trades from IndexedDB and render immediately. Market prices for open
+  // positions are fetched separately (below) so the P&L/list never waits on a
+  // network call. Runs once per account/refresh — date navigation does NOT
+  // reload, keeping arrow-key paging instant.
   useEffect(() => {
     async function load() {
       if (!selectedAccountId) {
         setSummaries([]);
         return;
       }
-
       setSummaries(null); // Show loading state on switch
+      pricedScopeRef.current = ''; // new dataset → allow re-pricing
       const transactions = await getTransactionsByAccount(selectedAccountId);
-
-      if (transactions.length > 0) {
-        const agg = aggregateByDay(transactions);
-
-        // --- 1. SET INITIAL DATA IMMEDIATELY ---
-        setSummaries([...agg]);
-
-        // Fetch historical market prices for open positions
-        const openSymbols = new Set<string>();
-        let minDate = '';
-        let maxDate = '';
-        for (const day of agg) {
-          for (const trade of day.trades) {
-            if (trade.isOpen) {
-              openSymbols.add(trade.symbol);
-              if (!minDate || day.date < minDate) minDate = day.date;
-              if (!maxDate || day.date > maxDate) maxDate = day.date;
-            }
-          }
-        }
-        if (openSymbols.size > 0) {
-          try {
-            const params = new URLSearchParams({
-              symbols: [...openSymbols].join(','),
-              from: minDate,
-              to: maxDate,
-            });
-            const res = await fetch(`/api/quotes?${params}`);
-            if (res.ok) {
-              const prices = await res.json();
-
-              // --- 2. UPDATE WITH MARKET PRICES ---
-              applyMarketPrices(agg, prices);
-              setSummaries([...agg]);
-            }
-          } catch {
-            // Silently fail
-          }
-        }
-      } else {
-        setSummaries([]);
-      }
+      setSummaries(transactions.length > 0 ? aggregateByDay(transactions) : []);
     }
     load();
   }, [selectedAccountId, refreshKey]);
@@ -153,6 +122,64 @@ export default function JournalPage() {
   const normalizedFilterDate = useMemo(() => {
     return filterDate?.replace(/-/g, '');
   }, [filterDate]);
+
+  // Price ONLY the open positions relevant to what's on screen. When focused on a
+  // single date, other days' open positions aren't shown, so a day with nothing
+  // open (every trade closed) fetches nothing at all — no more 40-symbol call on
+  // a fully-closed day. The scope ref makes applying prices idempotent: the
+  // resulting setSummaries re-runs this effect, the scope key is unchanged, and
+  // it early-returns instead of looping.
+  useEffect(() => {
+    if (!summaries || summaries.length === 0) return;
+    const days = normalizedFilterDate
+      ? summaries.filter((s) => s.date === normalizedFilterDate)
+      : summaries;
+
+    const openSymbols = new Set<string>();
+    let minDate = '';
+    let maxDate = '';
+    for (const day of days) {
+      for (const trade of day.trades) {
+        if (trade.isOpen) {
+          openSymbols.add(trade.symbol);
+          if (!minDate || day.date < minDate) minDate = day.date;
+          if (!maxDate || day.date > maxDate) maxDate = day.date;
+        }
+      }
+    }
+    if (openSymbols.size === 0) {
+      setPricesLoading(false); // nothing open on this view → no spinner
+      return;
+    }
+
+    const scopeKey = `${[...openSymbols].sort().join(',')}|${minDate}|${maxDate}`;
+    if (scopeKey === pricedScopeRef.current) return;
+    pricedScopeRef.current = scopeKey;
+
+    let cancelled = false;
+    setPricesLoading(true);
+    (async () => {
+      try {
+        const params = new URLSearchParams({
+          symbols: [...openSymbols].join(','),
+          from: minDate,
+          to: maxDate,
+        });
+        const res = await fetch(`/api/quotes?${params}`);
+        if (!res.ok || cancelled) return;
+        const prices = await res.json();
+        applyMarketPrices(summaries, prices);
+        setSummaries((prev) => (prev ? [...prev] : prev));
+      } catch {
+        // Silently fail — open positions just won't show unrealized P&L.
+      } finally {
+        if (!cancelled) setPricesLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [summaries, normalizedFilterDate]);
 
   const displaySummaries = useMemo(() => {
     if (!summaries || !normalizedFilterDate) return summaries;
@@ -410,6 +437,7 @@ export default function JournalPage() {
             hasPrevDay={Boolean(prev)}
             hasNextDay={Boolean(next)}
             showBaseCurrency={showBaseCurrency}
+            pricesLoading={pricesLoading}
           />
         );
       })}

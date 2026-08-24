@@ -7,39 +7,33 @@ import type { TransactionRecord } from '@/lib/db/schema';
 import { useReplay } from '@/components/replay/ReplayProvider';
 import SharedTradingChart from '@/components/chart/SharedTradingChart';
 import type { CandleData } from '@/lib/chart/patterns';
+import { etWallClockToEpochSeconds } from '@/lib/chart/execution-time';
+import { getInstrumentDetails } from '@/lib/trading/instruments';
 
 interface TradeChartProps {
   symbol: string;
   date: string;
   transactions: TransactionRecord[];
+  highlightedExecutionId?: string | null;
   interval?: string;
 }
 
 const INTERVALS = ['1m', '5m', '10m', '15m', '1h'] as const;
 
-/**
- * Compute the UTC→ET offset in seconds for a given date.
- */
-function getETOffsetSeconds(dateStr: string): number {
-  const year = parseInt(dateStr.substring(0, 4));
-  const month = parseInt(dateStr.substring(4, 6)) - 1;
-  const day = parseInt(dateStr.substring(6, 8));
-  const refUTC = new Date(Date.UTC(year, month, day, 12, 0, 0));
-  const etParts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    hour12: false,
-    hour: 'numeric',
-  }).formatToParts(refUTC);
-  const etHourAtNoonUTC = parseInt(etParts.find((p) => p.type === 'hour')?.value ?? '7');
-  return (etHourAtNoonUTC - 12) * 3600;
-}
-
-export default function TradeChart({ symbol, date, transactions, interval: defaultInterval = '5m' }: TradeChartProps) {
+export default function TradeChart({
+  symbol,
+  date,
+  transactions,
+  highlightedExecutionId = null,
+  interval: defaultInterval = '5m',
+}: TradeChartProps) {
   const { openReplay } = useReplay();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [interval, setInterval] = useState(defaultInterval);
   const [candles, setCandles] = useState<CandleData[]>([]);
+  const showExtendedHoursShading = getInstrumentDetails(symbol).assetClass === 'equity'
+    && !symbol.toUpperCase().endsWith('-USD');
   // Persisted globally so the Patterns overlay doesn't reset on every chart.
   const [autoPatternsEnabled, setAutoPatternsEnabled] = useState(false);
   useEffect(() => {
@@ -65,18 +59,16 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
           return;
         }
 
-        const etOffset = getETOffsetSeconds(date);
-        const shiftedCandles = rawCandles.map((c) => ({ ...c, time: c.time + etOffset }));
+        // Keep provider timestamps on their true UTC epochs. SharedTradingChart
+        // formats those epochs in New York time; shifting here as well applied
+        // ET twice and attached executions to candles roughly four hours later.
+        const dayStartUtc = etWallClockToEpochSeconds(date, '04:00:00');
+        const dayEndUtc = etWallClockToEpochSeconds(date, '20:00:00');
+        const filteredCandles = dayStartUtc !== null && dayEndUtc !== null
+          ? rawCandles.filter((c) => c.time >= dayStartUtc && c.time <= dayEndUtc)
+          : rawCandles;
 
-        const year = parseInt(date.substring(0, 4));
-        const month = parseInt(date.substring(4, 6)) - 1;
-        const day = parseInt(date.substring(6, 8));
-        
-        const dayStartET = Math.floor(Date.UTC(year, month, day, 4, 0, 0) / 1000);
-        const dayEndET = Math.floor(Date.UTC(year, month, day, 20, 0, 0) / 1000);
-        const filteredCandles = shiftedCandles.filter((c) => c.time >= dayStartET && c.time <= dayEndET);
-
-        setCandles(filteredCandles.length > 0 ? filteredCandles : shiftedCandles);
+        setCandles(filteredCandles.length > 0 ? filteredCandles : rawCandles);
         setLoading(false);
       } catch (e) {
         if (!cancelled) {
@@ -100,11 +92,13 @@ export default function TradeChart({ symbol, date, transactions, interval: defau
         date={date}
         candles={candles}
         transactions={transactions}
+        highlightedTransactionId={highlightedExecutionId}
         interval={interval}
         onIntervalChange={(iv) => setInterval(iv)}
         availableIntervals={INTERVALS}
         height={360}
         showVolume={true}
+        showExtendedHoursShading={showExtendedHoursShading}
         autoPatternsEnabled={autoPatternsEnabled}
         onTogglePatterns={() => {
           const next = !autoPatternsEnabled;

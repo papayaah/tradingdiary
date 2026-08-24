@@ -740,6 +740,7 @@ export function effectiveProviderName(provider: ChartProvider): string {
 export interface UserProviderConfig {
     preferredEquitiesProvider?: string;
     preferredCryptoProvider?: string;
+    preferredFuturesProvider?: string;
     alpacaKeyId?: string;
     alpacaSecret?: string;
     twelveKey?: string;
@@ -748,10 +749,22 @@ export interface UserProviderConfig {
 }
 
 let runtimeEquitiesProvider: string | undefined;
+let runtimeCryptoProvider: string | undefined;
+let runtimeFuturesProvider: string | undefined;
 
 /** Scanner-process override synchronized from the admin-owned Redis control. */
 export function setRuntimeEquitiesProvider(provider: string | undefined): void {
     runtimeEquitiesProvider = provider;
+}
+
+/** Scanner-process crypto override synchronized from the admin-owned control. */
+export function setRuntimeCryptoProvider(provider: string | undefined): void {
+    runtimeCryptoProvider = provider;
+}
+
+/** Scanner-process futures override synchronized from the admin-owned control. */
+export function setRuntimeFuturesProvider(provider: string | undefined): void {
+    runtimeFuturesProvider = provider;
 }
 
 /**
@@ -778,14 +791,24 @@ export function getActiveProvider(
 
     // Handle Futures Data Feed Selection separately
     if (isFutures) {
+        // Centralized futures provider: 'yahoo' forces the keyless feed; 'auto'
+        // and 'ibkr' both use the gateway-first chain (Tiingo has no futures).
+        const futuresPref = userConfig?.preferredFuturesProvider
+            || runtimeFuturesProvider
+            || process.env.FUTURES_PROVIDER
+            || 'auto';
+        if (futuresPref === 'yahoo') {
+            return trackProvider(new YahooProvider(), 'owner');
+        }
+
         const cleanRoot = futuresRoot(upperSymbol);
         const isIbkrPrimaryRoot = IBKR_PRIMARY_FUTURES_ROOTS.has(cleanRoot);
         // IBKR is only usable where the Gateway is reachable (the scanner/server
         // process), signalled by IBKR_GATEWAY_HOST / IBKR_ENABLED.
         const ibkrConfigured = Boolean(process.env.IBKR_GATEWAY_HOST) || process.env.IBKR_ENABLED === 'true';
 
-        // Futures always use the deployed gateway first and Yahoo as the only
-        // fallback. effectiveProviderName() reports whichever actually served.
+        // Futures use the deployed gateway first and Yahoo as the only fallback.
+        // effectiveProviderName() reports whichever actually served.
         const chain: ChartProvider[] = [];
         if (ibkrConfigured) {
             chain.push(trackProvider(new IBKRProvider(), 'owner'));
@@ -799,7 +822,10 @@ export function getActiveProvider(
     // Crypto uses Tiingo's dedicated crypto endpoint, not its equity/IEX
     // endpoints. Yahoo remains the zero-config fallback for crypto symbols.
     if (isCrypto) {
-        const pref = userConfig?.preferredCryptoProvider || 'auto';
+        const pref = userConfig?.preferredCryptoProvider
+            || runtimeCryptoProvider
+            || process.env.CRYPTO_PROVIDER
+            || 'auto';
         if (pref === 'yahoo') return trackProvider(new YahooProvider(), 'owner');
         if (pref === 'tiingo' || pref === 'auto') {
             const key = userConfig?.tiingoKey || process.env.TIINGO_API_KEY;

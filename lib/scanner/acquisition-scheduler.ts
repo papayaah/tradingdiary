@@ -7,6 +7,7 @@ import {
 } from '@/lib/scanner/shared/acquisition-inventory';
 import { getSharedCandleService, type SharedCandleService } from '@/lib/scanner/shared/shared-candle-service';
 import { blacklistSymbol, isSymbolBlacklistedSync } from '@/lib/scanner/shared/invalid-symbols';
+import type { AssetClass } from '@/lib/scanner/sessions';
 
 const STATE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const FAILED_RETRY_MS = 10_000;
@@ -56,6 +57,7 @@ export class AcquisitionScheduler {
   private inventory: AcquisitionEntry[] = [];
   private inventoryLoadedAt = 0;
   private running = false;
+  private pausedClasses: Set<AssetClass> = new Set();
 
   constructor(deps: AcquisitionSchedulerDeps = {}) {
     this.store = deps.store ?? getSharedCacheStore();
@@ -72,6 +74,15 @@ export class AcquisitionScheduler {
     this.inventoryLoadedAt = 0;
   }
 
+  /**
+   * Asset classes whose acquisition is paused by admin control. Applied as a
+   * live filter each tick (no inventory rebuild needed), so acquisition stops
+   * and resumes for a class within the control poll interval.
+   */
+  setPausedClasses(classes: Set<AssetClass>): void {
+    this.pausedClasses = new Set(classes);
+  }
+
   private async refreshInventory(): Promise<void> {
     if (this.inventory.length && this.now() - this.inventoryLoadedAt < this.inventoryRefreshMs) return;
     this.inventory = await this.loadSeries(new Date(this.now()));
@@ -85,6 +96,9 @@ export class AcquisitionScheduler {
       await this.refreshInventory();
       const byScope = new Map<string, AcquisitionEntry[]>();
       for (const series of this.inventory) {
+        // Skip acquisition for admin-paused asset classes; the series stays in
+        // inventory so it resumes immediately when the class is unpaused.
+        if (this.pausedClasses.has(series.assetClass)) continue;
         const rows = byScope.get(series.providerScope) ?? [];
         rows.push(series);
         byScope.set(series.providerScope, rows);

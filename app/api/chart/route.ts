@@ -15,7 +15,9 @@ export async function GET(request: NextRequest) {
   try {
     const control = await readScannerControl().catch(() => parseScannerControl(null));
     const provider = getActiveProvider(symbol, {
-      preferredEquitiesProvider: control.equitiesProvider,
+      preferredEquitiesProvider: control.providers.equity,
+      preferredCryptoProvider: control.providers.crypto,
+      preferredFuturesProvider: control.providers.futures,
     });
     const candles = await provider.fetchCandles(symbol, date, interval);
 

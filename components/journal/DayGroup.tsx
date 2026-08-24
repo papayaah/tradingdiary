@@ -17,6 +17,7 @@ interface DayGroupProps {
   hasPrevDay?: boolean;
   hasNextDay?: boolean;
   showBaseCurrency?: boolean;
+  pricesLoading?: boolean;
 }
 
 export default function DayGroup({
@@ -29,6 +30,7 @@ export default function DayGroup({
   hasPrevDay = false,
   hasNextDay = false,
   showBaseCurrency = false,
+  pricesLoading = false,
 }: DayGroupProps) {
   const { accounts } = useAccount();
   const [isNotesOpen, setIsNotesOpen] = useState(openNotes);
@@ -67,6 +69,7 @@ export default function DayGroup({
         currency={currency}
         focusSymbol={focusSymbol}
         showBaseCurrency={showBaseCurrency}
+        pricesLoading={pricesLoading}
       />
     </section>
   );

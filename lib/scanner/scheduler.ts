@@ -22,7 +22,6 @@ export interface TickResult {
   deferred: number; // out-of-session, advanced without a provider request
 }
 
-type ScheduledWatch = typeof serverWatch.$inferSelect;
 
 /** Evaluation cadence is user-owned and intentionally independent of acquisition. */
 export function effectiveScanFrequencySeconds(
@@ -36,9 +35,8 @@ export function effectiveScanFrequencySeconds(
 /** Run one scheduling pass. Returns counts for observability. */
 export async function scheduleDueWatches(
   now: Date = new Date(),
-  _governedCadenceSeconds?: (watch: ScheduledWatch) => number,
+  pausedClasses?: Set<AssetClass>,
 ): Promise<TickResult> {
-  void _governedCadenceSeconds;
   const nowIso = now.toISOString();
   const dueWatches = await db
     .select()
@@ -50,9 +48,14 @@ export async function scheduleDueWatches(
   let deferred = 0;
 
   for (const w of dueWatches) {
-    const eligible = isSessionActive(
+    const assetClass = w.assetClass as AssetClass;
+    // Admin per-class pause: advance the schedule but enqueue no evaluation, so
+    // no provider work happens and the watch resumes cleanly on unpause without
+    // a backlog stampede.
+    const classPaused = pausedClasses?.has(assetClass) ?? false;
+    const eligible = !classPaused && isSessionActive(
       w.session as WatchSession,
-      w.assetClass as AssetClass,
+      assetClass,
       now,
     );
 

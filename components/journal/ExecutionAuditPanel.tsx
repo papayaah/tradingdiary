@@ -8,6 +8,8 @@ import { getCurrencySymbol } from '@/lib/currency';
 
 interface ExecutionAuditPanelProps {
   transactions: TransactionRecord[];
+  highlightedExecutionId?: string | null;
+  onExecutionHover?: (executionId: string | null) => void;
 }
 
 interface AuditRow {
@@ -72,7 +74,11 @@ function buildAuditRows(transactions: TransactionRecord[]): AuditRow[] {
  * and the import provenance. The traceability surface — "why does this trade
  * look like this?" — answered from deterministic data, no invented values.
  */
-export default function ExecutionAuditPanel({ transactions }: ExecutionAuditPanelProps) {
+export default function ExecutionAuditPanel({
+  transactions,
+  highlightedExecutionId = null,
+  onExecutionHover,
+}: ExecutionAuditPanelProps) {
   const [sources, setSources] = useState<Map<string, ImportBatchRecord>>(new Map());
 
   useEffect(() => {
@@ -122,7 +128,16 @@ export default function ExecutionAuditPanel({ transactions }: ExecutionAuditPane
               const source = sources.get(t.tradeId);
               const isBuy = t.side?.toUpperCase().startsWith('BUY');
               return (
-                <tr key={t.tradeId} className="hover:bg-muted-bg/30">
+                <tr
+                  key={t.tradeId}
+                  onMouseEnter={() => onExecutionHover?.(t.tradeId)}
+                  onMouseLeave={() => onExecutionHover?.(null)}
+                  className={`transition-colors ${
+                    highlightedExecutionId === t.tradeId
+                      ? 'bg-accent/10 ring-1 ring-inset ring-accent/30'
+                      : 'hover:bg-muted-bg/30'
+                  }`}
+                >
                   <td className="px-3 py-2 whitespace-nowrap text-muted">{t.time}</td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     <span className={`font-medium ${isBuy ? 'text-profit' : 'text-loss'}`}>{t.side}</span>

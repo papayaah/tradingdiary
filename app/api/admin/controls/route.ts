@@ -6,11 +6,14 @@ import { serverWatch } from '@/lib/db/server/schema';
 import { eq } from 'drizzle-orm';
 import { evaluateJobId, getScanQueue, type ScanJob } from '@/lib/scanner/queue';
 import {
-  isEquitiesProvider,
   isGovernorScope,
+  isMarketAssetClass,
+  isProviderForClass,
+  providerOptionsForClass,
   readScannerControl,
   writeCadenceOverride,
-  writeEquitiesProvider,
+  writeClassPause,
+  writeClassProvider,
   writeScannerControl,
 } from '@/lib/scanner/control';
 
@@ -32,6 +35,14 @@ export async function GET(request: Request) {
       tiingo: Boolean(process.env.TIINGO_API_KEY),
       polygon: Boolean(process.env.POLYGON_API_KEY),
       yahoo: true,
+    },
+    // Selectable provider ids per asset class, so the admin UI and the server
+    // validate against one source of truth (Tiingo, for instance, is absent
+    // from futures).
+    providerOptions: {
+      equity: providerOptionsForClass('equity'),
+      crypto: providerOptionsForClass('crypto'),
+      futures: providerOptionsForClass('futures'),
     },
   });
 }
@@ -57,15 +68,36 @@ export async function POST(request: Request) {
       });
     }
 
-    if (action === 'set-equities-provider') {
-      if (!isEquitiesProvider(body?.provider)) {
-        return NextResponse.json({ success: false, error: 'Unsupported equities provider' }, { status: 400 });
+    if (action === 'set-provider') {
+      if (!isMarketAssetClass(body?.assetClass)) {
+        return NextResponse.json({ success: false, error: 'Unknown asset class' }, { status: 400 });
       }
-      const control = await writeEquitiesProvider(body.provider, session.user.email);
+      if (!isProviderForClass(body.assetClass, body?.provider)) {
+        return NextResponse.json(
+          { success: false, error: `Unsupported ${body.assetClass} provider` },
+          { status: 400 },
+        );
+      }
+      const control = await writeClassProvider(body.assetClass, body.provider, session.user.email);
       return NextResponse.json({
         success: true,
         control,
-        message: `Equities provider changed to ${body.provider}. Scanner workers will apply it shortly.`,
+        message: `${body.assetClass} provider changed to ${body.provider}. Scanner workers will apply it shortly.`,
+      });
+    }
+
+    if (action === 'pause-class' || action === 'resume-class') {
+      if (!isMarketAssetClass(body?.assetClass)) {
+        return NextResponse.json({ success: false, error: 'Unknown asset class' }, { status: 400 });
+      }
+      const paused = action === 'pause-class';
+      const control = await writeClassPause(body.assetClass, paused, session.user.email);
+      return NextResponse.json({
+        success: true,
+        control,
+        message: paused
+          ? `${body.assetClass} paused — acquisition and evaluation stopped for that class.`
+          : `${body.assetClass} resumed.`,
       });
     }
 

@@ -26,7 +26,9 @@ export async function GET(request: NextRequest) {
     const control = await readScannerControl().catch(() => parseScannerControl(null));
 
     const provider = getActiveProvider(symbol, {
-      preferredEquitiesProvider: control.equitiesProvider,
+      preferredEquitiesProvider: control.providers.equity,
+      preferredCryptoProvider: control.providers.crypto,
+      preferredFuturesProvider: control.providers.futures,
     });
     const isFutures = symbol.toUpperCase().endsWith('=F')
       || symbol.toUpperCase().includes('.C.0')

@@ -12,6 +12,7 @@ import {
 } from '@/lib/journal/request-trade-review';
 import { hashTradeContext, type TradeAnalysisContext } from '@/lib/trading/trade-analysis';
 import type { TradeAnalysis } from '@/lib/trading/trade-review-contract';
+import { normalizeReviewTextValues } from '@/lib/trading/review-time';
 import {
   getTradeAIReviews,
   saveTradeAIReview,
@@ -207,32 +208,32 @@ function humanizeMetricName(metric: string): string {
     .replace(/\./g, ' · ');
 }
 
-function humanizeReviewText(text: string): string {
-  return text
+function humanizeReviewText(text: string, currency: string): string {
+  return normalizeReviewTextValues(text, currency)
     .replace(/([\d,]+(?:\.\d+)?)\s*ms\b/g, (_, raw: string) => formatDuration(Number(raw.replace(/,/g, ''))))
     .replace(/(?:metrics\.)?exitGivebackFromMFE\.percentOfMFE/g, 'exit giveback')
     .replace(/holdingDurationMs/g, 'holding duration')
     .replace(/timeToMfeMs/g, 'time to peak');
 }
 
-function humanizeEvidenceValue(metric: string, value: string): string {
+function humanizeEvidenceValue(metric: string, value: string, currency: string): string {
   const numeric = Number(value.replace(/,/g, '').replace(/%$/, ''));
   if (/percentOfMFE/i.test(metric) && Number.isFinite(numeric)) return `${numeric.toFixed(1)}%`;
   if (/Ms$|Duration|timeTo/i.test(metric) && Number.isFinite(numeric)) return formatDuration(numeric);
-  return humanizeReviewText(value);
+  return humanizeReviewText(value, currency);
 }
 
-function AnalysisView({ a }: { a: TradeAnalysis }) {
+function AnalysisView({ a, currency }: { a: TradeAnalysis; currency: string }) {
   return (
     <div className="space-y-3">
-      <p className="text-sm text-foreground leading-relaxed">{humanizeReviewText(a.summary)}</p>
+      <p className="text-sm text-foreground leading-relaxed">{humanizeReviewText(a.summary, currency)}</p>
 
       {a.observations.length > 0 && (
         <div className="space-y-2">
           {a.observations.map((o, i) => (
             <div key={i} className="rounded-lg border border-card-border bg-background/40 p-2.5">
               <div className="text-xs font-semibold text-foreground">{o.label}</div>
-              <div className="text-xs text-muted mt-0.5 leading-relaxed">{humanizeReviewText(o.detail)}</div>
+              <div className="text-xs text-muted mt-0.5 leading-relaxed">{humanizeReviewText(o.detail, currency)}</div>
               {o.evidence && o.evidence.length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-1.5">
                   {o.evidence.map((e, j) => (
@@ -241,7 +242,7 @@ function AnalysisView({ a }: { a: TradeAnalysis }) {
                       className="inline-flex items-center gap-1 rounded bg-muted-bg px-1.5 py-0.5 text-[10px] text-muted"
                     >
                       <span className="font-medium text-foreground">{humanizeMetricName(e.metric)}</span>
-                      {humanizeEvidenceValue(e.metric, e.value)}
+                      {humanizeEvidenceValue(e.metric, e.value, currency)}
                     </span>
                   ))}
                 </div>
@@ -254,13 +255,13 @@ function AnalysisView({ a }: { a: TradeAnalysis }) {
       {a.executionReview && (
         <div>
           <div className="text-[10px] uppercase tracking-wider text-muted/70 mb-0.5">Execution</div>
-          <p className="text-xs text-muted leading-relaxed">{humanizeReviewText(a.executionReview)}</p>
+          <p className="text-xs text-muted leading-relaxed">{humanizeReviewText(a.executionReview, currency)}</p>
         </div>
       )}
       {a.riskReview && (
         <div>
           <div className="text-[10px] uppercase tracking-wider text-muted/70 mb-0.5">Risk</div>
-          <p className="text-xs text-muted leading-relaxed">{humanizeReviewText(a.riskReview)}</p>
+          <p className="text-xs text-muted leading-relaxed">{humanizeReviewText(a.riskReview, currency)}</p>
         </div>
       )}
       {a.questionsForTrader && a.questionsForTrader.length > 0 && (
@@ -271,7 +272,7 @@ function AnalysisView({ a }: { a: TradeAnalysis }) {
           <ul className="list-disc list-inside space-y-0.5">
             {a.questionsForTrader.map((q, i) => (
               <li key={i} className="text-xs text-muted leading-relaxed">
-                {humanizeReviewText(q)}
+                {humanizeReviewText(q, currency)}
               </li>
             ))}
           </ul>
@@ -280,28 +281,29 @@ function AnalysisView({ a }: { a: TradeAnalysis }) {
       {a.takeaway && (
         <div className="rounded-lg bg-accent/5 border border-accent/20 p-2.5">
           <div className="text-[10px] uppercase tracking-wider text-accent mb-0.5">Takeaway</div>
-          <p className="text-xs text-foreground leading-relaxed">{humanizeReviewText(a.takeaway)}</p>
+          <p className="text-xs text-foreground leading-relaxed">{humanizeReviewText(a.takeaway, currency)}</p>
         </div>
       )}
     </div>
   );
 }
 
-function analysisToText(a: TradeAnalysis): string {
-  const lines = [humanizeReviewText(a.summary), ''];
-  for (const o of a.observations) lines.push(`• ${o.label}: ${humanizeReviewText(o.detail)}`);
-  if (a.executionReview) lines.push('', `Execution: ${humanizeReviewText(a.executionReview)}`);
-  if (a.riskReview) lines.push('', `Risk: ${humanizeReviewText(a.riskReview)}`);
+function analysisToText(a: TradeAnalysis, currency: string): string {
+  const lines = [humanizeReviewText(a.summary, currency), ''];
+  for (const o of a.observations) lines.push(`• ${o.label}: ${humanizeReviewText(o.detail, currency)}`);
+  if (a.executionReview) lines.push('', `Execution: ${humanizeReviewText(a.executionReview, currency)}`);
+  if (a.riskReview) lines.push('', `Risk: ${humanizeReviewText(a.riskReview, currency)}`);
   if (a.questionsForTrader?.length) {
     lines.push('', 'Questions:');
-    a.questionsForTrader.forEach((q) => lines.push(`- ${humanizeReviewText(q)}`));
+    a.questionsForTrader.forEach((q) => lines.push(`- ${humanizeReviewText(q, currency)}`));
   }
-  if (a.takeaway) lines.push('', `Takeaway: ${humanizeReviewText(a.takeaway)}`);
+  if (a.takeaway) lines.push('', `Takeaway: ${humanizeReviewText(a.takeaway, currency)}`);
   return lines.join('\n');
 }
 
 export default function TradeAIReviewCard({ trade, accountId, currency }: TradeAIReviewCardProps) {
   const groupKey = tradeRef(trade, accountId).tradeGroupKey;
+  const reviewCurrency = trade.currency || currency;
   const aiContext = useAIManagementContextOptional();
   const [ctx, setCtx] = useState<TradeAnalysisContext | null>(null);
   const [result, setResult] = useState<TradeReviewResult | null>(null);
@@ -385,10 +387,10 @@ export default function TradeAIReviewCard({ trade, accountId, currency }: TradeA
 
   const handleCopy = useCallback(() => {
     if (!result) return;
-    navigator.clipboard.writeText(analysisToText(result.analysis));
+    navigator.clipboard.writeText(analysisToText(result.analysis, reviewCurrency));
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
-  }, [result]);
+  }, [result, reviewCurrency]);
 
   const handleDelete = useCallback(
     async (id: string) => {
@@ -460,7 +462,7 @@ export default function TradeAIReviewCard({ trade, accountId, currency }: TradeA
               </button>
             </div>
           </div>
-          <AnalysisView a={result.analysis} />
+          <AnalysisView a={result.analysis} currency={reviewCurrency} />
           <div className="mt-2 text-[10px] text-muted/50">
             {result.provider} · {result.model}
           </div>
@@ -496,6 +498,7 @@ export default function TradeAIReviewCard({ trade, accountId, currency }: TradeA
               </button>
             </div>
             <AnalysisView
+              currency={reviewCurrency}
               a={{
                 summary: r.summary,
                 observations: r.observations,

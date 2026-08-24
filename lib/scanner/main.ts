@@ -9,13 +9,22 @@ import { createScanWorker, writeHeartbeat, deleteHeartbeat } from '@/lib/scanner
 import { getSharedCandleService } from '@/lib/scanner/shared/shared-candle-service';
 import { createGovernor, recomputeGovernor } from '@/lib/scanner/shared/governor-runtime';
 import { AcquisitionScheduler } from '@/lib/scanner/acquisition-scheduler';
-import { readScannerControl } from '@/lib/scanner/control';
-import { setRuntimeEquitiesProvider } from '@/lib/chart/providers';
+import { pausedClassSet, readScannerControl, type ProviderSelection } from '@/lib/scanner/control';
+import {
+  setRuntimeEquitiesProvider,
+  setRuntimeCryptoProvider,
+  setRuntimeFuturesProvider,
+} from '@/lib/chart/providers';
 import { syncDueIbkrFlexConnections } from '@/lib/ibkr-flex/scheduler';
 
 async function main() {
   const initialControl = await readScannerControl();
-  setRuntimeEquitiesProvider(initialControl.equitiesProvider);
+  const applyRuntimeProviders = (providers: ProviderSelection) => {
+    setRuntimeEquitiesProvider(providers.equity);
+    setRuntimeCryptoProvider(providers.crypto);
+    setRuntimeFuturesProvider(providers.futures);
+  };
+  applyRuntimeProviders(initialControl.providers);
 
   console.log(
     `[scanner] starting worker=${scannerConfig.workerId} shadow=${scannerConfig.shadow} ` +
@@ -68,11 +77,16 @@ async function main() {
     );
   }
 
+  // Per-asset-class pause set, kept current by the control poll and consulted by
+  // both the acquisition scheduler and the evaluation scheduler.
+  let pausedClasses = pausedClassSet(initialControl);
+
   const acquisitionScheduler = new AcquisitionScheduler({
     cadenceForScope: (scope) => governor
       ? governor.getCadenceSeconds(scope)
       : Math.max(1, scannerConfig.acquisitionBucketMs / 1000),
   });
+  acquisitionScheduler.setPausedClasses(pausedClasses);
 
   const worker = createScanWorker();
   worker.on('failed', (job, err) => {
@@ -83,7 +97,8 @@ async function main() {
   worker.on('error', (err) => console.error('[scanner] worker error:', err.message));
 
   let scannerPaused = initialControl.paused;
-  let equitiesProvider = initialControl.equitiesProvider;
+  let providersKey = JSON.stringify(initialControl.providers);
+  let pausedClassesKey = JSON.stringify(initialControl.pausedClasses);
   let cadenceOverridesKey = JSON.stringify(initialControl.cadenceOverrides);
   let controlCheckRunning = false;
   const syncGlobalControl = async () => {
@@ -103,13 +118,22 @@ async function main() {
           console.log('[scanner] global pause cleared — scanner resumed');
         }
       }
-      if (control.equitiesProvider !== equitiesProvider) {
+      const nextProvidersKey = JSON.stringify(control.providers);
+      if (nextProvidersKey !== providersKey) {
         changed = true;
-        equitiesProvider = control.equitiesProvider;
-        setRuntimeEquitiesProvider(equitiesProvider);
+        providersKey = nextProvidersKey;
+        applyRuntimeProviders(control.providers);
         acquisitionScheduler.invalidateInventory();
         await recomputeGovernorCadence();
-        console.log(`[scanner] equities provider changed to ${equitiesProvider}`);
+        console.log(`[scanner] providers changed to ${nextProvidersKey}`);
+      }
+      const nextPausedClassesKey = JSON.stringify(control.pausedClasses);
+      if (nextPausedClassesKey !== pausedClassesKey) {
+        changed = true;
+        pausedClassesKey = nextPausedClassesKey;
+        pausedClasses = pausedClassSet(control);
+        acquisitionScheduler.setPausedClasses(pausedClasses);
+        console.log(`[scanner] paused classes changed to ${nextPausedClassesKey}`);
       }
       const nextCadenceOverridesKey = JSON.stringify(control.cadenceOverrides);
       if (nextCadenceOverridesKey !== cadenceOverridesKey) {
@@ -123,7 +147,8 @@ async function main() {
       if (!changed) return;
       await writeHeartbeat(scannerPaused ? 'paused' : 'ok', {
         event: 'global-control-change',
-        equitiesProvider,
+        providers: control.providers,
+        pausedClasses: control.pausedClasses,
         changedAt: control.changedAt,
       });
     } catch (err) {
@@ -140,7 +165,8 @@ async function main() {
 
   await writeHeartbeat(scannerPaused ? 'paused' : 'ok', {
     event: 'startup',
-    equitiesProvider,
+    providers: initialControl.providers,
+    pausedClasses: initialControl.pausedClasses,
   });
 
   // Startup reconciliation: immediately enqueue any already-due watches rather
@@ -150,7 +176,7 @@ async function main() {
   if (!scannerPaused) {
     try {
       await acquisitionScheduler.tick();
-      const r = await scheduleDueWatches(new Date());
+      const r = await scheduleDueWatches(new Date(), pausedClasses);
       console.log(`[scanner] startup reconcile due=${r.due} enqueued=${r.enqueued} deferred=${r.deferred}`);
     } catch (err) {
       console.error('[scanner] startup reconcile error:', err instanceof Error ? err.message : err);
@@ -186,7 +212,7 @@ async function main() {
   const scheduleTimer = setInterval(async () => {
     if (scannerPaused) return;
     try {
-      const r = await scheduleDueWatches(new Date());
+      const r = await scheduleDueWatches(new Date(), pausedClasses);
       if (r.enqueued || r.deferred) {
         console.log(`[scanner] tick due=${r.due} enqueued=${r.enqueued} deferred=${r.deferred}`);
       }

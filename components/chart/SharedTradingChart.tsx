@@ -19,6 +19,8 @@ import {
   type IPrimitivePaneRenderer,
   type PrimitivePaneViewZOrder,
   type SeriesAttachedParameter,
+  type AutoscaleInfo,
+  type Logical,
 } from 'lightweight-charts';
 import PatternOverlay from '@/components/chart/PatternOverlay';
 import { displaySymbol } from '@/lib/utils/format';
@@ -39,6 +41,8 @@ import {
 } from '@/lib/scanner/patterns';
 import type { TransactionRecord } from '@/lib/db/schema';
 import { getChartOverlayPreferences, setChartOverlayPreference } from '@/lib/settings';
+import { findExecutionCandleTime } from '@/lib/chart/execution-time';
+import { ExtendedHoursBackgroundPrimitive } from '@/components/chart/ExtendedHoursBackground';
 import { CalendarDays, ChartNoAxesCombined, Loader2, Minus, Play, Sparkles } from 'lucide-react';
 const DEFAULT_INTERVALS = ['1m', '5m', '10m', '15m', '1h', '1d'] as const;
 const LOAD_MORE_THRESHOLD_BARS = 25;
@@ -49,11 +53,13 @@ export interface SharedTradingChartProps {
   date?: string;
   candles?: CandleData[];
   transactions?: TransactionRecord[];
+  highlightedTransactionId?: string | null;
   interval?: string;
   onIntervalChange?: (newInterval: string) => void;
   availableIntervals?: readonly string[];
   height?: number;
   showVolume?: boolean;
+  showExtendedHoursShading?: boolean;
   autoPatternsEnabled?: boolean;
   onTogglePatterns?: () => void;
   levelsEnabled?: boolean;
@@ -83,57 +89,6 @@ export interface SharedTradingChartProps {
   flat?: boolean;
 }
 
-function getETOffsetSeconds(dateStr: string): number {
-  if (!dateStr || dateStr.length !== 8) return 0;
-  const year = parseInt(dateStr.substring(0, 4));
-  const month = parseInt(dateStr.substring(4, 6)) - 1;
-  const day = parseInt(dateStr.substring(6, 8));
-  const refUTC = new Date(Date.UTC(year, month, day, 12, 0, 0));
-  const etParts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    hour12: false,
-    hour: 'numeric',
-  }).formatToParts(refUTC);
-  const etHourAtNoonUTC = parseInt(etParts.find((p) => p.type === 'hour')?.value ?? '7');
-  return (etHourAtNoonUTC - 12) * 3600;
-}
-
-function findClosestCandleTime(candles: CandleData[], transactionTime: string, dateStr?: string): number | null {
-  if (!candles || candles.length === 0) return null;
-  const parts = transactionTime.split(':').map(Number);
-  if (parts.length < 2) return null;
-
-  let targetSec: number;
-  if (dateStr && dateStr.length === 8) {
-    const year = parseInt(dateStr.substring(0, 4));
-    const month = parseInt(dateStr.substring(4, 6)) - 1;
-    const day = parseInt(dateStr.substring(6, 8));
-    // Execution times are exchange-local (ET). The candles are positioned on raw
-    // UTC epochs (only the axis LABELS are rendered in ET), so convert the ET
-    // wall-clock execution time to its true UTC epoch before matching — otherwise
-    // every arrow lands ~ET-offset hours early and piles up at the left edge.
-    // Mirrors ReplayChart/TradeChart, which apply the same offset.
-    targetSec =
-      Math.floor(Date.UTC(year, month, day, parts[0], parts[1], parts[2] || 0) / 1000) -
-      getETOffsetSeconds(dateStr);
-  } else {
-    targetSec = parts[0] * 3600 + parts[1] * 60 + (parts[2] || 0);
-  }
-
-  let closest = candles[0];
-  let minDiff = Math.abs(candles[0].time - targetSec);
-
-  for (let i = 1; i < candles.length; i++) {
-    const diff = Math.abs(candles[i].time - targetSec);
-    if (diff < minDiff) {
-      minDiff = diff;
-      closest = candles[i];
-    }
-  }
-
-  return closest.time;
-}
-
 function drawMetaTraderArrow(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -147,7 +102,6 @@ function drawMetaTraderArrow(
   const arrowWidth = Math.max(4, Math.min(11, Math.round(barWidth * 0.7)));
   const arrowHeight = Math.max(5, Math.min(13, Math.round(barWidth * 0.85)));
   const halfW = arrowWidth / 2;
-  const halfH = arrowHeight / 2;
   const notch = 2; // depth of the arrow's tail flag
 
   // Halo contrasts the arrow against the candle behind it: light outline on the
@@ -159,21 +113,24 @@ function drawMetaTraderArrow(
   const buildPath = () => {
     ctx.beginPath();
     if (isBuy) {
-      ctx.moveTo(x, y - halfH);
-      ctx.lineTo(x + halfW, y + halfH);
-      ctx.lineTo(x + halfW / 2, y + halfH);
-      ctx.lineTo(x + halfW / 2, y + halfH + notch);
-      ctx.lineTo(x - halfW / 2, y + halfH + notch);
-      ctx.lineTo(x - halfW / 2, y + halfH);
-      ctx.lineTo(x - halfW, y + halfH);
+      // The arrow tip is the fill-price coordinate; the body extends away from
+      // it so the marker points to the exact traded level rather than centering
+      // an arbitrary icon box on that price.
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + halfW, y + arrowHeight);
+      ctx.lineTo(x + halfW / 2, y + arrowHeight);
+      ctx.lineTo(x + halfW / 2, y + arrowHeight + notch);
+      ctx.lineTo(x - halfW / 2, y + arrowHeight + notch);
+      ctx.lineTo(x - halfW / 2, y + arrowHeight);
+      ctx.lineTo(x - halfW, y + arrowHeight);
     } else {
-      ctx.moveTo(x, y + halfH);
-      ctx.lineTo(x + halfW, y - halfH);
-      ctx.lineTo(x + halfW / 2, y - halfH);
-      ctx.lineTo(x + halfW / 2, y - halfH - notch);
-      ctx.lineTo(x - halfW / 2, y - halfH - notch);
-      ctx.lineTo(x - halfW / 2, y - halfH);
-      ctx.lineTo(x - halfW, y - halfH);
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + halfW, y - arrowHeight);
+      ctx.lineTo(x + halfW / 2, y - arrowHeight);
+      ctx.lineTo(x + halfW / 2, y - arrowHeight - notch);
+      ctx.lineTo(x - halfW / 2, y - arrowHeight - notch);
+      ctx.lineTo(x - halfW / 2, y - arrowHeight);
+      ctx.lineTo(x - halfW, y - arrowHeight);
     }
     ctx.closePath();
   };
@@ -221,12 +178,15 @@ function drawMetaTraderArrow(
 export class TradeExecutionPrimitive implements ISeriesPrimitive<Time> {
   private _chart: IChartApi | null = null;
   private _series: ISeriesApi<'Candlestick'> | null = null;
-  private _transactions: TransactionRecord[] = [];
   private _sortedCandles: CandleData[] = [];
-  private _date?: string;
+  private _executionPoints: Array<{
+    transaction: TransactionRecord;
+    candleTime: number;
+    candleIndex: number;
+  }> = [];
   private _formatCandleTime: (t: number) => Time;
   private _isDark: boolean = true;
-  private _hovered: { time: string; price: number } | null = null;
+  private _highlightedTransactionId: string | null = null;
   private _paneViews: readonly IPrimitivePaneView[];
   private _requestUpdate?: () => void;
 
@@ -238,12 +198,11 @@ export class TradeExecutionPrimitive implements ISeriesPrimitive<Time> {
 
   get chart() { return this._chart; }
   get series() { return this._series; }
-  get transactions() { return this._transactions; }
   get sortedCandles() { return this._sortedCandles; }
-  get date() { return this._date; }
+  get executionPoints() { return this._executionPoints; }
   get formatCandleTime() { return this._formatCandleTime; }
   get isDark() { return this._isDark; }
-  get hovered() { return this._hovered; }
+  get highlightedTransactionId() { return this._highlightedTransactionId; }
 
   attached(param: SeriesAttachedParameter<Time>) {
     this._chart = param.chart;
@@ -258,20 +217,46 @@ export class TradeExecutionPrimitive implements ISeriesPrimitive<Time> {
   }
 
   update(transactions: TransactionRecord[], sortedCandles: CandleData[], date?: string, isDark?: boolean) {
-    this._transactions = transactions;
     this._sortedCandles = sortedCandles;
-    this._date = date;
+    const candleIndexes = new Map(sortedCandles.map((candle, index) => [candle.time, index]));
+    this._executionPoints = transactions.flatMap((transaction) => {
+      const candleTime = findExecutionCandleTime(sortedCandles, transaction.time, date);
+      const candleIndex = candleTime === null ? undefined : candleIndexes.get(candleTime);
+      return candleTime !== null && candleIndex !== undefined
+        ? [{ transaction, candleTime, candleIndex }]
+        : [];
+    });
     if (isDark !== undefined) this._isDark = isDark;
     this._requestUpdate?.();
   }
 
-  setHovered(hovered: { time: string; price: number } | null) {
-    this._hovered = hovered;
+  setHighlightedTransactionId(transactionId: string | null) {
+    this._highlightedTransactionId = transactionId;
     this._requestUpdate?.();
   }
 
   paneViews(): readonly IPrimitivePaneView[] {
     return this._paneViews;
+  }
+
+  autoscaleInfo(startTimePoint: Logical, endTimePoint: Logical): AutoscaleInfo | null {
+    const from = Math.floor(Number(startTimePoint));
+    const to = Math.ceil(Number(endTimePoint));
+    let minValue = Number.POSITIVE_INFINITY;
+    let maxValue = Number.NEGATIVE_INFINITY;
+
+    for (const { transaction, candleIndex } of this._executionPoints) {
+      if (candleIndex < from || candleIndex > to) continue;
+      if (!Number.isFinite(transaction.price) || transaction.price <= 0) continue;
+      minValue = Math.min(minValue, transaction.price);
+      maxValue = Math.max(maxValue, transaction.price);
+    }
+
+    if (!Number.isFinite(minValue) || !Number.isFinite(maxValue)) return null;
+    return {
+      priceRange: { minValue, maxValue },
+      margins: { above: 16, below: 16 },
+    };
   }
 }
 
@@ -306,9 +291,9 @@ class TradeExecutionPaneRenderer implements IPrimitivePaneRenderer {
       if (!chart || !series) return;
 
       const timeScale = chart.timeScale();
-      const transactions = this._primitive.transactions;
+      const executionPoints = this._primitive.executionPoints;
       const sortedCandles = this._primitive.sortedCandles;
-      if (!transactions || transactions.length === 0 || sortedCandles.length === 0) return;
+      if (executionPoints.length === 0 || sortedCandles.length === 0) return;
 
       const mediaSize = scope.mediaSize;
       const width = mediaSize.width;
@@ -323,11 +308,8 @@ class TradeExecutionPaneRenderer implements IPrimitivePaneRenderer {
         }
       }
 
-      transactions.forEach((t) => {
-        const tradeTime = findClosestCandleTime(sortedCandles, t.time, this._primitive.date);
-        if (tradeTime === null) return;
-
-        const timeFormatted = this._primitive.formatCandleTime(tradeTime);
+      executionPoints.forEach(({ transaction: t, candleTime }) => {
+        const timeFormatted = this._primitive.formatCandleTime(candleTime);
         const x = timeScale.timeToCoordinate(timeFormatted);
         if (x === null || x < 0 || x > width) return;
 
@@ -336,16 +318,8 @@ class TradeExecutionPaneRenderer implements IPrimitivePaneRenderer {
           y = series.priceToCoordinate(t.price);
         }
 
-        // Anchor to the candle at this time when the trade price is missing OR
-        // falls outside the visible range — otherwise the arrow would be skipped
-        // (e.g. placeholder/demo prices, or a fill outside the fetched candles).
-        if (y === null || y < 0 || y > height) {
-          const matchedCandle = sortedCandles.find((c) => c.time === tradeTime);
-          if (matchedCandle) {
-            y = series.priceToCoordinate(matchedCandle.close);
-          }
-        }
-
+        // Never substitute the candle close: the marker represents the recorded
+        // fill and must remain at that exact price through every scale change.
         if (y === null || y < 0 || y > height) return;
 
         const isBuy = t.side === 'BUYTOOPEN' || t.side === 'BUYTOCLOSE';
@@ -353,8 +327,7 @@ class TradeExecutionPaneRenderer implements IPrimitivePaneRenderer {
           ? (this._primitive.isDark ? '#4ade80' : '#16a34a')
           : (this._primitive.isDark ? '#f87171' : '#dc2626');
 
-        const hv = this._primitive.hovered;
-        const isHovered = hv !== null && hv.time === t.time && hv.price === t.price;
+        const isHovered = this._primitive.highlightedTransactionId === t.tradeId;
 
         drawMetaTraderArrow(ctx, x, y, isBuy, color, barWidth, isHovered, this._primitive.isDark);
       });
@@ -367,11 +340,13 @@ export default function SharedTradingChart({
   date,
   candles = [],
   transactions = [],
+  highlightedTransactionId = null,
   interval = '5m',
   onIntervalChange,
   availableIntervals = DEFAULT_INTERVALS,
   height = 380,
   showVolume = true,
+  showExtendedHoursShading = false,
   autoPatternsEnabled = false,
   onTogglePatterns,
   levelsEnabled: controlledLevelsEnabled,
@@ -408,6 +383,7 @@ export default function SharedTradingChart({
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const patternSeriesRef = useRef<ISeriesApi<'Line'>[]>([]);
   const primitiveRef = useRef<TradeExecutionPrimitive | null>(null);
+  const extendedHoursPrimitiveRef = useRef<ExtendedHoursBackgroundPrimitive | null>(null);
   // Levels/Trendlines default to the globally-persisted preference so a user's
   // choice sticks across every chart instead of resetting per chart. Start from
   // the SSR-safe defaults, then hydrate from localStorage after mount (matching
@@ -542,7 +518,7 @@ export default function SharedTradingChart({
   const tradeExecutionSpan = useMemo(() => {
     if (!transactions || transactions.length === 0 || sortedCandles.length === 0) return null;
     const times = transactions
-      .map((t) => findClosestCandleTime(sortedCandles, t.time, date))
+      .map((t) => findExecutionCandleTime(sortedCandles, t.time, date))
       .filter((t): t is number => t !== null);
     if (times.length === 0) return null;
     const minTime = Math.min(...times);
@@ -581,16 +557,44 @@ export default function SharedTradingChart({
       : { levels: [], trendlines: [] },
     [visibleCandles, levelsEnabled, trendlinesEnabled],
   );
+  const activeTransactionId = highlightedTransactionId ?? hoveredTrade?.trade.tradeId ?? null;
 
   // Execution arrows are drawn by the TradeExecutionPrimitive inside the chart's
   // own render loop, so they stay pinned to their candle through any X/Y zoom or
   // scale change — no separate overlay canvas to fall out of sync. We only feed
-  // it the hovered execution so it can highlight that one arrow.
+  // it the active execution so it can highlight that one arrow.
   useEffect(() => {
-    primitiveRef.current?.setHovered(
-      hoveredTrade ? { time: hoveredTrade.trade.time, price: hoveredTrade.trade.price } : null
-    );
-  }, [hoveredTrade]);
+    primitiveRef.current?.setHighlightedTransactionId(activeTransactionId);
+  }, [activeTransactionId]);
+
+  // Hovering a row in the execution audit moves the chart crosshair to that
+  // fill, making the linked arrow easy to locate without changing zoom or pan.
+  useEffect(() => {
+    const chart = chartRef.current;
+    const candleSeries = candleSeriesRef.current;
+    if (!chart || !candleSeries) return;
+
+    if (!highlightedTransactionId) {
+      chart.clearCrosshairPosition();
+      return;
+    }
+
+    const transaction = transactions.find((t) => t.tradeId === highlightedTransactionId);
+    if (!transaction) {
+      chart.clearCrosshairPosition();
+      return;
+    }
+
+    const candleTime = findExecutionCandleTime(sortedCandles, transaction.time, date);
+    if (candleTime === null) return;
+
+    if (!Number.isFinite(transaction.price) || transaction.price <= 0) {
+      chart.clearCrosshairPosition();
+      return;
+    }
+
+    chart.setCrosshairPosition(transaction.price, formatCandleTime(candleTime), candleSeries);
+  }, [highlightedTransactionId, transactions, sortedCandles, date, formatCandleTime]);
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -610,7 +614,7 @@ export default function SharedTradingChart({
       let minDistance = 14;
 
       for (const t of transactions) {
-        const tradeTime = findClosestCandleTime(sortedCandles, t.time, date);
+        const tradeTime = findExecutionCandleTime(sortedCandles, t.time, date);
         if (tradeTime === null) continue;
 
         const x = timeScale.timeToCoordinate(formatCandleTime(tradeTime));
@@ -764,6 +768,11 @@ export default function SharedTradingChart({
     candleSeries.attachPrimitive(primitive);
     primitiveRef.current = primitive;
 
+    const extendedHoursPrimitive = new ExtendedHoursBackgroundPrimitive(formatCandleTime);
+    extendedHoursPrimitive.update(sortedCandles, date, showExtendedHoursShading, isDark);
+    candleSeries.attachPrimitive(extendedHoursPrimitive);
+    extendedHoursPrimitiveRef.current = extendedHoursPrimitive;
+
     if (showVolume) {
       const volumeSeries = chart.addSeries(HistogramSeries, {
         priceFormat: { type: 'volume' },
@@ -830,6 +839,10 @@ export default function SharedTradingChart({
       if (primitiveRef.current && candleSeriesRef.current) {
         candleSeriesRef.current.detachPrimitive(primitiveRef.current);
         primitiveRef.current = null;
+      }
+      if (extendedHoursPrimitiveRef.current && candleSeriesRef.current) {
+        candleSeriesRef.current.detachPrimitive(extendedHoursPrimitiveRef.current);
+        extendedHoursPrimitiveRef.current = null;
       }
       if (visibleRangeTimerRef.current !== null) {
         window.clearTimeout(visibleRangeTimerRef.current);
@@ -968,6 +981,12 @@ export default function SharedTradingChart({
     if (primitiveRef.current) {
       primitiveRef.current.update(transactions, sortedCandles, date, isDark);
     }
+    extendedHoursPrimitiveRef.current?.update(
+      sortedCandles,
+      date,
+      showExtendedHoursShading,
+      isDark,
+    );
 
     // 1.5 Scanner detector markers. These are separate from the optional
     // chart-formation overlays controlled by `autoPatternsEnabled`.
@@ -1209,6 +1228,8 @@ export default function SharedTradingChart({
     trendlinesEnabled,
     transactions,
     date,
+    isDark,
+    showExtendedHoursShading,
     formatCandleTime,
     selectedPatternId,
     minMovePercent,

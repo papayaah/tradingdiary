@@ -196,19 +196,33 @@ interface AIUsageData {
   trend: Array<{ day: string; requests: number; credits: number; costUsd: number }>;
 }
 
-type AdminEquitiesProvider = 'auto' | 'ibkr' | 'tiingo' | 'polygon' | 'yahoo';
+type MarketAssetClass = 'equity' | 'crypto' | 'futures';
 
-const EQUITIES_PROVIDER_OPTIONS: Array<{
-  id: AdminEquitiesProvider;
-  name: string;
-  description: string;
-}> = [
-  { id: 'auto', name: 'Automatic', description: 'Use the first configured server provider.' },
-  { id: 'ibkr', name: 'IBKR Gateway', description: 'SMART-routed US stocks and ETFs.' },
-  { id: 'tiingo', name: 'Tiingo IEX', description: 'Server-funded Tiingo equities feed.' },
-  { id: 'polygon', name: 'Polygon / Massive', description: 'Server-funded Polygon aggregates.' },
-  { id: 'yahoo', name: 'Yahoo Finance', description: 'Keyless fallback market data.' },
+// Per-provider display copy, shared across asset classes.
+const PROVIDER_META: Record<string, { name: string; description: string }> = {
+  auto: { name: 'Automatic', description: 'First configured server provider for this class.' },
+  ibkr: { name: 'IBKR Gateway', description: 'SMART-routed via the IB gateway.' },
+  tiingo: { name: 'Tiingo', description: 'Server-funded Tiingo feed.' },
+  polygon: { name: 'Polygon / Massive', description: 'Server-funded Polygon aggregates.' },
+  yahoo: { name: 'Yahoo Finance', description: 'Keyless fallback market data.' },
+};
+
+// Selectable providers per asset class (mirrors the server). Tiingo has no
+// futures feed, so it is intentionally absent there.
+const CLASS_PROVIDER_OPTIONS: Record<MarketAssetClass, string[]> = {
+  equity: ['auto', 'ibkr', 'tiingo', 'polygon', 'yahoo'],
+  crypto: ['auto', 'tiingo', 'yahoo'],
+  futures: ['auto', 'ibkr', 'yahoo'],
+};
+
+const CLASS_META: Array<{ id: MarketAssetClass; label: string; description: string }> = [
+  { id: 'equity', label: 'Equities', description: 'US stocks & ETFs.' },
+  { id: 'crypto', label: 'Crypto', description: 'Spot crypto pairs (…-USD).' },
+  { id: 'futures', label: 'Futures', description: 'CME futures roots.' },
 ];
+
+type ProviderSelectionState = Record<MarketAssetClass, string>;
+type ClassPauseUIState = Record<MarketAssetClass, boolean>;
 
 function formatCadence(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return '—';
@@ -231,7 +245,16 @@ export default function AdminDashboard() {
   const [aiUsage, setAIUsage] = useState<AIUsageData | null>(null);
   const [allowlistConfigured, setAllowlistConfigured] = useState<boolean>(true);
   const [scannerPaused, setScannerPaused] = useState(false);
-  const [equitiesProvider, setEquitiesProvider] = useState<AdminEquitiesProvider>('auto');
+  const [providers, setProviders] = useState<ProviderSelectionState>({
+    equity: 'auto',
+    crypto: 'auto',
+    futures: 'auto',
+  });
+  const [pausedClasses, setPausedClasses] = useState<ClassPauseUIState>({
+    equity: false,
+    crypto: false,
+    futures: false,
+  });
   const [providerAvailability, setProviderAvailability] = useState<Record<string, boolean>>({});
   const [controlActionPending, setControlActionPending] = useState(false);
   const [cadenceDrafts, setCadenceDrafts] = useState<Record<string, string>>({});
@@ -300,7 +323,8 @@ export default function AdminDashboard() {
       if (aiUsageRes?.success) setAIUsage(aiUsageRes);
       if (controlsRes?.success) {
         setScannerPaused(Boolean(controlsRes.control?.paused));
-        setEquitiesProvider(controlsRes.control?.equitiesProvider || 'auto');
+        if (controlsRes.control?.providers) setProviders(controlsRes.control.providers);
+        if (controlsRes.control?.pausedClasses) setPausedClasses(controlsRes.control.pausedClasses);
         setProviderAvailability(controlsRes.providerAvailability || {});
       }
 
@@ -400,25 +424,50 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleSetEquitiesProvider = async (provider: AdminEquitiesProvider) => {
-    if (provider === equitiesProvider || providerAvailability[provider] === false) return;
+  const handleSetProvider = async (assetClass: MarketAssetClass, provider: string) => {
+    if (providers[assetClass] === provider || providerAvailability[provider] === false) return;
     setControlActionPending(true);
-    setControlActionMsg(`Switching equities to ${provider}...`);
+    setControlActionMsg(`Switching ${assetClass} to ${provider}...`);
     try {
       const res = await fetch('/api/admin/controls', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'set-equities-provider', provider }),
+        body: JSON.stringify({ action: 'set-provider', assetClass, provider }),
       });
       const data = await res.json();
       if (data.success) {
-        setEquitiesProvider(data.control?.equitiesProvider || provider);
+        if (data.control?.providers) setProviders(data.control.providers);
         setControlActionMsg(data.message);
       } else {
         setControlActionMsg(data.error || 'Provider change failed');
       }
     } catch {
-      setControlActionMsg('Failed to change equities provider');
+      setControlActionMsg(`Failed to change ${assetClass} provider`);
+    } finally {
+      setControlActionPending(false);
+      setTimeout(() => setControlActionMsg(null), 5000);
+    }
+  };
+
+  const handleToggleClassPause = async (assetClass: MarketAssetClass) => {
+    const currentlyPaused = pausedClasses[assetClass];
+    setControlActionPending(true);
+    setControlActionMsg(currentlyPaused ? `Resuming ${assetClass}...` : `Pausing ${assetClass}...`);
+    try {
+      const res = await fetch('/api/admin/controls', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: currentlyPaused ? 'resume-class' : 'pause-class', assetClass }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (data.control?.pausedClasses) setPausedClasses(data.control.pausedClasses);
+        setControlActionMsg(data.message);
+      } else {
+        setControlActionMsg(data.error || 'Pause change failed');
+      }
+    } catch {
+      setControlActionMsg(`Failed to update ${assetClass} pause`);
     } finally {
       setControlActionPending(false);
       setTimeout(() => setControlActionMsg(null), 5000);
@@ -655,43 +704,74 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      <div className="bg-card-bg border border-card-border rounded-xl p-5 space-y-4">
-        <div className="flex flex-col gap-1 border-b border-card-border pb-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-              <Server size={16} className="text-accent" /> Centralized equities provider
-            </h2>
-            <p className="mt-0.5 text-xs text-muted">
-              Controls the shared acquisition scanner for every user. Provider credentials remain server-side.
-            </p>
-          </div>
-          <span className="text-xs font-semibold text-accent">Active: {equitiesProvider}</span>
+      <div className="bg-card-bg border border-card-border rounded-xl p-5 space-y-5">
+        <div className="flex flex-col gap-1 border-b border-card-border pb-3">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Server size={16} className="text-accent" /> Centralized market-data providers
+          </h2>
+          <p className="mt-0.5 text-xs text-muted">
+            Per-asset-class provider and pause for the shared acquisition scanner and every user&apos;s
+            charts. Credentials stay server-side. The global pause below overrides all of these.
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {EQUITIES_PROVIDER_OPTIONS.map((provider) => {
-            const unavailable = providerAvailability[provider.id] === false;
-            const selected = equitiesProvider === provider.id;
-            return (
-              <button
-                key={provider.id}
-                type="button"
-                onClick={() => void handleSetEquitiesProvider(provider.id)}
-                disabled={unavailable || controlActionPending}
-                className={`rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
-                  selected
-                    ? 'border-accent bg-accent/10'
-                    : 'border-card-border bg-muted-bg hover:border-accent/50'
-                }`}
-              >
-                <span className="block text-xs font-semibold text-foreground">{provider.name}</span>
-                <span className="mt-1 block text-[11px] leading-tight text-muted">
-                  {unavailable ? 'Not configured on this server.' : provider.description}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        {CLASS_META.map((cls) => {
+          const classPaused = pausedClasses[cls.id];
+          const activeProvider = providers[cls.id];
+          return (
+            <div key={cls.id} className={classPaused ? 'opacity-60' : undefined}>
+              <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-xs font-semibold text-foreground">{cls.label}</span>
+                  <span className="text-[11px] text-muted">{cls.description}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[11px] font-semibold text-accent">
+                    {classPaused ? 'Paused' : `Active: ${activeProvider}`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void handleToggleClassPause(cls.id)}
+                    disabled={controlActionPending}
+                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors disabled:cursor-wait disabled:opacity-60 ${
+                      classPaused
+                        ? 'border-accent/30 bg-accent/10 text-accent hover:bg-accent/15'
+                        : 'border-loss/30 bg-loss/10 text-loss hover:bg-loss/15'
+                    }`}
+                  >
+                    {classPaused ? <Play size={12} /> : <Pause size={12} />}
+                    {classPaused ? 'Resume' : 'Pause'}
+                  </button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                {CLASS_PROVIDER_OPTIONS[cls.id].map((providerId) => {
+                  const meta = PROVIDER_META[providerId] ?? { name: providerId, description: '' };
+                  const unavailable = providerAvailability[providerId] === false;
+                  const selected = activeProvider === providerId;
+                  return (
+                    <button
+                      key={providerId}
+                      type="button"
+                      onClick={() => void handleSetProvider(cls.id, providerId)}
+                      disabled={unavailable || classPaused || controlActionPending}
+                      className={`rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
+                        selected
+                          ? 'border-accent bg-accent/10'
+                          : 'border-card-border bg-muted-bg hover:border-accent/50'
+                      }`}
+                    >
+                      <span className="block text-xs font-semibold text-foreground">{meta.name}</span>
+                      <span className="mt-1 block text-[11px] leading-tight text-muted">
+                        {unavailable ? 'Not configured on this server.' : meta.description}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Operator Controls Bar (Phase 4) */}
