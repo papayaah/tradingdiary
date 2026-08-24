@@ -2654,26 +2654,12 @@ export default function MarketWatcher() {
             const status = sessionCandles.length === 0
               ? 'no-data' as const
               : alertMatches[0]?.matched ?? 'none';
-            const dailyMove = isFuturesOrCrypto
-              ? null
-              : calculateEquityIntradayChange(freshCandles);
 
-            const lastAlertedPatternKeys = { ...item.lastAlertedPatternKeys };
-            for (const result of alertMatches) {
-              const alertKey = `${result.time}:${result.matched}`;
-              if (lastAlertedPatternKeys[result.patternId] === alertKey) continue;
-              triggerAlert(
-                item.symbol,
-                item.interval,
-                result.matched,
-                result.message,
-                sessionCandles[sessionCandles.length - 1]?.close || 0,
-                sessionCandles,
-                dailyMove,
-              );
-              lastAlertedPatternKeys[result.patternId] = alertKey;
-            }
-
+            // Expanding a row only refreshes the chart/candles for viewing; it
+            // must NOT (re)emit Alert History entries or mutate alerting state.
+            // Alerting is owned solely by the background scan loop, which dedupes
+            // via lastAlertedPatternKeys and attaches real pattern names.
+            // Re-triggering here produced redundant, unnamed ("Pattern") cards.
             setTestResult({
               success: true,
               patternMatched: matched,
@@ -2695,12 +2681,9 @@ export default function MarketWatcher() {
                   status,
                   lastError: sessionCandles.length === 0 ? 'No candles available for today’s selected ET session' : undefined,
                   lastChecked: formatLastCheckTime(),
-                  lastAlertedCandleTime: alertMatches[0]?.time ?? updated[index].lastAlertedCandleTime,
-                  lastAlertedType: alertMatches[0]?.matched ?? updated[index].lastAlertedType,
-                  lastAlertedPatternId: alertMatches[0]?.patternId
-                    ? alertMatches[0].patternId
-                    : updated[index].lastAlertedPatternId,
-                  lastAlertedPatternKeys,
+                  // Alerting state (lastAlerted*) is preserved via the spread above
+                  // and left to the background scan loop; expansion only refreshes
+                  // display fields so it can't suppress or duplicate a real alert.
                   selectedPatternIds: selectedPatternIdsRef.current,
                   matchedPatternIds: alertMatches.map((result) => result.patternId),
                 };
