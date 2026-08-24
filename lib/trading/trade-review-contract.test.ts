@@ -14,9 +14,9 @@ describe('parseTradeAnalysis', () => {
       evidenceConfidence: 'medium',
     }), 'USD');
 
-    expect(analysis?.summary).toBe('The trader entered SLV at $54.16 at 1:58:29 PM ET.');
+    expect(analysis?.summary).toBe('The trader entered SLV at $54.16 at 1:58 PM ET.');
     expect(analysis?.observations[0].detail).toBe('The entry price was $54.16.');
     expect(analysis?.observations[0].evidence?.[0].value).toBe('$54.16');
-    expect(analysis?.questionsForTrader?.[0]).toBe('Was the 2:02:12 PM exit planned?');
+    expect(analysis?.questionsForTrader?.[0]).toBe('Was the 2:02 PM exit planned?');
   });
 });

@@ -3,7 +3,7 @@ import type { TradeAnalysisContext } from './trade-analysis';
 import { formatEtTimestamp12Hour, normalizeReviewTextValues } from './review-time';
 
 /** Bump when the prompt template or schema meaningfully changes. */
-export const TRADE_REVIEW_PROMPT_VERSION = '4';
+export const TRADE_REVIEW_PROMPT_VERSION = '5';
 
 // ============================================================================
 // AI output contract (see docs/specs/trade-ai-assistant-notes.md §4)
@@ -122,8 +122,9 @@ Return a JSON object with this exact shape:
 
 Ground every observation in a metric or event from the data. Do not invent prices, times, or levels.
 Use human-readable durations (for example, "45m"), never milliseconds. Use friendly metric names,
-never internal property paths. Use 12-hour clock timestamps with AM/PM (for example,
-"1:58:29 PM ET"), never 24-hour or military time. Clearly label prices using the supplied currency;
+never internal property paths. Use readable dates and minute-precision 12-hour clock timestamps with
+AM/PM (for example, "Aug 20, 2026 at 1:58 PM ET"), never ISO dates, seconds, 24-hour, or military time.
+Clearly label prices using the supplied currency;
 never append "ET" to a price. Round displayed percentages to at most one decimal place.`;
 }
 
