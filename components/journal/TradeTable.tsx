@@ -8,23 +8,15 @@ import { formatExchangeTime } from '@/lib/trading/exchange-time';
 import { formatCurrency } from '@/lib/currency';
 import { getTradePnlDisplay } from '@/lib/trading/pnl-display';
 import {
-  getTradeNote,
   getAllTradeNotes,
-  addScreenshotToTrade,
-  removeScreenshotFromTrade,
   tradeRef,
 } from '@/lib/db/notes';
 import { getAllTags } from '@/lib/db/tags';
-import type { TagRecord } from '@/lib/db/schema';
+import type { TagRecord, TradeNoteRecord } from '@/lib/db/schema';
 import TradeChart from './TradeChart';
 import TradeDetailsPanel from './TradeDetailsPanel';
 import ExecutionAuditPanel from './ExecutionAuditPanel';
-import TradeTagsEditor from './TradeTagsEditor';
-import TradePlaybookEditor from './TradePlaybookEditor';
-import TradePlanEditor from './TradePlanEditor';
-import ScreenshotAttachment from './ScreenshotAttachment';
-import TradeNotesEditor from './TradeNotesEditor';
-import TradeAIReviewCard from './TradeAIReviewCard';
+import TradeJournalPanel from './TradeJournalPanel';
 
 interface TradeTableProps {
   trades: AggregatedTrade[];
@@ -50,7 +42,8 @@ export default function TradeTable({ trades, accountId, currency = 'USD', focusS
   // Tag chips for the collapsed rows: resolve each trade's tagIds to TagRecords.
   const [tagsById, setTagsById] = useState<Map<string, TagRecord>>(new Map());
   const [tagIdsByKey, setTagIdsByKey] = useState<Map<string, string[]>>(new Map());
-  const [tagsVersion, setTagsVersion] = useState(0);
+  const [notesByKey, setNotesByKey] = useState<Map<string, TradeNoteRecord>>(new Map());
+  const [journalVersion, setJournalVersion] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -59,11 +52,12 @@ export default function TradeTable({ trades, accountId, currency = 'USD', focusS
       if (!active) return;
       setTagsById(new Map(tags.map((t) => [t.id, t])));
       setTagIdsByKey(new Map(notes.filter((n) => n.tagIds?.length).map((n) => [n.tradeGroupKey, n.tagIds ?? []])));
+      setNotesByKey(new Map(notes.map((note) => [note.tradeGroupKey, note])));
     })();
     return () => { active = false; };
-  }, [tagsVersion]);
+  }, [journalVersion]);
 
-  const bumpTags = useCallback(() => setTagsVersion((v) => v + 1), []);
+  const bumpJournal = useCallback(() => setJournalVersion((v) => v + 1), []);
 
   return (
     <div className="bg-card-bg/20 rounded-b-2xl overflow-hidden">
@@ -87,8 +81,9 @@ export default function TradeTable({ trades, accountId, currency = 'USD', focusS
               // Flat-to-flat rows share date+symbol, so key by the unique trade
               // group; fall back to a positional key for legacy aggregation.
               const key = trade.groupKey ?? `${trade.date}-${trade.symbol}-${idx}`;
+              const noteKey = tradeRef(trade, accountId).tradeGroupKey;
               const isExpanded = expanded === key;
-              const rowTags = (tagIdsByKey.get(key) ?? [])
+              const rowTags = (tagIdsByKey.get(noteKey) ?? [])
                 .map((id) => tagsById.get(id))
                 .filter((t): t is TagRecord => Boolean(t));
 
@@ -105,7 +100,8 @@ export default function TradeTable({ trades, accountId, currency = 'USD', focusS
                   showBaseCurrency={showBaseCurrency}
                   pricesLoading={pricesLoading}
                   tags={rowTags}
-                  onTagsChange={bumpTags}
+                  note={notesByKey.get(noteKey)}
+                  onJournalChange={bumpJournal}
                 />
               );
             })}
@@ -127,7 +123,8 @@ function TradeRow({
   showBaseCurrency,
   pricesLoading,
   tags,
-  onTagsChange,
+  note,
+  onJournalChange,
 }: {
   trade: AggregatedTrade;
   rowKey: string;
@@ -139,14 +136,12 @@ function TradeRow({
   showBaseCurrency: boolean;
   pricesLoading: boolean;
   tags: TagRecord[];
-  onTagsChange: () => void;
+  note?: TradeNoteRecord;
+  onJournalChange: () => void;
 }) {
-  const [screenshotIds, setScreenshotIds] = useState<number[]>([]);
   const [showAudit, setShowAudit] = useState(false);
   const [highlightedExecutionId, setHighlightedExecutionId] = useState<string | null>(null);
   const rowRef = useRef<HTMLTableRowElement>(null);
-  const ref = tradeRef(trade, accountId);
-  const groupKey = ref.tradeGroupKey;
 
   useEffect(() => {
     if (!isFocused) return;
@@ -155,30 +150,6 @@ function TradeRow({
     });
     return () => cancelAnimationFrame(frame);
   }, [isFocused]);
-
-  useEffect(() => {
-    if (!isExpanded) return;
-    getTradeNote(groupKey).then((note) => {
-      setScreenshotIds(note?.screenshotIds ?? []);
-    });
-  }, [isExpanded, groupKey]);
-
-  const handleAddScreenshot = useCallback(
-    async (assetId: number) => {
-      await addScreenshotToTrade(ref, assetId);
-      setScreenshotIds((prev) => [...prev, assetId]);
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [groupKey]
-  );
-
-  const handleRemoveScreenshot = useCallback(
-    async (assetId: number) => {
-      await removeScreenshotFromTrade(groupKey, assetId);
-      setScreenshotIds((prev) => prev.filter((id) => id !== assetId));
-    },
-    [groupKey]
-  );
 
   const tradeCurrency = trade.currency || currency;
   const pnlDisplay = getTradePnlDisplay(trade, currency, showBaseCurrency);
@@ -249,7 +220,9 @@ function TradeRow({
             </div>
           )}
         </td>
-        <td className="hidden lg:table-cell px-2.5 sm:px-4 py-3 text-muted/40 font-normal italic text-xs truncate max-w-[120px]">No notes</td>
+        <td className="hidden lg:table-cell px-2.5 sm:px-4 py-3 text-xs text-muted truncate max-w-[120px]">
+          {note?.content.trim() || <span className="text-muted/40">—</span>}
+        </td>
         <td className="hidden xl:table-cell px-2.5 sm:px-4 py-3 text-xs">
           {tags.length === 0 ? (
             <span className="text-muted/40 italic">-</span>
@@ -320,38 +293,13 @@ function TradeRow({
             </tr>
           )}
           <tr>
-            <td colSpan={9} className="px-5 py-3 border-t border-card-border">
-              <div className="text-xs text-muted mb-1.5 font-medium uppercase tracking-wider">Screenshots</div>
-              <ScreenshotAttachment
-                screenshotIds={screenshotIds}
-                onAdd={handleAddScreenshot}
-                onRemove={handleRemoveScreenshot}
+            <td colSpan={9} className="px-5 py-4 border-t border-card-border">
+              <TradeJournalPanel
+                trade={trade}
+                accountId={accountId}
+                currency={currency}
+                onChange={onJournalChange}
               />
-            </td>
-          </tr>
-          <tr>
-            <td colSpan={9} className="px-5 py-4 border-t border-card-border">
-              <TradeTagsEditor tradeRef={ref} onChange={onTagsChange} />
-            </td>
-          </tr>
-          <tr>
-            <td colSpan={9} className="px-5 py-4 border-t border-card-border">
-              <TradePlaybookEditor tradeRef={ref} onChange={onTagsChange} />
-            </td>
-          </tr>
-          <tr>
-            <td colSpan={9} className="px-5 py-4 border-t border-card-border">
-              <TradePlanEditor tradeRef={ref} trade={trade} onChange={onTagsChange} />
-            </td>
-          </tr>
-          <tr>
-            <td colSpan={9} className="px-5 py-4 border-t border-card-border">
-              <TradeNotesEditor tradeRef={ref} />
-            </td>
-          </tr>
-          <tr>
-            <td colSpan={9} className="px-5 py-4 border-t border-card-border">
-              <TradeAIReviewCard trade={trade} accountId={accountId} currency={currency} />
             </td>
           </tr>
         </>

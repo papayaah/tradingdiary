@@ -195,17 +195,7 @@ export async function addScreenshotToTrade(ref: TradeRef, assetId: number) {
   const existing = await db.get('tradeNotes', ref.tradeGroupKey);
   const ids = existing?.screenshotIds ?? [];
   if (ids.includes(assetId)) return;
-  await db.put('tradeNotes', {
-    tradeGroupKey: ref.tradeGroupKey,
-    date: ref.date,
-    symbol: ref.symbol,
-    accountId: ref.accountId,
-    content: existing?.content ?? '',
-    tags: existing?.tags ?? [],
-    screenshotIds: [...ids, assetId],
-    updatedAt: Date.now(),
-  });
-  notifyJournalChanged();
+  await patchTradeNote(ref, { screenshotIds: [...ids, assetId] });
 }
 
 export async function removeScreenshotFromTrade(tradeGroupKey: string, assetId: number) {

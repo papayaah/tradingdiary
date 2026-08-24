@@ -5,13 +5,14 @@ import { getTradeNote, saveTradeNoteContent, type TradeRef } from '@/lib/db/note
 
 interface TradeNotesEditorProps {
   tradeRef: TradeRef;
+  onChange?: () => void;
 }
 
 /**
  * Auto-saving textarea for the trader's personal reflections. Debounced; patches
  * only note content (screenshots/tags preserved by saveTradeNoteContent).
  */
-export default function TradeNotesEditor({ tradeRef }: TradeNotesEditorProps) {
+export default function TradeNotesEditor({ tradeRef, onChange }: TradeNotesEditorProps) {
   const [value, setValue] = useState('');
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -39,7 +40,16 @@ export default function TradeNotesEditor({ tradeRef }: TradeNotesEditorProps) {
     timer.current = setTimeout(async () => {
       await saveTradeNoteContent(tradeRef, next);
       setStatus('saved');
+      onChange?.();
     }, 600);
+  };
+
+  const handleBlur = async () => {
+    if (status !== 'saving') return;
+    if (timer.current) clearTimeout(timer.current);
+    await saveTradeNoteContent(tradeRef, value);
+    setStatus('saved');
+    onChange?.();
   };
 
   return (
@@ -53,6 +63,7 @@ export default function TradeNotesEditor({ tradeRef }: TradeNotesEditorProps) {
       <textarea
         value={value}
         onChange={(e) => handleChange(e.target.value)}
+        onBlur={handleBlur}
         placeholder="Your thoughts on this trade — plan, execution, what you'd do differently…"
         rows={3}
         className="w-full resize-y rounded-lg border border-card-border bg-background/60 px-3 py-2 text-sm text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-1 focus:ring-accent/40 focus:border-accent/40"
