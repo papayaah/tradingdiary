@@ -15,7 +15,6 @@ import {
   Zap,
   HardDrive,
   TrendingUp,
-  Gauge,
   CheckCircle2,
   PieChart as PieIcon,
   BarChart3,
@@ -136,6 +135,8 @@ interface CacheData {
 
 interface GovernorItem {
   providerScope: string;
+  entitlementScope?: string;
+  assetClass?: string;
   cadenceSeconds: number;
   uniqueKeys: number;
   bindingTerm: string;
@@ -718,6 +719,20 @@ export default function AdminDashboard() {
         {CLASS_META.map((cls) => {
           const classPaused = pausedClasses[cls.id];
           const activeProvider = providers[cls.id];
+          // Each class maps to exactly one active governor cadence scope
+          // (provider is fixed per class), so its cadence lives right here.
+          const gov = governorItems.find((g) => g.assetClass === cls.id);
+          const cadenceDraft = gov
+            ? cadenceDrafts[gov.providerScope]
+              ?? (gov.overrideSeconds != null ? String(gov.overrideSeconds) : '')
+            : '';
+          const parsedCadence = Number(cadenceDraft);
+          const canSetCadence = !!gov
+            && cadenceDraft.trim() !== ''
+            && Number.isFinite(parsedCadence)
+            && parsedCadence > 0
+            && parsedCadence !== gov.overrideSeconds;
+          const cadencePending = !!gov && cadencePendingScope === gov.providerScope;
           return (
             <div key={cls.id} className={classPaused ? 'opacity-60' : undefined}>
               <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
@@ -769,6 +784,62 @@ export default function AdminDashboard() {
                   );
                 })}
               </div>
+
+              {/* Per-class acquisition cadence (governor) */}
+              <div className="mt-3 flex flex-col gap-2 rounded-lg border border-card-border/40 bg-muted-bg/20 p-3 lg:flex-row lg:items-center lg:justify-between">
+                {gov ? (
+                  <>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted">
+                      <span>Full cycle <span className="font-semibold text-accent" title={`${gov.cadenceSeconds}s`}>{formatCadence(gov.cadenceSeconds)}</span></span>
+                      <span>~{gov.predictedReqPerHour}/hr</span>
+                      <span>N={gov.uniqueKeys}</span>
+                      <span className="capitalize">{gov.overrideSeconds != null ? 'manual override' : gov.bindingTerm}</span>
+                      <span className="font-mono text-muted/70">{gov.providerScope}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min={gov.floorSeconds}
+                        step={1}
+                        value={cadenceDraft}
+                        disabled={classPaused || cadencePending}
+                        onChange={(e) =>
+                          setCadenceDrafts((drafts) => ({ ...drafts, [gov.providerScope]: e.target.value }))
+                        }
+                        placeholder={`auto (min ${gov.floorSeconds})`}
+                        className="w-28 rounded-md border border-card-border bg-background px-2 py-1 text-xs text-foreground disabled:opacity-50"
+                        aria-label={`Manual cadence seconds for ${gov.providerScope}`}
+                      />
+                      <span className="text-[11px] text-muted">s</span>
+                      <button
+                        type="button"
+                        onClick={() => handleSetCadenceOverride(gov.providerScope, Math.round(parsedCadence))}
+                        disabled={!canSetCadence || classPaused || cadencePending}
+                        className="rounded-md border border-accent/30 bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent transition-colors hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        Set
+                      </button>
+                      {gov.overrideSeconds != null && (
+                        <button
+                          type="button"
+                          onClick={() => handleSetCadenceOverride(gov.providerScope, null)}
+                          disabled={cadencePending}
+                          className="rounded-md border border-card-border px-2.5 py-1 text-xs font-medium text-muted transition-colors hover:text-foreground disabled:opacity-45"
+                          title="Clear the manual override and return this class to the governor"
+                        >
+                          Auto
+                        </button>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-[11px] text-muted">
+                    {classPaused
+                      ? 'Paused — no acquisition cadence while this class is paused.'
+                      : 'Cadence appears once this class has symbols being acquired.'}
+                  </p>
+                )}
+              </div>
             </div>
           );
         })}
@@ -812,8 +883,8 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Row 2: Phase 2 Metrics — Governor Cadence & Shared-Cache Efficiency */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* Row 2: Shared-Cache Efficiency */}
+      <div className="grid grid-cols-1 gap-6">
         {/* Panel A: Cache Efficiency */}
         <div className="bg-card-bg border border-card-border rounded-xl p-5 space-y-4">
           <div className="flex items-center justify-between border-b border-card-border pb-3">
@@ -870,100 +941,6 @@ export default function AdminDashboard() {
           )}
         </div>
 
-        {/* Panel B: Governor Cadence */}
-        <div className="bg-card-bg border border-card-border rounded-xl p-5 space-y-4">
-          <div className="border-b border-card-border pb-3">
-            <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-              <Gauge size={16} className="text-accent" /> Adaptive Governor Cadence
-            </h2>
-            <p className="mt-1 text-[11px] text-muted">
-              Full Cycle is the approximate time for every active key to refresh once. Pool Spacing is the average delay between provider requests. Set a Manual cadence to override the governor per provider (clamped to the provider floor); it applies within ~30s with no restart.
-            </p>
-          </div>
-
-          {governorItems.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-card-border text-muted font-medium">
-                    <th className="py-2 px-2">Provider Scope</th>
-                    <th className="py-2 px-2">Keys (N)</th>
-                    <th className="py-2 px-2">Full Cycle</th>
-                    <th className="py-2 px-2">Pool Spacing</th>
-                    <th className="py-2 px-2">Constraint</th>
-                    <th className="py-2 px-2 text-right">Predicted Req/hr</th>
-                    <th className="py-2 px-2">Manual Cadence</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-card-border/50">
-                  {governorItems.map((gov) => {
-                    const poolSpacingSeconds = gov.uniqueKeys > 0
-                      ? gov.cadenceSeconds / gov.uniqueKeys
-                      : 0;
-                    const draft = cadenceDrafts[gov.providerScope]
-                      ?? (gov.overrideSeconds != null ? String(gov.overrideSeconds) : '');
-                    const rowPending = cadencePendingScope === gov.providerScope;
-                    const parsedDraft = Number(draft);
-                    const canSet = draft.trim() !== '' && Number.isFinite(parsedDraft) && parsedDraft > 0
-                      && parsedDraft !== gov.overrideSeconds;
-                    return (
-                      <tr key={gov.providerScope} className="hover:bg-muted-bg/40">
-                        <td className="py-2 px-2 font-mono text-foreground">{gov.providerScope}</td>
-                        <td className="py-2 px-2 text-foreground font-medium">{gov.uniqueKeys}</td>
-                        <td className="py-2 px-2 text-accent font-semibold" title={`${gov.cadenceSeconds} seconds`}>
-                          {formatCadence(gov.cadenceSeconds)}
-                        </td>
-                        <td className="py-2 px-2 text-foreground" title={`${poolSpacingSeconds.toFixed(2)} seconds`}>
-                          {formatCadence(poolSpacingSeconds)}
-                        </td>
-                        <td className="py-2 px-2 capitalize text-muted">{gov.bindingTerm}</td>
-                        <td className="py-2 px-2 text-right font-semibold text-foreground">{gov.predictedReqPerHour}</td>
-                        <td className="py-2 px-2">
-                          <div className="flex items-center gap-1.5">
-                            <input
-                              type="number"
-                              min={gov.floorSeconds}
-                              step={1}
-                              inputMode="numeric"
-                              placeholder={`auto (min ${gov.floorSeconds}s)`}
-                              value={draft}
-                              disabled={rowPending || controlActionPending}
-                              onChange={(e) =>
-                                setCadenceDrafts((drafts) => ({ ...drafts, [gov.providerScope]: e.target.value }))
-                              }
-                              className="w-24 rounded-md border border-card-border bg-background px-2 py-1 text-xs text-foreground disabled:opacity-50"
-                            />
-                            <span className="text-[11px] text-muted">s</span>
-                            <button
-                              type="button"
-                              disabled={!canSet || rowPending || controlActionPending}
-                              onClick={() => handleSetCadenceOverride(gov.providerScope, Math.round(parsedDraft))}
-                              className="rounded-md border border-card-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted-bg disabled:opacity-40"
-                            >
-                              Set
-                            </button>
-                            {gov.overrideSeconds != null && (
-                              <button
-                                type="button"
-                                disabled={rowPending || controlActionPending}
-                                onClick={() => handleSetCadenceOverride(gov.providerScope, null)}
-                                className="rounded-md border border-card-border px-2 py-1 text-[11px] font-medium text-loss hover:bg-muted-bg disabled:opacity-40"
-                              >
-                                Clear
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="text-xs text-muted italic">No active governor scopes reported.</p>
-          )}
-        </div>
       </div>
 
       {/* Row 3: Phase 3 Trends — User Signups & Provider Headroom Gauges */}

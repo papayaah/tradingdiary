@@ -34,18 +34,15 @@ export function isProviderForClass(assetClass: MarketAssetClass, value: unknown)
   return typeof value === 'string' && providerOptionsForClass(assetClass).includes(value);
 }
 
-// Provider scopes the admin can tune a manual cadence override for. Kept in sync
-// with the scopes the governor recompute and admin governor view report on.
-export const GOVERNOR_SCOPES = [
-  'tiingo:server',
-  'polygon-io:server',
-  'ibkr-cme:server',
-  'yahoo-finance:server',
-] as const;
-export type GovernorScope = (typeof GOVERNOR_SCOPES)[number];
+// Governor cadence scopes are per provider×asset-class, e.g. "tiingo:crypto:server"
+// or "ibkr-cme:futures:server". They are derived at runtime from the active
+// providers, so the admin can tune a manual cadence override for any of them.
+export type GovernorScope = string;
+
+const GOVERNOR_SCOPE_RE = /^[a-z0-9-]+:(equity|crypto|futures):server$/;
 
 export function isGovernorScope(value: unknown): value is GovernorScope {
-  return typeof value === 'string' && GOVERNOR_SCOPES.includes(value as GovernorScope);
+  return typeof value === 'string' && GOVERNOR_SCOPE_RE.test(value);
 }
 
 export function isEquitiesProvider(value: unknown): value is EquitiesProvider {

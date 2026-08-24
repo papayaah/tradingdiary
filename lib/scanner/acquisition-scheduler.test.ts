@@ -5,6 +5,7 @@ import type { AcquisitionEntry } from './shared/acquisition-inventory';
 
 const series = (symbol: string): AcquisitionEntry => ({
   providerScope: 'tiingo:server',
+  cadenceScope: 'tiingo:equity:server',
   providerName: 'Tiingo',
   canonicalSymbol: symbol,
   sourceSymbol: symbol,

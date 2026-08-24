@@ -16,6 +16,7 @@
 
 import { getActiveProvider, FallbackProvider } from '@/lib/chart/providers';
 import type { AssetClass } from '@/lib/scanner/sessions';
+import { classifyAssetClass } from './canonical-symbol';
 
 /** Lowercase, punctuation-collapsed provider label safe for a Redis key. */
 function slugifyProvider(name: string): string {
@@ -36,14 +37,44 @@ function slugifyProvider(name: string): string {
 export interface ProviderIdentity {
   /** ChartProvider.name of the provider that will serve this symbol. */
   providerName: string;
-  /** Credential/entitlement scope for the cache key, e.g. "polygon-io:server". */
+  /**
+   * Credential/entitlement scope, e.g. "tiingo:server". Shared across asset
+   * classes served by the same provider plan — used for the cache key, the
+   * physical-request quota gate, and the budget lookup (one API key, one cap).
+   */
   providerScope: string;
+  /**
+   * Governor cadence scope, e.g. "tiingo:equity:server". Adds the asset-class
+   * dimension so acquisition cadence (and its manual override) can be tuned per
+   * class even when two classes share one provider plan/quota.
+   */
+  cadenceScope: string;
+}
+
+const CADENCE_SCOPE_RE = /^(.*):(equity|crypto|futures):server$/;
+
+/** Build the cadence scope for a provider entitlement scope and asset class. */
+export function cadenceScopeFor(providerScope: string, assetClass: AssetClass): string {
+  const base = providerScope.replace(/:server$/, '');
+  return `${base}:${assetClass}:server`;
+}
+
+/** The shared entitlement scope a cadence scope belongs to (drops the class). */
+export function entitlementScopeFromCadence(cadenceScope: string): string {
+  const m = cadenceScope.match(CADENCE_SCOPE_RE);
+  return m ? `${m[1]}:server` : cadenceScope;
+}
+
+/** The asset class encoded in a cadence scope, or undefined if not a cadence scope. */
+export function assetClassFromCadence(cadenceScope: string): AssetClass | undefined {
+  const m = cadenceScope.match(CADENCE_SCOPE_RE);
+  return m ? (m[2] as AssetClass) : undefined;
 }
 
 /**
- * Resolve both the provider name (for capability lookup) and its scope (for the
- * cache key) in one call, without triggering an upstream request. Contains only
- * the public provider identity — never a raw API key, token, or secret.
+ * Resolve the provider name, its shared entitlement scope, and its per-class
+ * cadence scope in one call, without triggering an upstream request. Contains
+ * only the public provider identity — never a raw API key, token, or secret.
  */
 export function resolveProviderIdentity(symbol: string, assetClass?: AssetClass): ProviderIdentity {
   const provider = getActiveProvider(symbol, undefined, assetClass);
@@ -51,10 +82,12 @@ export function resolveProviderIdentity(symbol: string, assetClass?: AssetClass)
   // (e.g. "IBKR (CME)"), not the chain wrapper name ("Futures (auto)"), so the
   // capability registry and budget resolve correctly.
   const name = provider instanceof FallbackProvider ? provider.primaryName : provider.name;
-  return { providerName: name, providerScope: `${slugifyProvider(name)}:server` };
+  const providerScope = `${slugifyProvider(name)}:server`;
+  const cls = assetClass ?? classifyAssetClass(symbol);
+  return { providerName: name, providerScope, cadenceScope: cadenceScopeFor(providerScope, cls) };
 }
 
-/** Provider scope only (convenience over {@link resolveProviderIdentity}). */
+/** Entitlement scope only (convenience over {@link resolveProviderIdentity}). */
 export function resolveProviderScope(symbol: string, assetClass?: AssetClass): string {
   return resolveProviderIdentity(symbol, assetClass).providerScope;
 }

@@ -55,6 +55,8 @@ const IBKR_SYMBOL_ALIAS: Record<string, string> = {
   FDAX: 'DAX', // EUREX DAX 40 Index Future (symbol=DAX in IBKR)
   FGBL: 'GBL', // EUREX Euro-Bund Future (symbol=GBL in IBKR)
   FSTX: 'ESTX50', // EUREX Euro Stoxx 50 Future (symbol=ESTX50 in IBKR)
+  FSMI: 'SMI', // EUREX Swiss Market Index Future (symbol=SMI in IBKR)
+  FCE: 'CAC40', // Euronext Paris CAC 40 Index Future (symbol=CAC40 in IBKR)
 };
 
 // Contract routing for roots that do not trade as USD-denominated CME futures.
@@ -63,9 +65,13 @@ const EXCHANGE_BY_ROOT: Record<string, string> = {
   CL: 'NYMEX', MCL: 'NYMEX', NG: 'NYMEX', QM: 'NYMEX', RB: 'NYMEX', HO: 'NYMEX',
   YM: 'CBOT', MYM: 'CBOT', ZB: 'CBOT', ZN: 'CBOT', ZF: 'CBOT', ZT: 'CBOT',
   ZC: 'CBOT', ZS: 'CBOT', ZW: 'CBOT',
-  DAX: 'EUREX', FDAX: 'EUREX',
+  // European index futures (accept both the EUREX product code and the IBKR symbol).
+  DAX: 'EUREX', FDAX: 'EUREX', // DAX 40 (Germany, EUR)
+  ESTX50: 'EUREX', FSTX: 'EUREX', // EURO STOXX 50 (Eurozone, EUR)
+  SMI: 'EUREX', FSMI: 'EUREX', // SMI (Switzerland, CHF)
+  IBEX35: 'MEFF', // IBEX 35 (Spain, EUR)
+  CAC40: 'MONEP', FCE: 'MONEP', // CAC 40 (France, EUR)
   GBL: 'EUREX', FGBL: 'EUREX',
-  ESTX50: 'EUREX', FSTX: 'EUREX',
   Z: 'ICEEU',
   K200: 'KSE',
   HSI: 'HKFE',
@@ -75,8 +81,11 @@ const EXCHANGE_BY_ROOT: Record<string, string> = {
 
 const CURRENCY_BY_ROOT: Record<string, string> = {
   DAX: 'EUR', FDAX: 'EUR',
-  GBL: 'EUR', FGBL: 'EUR',
   ESTX50: 'EUR', FSTX: 'EUR',
+  SMI: 'CHF', FSMI: 'CHF',
+  IBEX35: 'EUR',
+  CAC40: 'EUR', FCE: 'EUR',
+  GBL: 'EUR', FGBL: 'EUR',
   Z: 'GBP',
   NIY: 'JPY',
   K200: 'KRW',

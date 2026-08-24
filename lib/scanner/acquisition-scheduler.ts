@@ -94,14 +94,16 @@ export class AcquisitionScheduler {
     this.running = true;
     try {
       await this.refreshInventory();
+      // Group by cadence scope (provider×class) so each class refreshes at its
+      // own governed/overridden cadence and paces itself independently.
       const byScope = new Map<string, AcquisitionEntry[]>();
       for (const series of this.inventory) {
         // Skip acquisition for admin-paused asset classes; the series stays in
         // inventory so it resumes immediately when the class is unpaused.
         if (this.pausedClasses.has(series.assetClass)) continue;
-        const rows = byScope.get(series.providerScope) ?? [];
+        const rows = byScope.get(series.cadenceScope) ?? [];
         rows.push(series);
-        byScope.set(series.providerScope, rows);
+        byScope.set(series.cadenceScope, rows);
       }
 
       let acquired = 0;

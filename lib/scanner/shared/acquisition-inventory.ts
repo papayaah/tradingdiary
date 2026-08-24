@@ -65,7 +65,10 @@ export function isProviderAcquisitionActive(assetClass: AssetClass, now = new Da
 }
 
 export interface AcquisitionEntry {
+  /** Shared entitlement/quota/cache scope (per provider plan), e.g. "tiingo:server". */
   providerScope: string;
+  /** Per-provider×class governor cadence scope, e.g. "tiingo:crypto:server". */
+  cadenceScope: string;
   providerName: string;
   canonicalSymbol: string;
   interval: string;
@@ -78,7 +81,11 @@ export interface AcquisitionEntry {
 }
 
 export interface ScopeInventory {
-  providerScope: string;
+  /** Governor cadence scope this inventory row is keyed by (per class). */
+  cadenceScope: string;
+  /** Shared entitlement scope for budget/usage lookup (may cover sibling classes). */
+  entitlementScope: string;
+  assetClass: AssetClass;
   providerName: string;
   uniqueKeys: number;
   providerTargetSeconds: number;
@@ -98,7 +105,7 @@ export function entryForWatch(
   aggregationEnabled: boolean = scannerConfig.aggregationEnabled,
 ): AcquisitionEntry {
   const assetClass = watch.assetClass as AssetClass;
-  const { providerName, providerScope } = resolveProviderIdentity(watch.symbol, assetClass);
+  const { providerName, providerScope, cadenceScope } = resolveProviderIdentity(watch.symbol, assetClass);
   const capability = getProviderCapability(providerName, assetClass);
   const windowSeconds = sessionWindowSeconds('all', assetClass);
   // Count and size the entry by the interval actually fetched (the 1m base when
@@ -109,6 +116,7 @@ export function entryForWatch(
   const activeDaysPerMonth = assetClass === 'equity' ? 22 : 30;
   return {
     providerScope,
+    cadenceScope,
     providerName,
     canonicalSymbol: canonicalizeSymbol(watch.symbol, assetClass, capability),
     interval,
@@ -133,14 +141,30 @@ export function entryForWatch(
 export function computeInventory(entries: AcquisitionEntry[]): ScopeInventory[] {
   const byScope = new Map<
     string,
-    { providerName: string; keys: Map<string, number>; fastest: number; window: number }
+    {
+      entitlementScope: string;
+      assetClass: AssetClass;
+      providerName: string;
+      keys: Map<string, number>;
+      fastest: number;
+      window: number;
+    }
   >();
 
   for (const e of entries) {
-    let s = byScope.get(e.providerScope);
+    // Group by cadence scope so each provider×class gets its own N, cadence, and
+    // manual override — even when two classes share one provider entitlement.
+    let s = byScope.get(e.cadenceScope);
     if (!s) {
-      s = { providerName: e.providerName, keys: new Map(), fastest: Infinity, window: 0 };
-      byScope.set(e.providerScope, s);
+      s = {
+        entitlementScope: e.providerScope,
+        assetClass: e.assetClass,
+        providerName: e.providerName,
+        keys: new Map(),
+        fastest: Infinity,
+        window: 0,
+      };
+      byScope.set(e.cadenceScope, s);
     }
     const key = `${e.canonicalSymbol}\u0000${e.interval}`;
     s.keys.set(key, Math.max(s.keys.get(key) ?? 0, e.monthlyBarSeconds));
@@ -148,8 +172,10 @@ export function computeInventory(entries: AcquisitionEntry[]): ScopeInventory[] 
     if (e.windowSeconds > s.window) s.window = e.windowSeconds;
   }
 
-  return [...byScope].map(([providerScope, s]) => ({
-    providerScope,
+  return [...byScope].map(([cadenceScope, s]) => ({
+    cadenceScope,
+    entitlementScope: s.entitlementScope,
+    assetClass: s.assetClass,
     providerName: s.providerName,
     uniqueKeys: s.keys.size,
     providerTargetSeconds: Number.isFinite(s.fastest) ? s.fastest : 0,

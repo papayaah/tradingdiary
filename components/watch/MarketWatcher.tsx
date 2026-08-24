@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Bell, 
   BellOff, 
@@ -22,7 +22,9 @@ import {
   X,
   Loader2,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { getPatternDefinition } from '@/lib/scanner/patterns';
 import { getChartDB } from '@/lib/chart/cache';
@@ -226,7 +228,61 @@ const formatLastCheckTime = (value: string | number | Date = Date.now()) =>
 const FUTURES_ROOT_SYMBOLS = new Set([
   'BTC', 'CL', 'ES', 'FDAX', 'FGBL', 'FSTX', 'GC', 'HSI', 'K200',
   'NIY', 'NQ', 'RTY', 'SI', 'SPI', 'SSG', 'YM', 'Z', 'ZB',
+  // European index futures (IBKR-served).
+  'DAX', 'ESTX50', 'CAC40', 'IBEX35', 'SMI',
 ]);
+
+// Quick-add preset chips, per watchlist category. A few "popular" ones show by
+// default; futures also carry a longer secondary list behind a "More" toggle.
+interface WatchlistPreset {
+  label: string;
+  symbol: string;
+}
+
+const PRIMARY_STOCKS_PRESETS: WatchlistPreset[] = [
+  { label: 'AAPL (Apple)', symbol: 'AAPL' },
+  { label: 'NVDA (Nvidia)', symbol: 'NVDA' },
+  { label: 'TSLA (Tesla)', symbol: 'TSLA' },
+  { label: 'SPY (S&P 500 ETF)', symbol: 'SPY' },
+  { label: 'QQQ (Nasdaq ETF)', symbol: 'QQQ' },
+];
+
+const PRIMARY_CRYPTO_PRESETS: WatchlistPreset[] = [
+  { label: 'BTC (Bitcoin)', symbol: 'BTC-USD' },
+  { label: 'ETH (Ethereum)', symbol: 'ETH-USD' },
+  { label: 'SOL (Solana)', symbol: 'SOL-USD' },
+  { label: 'DOGE (Dogecoin)', symbol: 'DOGE-USD' },
+  { label: 'XRP (Ripple)', symbol: 'XRP-USD' },
+];
+
+const PRIMARY_FUTURES_PRESETS: WatchlistPreset[] = [
+  { label: 'GC (Gold)', symbol: 'GC=F' },
+  { label: 'NQ (Nasdaq)', symbol: 'NQ=F' },
+  { label: 'CL (Oil)', symbol: 'CL=F' },
+];
+
+const SECONDARY_FUTURES_PRESETS: WatchlistPreset[] = [
+  { label: 'ES (S&P 500)', symbol: 'ES=F' },
+  { label: 'YM (Dow)', symbol: 'YM=F' },
+  { label: 'RTY (Russell)', symbol: 'RTY=F' },
+  { label: 'SI (Silver)', symbol: 'SI=F' },
+  { label: 'BTC (CME BTC)', symbol: 'BTC=F' },
+  // European index futures (IBKR).
+  { label: 'DAX (Germany 40)', symbol: 'DAX=F' },
+  { label: 'ESTX50 (Euro Stoxx 50)', symbol: 'ESTX50=F' },
+  { label: 'CAC40 (France 40)', symbol: 'CAC40=F' },
+  { label: 'IBEX35 (Spain 35)', symbol: 'IBEX35=F' },
+  { label: 'SMI (Switzerland 20)', symbol: 'SMI=F' },
+  { label: 'FGBL (Euro Bund)', symbol: 'FGBL=F' },
+  { label: 'Z (FTSE 100)', symbol: 'Z=F' },
+  // Asia-Pacific index futures (IBKR).
+  { label: 'HSI (Hang Seng)', symbol: 'HSI=F' },
+  { label: 'NIY (Nikkei 225)', symbol: 'NIY=F' },
+  { label: 'K200 (KOSPI 200)', symbol: 'K200=F' },
+  { label: 'SPI (Australia 200)', symbol: 'SPI=F' },
+  { label: 'SSG (Singapore MSCI)', symbol: 'SSG=F' },
+  { label: 'ZB (Bonds)', symbol: 'ZB=F' },
+];
 
 
 
@@ -357,6 +413,7 @@ export default function MarketWatcher() {
   );
   const serverStateFlushTimerRef = useRef<number | null>(null);
   const [newInterval, setNewInterval] = useState('10m');
+  const [showAllPresets, setShowAllPresets] = useState(false);
   const [newMinMove, setNewMinMove] = useState(0.25);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
 
@@ -733,6 +790,15 @@ export default function MarketWatcher() {
     });
   }, []);
   const [watchlistCategory, setWatchlistCategory] = useState<WatchlistCategory>('stocks');
+  const presetList = useMemo<WatchlistPreset[]>(() => {
+    if (watchlistCategory === 'crypto') return PRIMARY_CRYPTO_PRESETS;
+    if (watchlistCategory === 'futures') {
+      return showAllPresets
+        ? [...PRIMARY_FUTURES_PRESETS, ...SECONDARY_FUTURES_PRESETS]
+        : PRIMARY_FUTURES_PRESETS;
+    }
+    return PRIMARY_STOCKS_PRESETS; // stocks and the "all" tab
+  }, [watchlistCategory, showAllPresets]);
 
   // Auto-switch category tab when searching if current category has no matches but another category does
   useEffect(() => {
@@ -3458,6 +3524,55 @@ export default function MarketWatcher() {
                     </div>
                   </div>
                 ) : null}
+                {/* QUICK PRESETS TOOLBAR */}
+                {presetList.length > 0 && (
+                  <div className="sm:col-span-12 flex flex-wrap items-center gap-1.5 rounded-xl border border-card-border/30 bg-muted-bg/10 p-3 text-xs">
+                    <span className="flex items-center gap-1 font-semibold text-muted">
+                      <Zap size={13} className="text-amber-400" />
+                      Quick add:
+                    </span>
+                    {presetList.map((preset) => {
+                      const exists = watchlist.some(
+                        (w) => w.symbol === preset.symbol && w.interval === newInterval,
+                      );
+                      return (
+                        <button
+                          key={preset.symbol}
+                          type="button"
+                          onClick={() => void stableAddSymbol(preset.symbol)}
+                          disabled={exists || (isAuthenticated && isWatchlistAtLimit)}
+                          className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 font-medium transition-colors disabled:cursor-not-allowed ${
+                            exists
+                              ? 'border-card-border bg-muted-bg text-muted opacity-60'
+                              : 'border-card-border bg-card-bg text-foreground hover:border-accent/50 hover:text-accent'
+                          }`}
+                          title={
+                            exists
+                              ? `${preset.symbol} (${newInterval}) is already in your watchlist`
+                              : `Add ${preset.symbol} (${newInterval})`
+                          }
+                        >
+                          <Plus size={12} />
+                          <span>{preset.label}</span>
+                        </button>
+                      );
+                    })}
+                    {watchlistCategory === 'futures' && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllPresets((v) => !v)}
+                        className="inline-flex items-center gap-1 rounded-lg border border-accent/30 bg-accent/10 px-2 py-1 font-semibold text-accent transition-colors hover:bg-accent/15"
+                      >
+                        {showAllPresets ? (
+                          <><ChevronUp size={12} /><span>Less</span></>
+                        ) : (
+                          <><ChevronDown size={12} /><span>+ More ({SECONDARY_FUTURES_PRESETS.length})</span></>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 <TickerInput
                   ref={tickerInputRef}
                   category="all"

@@ -705,7 +705,11 @@ export class FallbackProvider implements ChartProvider {
 // These contracts are available through the deployed IBKR gateway but do not
 // have a reliable Yahoo futures endpoint. Exhausted fallback therefore means
 // "no data" rather than a failed scan/request.
-const IBKR_PRIMARY_FUTURES_ROOTS = new Set(['K200', 'HSI', 'SPI', 'SSG']);
+const IBKR_PRIMARY_FUTURES_ROOTS = new Set([
+  'K200', 'HSI', 'SPI', 'SSG',
+  // European index futures Yahoo can't serve reliably — IBKR is the primary.
+  'DAX', 'FDAX', 'ESTX50', 'FSTX', 'CAC40', 'FCE', 'IBEX35', 'SMI', 'FSMI',
+]);
 
 /** The effective provider name for a fetch: the winning inner provider when it's
  *  a fallback chain, otherwise the provider's own name. Read after the fetch. */

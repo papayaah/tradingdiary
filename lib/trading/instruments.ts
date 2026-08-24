@@ -28,6 +28,12 @@ const FUTURES_SPECS: Record<string, FuturesSpec> = {
   SIL: { multiplier: 1000 },
   BTC: { multiplier: 5 },
   MBT: { multiplier: 0.1 },
+  // European index futures (IBKR-served). Point values per exchange contract spec.
+  DAX: { multiplier: 25 }, FDAX: { multiplier: 25 }, // DAX 40 — €25/pt
+  ESTX50: { multiplier: 10 }, FSTX: { multiplier: 10 }, // EURO STOXX 50 — €10/pt
+  CAC40: { multiplier: 10 }, FCE: { multiplier: 10 }, // CAC 40 — €10/pt
+  IBEX35: { multiplier: 10 }, // IBEX 35 — €10/pt
+  SMI: { multiplier: 10 }, FSMI: { multiplier: 10 }, // SMI — CHF 10/pt
 };
 
 const DATED_FUTURES_RE = /^([A-Z]{1,4})[FGHJKMNQUVXZ]\d{1,2}$/;

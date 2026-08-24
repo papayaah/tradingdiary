@@ -11,6 +11,7 @@ import { getProviderCapability } from './provider-capabilities';
 
 const entry = (over: Partial<AcquisitionEntry> = {}): AcquisitionEntry => ({
   providerScope: 'tiingo:server',
+  cadenceScope: 'tiingo:equity:server',
   providerName: 'Tiingo',
   canonicalSymbol: 'AAPL',
   interval: '10m',
@@ -68,13 +69,26 @@ describe('computeInventory', () => {
     expect(inv[0].windowSeconds).toBe(16 * 3600);
   });
 
-  it('separates provider scopes', () => {
+  it('separates cadence scopes', () => {
     const inv = computeInventory([
-      entry({ providerScope: 'tiingo:server', providerName: 'Tiingo', canonicalSymbol: 'AAPL' }),
-      entry({ providerScope: 'ibkr-cme:server', providerName: 'IBKR (CME)', canonicalSymbol: 'MNQ=F' }),
+      entry({ providerScope: 'tiingo:server', cadenceScope: 'tiingo:equity:server', providerName: 'Tiingo', canonicalSymbol: 'AAPL' }),
+      entry({ providerScope: 'ibkr-cme:server', cadenceScope: 'ibkr-cme:futures:server', providerName: 'IBKR (CME)', canonicalSymbol: 'MNQ=F', assetClass: 'futures' }),
     ]);
-    expect(inv.map((i) => i.providerScope).sort()).toEqual(['ibkr-cme:server', 'tiingo:server']);
+    expect(inv.map((i) => i.cadenceScope).sort()).toEqual(['ibkr-cme:futures:server', 'tiingo:equity:server']);
     expect(inv.every((i) => i.uniqueKeys === 1)).toBe(true);
+  });
+
+  it('separates two classes that share one provider entitlement', () => {
+    const inv = computeInventory([
+      entry({ providerScope: 'tiingo:server', cadenceScope: 'tiingo:equity:server', canonicalSymbol: 'AAPL', assetClass: 'equity' }),
+      entry({ providerScope: 'tiingo:server', cadenceScope: 'tiingo:crypto:server', canonicalSymbol: 'BTCUSD', assetClass: 'crypto' }),
+    ]);
+    expect(inv).toHaveLength(2);
+    const bySc = Object.fromEntries(inv.map((i) => [i.cadenceScope, i]));
+    // Both point back to the shared entitlement for budget/usage.
+    expect(bySc['tiingo:equity:server'].entitlementScope).toBe('tiingo:server');
+    expect(bySc['tiingo:crypto:server'].entitlementScope).toBe('tiingo:server');
+    expect(bySc['tiingo:crypto:server'].assetClass).toBe('crypto');
   });
 
   it('counts bandwidth demand once per shared key using the largest scope', () => {

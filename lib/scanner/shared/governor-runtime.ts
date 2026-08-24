@@ -43,9 +43,30 @@ export async function recomputeGovernor(
   const results: GovernorRecomputeResult[] = [];
   const store = getSharedCacheStore();
 
+  // Classes that share one provider entitlement also share its rate/bandwidth
+  // cap. Split that cap between them in proportion to each class's N so the
+  // per-class auto cadences sum back within the provider's real budget (the hard
+  // quota gate still backstops it). Usage is only tracked per entitlement, so it
+  // is apportioned the same way for the measured guardrail.
+  const totalKeysByEntitlement = new Map<string, number>();
   for (const inv of inventory) {
-    const budget = getProviderBudget(inv.providerScope);
-    const usage = await readUsage(store, inv.providerScope, now.getTime());
+    totalKeysByEntitlement.set(
+      inv.entitlementScope,
+      (totalKeysByEntitlement.get(inv.entitlementScope) ?? 0) + inv.uniqueKeys,
+    );
+  }
+
+  for (const inv of inventory) {
+    const baseBudget = getProviderBudget(inv.entitlementScope);
+    const totalKeys = totalKeysByEntitlement.get(inv.entitlementScope) ?? inv.uniqueKeys;
+    const share = totalKeys > 0 ? inv.uniqueKeys / totalKeys : 1;
+    const budget = {
+      ...baseBudget,
+      hourlyCap: baseBudget.hourlyCap * share,
+      dailyCap: baseBudget.dailyCap * share,
+      monthlyBandwidthBytes: baseBudget.monthlyBandwidthBytes * share,
+    };
+    const usage = await readUsage(store, inv.entitlementScope, now.getTime());
     const formula = computeCadenceSeconds({
       uniqueKeys: inv.uniqueKeys,
       windowSeconds: inv.windowSeconds,
@@ -57,25 +78,27 @@ export async function recomputeGovernor(
       uniqueKeys: inv.uniqueKeys,
       windowSeconds: inv.windowSeconds,
       usableDaily: budget.dailyCap * budget.headroom,
-      usedToday: usage.daily,
+      usedToday: usage.daily * share,
       floorSeconds: budget.floorSeconds,
     });
     // A manual override wins over the computed cadence, but is clamped to the
     // scope's floor so it can never fetch faster than the provider's hard pacing.
-    const override = cadenceOverrides[inv.providerScope];
+    const override = cadenceOverrides[inv.cadenceScope];
     const hasOverride = typeof override === 'number' && override > 0;
     const cadenceSeconds = hasOverride
-      ? Math.max(override, budget.floorSeconds)
+      ? Math.max(override, baseBudget.floorSeconds)
       : Math.max(formula, measured);
-    const changed = governor.set(inv.providerScope, cadenceSeconds);
+    const changed = governor.set(inv.cadenceScope, cadenceSeconds);
 
     const bindingTerm = hasOverride ? 'manual' : formula >= measured ? 'formula' : 'measured';
     const predictedReqPerHour = cadenceSeconds > 0 ? Math.round((inv.uniqueKeys * 3600) / cadenceSeconds) : 0;
 
     if (typeof store.hset === 'function') {
       try {
-        await store.hset(`metrics:governor:${inv.providerScope}`, {
-          providerScope: inv.providerScope,
+        await store.hset(`metrics:governor:${inv.cadenceScope}`, {
+          providerScope: inv.cadenceScope,
+          entitlementScope: inv.entitlementScope,
+          assetClass: inv.assetClass,
           cadenceSeconds: String(cadenceSeconds),
           uniqueKeys: String(inv.uniqueKeys),
           bindingTerm,
@@ -87,7 +110,7 @@ export async function recomputeGovernor(
       }
     }
 
-    results.push({ providerScope: inv.providerScope, cadenceSeconds, uniqueKeys: inv.uniqueKeys, changed });
+    results.push({ providerScope: inv.cadenceScope, cadenceSeconds, uniqueKeys: inv.uniqueKeys, changed });
   }
 
   return results;
