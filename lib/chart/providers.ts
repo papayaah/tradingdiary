@@ -1,6 +1,7 @@
 import { OHLCCandle } from "./types";
 import type { KeyOwner } from "@/lib/metrics/provider-usage";
 import { fetchWithProviderQuota, providerCredentialScope, reserveProviderRequest } from '@/lib/market-data/provider-request-gate';
+import { parseTiingoDailyCsv, parseTiingoIntradayCsv } from './tiingo-csv';
 
 /** Compatibility hook retained around factory results. Physical request quota
  * and audit accounting now live below providers in provider-request-gate.ts so
@@ -27,14 +28,6 @@ interface IntradayPriceRecord {
     low: number | string;
     close: number | string;
     volume?: number | string;
-}
-
-interface DailyPriceRecord extends IntradayPriceRecord {
-    adjOpen?: number | string;
-    adjHigh?: number | string;
-    adjLow?: number | string;
-    adjClose?: number | string;
-    adjVolume?: number | string;
 }
 
 interface TiingoCryptoPriceResponse {
@@ -420,7 +413,7 @@ class TiingoProvider implements ChartProvider {
         // candle receives volume=0 and volume-dependent detectors can never
         // match even though the feed supports OHLCV.
         const columns = 'open,high,low,close,volume';
-        const query = `${dateParams}&resampleFreq=${freq}&afterHours=true&columns=${columns}&token=${this.apiKey}`;
+        const query = `${dateParams}&resampleFreq=${freq}&afterHours=true&columns=${columns}&format=csv&token=${this.apiKey}`;
         const cleanSymbol = symbol.toUpperCase();
 
         // The consolidated equity feed covers the full 4:00 AM–8:00 PM ET
@@ -438,21 +431,13 @@ class TiingoProvider implements ChartProvider {
             lastStatus = res.status;
             if (!res.ok) continue;
 
-            const data = await res.json();
-            if (!Array.isArray(data)) continue;
+            const data = parseTiingoIntradayCsv(await res.text());
             receivedSuccessfulResponse = true;
-            // A 200 with an empty array means this endpoint has no bars for the
+            // A 200 with an empty CSV response means this endpoint has no bars for the
             // request. Continue to the compatibility endpoint instead of
             // caching an empty snapshot and making evaluators reuse stale state.
             if (data.length === 0) continue;
-            return data.map((r: IntradayPriceRecord) => ({
-                time: Math.floor(new Date(r.date || r.datetime || '').getTime() / 1000),
-                open: Number(r.open),
-                high: Number(r.high),
-                low: Number(r.low),
-                close: Number(r.close),
-                volume: Number(r.volume || 0),
-            }));
+            return data;
         }
 
         if (receivedSuccessfulResponse) return [];
@@ -491,20 +476,11 @@ class TiingoProvider implements ChartProvider {
     private async fetchDaily(symbol: string, startDate: string, endDate?: string): Promise<OHLCCandle[]> {
         const cleanSymbol = symbol.toUpperCase();
         const dateParams = `startDate=${startDate}${endDate ? `&endDate=${endDate}` : ''}`;
-        const url = `https://api.tiingo.com/tiingo/daily/${cleanSymbol}/prices?${dateParams}&resampleFreq=daily&token=${this.apiKey}`;
+        const url = `https://api.tiingo.com/tiingo/daily/${cleanSymbol}/prices?${dateParams}&resampleFreq=daily&format=csv&token=${this.apiKey}`;
         const res = await fetchWithProviderQuota(this.name, url, undefined, this.keyOwner, this.quotaScope);
         if (!res.ok) throw new Error(`Tiingo daily API error: ${res.status}`);
 
-        const data = await res.json();
-        if (!Array.isArray(data)) return [];
-        return data.map((r: DailyPriceRecord) => ({
-            time: Math.floor(new Date(r.date || '').getTime() / 1000),
-            open: Number(r.adjOpen ?? r.open),
-            high: Number(r.adjHigh ?? r.high),
-            low: Number(r.adjLow ?? r.low),
-            close: Number(r.adjClose ?? r.close),
-            volume: Number(r.adjVolume ?? r.volume ?? 0),
-        }));
+        return parseTiingoDailyCsv(await res.text());
     }
 
     async fetchRangeCandles(symbol: string, interval: string, days: number, endTimeMs?: number): Promise<OHLCCandle[]> {
