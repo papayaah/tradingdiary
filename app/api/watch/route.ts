@@ -3,6 +3,7 @@ import { getActiveProvider, YahooProvider, effectiveProviderName } from '@/lib/c
 import { newYorkTradingDate } from '@/lib/scanner/candles';
 import { parseScannerControl, readScannerControl } from '@/lib/scanner/control';
 import { isCryptoMarketDataEnabled, isCryptoMarketDataSymbol } from '@/lib/features/market-data';
+import { calculateEquityChangeFromDailyBars } from '@/lib/market/intraday-change';
 
 const newYorkDate = (timestampMs: number) =>
   new Date(timestampMs).toLocaleDateString('en-US', {
@@ -121,11 +122,30 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // The compact watch card normally receives its prior-close change from the
+    // shared scanner state. An explicit user refresh/expansion can request the
+    // same baseline alongside fresh candles so a stale scanner snapshot is
+    // never combined with a current direct quote.
+    let intradayChange: { amount: number; percent: number } | null = null;
+    if (!isFutures && !isCrypto && searchParams.get('includeChange') === '1' && candles.length > 0) {
+      const dailyCandles = await provider.fetchRecentCandles(symbol, '1d').catch(() => []);
+      const latest = candles.at(-1);
+      if (latest) {
+        intradayChange = calculateEquityChangeFromDailyBars(
+          dailyCandles,
+          latest.close,
+          latest.time,
+        );
+      }
+    }
+
     return NextResponse.json({
       symbol: symbol.toUpperCase(),
       interval,
       provider: providerName,
       candles,
+      intradayChange: intradayChange?.amount ?? null,
+      intradayChangePercent: intradayChange?.percent ?? null,
     }, {
       headers: {
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',

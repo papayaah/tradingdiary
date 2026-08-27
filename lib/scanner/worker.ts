@@ -24,7 +24,12 @@ import {
   PATTERN_VERSION,
   type Candle,
 } from '@/lib/scanner/patterns';
-import { boundRecent, filterCandlesForSession, type CandleSnapshot } from '@/lib/scanner/candles';
+import {
+  boundRecent,
+  filterCandlesForSession,
+  isRecentCandleSnapshot,
+  type CandleSnapshot,
+} from '@/lib/scanner/candles';
 import { getSharedCandleService } from '@/lib/scanner/shared/shared-candle-service';
 import { isSessionActive, type AssetClass, type WatchSession } from '@/lib/scanner/sessions';
 import { SCAN_QUEUE, scannerConfig } from '@/lib/scanner/env';
@@ -113,7 +118,7 @@ export async function processScanJob(job: ScanJob): Promise<ScanOutcome> {
     const prevCandles = Array.isArray(prev?.recentCandles)
       ? (prev!.recentCandles as CandleSnapshot[])
       : [];
-    if (prevCandles.length === 0) {
+    if (!isRecentCandleSnapshot(prevCandles, watch.interval)) {
       return { status: 'idle', alerted: false, skipped: 'no-cache' };
     }
     candles = prevCandles.map((c) => ({ ...c, volume: c.volume ?? 0 }));

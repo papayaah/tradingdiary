@@ -161,7 +161,15 @@ export class AcquisitionScheduler {
             void blacklistSymbol(candidate.canonicalSymbol, msg, scope);
           }
           const retryTtlMs = is404 ? 86_400_000 : FAILED_RETRY_MS;
-          await this.store.set(retryKey(candidate), String(this.now() + retryTtlMs), retryTtlMs);
+          const attemptedAt = this.now();
+          // A failed series still took its turn. Advance its fairness timestamp
+          // as well as setting a retry delay; otherwise its zero/old timestamp
+          // keeps it permanently ahead of healthy series and a few malformed
+          // symbols can starve an entire provider scope.
+          await Promise.all([
+            this.store.set(lastKey(candidate), String(attemptedAt), STATE_TTL_MS),
+            this.store.set(retryKey(candidate), String(attemptedAt + retryTtlMs), retryTtlMs),
+          ]);
           console.error(
             `[scanner] acquisition ${candidate.canonicalSymbol} (${candidate.interval}) failed${is404 ? ' [PERMANENTLY BLACKLISTED IN DB]' : ''}:`,
             msg,

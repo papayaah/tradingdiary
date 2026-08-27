@@ -19,6 +19,14 @@ function parseRows(csv: string, requiredFields: readonly string[]): TiingoCsvRow
         throw new Error(`Tiingo CSV parsing failed: ${result.errors[0]?.message}`);
     }
 
+    // Tiingo sometimes returns only a comma-delimited header for symbols with
+    // no bars on an endpoint. Treat that as an empty successful response so
+    // the provider can try its compatibility endpoint. A non-CSV payload still
+    // falls through to strict shape validation below.
+    if (result.data.length === 0 && (result.meta.fields?.length ?? 0) > 1) {
+        return [];
+    }
+
     const fields = new Set(result.meta.fields ?? []);
     const missingFields = requiredFields.filter((field) => !fields.has(field));
     if (missingFields.length > 0) {

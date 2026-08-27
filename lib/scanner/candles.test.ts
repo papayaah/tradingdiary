@@ -17,6 +17,7 @@ import {
   boundRecent,
   fetchCandles,
   filterCandlesForSession,
+  isRecentCandleSnapshot,
   newYorkTradingDate,
   sanitizeCandles,
 } from './candles';
@@ -104,5 +105,21 @@ describe('intraday equity boundaries', () => {
     expect(filterCandlesForSession(candles, 'ext', 'equity')).toHaveLength(5);
     expect(filterCandlesForSession(candles, 'all', 'equity')).toHaveLength(5);
     expect(filterCandlesForSession(candles, 'rth', 'futures')).toHaveLength(6);
+  });
+});
+
+describe('isRecentCandleSnapshot', () => {
+  const now = Date.parse('2026-08-27T10:30:00Z');
+
+  it('accepts a recent persisted tail during a brief cache miss', () => {
+    expect(isRecentCandleSnapshot([
+      { time: Date.parse('2026-08-27T10:20:00Z') / 1000 },
+    ], '10m', now)).toBe(true);
+  });
+
+  it('rejects a prior-day tail instead of presenting it as freshly scanned', () => {
+    expect(isRecentCandleSnapshot([
+      { time: Date.parse('2026-08-26T19:50:00Z') / 1000 },
+    ], '10m', now)).toBe(false);
   });
 });

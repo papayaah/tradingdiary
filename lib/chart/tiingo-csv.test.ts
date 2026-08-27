@@ -38,6 +38,11 @@ describe('Tiingo CSV parsing', () => {
         expect(parseTiingoIntradayCsv('')).toEqual([]);
     });
 
+    it('returns no candles for Tiingo header-only responses', () => {
+        expect(parseTiingoIntradayCsv(',date,open,high,low,close,volume\n')).toEqual([]);
+        expect(parseTiingoIntradayCsv(',open,high,low,close,volume\n')).toEqual([]);
+    });
+
     it('rejects an unexpected response shape instead of creating corrupt candles', () => {
         expect(() => parseTiingoIntradayCsv('{"detail":"unexpected response"}'))
             .toThrow('Tiingo CSV');

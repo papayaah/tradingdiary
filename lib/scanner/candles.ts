@@ -77,6 +77,30 @@ export function newYorkTradingDate(at: Date = new Date()): string {
   return `${get('year')}${get('month')}${get('day')}`;
 }
 
+function intervalMinutes(interval: string): number {
+  const match = interval.trim().toLowerCase().match(/^(\d+)(m|h)$/);
+  if (!match) return 5;
+  const value = Number(match[1]);
+  return match[2] === 'h' ? value * 60 : value;
+}
+
+/**
+ * Whether a persisted candle tail is recent enough to stand in for the shared
+ * cache during a brief Redis restart. This prevents an evaluator from stamping
+ * yesterday's DB snapshot as freshly scanned during an acquisition outage.
+ */
+export function isRecentCandleSnapshot(
+  candles: Array<Pick<CandleSnapshot, 'time'>>,
+  interval: string,
+  nowMs = Date.now(),
+): boolean {
+  const lastTime = candles.at(-1)?.time;
+  if (!Number.isFinite(lastTime)) return false;
+  const maxAgeMs = Math.max(20, intervalMinutes(interval) * 2 + 5) * 60_000;
+  const ageMs = nowMs - lastTime! * 1000;
+  return ageMs >= 0 && ageMs <= maxAgeMs;
+}
+
 function newYorkCandleParts(timestampSeconds: number): { weekday: string; minutes: number } {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',

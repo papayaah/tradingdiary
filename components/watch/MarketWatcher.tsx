@@ -67,6 +67,7 @@ import {
   calculateEquityIntradayChange,
   type IntradayChange,
 } from '@/lib/market/intraday-change';
+import { formatScanTimeEt } from '@/lib/market/scan-time';
 import { buildScannerSyncWatchlist } from '@/lib/watch/sync-settings';
 import { limitAlertHistory } from '@/lib/watch/alert-history';
 import {
@@ -225,11 +226,7 @@ const CATEGORY_TO_ASSET_CLASS: Record<ScanCategory, string> = {
 
 const isFuturesSymbol = (symbol: string) => symbol.toUpperCase().includes('=F');
 const isCryptoSymbol = (symbol: string) => symbol.toUpperCase().endsWith('-USD');
-const formatLastCheckTime = (value: string | number | Date = Date.now()) =>
-  new Date(value).toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+const formatLastCheckTime = formatScanTimeEt;
 
 const FUTURES_ROOT_SYMBOLS = new Set([
   'BTC', 'CL', 'ES', 'FDAX', 'FGBL', 'FSTX', 'GC', 'HSI', 'K200',
@@ -2004,6 +2001,7 @@ export default function MarketWatcher() {
     try {
       let candles: Candle[] = [];
       let providerName = 'Live Feed';
+      let fetchedDailyMove: IntradayChange | null = null;
 
       // 1. Try fetching from IndexedDB cache first (skipped on a manual refresh,
       // which should always hit the provider for the freshest data).
@@ -2025,7 +2023,7 @@ export default function MarketWatcher() {
         const timeoutId = setTimeout(() => controller.abort(), 12000);
         
         try {
-          const cacheBust = forceFresh ? `&t=${Date.now()}` : '';
+          const cacheBust = forceFresh ? `&includeChange=1&t=${Date.now()}` : '';
           const res = await fetch(`/api/watch?symbol=${encodeURIComponent(item.symbol)}&interval=${item.interval}${cacheBust}`, {
             signal: controller.signal
           });
@@ -2046,6 +2044,12 @@ export default function MarketWatcher() {
           const data = await res.json();
           candles = data.candles || [];
           providerName = data.provider || 'Live Feed';
+          if (data.intradayChangePercent != null && Number.isFinite(data.intradayChangePercent)) {
+            fetchedDailyMove = {
+              amount: Number(data.intradayChange) || 0,
+              percent: Number(data.intradayChangePercent),
+            };
+          }
           if (providerName === 'Polygon.io') {
             setIsPolygonActive(true);
           }
@@ -2079,7 +2083,7 @@ export default function MarketWatcher() {
         : primaryMatch?.matched ?? 'none';
       const dailyMove = isFuturesOrCrypto
         ? null
-        : calculateEquityIntradayChange(candles);
+        : fetchedDailyMove ?? calculateEquityIntradayChange(candles);
 
       // Group multiple pattern matches for this symbol scan into a single alert card
       const lastAlertedPatternKeys = { ...item.lastAlertedPatternKeys };
@@ -2131,7 +2135,10 @@ export default function MarketWatcher() {
         lastChecked: formatLastCheckTime(),
         status,
         candles,
+        lastPrice: candles.at(-1)?.close,
         provider: providerName,
+        intradayChange: dailyMove?.amount ?? null,
+        intradayChangePercent: dailyMove?.percent ?? null,
         lastError: scanCandles.length === 0 ? 'No candles available for today’s selected ET session' : undefined,
         lastAlertedCandleTime: primaryMatch?.time ?? item.lastAlertedCandleTime,
         lastAlertedType: primaryMatch?.matched ?? item.lastAlertedType,
@@ -2612,7 +2619,7 @@ export default function MarketWatcher() {
 
       // Fetch fresh live candles to ensure today's current pre-market/live data is displayed
       try {
-        const res = await fetch(`/api/watch?symbol=${encodeURIComponent(item.symbol)}&interval=${item.interval}&t=${Date.now()}`);
+        const res = await fetch(`/api/watch?symbol=${encodeURIComponent(item.symbol)}&interval=${item.interval}&includeChange=1&t=${Date.now()}`);
         if (res.ok) {
           const data = await res.json();
           const freshCandles: Candle[] = data.candles || [];
@@ -2654,6 +2661,14 @@ export default function MarketWatcher() {
             const status = sessionCandles.length === 0
               ? 'no-data' as const
               : alertMatches[0]?.matched ?? 'none';
+            const dailyMove = isFuturesOrCrypto
+              ? null
+              : data.intradayChangePercent != null && Number.isFinite(data.intradayChangePercent)
+                ? {
+                    amount: Number(data.intradayChange) || 0,
+                    percent: Number(data.intradayChangePercent),
+                  }
+                : calculateEquityIntradayChange(freshCandles);
 
             // Expanding a row only refreshes the chart/candles for viewing; it
             // must NOT (re)emit Alert History entries or mutate alerting state.
@@ -2677,8 +2692,11 @@ export default function MarketWatcher() {
                 updated[index] = {
                   ...updated[index],
                   candles: freshCandles,
+                  lastPrice: freshCandles.at(-1)?.close,
                   provider: providerName,
                   status,
+                  intradayChange: dailyMove?.amount ?? null,
+                  intradayChangePercent: dailyMove?.percent ?? null,
                   lastError: sessionCandles.length === 0 ? 'No candles available for today’s selected ET session' : undefined,
                   lastChecked: formatLastCheckTime(),
                   // Alerting state (lastAlerted*) is preserved via the spread above
