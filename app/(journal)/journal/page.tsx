@@ -8,12 +8,16 @@ import {
   getShowPnlInBaseCurrency,
   setShowPnlInBaseCurrency,
 } from '@/lib/settings';
-import { aggregateByDay, applyMarketPrices, type DailySummary } from '@/lib/trading/aggregator';
+import { aggregateByDay, applyMarketPrices, type DailySummary, type AggregatedTrade } from '@/lib/trading/aggregator';
 import { onJournalSynced } from '@/lib/journal/sync-bus';
 import SyncStatusIndicator from '@/components/journal/SyncStatusIndicator';
 import DayGroup from '@/components/journal/DayGroup';
+import JournalTagFilter from '@/components/journal/JournalTagFilter';
 import { useAccount } from '@/contexts/AccountContext';
 import { getTransactionsByAccount } from '@/lib/db/trades';
+import { getAllTags } from '@/lib/db/tags';
+import { getAllTradeNotes } from '@/lib/db/notes';
+import type { TagRecord } from '@/lib/db/schema';
 import { ManualTradePanel } from '@/components/trades/manual-entry/ManualTradePanel';
 import { loadDemoSampleData } from '@/lib/import/sample-loader';
 import { toast } from 'sonner';
@@ -28,6 +32,10 @@ export default function JournalPage() {
   const baseCurrency = accounts.find((account) => account.accountId === selectedAccountId)?.currency ?? 'USD';
 
   const [summaries, setSummaries] = useState<DailySummary[] | null>(null);
+  // Tag filter: applied tags + a map of trade-group key → its tag ids.
+  const [allTags, setAllTags] = useState<TagRecord[]>([]);
+  const [noteTagsByKey, setNoteTagsByKey] = useState<Record<string, string[]>>({});
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [loadingSample, setLoadingSample] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -119,6 +127,58 @@ export default function JournalPage() {
     load();
   }, [selectedAccountId, refreshKey]);
 
+  // Load tags + per-trade tag links for the tag filter. Refreshes with the
+  // journal (account switch, sync merge, local edits bump refreshKey).
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const [tags, notes] = await Promise.all([getAllTags(), getAllTradeNotes()]);
+      if (!active) return;
+      setAllTags(tags);
+      const byKey: Record<string, string[]> = {};
+      for (const note of notes) {
+        if (note.tagIds && note.tagIds.length > 0) byKey[note.tradeGroupKey] = note.tagIds;
+      }
+      setNoteTagsByKey(byKey);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [selectedAccountId, refreshKey]);
+
+  // Only offer tags that are actually applied to a trade in this account.
+  const inUseTags = useMemo(() => {
+    const used = new Set(Object.values(noteTagsByKey).flat());
+    return allTags.filter((t) => used.has(t.id));
+  }, [allTags, noteTagsByKey]);
+
+  const tradeKey = useCallback(
+    (t: AggregatedTrade) => t.groupKey ?? `${t.date}:${t.symbol}:${selectedAccountId ?? ''}`,
+    [selectedAccountId],
+  );
+
+  // When tags are selected, keep only trades carrying any of them, then
+  // re-aggregate so each day's header/stats reflect the filtered set exactly.
+  const baseSummaries = useMemo(() => {
+    if (!summaries || selectedTagIds.length === 0) return summaries;
+    const sel = new Set(selectedTagIds);
+    const matchKeys = new Set<string>();
+    for (const [key, ids] of Object.entries(noteTagsByKey)) {
+      if (ids.some((id) => sel.has(id))) matchKeys.add(key);
+    }
+    const txns = summaries
+      .flatMap((s) => s.trades)
+      .filter((t) => matchKeys.has(tradeKey(t)))
+      .flatMap((t) => t.transactions);
+    return txns.length > 0 ? aggregateByDay(txns) : [];
+  }, [summaries, selectedTagIds, noteTagsByKey, tradeKey]);
+
+  const toggleTag = useCallback((tagId: string) => {
+    setSelectedTagIds((prev) =>
+      prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId],
+    );
+  }, []);
+
   const normalizedFilterDate = useMemo(() => {
     return filterDate?.replace(/-/g, '');
   }, [filterDate]);
@@ -182,30 +242,30 @@ export default function JournalPage() {
   }, [summaries, normalizedFilterDate]);
 
   const displaySummaries = useMemo(() => {
-    if (!summaries || !normalizedFilterDate) return summaries;
-    return summaries.filter(s => s.date === normalizedFilterDate);
-  }, [summaries, normalizedFilterDate]);
+    if (!baseSummaries || !normalizedFilterDate) return baseSummaries;
+    return baseSummaries.filter(s => s.date === normalizedFilterDate);
+  }, [baseSummaries, normalizedFilterDate]);
 
   const currentDayIndex = useMemo(() => {
-    if (!summaries || !normalizedFilterDate) return -1;
-    return summaries.findIndex((summary) => summary.date === normalizedFilterDate);
-  }, [summaries, normalizedFilterDate]);
+    if (!baseSummaries || !normalizedFilterDate) return -1;
+    return baseSummaries.findIndex((summary) => summary.date === normalizedFilterDate);
+  }, [baseSummaries, normalizedFilterDate]);
 
   const previousDay = useMemo(() => {
-    if (!summaries || summaries.length === 0) return undefined;
+    if (!baseSummaries || baseSummaries.length === 0) return undefined;
     if (currentDayIndex === -1) {
-      return summaries.length > 1 ? summaries[1] : undefined;
+      return baseSummaries.length > 1 ? baseSummaries[1] : undefined;
     }
-    return currentDayIndex < summaries.length - 1 ? summaries[currentDayIndex + 1] : undefined;
-  }, [summaries, currentDayIndex]);
+    return currentDayIndex < baseSummaries.length - 1 ? baseSummaries[currentDayIndex + 1] : undefined;
+  }, [baseSummaries, currentDayIndex]);
 
   const nextDay = useMemo(() => {
-    if (!summaries || summaries.length === 0) return undefined;
+    if (!baseSummaries || baseSummaries.length === 0) return undefined;
     if (currentDayIndex === -1) {
-      return summaries[0];
+      return baseSummaries[0];
     }
-    return currentDayIndex > 0 ? summaries[currentDayIndex - 1] : undefined;
-  }, [summaries, currentDayIndex]);
+    return currentDayIndex > 0 ? baseSummaries[currentDayIndex - 1] : undefined;
+  }, [baseSummaries, currentDayIndex]);
 
   const navigateToDay = useCallback((date: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -420,10 +480,23 @@ export default function JournalPage() {
         </div>
       )}
 
+      <JournalTagFilter
+        tags={inUseTags}
+        selected={selectedTagIds}
+        onToggle={toggleTag}
+        onClear={() => setSelectedTagIds([])}
+      />
+
+      {selectedTagIds.length > 0 && displaySummaries?.length === 0 && (
+        <div className="py-16 text-center text-sm text-muted">
+          No trades match the selected tag{selectedTagIds.length === 1 ? '' : 's'}.
+        </div>
+      )}
+
       {displaySummaries?.map((summary) => {
-        const indexInAll = summaries?.findIndex(s => s.date === summary.date) ?? -1;
-        const prev = indexInAll >= 0 && indexInAll < (summaries?.length || 0) - 1 ? summaries?.[indexInAll + 1] : undefined;
-        const next = indexInAll > 0 ? summaries?.[indexInAll - 1] : undefined;
+        const indexInAll = baseSummaries?.findIndex(s => s.date === summary.date) ?? -1;
+        const prev = indexInAll >= 0 && indexInAll < (baseSummaries?.length || 0) - 1 ? baseSummaries?.[indexInAll + 1] : undefined;
+        const next = indexInAll > 0 ? baseSummaries?.[indexInAll - 1] : undefined;
 
         return (
           <DayGroup
