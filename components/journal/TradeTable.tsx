@@ -170,8 +170,11 @@ function TradeRow({
         <td className="px-2.5 sm:px-4 py-3 text-muted font-mono text-[11px] font-normal tracking-tight whitespace-nowrap">
           {formatExchangeTime(trade.firstTradeTime, trade.date)}
         </td>
-        <td className="px-2.5 sm:px-4 py-3 font-normal text-foreground text-xs sm:text-sm tracking-tight capitalize whitespace-nowrap">
-          {trade.symbol}
+        <td className="px-2.5 sm:px-4 py-3 whitespace-nowrap">
+          <span className="block font-normal text-foreground text-xs sm:text-sm tracking-tight">{trade.symbol}</span>
+          {trade.companyName && trade.companyName.toUpperCase() !== trade.symbol.toUpperCase() && (
+            <span className="block text-muted text-[10px] leading-tight tracking-tight">{trade.companyName}</span>
+          )}
         </td>
         <td className="px-2.5 sm:px-4 py-3 whitespace-nowrap">
           <span

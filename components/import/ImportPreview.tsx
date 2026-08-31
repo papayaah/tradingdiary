@@ -6,7 +6,7 @@ import { AccountRecord } from '@/lib/db/schema';
 import { CreditCard, Plus, Wallet, TrendingUp, TrendingDown, Activity, BarChart3, Info, Lightbulb, ScanSearch } from 'lucide-react';
 import { toTransactionRecords } from '@/lib/import/converter';
 import { aggregateByDay } from '@/lib/trading/aggregator';
-import { formatCurrency } from '@/lib/currency';
+import { formatCurrency, getCurrencySymbol } from '@/lib/currency';
 import { getImportAccountDefaults, getRecommendedImportAccountId } from '@/lib/import/account-defaults';
 
 interface ImportPreviewProps {
@@ -41,17 +41,37 @@ export default function ImportPreview({
     const [accountSelection, setAccountSelection] = useState<string | null>(null);
     const selectedAccountId = accountSelection ?? recommendedAccountId;
 
+    // Currencies actually present in the file, most-frequent first. The most
+    // common one is the default, but every currency in the file is offered so the
+    // user can pick the account's real base (e.g. USD) instead of a guess.
+    const currenciesInFile = useMemo(() => {
+        const counts = new Map<string, number>();
+        for (const t of transactions) {
+            const c = (t.currency || 'USD').toUpperCase();
+            counts.set(c, (counts.get(c) ?? 0) + 1);
+        }
+        return [...counts.entries()].sort((a, b) => b[1] - a[1]); // [currency, count] desc
+    }, [transactions]);
+    const mostCommonCurrency = currenciesInFile[0]?.[0] ?? suggestedCurrency ?? 'USD';
+
     // New account form state
     const accountDefaults = getImportAccountDefaults(detectedBrokerName);
     const newAccountType = accountDefaults.type;
     const [newAccountName, setNewAccountName] = useState(accountDefaults.name);
-    const [newAccountCurrency, setNewAccountCurrency] = useState(suggestedCurrency);
+    const [newAccountCurrency, setNewAccountCurrency] = useState(mostCommonCurrency);
 
+    // Default to the file's most-common currency; the user can still override.
     useEffect(() => {
-        if (suggestedCurrency) {
-            setNewAccountCurrency(suggestedCurrency);
-        }
-    }, [suggestedCurrency]);
+        setNewAccountCurrency(mostCommonCurrency);
+    }, [mostCommonCurrency]);
+
+    // The currency the preview P&L is estimated and labelled in: the chosen base
+    // for a new account, otherwise the target account's own currency. Computing
+    // and displaying in the SAME currency avoids the mislabel (USD math shown as
+    // HK$).
+    const previewCurrency = selectedAccountId === 'new'
+        ? newAccountCurrency
+        : (accounts.find((a) => a.accountId === selectedAccountId)?.currency || 'USD');
 
     const toggleAll = () => {
         if (selectedIndices.size === transactions.length) {
@@ -99,7 +119,7 @@ export default function ImportPreview({
 
         // If no explicit PnL found, attempt basic position aggregation PnL estimation
         if (totalPnL === 0 && wins === 0 && losses === 0) {
-            const tempRecords = toTransactionRecords(selectedTransactions, 'preview-acc', 'USD');
+            const tempRecords = toTransactionRecords(selectedTransactions, 'preview-acc', previewCurrency);
             const daily = aggregateByDay(tempRecords);
             daily.forEach(d => {
                 totalPnL += d.totalPnL;
@@ -118,7 +138,7 @@ export default function ImportPreview({
             totalTrades: selectedTransactions.length,
             totalCommissions
         };
-    }, [selectedTransactions]);
+    }, [selectedTransactions, previewCurrency]);
 
     const selectedAccount = useMemo(() => {
         return accounts.find(a => a.accountId === selectedAccountId);
@@ -274,24 +294,32 @@ export default function ImportPreview({
                                             onChange={e => setNewAccountCurrency(e.target.value)}
                                             className="w-full p-2.5 bg-card-bg border border-card-border rounded-xl focus:border-accent outline-none text-sm font-medium text-foreground"
                                         >
-                                            <option value="USD">USD ($)</option>
-                                            <option value="HKD">HKD (HK$)</option>
-                                            <option value="EUR">EUR (€)</option>
-                                            <option value="GBP">GBP (£)</option>
-                                            <option value="CAD">CAD (C$)</option>
-                                            <option value="AUD">AUD (A$)</option>
-                                            <option value="SGD">SGD (S$)</option>
-                                            <option value="JPY">JPY (¥)</option>
-                                            <option value="INR">INR (₹)</option>
+                                            {currenciesInFile.length > 0 && (
+                                                <optgroup label="In this file">
+                                                    {currenciesInFile.map(([ccy, count]) => (
+                                                        <option key={ccy} value={ccy}>
+                                                            {ccy} ({getCurrencySymbol(ccy)}) · {count} trade{count === 1 ? '' : 's'}
+                                                        </option>
+                                                    ))}
+                                                </optgroup>
+                                            )}
+                                            <optgroup label="Other">
+                                                {['USD', 'HKD', 'EUR', 'GBP', 'CAD', 'AUD', 'SGD', 'JPY', 'INR']
+                                                    .filter((c) => !currenciesInFile.some(([ccy]) => ccy === c))
+                                                    .map((c) => (
+                                                        <option key={c} value={c}>{c} ({getCurrencySymbol(c)})</option>
+                                                    ))}
+                                            </optgroup>
                                         </select>
                                     </div>
                                 </div>
-                                {suggestedCurrency && suggestedCurrency !== newAccountCurrency && (
-                                    <p className="text-[10px] text-accent font-medium mt-1 flex items-center gap-1">
-                                        <Lightbulb className="w-3 h-3 text-accent shrink-0" />
-                                        <span>Suggested {suggestedCurrency} based on your data.</span>
-                                    </p>
-                                )}
+                                <p className="text-[10px] text-muted font-medium mt-1 flex items-center gap-1">
+                                    <Lightbulb className="w-3 h-3 text-accent shrink-0" />
+                                    <span>
+                                        Defaulted to {mostCommonCurrency}, the most common currency in your file.
+                                        Pick your account&apos;s real base (e.g. USD) if different — it&apos;s optional.
+                                    </span>
+                                </p>
                             </div>
                         </div>
                     )}
@@ -316,7 +344,7 @@ export default function ImportPreview({
                                 Est. Net P&L
                             </span>
                             <div className={`text-xl font-black ${insights.totalPnL >= 0 ? 'text-profit' : 'text-loss'}`}>
-                                {formatCurrency(insights.totalPnL, selectedAccount?.currency || 'USD')}
+                                {formatCurrency(insights.totalPnL, previewCurrency)}
                             </div>
                         </div>
                         <div className="space-y-1">
@@ -345,7 +373,7 @@ export default function ImportPreview({
                                 Commissions
                             </span>
                             <div className="text-xl font-black text-muted">
-                                {formatCurrency(insights.totalCommissions, selectedAccount?.currency || 'USD')}
+                                {formatCurrency(insights.totalCommissions, previewCurrency)}
                             </div>
                         </div>
                         <div className="col-span-full pt-2 flex items-start gap-2 text-[10px] text-muted italic">

@@ -34,11 +34,28 @@ export function parseTLGFile(content: string): ParsedTLGFile {
       else if (side === 'BOT') side = 'BUYTOOPEN';
       else if (side === 'SLD') side = 'SELLTOCLOSE';
 
+      // For futures the trade code (parts[2], e.g. "056U", "MCLU6") is IBKR's
+      // per-contract local code — unreadable and expiry-specific. The human
+      // product root lives in the first token of the description (parts[3], e.g.
+      // "K200M 10SEP26" → "K200M"). Use the root as the symbol so contract months
+      // group together and it's recognizable; keep the code + expiry as the name.
+      // Stocks are unchanged (parts[2] is the ticker, parts[3] the company name).
+      const isFutures = line.startsWith('FUT_TRD|');
+      let symbol = parts[2];
+      let companyName = parts[3];
+      if (isFutures) {
+        const description = (parts[3] || '').trim();
+        const [root, ...rest] = description.split(/\s+/);
+        if (root) symbol = root;
+        const expiry = rest.join(' ');
+        companyName = expiry ? `${parts[2]} · ${expiry}` : parts[2];
+      }
+
       transactions.push({
         tradeId: parts[1],
         accountId: account?.accountId || '',
-        symbol: parts[2],
-        companyName: parts[3],
+        symbol,
+        companyName,
         exchanges: parts[4],
         side: side as Side,
         orderType: parts[6],

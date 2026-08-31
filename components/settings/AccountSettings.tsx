@@ -99,12 +99,14 @@ export default function AccountSettings() {
     const { accounts, selectedAccountId, refreshAccounts } = useAccount();
     const activeAccount = accounts.find(a => a.accountId === selectedAccountId);
 
+    const [accountName, setAccountName] = useState<string>('');
     const [initialBalance, setInitialBalance] = useState<string>('');
     const [currency, setCurrency] = useState<string>('USD');
     const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
         if (activeAccount) {
+            setAccountName(activeAccount.name);
             setInitialBalance(activeAccount.initialBalance?.toString() || '');
             setCurrency(activeAccount.currency || 'USD');
         }
@@ -132,6 +134,12 @@ export default function AccountSettings() {
     const handleSave = async () => {
         setIsSaving(true);
         try {
+            const name = accountName.trim();
+            if (!name) {
+                toast.error('Please enter an account name');
+                return;
+            }
+
             const balance = parseFloat(initialBalance);
             if (isNaN(balance) && initialBalance !== '') {
                 toast.error('Please enter a valid number for the initial balance');
@@ -140,6 +148,7 @@ export default function AccountSettings() {
 
             await updateAccount({
                 ...activeAccount,
+                name,
                 currency,
                 initialBalance: initialBalance === '' ? undefined : balance
             });
@@ -166,13 +175,30 @@ export default function AccountSettings() {
                 </div>
             </div>
 
-            <div className="space-y-5 max-w-sm">
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+                <div>
+                    <label htmlFor="account-name" className="block text-[10px] font-normal uppercase tracking-wider text-muted mb-2">
+                        Account Name
+                    </label>
+                    <input
+                        id="account-name"
+                        type="text"
+                        value={accountName}
+                        onChange={(e) => setAccountName(e.target.value)}
+                        autoComplete="off"
+                        className="w-full bg-background/50 border border-card-border rounded-xl py-3 px-4 text-sm font-normal outline-none focus:border-accent transition-all text-foreground"
+                    />
+                    <p className="mt-2 text-[10px] text-muted font-normal leading-relaxed">
+                        Shown in the account switcher and throughout your journal.
+                    </p>
+                </div>
+
                 <div>
                     <label className="block text-[10px] font-normal uppercase tracking-wider text-muted mb-2">
                         Account Base Currency
                     </label>
                     <CustomCurrencySelect value={currency} onChange={setCurrency} />
-                    <p className="mt-2 text-[10px] text-muted-foreground font-normal leading-relaxed">
+                    <p className="mt-2 text-[10px] text-muted font-normal leading-relaxed">
                         Sets the primary currency used for portfolio metrics and account totals.
                     </p>
                 </div>
@@ -191,15 +217,17 @@ export default function AccountSettings() {
                             className="w-full bg-background/50 border border-card-border rounded-xl py-3 pl-12 pr-4 text-sm font-normal outline-none focus:border-accent transition-all text-foreground"
                         />
                     </div>
-                    <p className="mt-2 text-[10px] text-muted-foreground font-normal leading-relaxed">
+                    <p className="mt-2 text-[10px] text-muted font-normal leading-relaxed">
                         Required to calculate cumulative percentage returns on the dashboard.
                     </p>
                 </div>
+            </div>
 
+            <div className="mt-6 flex justify-end border-t border-card-border pt-5">
                 <button
                     onClick={handleSave}
                     disabled={isSaving}
-                    className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-accent text-white rounded-xl text-xs font-normal shadow-lg shadow-accent/20 hover:bg-accent/90 active:scale-[0.98] transition-all disabled:opacity-50"
+                    className="flex w-full items-center justify-center gap-2 bg-accent px-6 py-3 text-xs font-normal text-white shadow-lg shadow-accent/20 transition-all hover:bg-accent/90 active:scale-[0.98] disabled:opacity-50 sm:w-auto sm:min-w-56"
                 >
                     {isSaving ? (
                         <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
