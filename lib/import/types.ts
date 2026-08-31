@@ -21,6 +21,7 @@ export interface NormalizedTransaction {
     realizedPnL?: number;   // realized profit/loss
     unrealizedPnL?: number; // unrealized profit/loss
     stockCode?: string;     // broker-specific code, e.g. "HK 01810"
+    fxRateToBase?: number;  // broker's exact per-trade rate: trade currency → account base (e.g. USD)
 }
 
 export type ExtractedData = {

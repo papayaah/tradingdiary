@@ -86,6 +86,20 @@ export function toTransactionRecord(
         feeMultiplier: 1,
         realizedPnL: n.realizedPnL,
         unrealizedPnL: n.unrealizedPnL,
+        // Prefer the broker's exact per-trade FX rate (trade currency → base) so
+        // realized P&L matches the broker and is identical across import formats.
+        // It converts into the account currency directly only when the account IS
+        // the broker base (USD here); otherwise leave it for historical enrichment.
+        ...(n.fxRateToBase && n.fxRateToBase > 0 && (n.currency || defaultCurrency).toUpperCase() !== 'USD' && defaultCurrency.toUpperCase() === 'USD'
+            ? {
+                fxRateToAccount: n.fxRateToBase,
+                fxAccountCurrency: 'USD',
+                fxRateDate: dateStr,
+                fxRateProvider: 'ibkr' as const,
+              }
+            : (n.currency || defaultCurrency).toUpperCase() === 'USD' && defaultCurrency.toUpperCase() === 'USD'
+                ? { fxRateToAccount: 1, fxAccountCurrency: 'USD', fxRateDate: dateStr, fxRateProvider: 'ibkr' as const }
+                : {}),
     };
 }
 

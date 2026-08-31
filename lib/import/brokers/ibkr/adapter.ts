@@ -61,6 +61,7 @@ function parseFlexXml(source: BrokerImportSource): NormalizedTransaction[] {
       orderType: trade.orderType || undefined,
       commission: Math.abs(commission ?? 0),
       totalValue: proceeds === undefined ? undefined : Math.abs(proceeds),
+      fxRateToBase: parseBrokerNumber(trade.fxRateToBase || ''),
     });
   }
 
@@ -104,6 +105,7 @@ async function parseFlexCsv(source: BrokerImportSource) {
       orderType: readValue(row, headers, ['OrderType', 'Order Type']) || undefined,
       commission: Math.abs(commission ?? 0),
       totalValue: proceeds === undefined ? undefined : Math.abs(proceeds),
+      fxRateToBase: parseBrokerNumber(readValue(row, headers, ['FXRateToBase', 'FxRateToBase', 'FX Rate To Base'])),
     };
   });
   return { transactions, warnings: skippedWarning(skipped) };
@@ -149,8 +151,11 @@ const adapter: BrokerAdapter = {
       orderType: trade.orderType,
       commission: trade.commission,
       totalValue: trade.totalValue,
+      multiplier: trade.multiplier,
       realizedPnL: trade.realizedPnL ?? undefined,
       unrealizedPnL: trade.unrealizedPnL ?? undefined,
+      // Final .tlg column (parsed into feeMultiplier) is IBKR's per-trade FX rate.
+      fxRateToBase: trade.feeMultiplier,
     }));
     return result(adapter, 'tradelog-tlg', transactions);
   },

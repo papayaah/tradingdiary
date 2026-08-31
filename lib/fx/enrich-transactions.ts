@@ -10,6 +10,19 @@ type FxResponse = {
   error?: string;
 };
 
+/**
+ * A trade already carries the broker's own exact FX rate into the account
+ * currency (IBKR trade log FX-to-base column). That is preferred over any
+ * historical daily rate, so never fetch or overwrite it.
+ */
+function hasBrokerRate(t: TransactionRecord, target: string): boolean {
+  return (
+    t.fxRateProvider === 'ibkr' &&
+    !!t.fxRateToAccount && t.fxRateToAccount > 0 &&
+    (t.fxAccountCurrency ?? 'USD').toUpperCase() === target
+  );
+}
+
 export async function enrichTransactionsWithHistoricalFx(
   transactions: TransactionRecord[],
   accountCurrency: string,
@@ -20,6 +33,7 @@ export async function enrichTransactionsWithHistoricalFx(
   for (const transaction of transactions) {
     const currency = transaction.currency.trim().toUpperCase();
     if (currency === target) continue;
+    if (hasBrokerRate(transaction, target)) continue;
     if (
       transaction.fxRateToAccount &&
       transaction.fxAccountCurrency === target &&
@@ -30,12 +44,15 @@ export async function enrichTransactionsWithHistoricalFx(
   }
 
   if (requests.size === 0) {
-    return transactions.map((transaction) => ({
-      ...transaction,
-      fxRateToAccount: transaction.currency.toUpperCase() === target ? 1 : transaction.fxRateToAccount,
-      fxAccountCurrency: target,
-      fxRateDate: transaction.fxRateDate ?? transaction.date,
-    }));
+    return transactions.map((transaction) => {
+      if (hasBrokerRate(transaction, target)) return transaction; // keep broker's exact rate
+      return {
+        ...transaction,
+        fxRateToAccount: transaction.currency.toUpperCase() === target ? 1 : transaction.fxRateToAccount,
+        fxAccountCurrency: target,
+        fxRateDate: transaction.fxRateDate ?? transaction.date,
+      };
+    });
   }
 
   const response = await fetch('/api/fx/historical', {
@@ -58,6 +75,7 @@ export async function enrichTransactionsWithHistoricalFx(
         fxRateDate: transaction.date,
       };
     }
+    if (hasBrokerRate(transaction, target)) return transaction; // keep broker's exact rate
     const fx = payload.rates[`${transaction.date}:${currency}`];
     if (!fx) throw new Error(`Missing ${currency}/${target} rate for ${transaction.date}`);
     return {

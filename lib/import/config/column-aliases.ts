@@ -20,4 +20,5 @@ export const COLUMN_ALIASES: Record<keyof NormalizedTransaction, string[]> = {
     totalValue: ['total', 'total value', 'amount', 'value', 'net amount', 'consideration', 'total amount'],
     realizedPnL: ['realized pnl', 'pnl', 'profit', 'gain/loss', 'realised p&l', 'realized profit'],
     unrealizedPnL: ['unrealized pnl', 'unrealized profit', 'mark to market', 'unrealised p&l'],
+    fxRateToBase: ['fxratetobase', 'fx rate to base', 'fx rate'],
 };

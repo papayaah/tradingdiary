@@ -29,12 +29,17 @@ export interface TransactionRecord {
   feeMultiplier: number;
   realizedPnL?: number;
   unrealizedPnL?: number;
-  /** Fixed historical multiplier from transaction currency into account currency. */
+  /**
+   * Multiplier from transaction currency into account currency. Prefer the
+   * broker's exact per-trade rate (`fxRateProvider: 'ibkr'`, from the trade log's
+   * FX-to-base column) so realized P&L matches the broker; otherwise a historical
+   * daily rate is filled in as a fallback.
+   */
   fxRateToAccount?: number;
   fxAccountCurrency?: string;
   /** Provider rate date in YYYYMMDD form. */
   fxRateDate?: string;
-  fxRateProvider?: 'exchange-rate-api';
+  fxRateProvider?: 'exchange-rate-api' | 'ibkr';
 }
 
 export interface PositionRecord {

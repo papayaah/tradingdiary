@@ -51,6 +51,13 @@ export function parseTLGFile(content: string): ParsedTLGFile {
         totalValue: parseFloat(parts[13]),
         commission: parseFloat(parts[14]),
         feeMultiplier: parseFloat(parts[15]),
+        // The final column is IBKR's exact per-trade FX rate into the account
+        // base currency (USD for these statements). Use it directly so realized
+        // P&L matches the broker instead of a historical daily rate.
+        fxRateToAccount: parseFloat(parts[15]),
+        fxAccountCurrency: 'USD',
+        fxRateDate: parts[7],
+        fxRateProvider: 'ibkr',
       });
     } else if (line.startsWith('STK_LOT|') || line.startsWith('FUT_LOT|')) {
       const parts = line.split('|');
