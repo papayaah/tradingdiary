@@ -4,6 +4,10 @@
 # into your LOCAL database so you can develop against real trades. Prod is
 # read-only; only your local DB (and .env.local) is written.
 #
+# Usage:
+#   npm run db:pull                       # every prod user that also exists locally
+#   npm run db:pull -- you@example.com    # only that one email
+#
 #   - Reads SSH config from .env.deploy and the local DB from .env.local.
 #   - Reaches prod Postgres via `ssh + docker compose exec` (no exposed port).
 #   - Heals schema drift: adds any columns prod has that local is missing.
@@ -19,6 +23,10 @@
 # NOTE: this is a DATA sync. It is unrelated to `drizzle-kit push/pull`, which
 # sync table STRUCTURE (see db:schema:push / db:schema:pull).
 set -euo pipefail
+
+# Optional first argument: restrict the sync to a single user by email. Empty =
+# every prod user that also exists locally.
+FILTER_EMAIL="${1:-}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -87,7 +95,11 @@ TABLES=(
 # cascades trade_tag; the rest are independent roots.
 DELETE_ROOTS=(trading_account tag attachment ibkr_flex_connection server_watch user_watchlists)
 
-echo "==> db:pull — mirroring FULL trading data from prod (${SERVER_IP}) into local"
+if [ -n "$FILTER_EMAIL" ]; then
+  echo "==> db:pull — mirroring FULL trading data from prod (${SERVER_IP}) into local — ONLY ${FILTER_EMAIL}"
+else
+  echo "==> db:pull — mirroring FULL trading data from prod (${SERVER_IP}) into local — all matched users"
+fi
 
 # 1) Schema-heal: add any columns prod has that local is missing (best effort).
 for t in "${TABLES[@]}"; do
@@ -105,6 +117,8 @@ done
 LOCAL_IDS=(); SED_ARGS=()
 while IFS='|' read -r pid email; do
   [ -z "${email:-}" ] && continue
+  # When an email filter is given, skip everyone else.
+  [ -n "$FILTER_EMAIL" ] && [ "$email" != "$FILTER_EMAIL" ] && continue
   lid="$(loc -tAc "SELECT id FROM \"user\" WHERE email='$email' LIMIT 1")"
   if [ -z "$lid" ]; then
     echo "   ! no local user for ${email} — log in locally once as that account, then re-run. Skipping."
