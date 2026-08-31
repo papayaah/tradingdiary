@@ -12,6 +12,32 @@ const tx = (over: Partial<NormalizedTransaction> = {}): NormalizedTransaction =>
   ...over,
 });
 
+describe('toTransactionRecords — explicit open/close indicator', () => {
+  it('honors the broker open/close indicator for a position opened before the window', () => {
+    // A SELL that CLOSES a long opened before the import window. With no prior
+    // BUY seen, position derivation would wrongly call it SELLTOOPEN (short);
+    // the explicit 'C' must classify it as SELLTOCLOSE.
+    const [rec] = toTransactionRecords([
+      tx({ side: 'SELL', openClose: 'C', symbol: 'MCL', quantity: 5, price: 79 }),
+    ], 'acc-1', 'USD');
+    expect(rec.side).toBe('SELLTOCLOSE');
+  });
+
+  it('honors the indicator for a BUY that closes a short', () => {
+    const [rec] = toTransactionRecords([
+      tx({ side: 'BUY', openClose: 'C', symbol: 'MCL', quantity: 5, price: 79 }),
+    ], 'acc-1', 'USD');
+    expect(rec.side).toBe('BUYTOCLOSE');
+  });
+
+  it('falls back to position derivation when no indicator is present', () => {
+    const [rec] = toTransactionRecords([
+      tx({ side: 'SELL', symbol: 'MCL', quantity: 5, price: 79 }),
+    ], 'acc-1', 'USD');
+    expect(rec.side).toBe('SELLTOOPEN'); // sells from flat → opening short (unchanged)
+  });
+});
+
 describe('toTransactionRecords — deterministic identity', () => {
   it('produces identical ids when the same input is converted twice', () => {
     const input = [

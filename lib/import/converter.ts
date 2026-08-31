@@ -30,7 +30,16 @@ export function toTransactionRecord(
 
     let side: TransactionRecord['side'];
 
-    if (n.side === 'BUY') {
+    // Prefer the broker's explicit open/close indicator when present — it is
+    // authoritative and avoids misclassifying fills whose position was opened
+    // before the import window (which flips P&L sign and fragments round trips).
+    // Only fall back to running-position derivation when the source omits it.
+    if (n.openClose === 'O' || n.openClose === 'C') {
+        const isOpen = n.openClose === 'O';
+        if (n.side === 'BUY') side = isOpen ? 'BUYTOOPEN' : 'BUYTOCLOSE';
+        else side = isOpen ? 'SELLTOOPEN' : 'SELLTOCLOSE';
+        state.positions[symbol] = currentPos + (n.side === 'BUY' ? qty : -qty);
+    } else if (n.side === 'BUY') {
         if (currentPos >= 0) {
             side = 'BUYTOOPEN'; // Adding to long
         } else {

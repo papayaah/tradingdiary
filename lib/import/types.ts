@@ -22,6 +22,7 @@ export interface NormalizedTransaction {
     unrealizedPnL?: number; // unrealized profit/loss
     stockCode?: string;     // broker-specific code, e.g. "HK 01810"
     fxRateToBase?: number;  // broker's exact per-trade rate: trade currency → account base (e.g. USD)
+    openClose?: 'O' | 'C';  // broker's explicit open/close indicator — authoritative, avoids mis-derived sides
 }
 
 export type ExtractedData = {

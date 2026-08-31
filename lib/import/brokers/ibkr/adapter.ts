@@ -11,6 +11,16 @@ import {
 import { collectTransactions, parseDelimitedSource, skippedWarning } from '../delimited';
 import { result, type BrokerAdapter, type BrokerImportSource } from '../types';
 
+/** IBKR open/close indicator → 'O'|'C'. Ambiguous/partial (e.g. "C;O") → undefined. */
+function normalizeOpenClose(raw: string | undefined): 'O' | 'C' | undefined {
+  const v = (raw || '').trim().toUpperCase();
+  const hasOpen = v.includes('O');
+  const hasClose = v.includes('C');
+  if (hasOpen && !hasClose) return 'O';
+  if (hasClose && !hasOpen) return 'C';
+  return undefined;
+}
+
 function decodeXml(value: string): string {
   return value
     .replace(/&quot;/g, '"')
@@ -62,6 +72,7 @@ function parseFlexXml(source: BrokerImportSource): NormalizedTransaction[] {
       commission: Math.abs(commission ?? 0),
       totalValue: proceeds === undefined ? undefined : Math.abs(proceeds),
       fxRateToBase: parseBrokerNumber(trade.fxRateToBase || ''),
+      openClose: normalizeOpenClose(trade.openCloseIndicator || trade.openClose),
     });
   }
 
@@ -106,6 +117,7 @@ async function parseFlexCsv(source: BrokerImportSource) {
       commission: Math.abs(commission ?? 0),
       totalValue: proceeds === undefined ? undefined : Math.abs(proceeds),
       fxRateToBase: parseBrokerNumber(readValue(row, headers, ['FXRateToBase', 'FxRateToBase', 'FX Rate To Base'])),
+      openClose: normalizeOpenClose(readValue(row, headers, ['Open/CloseIndicator', 'OpenCloseIndicator', 'Open/Close'])),
     };
   });
   return { transactions, warnings: skippedWarning(skipped) };
@@ -156,6 +168,9 @@ const adapter: BrokerAdapter = {
       unrealizedPnL: trade.unrealizedPnL ?? undefined,
       // Final .tlg column (parsed into feeMultiplier) is IBKR's per-trade FX rate.
       fxRateToBase: trade.feeMultiplier,
+      // The .tlg states open vs close explicitly (BUYTOOPEN/SELLTOCLOSE/…); keep it
+      // so the converter doesn't have to (mis)guess from running position.
+      openClose: trade.side.includes('OPEN') ? 'O' : 'C',
     }));
     return result(adapter, 'tradelog-tlg', transactions);
   },
