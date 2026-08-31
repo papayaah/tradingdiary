@@ -30,6 +30,11 @@ import {
   setDashboardRangePreference,
   type DashboardRangeType,
 } from '@/lib/settings';
+import {
+  filterDashboardSummaries,
+  isDateInDashboardRange,
+  resolveDashboardDateRange,
+} from '@/lib/trading/dashboard-range';
 
 function formatMinutes(minutes: number): string {
   if (minutes < 60) return `${minutes} minutes`;
@@ -39,6 +44,11 @@ function formatMinutes(minutes: number): string {
   return `about ${h} hour${h > 1 ? 's' : ''} ${m}m`;
 }
 
+function dateKeyToInputValue(dateKey: string): string {
+  if (dateKey.length !== 8) return '';
+  return `${dateKey.slice(0, 4)}-${dateKey.slice(4, 6)}-${dateKey.slice(6, 8)}`;
+}
+
 interface LatestDayTimeline {
   transactions: TransactionRecord[];
   symbols: string[];
@@ -46,6 +56,48 @@ interface LatestDayTimeline {
   endTime: number;
   snapshots: ReturnType<typeof computePnLTimeline>;
   formattedDate: string;
+}
+
+function buildLatestDayTimeline(summaries: DailySummary[]): LatestDayTimeline | null {
+  const latest = summaries[0]; // summaries are sorted newest first
+  if (!latest) return null;
+
+  // Reversal fills belong to two flat-to-flat trades, so de-duplicate them
+  // before building the replay timeline.
+  const transactions: TransactionRecord[] = [];
+  const seenTransactionIds = new Set<string>();
+  for (const trade of latest.trades) {
+    for (const transaction of trade.transactions) {
+      if (seenTransactionIds.has(transaction.tradeId)) continue;
+      seenTransactionIds.add(transaction.tradeId);
+      transactions.push(transaction);
+    }
+  }
+
+  const sorted = transactions.sort(
+    (a, b) => timeToSeconds(a.time) - timeToSeconds(b.time),
+  );
+  if (sorted.length === 0) return null;
+
+  const times = sorted.map((transaction) => timeToSeconds(transaction.time));
+  const firstSeenBySymbol = new Map<string, number>();
+  for (const transaction of sorted) {
+    const timestamp = timeToSeconds(transaction.time);
+    if (!firstSeenBySymbol.has(transaction.symbol)) {
+      firstSeenBySymbol.set(transaction.symbol, timestamp);
+    }
+  }
+
+  return {
+    transactions: sorted,
+    symbols: [...firstSeenBySymbol.entries()]
+      .sort((a, b) => a[1] - b[1])
+      .map(([symbol]) => symbol),
+    startTime: Math.max(0, Math.min(...times) - 300),
+    endTime: Math.min(86400, Math.max(...times) + 300),
+    snapshots: computePnLTimeline(sorted),
+    formattedDate: latest.formattedDate,
+  };
 }
 
 export default function DashboardPage() {
@@ -77,11 +129,11 @@ export default function DashboardPage() {
 
   const rangeLabel = useMemo(() => {
     switch (rangeType) {
-      case 'all': return 'All Time';
       case '7d': return 'Last 7 Days';
       case '30d': return 'Last 30 Days';
       case 'quarter': return 'This Quarter';
       case 'lastquarter': return 'Last Quarter';
+      case 'lastmonth': return 'Last Month';
       case 'mtd': return 'Month to Date';
       case 'ytd': return 'Year to Date';
       case 'custom':
@@ -95,7 +147,6 @@ export default function DashboardPage() {
 
   const [allSummaries, setAllSummaries] = useState<DailySummary[]>([]);
   const [cashFlows, setCashFlows] = useState<CashFlowRecord[]>([]);
-  const [latestDay, setLatestDay] = useState<LatestDayTimeline | null>(null);
   const [empty, setEmpty] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -112,7 +163,6 @@ export default function DashboardPage() {
       }
 
       setLoading(true);
-      setLatestDay(null);
       setEmpty(false);
 
       const transactions = await getTransactionsByAccount(selectedAccountId);
@@ -125,136 +175,25 @@ export default function DashboardPage() {
       const agg = aggregateByDay(transactions);
       setAllSummaries(agg);
       setLoading(false);
-
-      // Build timeline data for the most recent day. De-duplicate executions:
-      // a reversal fill belongs to two flat-to-flat trades, so it appears in
-      // both trades' transactions.
-      if (agg.length > 0) {
-        const latest = agg[0]; // sorted desc by date
-        const dayTxns: TransactionRecord[] = [];
-        const seenTxn = new Set<string>();
-        for (const trade of latest.trades) {
-          for (const t of trade.transactions) {
-            if (seenTxn.has(t.tradeId)) continue;
-            seenTxn.add(t.tradeId);
-            dayTxns.push(t);
-          }
-        }
-        const sorted = dayTxns.sort(
-          (a, b) => timeToSeconds(a.time) - timeToSeconds(b.time)
-        );
-        if (sorted.length > 0) {
-          const times = sorted.map((t) => timeToSeconds(t.time));
-          const min = Math.min(...times);
-          const max = Math.max(...times);
-          const seen = new Map<string, number>();
-          for (const t of sorted) {
-            const ts = timeToSeconds(t.time);
-            if (!seen.has(t.symbol) || ts < seen.get(t.symbol)!) {
-              seen.set(t.symbol, ts);
-            }
-          }
-          const symbols = [...seen.entries()]
-            .sort((a, b) => a[1] - b[1])
-            .map(([sym]) => sym);
-
-          setLatestDay({
-            transactions: sorted,
-            symbols,
-            startTime: Math.max(0, min - 300),
-            endTime: Math.min(86400, max + 300),
-            snapshots: computePnLTimeline(sorted),
-            formattedDate: latest.formattedDate,
-          });
-        }
-      }
     }
     load();
   }, [selectedAccountId, refreshKey]);
 
-  // Account equity uses all-time trading P&L + all cash flows (equity is a
-  // point-in-time figure, not range-filtered), keeping deposits/withdrawals
-  // distinct from trading performance. (React Compiler memoizes this.)
-  const allTimePnL = allSummaries.reduce((sum, d) => sum + d.netPnL, 0);
-  const equity = computeAccountEquity(activeAccount?.initialBalance, cashFlows, allTimePnL);
-
   const filteredData = useMemo(() => {
     if (!allSummaries.length) return null;
 
-    let filtered = allSummaries;
-    let start = '';
-    let end = '';
-    if (rangeType !== 'all') {
-      // Determine reference date anchor:
-      // If dataset's latest trade date (e.g. 20260526) is earlier than system Date.now(),
-      // anchor relative ranges (MTD, 30D, 7D, YTD, Quarter) to the dataset's latest trade date
-      // so historical trade logs populate metrics and calendar tiles correctly.
-      let referenceDate = new Date();
-      const latestStr = allSummaries[0]?.date; // format 'YYYYMMDD', sorted desc
-      if (latestStr && latestStr.length === 8) {
-        const y = parseInt(latestStr.substring(0, 4), 10);
-        const m = parseInt(latestStr.substring(4, 6), 10) - 1;
-        const d = parseInt(latestStr.substring(6, 8), 10);
-        const latestDateObj = new Date(y, m, d);
-        if (latestDateObj.getTime() <= referenceDate.getTime()) {
-          referenceDate = latestDateObj;
-        }
-      }
-
-      const toYMD = (dateObj: Date): string => {
-        const y = dateObj.getFullYear();
-        const m = String(dateObj.getMonth() + 1).padStart(2, '0');
-        const day = String(dateObj.getDate()).padStart(2, '0');
-        return `${y}${m}${day}`;
-      };
-
-      if (rangeType === '7d') {
-        const d = new Date(referenceDate);
-        d.setDate(d.getDate() - 6);
-        start = toYMD(d);
-        end = toYMD(referenceDate);
-      } else if (rangeType === '30d') {
-        const d = new Date(referenceDate);
-        d.setDate(d.getDate() - 29);
-        start = toYMD(d);
-        end = toYMD(referenceDate);
-      } else if (rangeType === 'quarter') {
-        const qStartMonth = Math.floor(referenceDate.getMonth() / 3) * 3;
-        start = `${referenceDate.getFullYear()}${String(qStartMonth + 1).padStart(2, '0')}01`;
-        const endDay = new Date(referenceDate.getFullYear(), qStartMonth + 3, 0);
-        end = toYMD(endDay);
-      } else if (rangeType === 'lastquarter') {
-        const q = Math.floor(referenceDate.getMonth() / 3);
-        const lastQYear = q === 0 ? referenceDate.getFullYear() - 1 : referenceDate.getFullYear();
-        const lastQStartMonth = (q === 0 ? 3 : q - 1) * 3;
-        start = `${lastQYear}${String(lastQStartMonth + 1).padStart(2, '0')}01`;
-        const endDay = new Date(lastQYear, lastQStartMonth + 3, 0);
-        end = toYMD(endDay);
-      } else if (rangeType === 'mtd') {
-        start = `${referenceDate.getFullYear()}${String(referenceDate.getMonth() + 1).padStart(2, '0')}01`;
-        end = toYMD(referenceDate);
-      } else if (rangeType === 'ytd') {
-        start = `${referenceDate.getFullYear()}0101`;
-        end = toYMD(referenceDate);
-      } else if (rangeType === 'custom') {
-        if (startDate) start = startDate.replace(/-/g, '');
-        if (endDate) end = endDate.replace(/-/g, '');
-      }
-
-      if (start || end) {
-        filtered = allSummaries.filter(s => {
-          const matchesStart = start ? s.date >= start : true;
-          const matchesEnd = end ? s.date <= end : true;
-          return matchesStart && matchesEnd;
-        });
-      }
-    }
+    const range = resolveDashboardDateRange(
+      rangeType,
+      allSummaries[0]?.date,
+      startDate,
+      endDate,
+    );
+    const filtered = filterDashboardSummaries(allSummaries, range);
 
     return {
       stats: computeDashboard(filtered),
       summaries: filtered,
-      rangeStart: start,
-      rangeEnd: end,
+      range,
     };
   }, [allSummaries, rangeType, startDate, endDate]);
 
@@ -321,7 +260,11 @@ export default function DashboardPage() {
     );
   }
 
-  const { stats, summaries, rangeStart, rangeEnd } = filteredData;
+  const { stats, summaries, range } = filteredData;
+  const periodPnL = summaries.reduce((sum, day) => sum + day.netPnL, 0);
+  const periodCashFlows = cashFlows.filter((cashFlow) => isDateInDashboardRange(cashFlow.date, range));
+  const equity = computeAccountEquity(activeAccount?.initialBalance, periodCashFlows, periodPnL);
+  const latestDay = buildLatestDayTimeline(summaries);
 
   return (
     <div className="p-2 sm:p-6 space-y-4 sm:space-y-8 w-full">
@@ -350,11 +293,11 @@ export default function DashboardPage() {
               </div>
               <div className="grid grid-cols-2 gap-1 py-1">
                 {([
-                  { id: 'all', label: 'All Time' },
                   { id: '7d', label: '7 Days' },
                   { id: '30d', label: '30 Days' },
                   { id: 'quarter', label: 'This Quarter' },
                   { id: 'lastquarter', label: 'Last Quarter' },
+                  { id: 'lastmonth', label: 'Last Month' },
                   { id: 'mtd', label: 'Month to Date' },
                   { id: 'ytd', label: 'Year to Date' },
                   { id: 'custom', label: 'Custom' },
@@ -362,6 +305,10 @@ export default function DashboardPage() {
                   <button
                     key={r.id}
                     onClick={() => {
+                      if (r.id === 'custom' && rangeType !== 'custom') {
+                        setStartDate(dateKeyToInputValue(range.start));
+                        setEndDate(dateKeyToInputValue(range.end));
+                      }
                       setRangeType(r.id);
                       if (r.id !== 'custom') setShowPicker(false);
                     }}
@@ -445,7 +392,7 @@ export default function DashboardPage() {
         );
       })()}
 
-      {/* Cash-flow-aware account equity (shown once capital/cash flows exist). */}
+      {/* Cash-flow-aware account stats for the selected dashboard period. */}
       {(activeAccount?.initialBalance != null || cashFlows.length > 0) && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
           {[
@@ -466,7 +413,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <MonthlyCalendar summaries={allSummaries} rangeStart={rangeStart} rangeEnd={rangeEnd} />
+      <MonthlyCalendar summaries={summaries} rangeStart={range.start} rangeEnd={range.end} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 items-stretch">
         <DailyWinLossChart summaries={summaries} />

@@ -7,17 +7,11 @@ import type { DailySummary } from '@/lib/trading/aggregator';
 import { pnlColorClass } from '@/lib/utils/format';
 
 interface MonthlyCalendarProps {
-  /** Full trade history — day cells always read from this, so navigating to any
-   * month shows its real trades regardless of the dashboard's date filter. */
+  /** Trade summaries inside the dashboard's currently selected period. */
   summaries: DailySummary[];
-  /** Selected date-range bounds ('YYYYMMDD', empty when 'All Time'). Used only
-   * to decide the opening month and the contiguous multi-month layout. */
+  /** Selected date-range bounds ('YYYYMMDD'). */
   rangeStart?: string;
   rangeEnd?: string;
-}
-
-function toDateKey(d: Date): string {
-  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
 }
 
 const DAY_HEADERS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -92,8 +86,7 @@ export default function MonthlyCalendar({ summaries, rangeStart = '', rangeEnd =
   const month = viewMonth.getMonth();
 
   // A selected range spanning 2-4 months renders as one contiguous grid;
-  // otherwise a single navigable month. Cell data comes from the full history
-  // in both, so navigating never blanks a month that actually has trades.
+  // otherwise a single navigable month.
   const rangeInfo = useMemo(() => {
     if (rangeStart.length !== 8 || rangeEnd.length !== 8) return null;
 

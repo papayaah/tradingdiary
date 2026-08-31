@@ -1,14 +1,8 @@
+import type { DashboardRangeType } from './trading/dashboard-range';
+
 const SETTINGS_KEY = 'tradingdiary-settings';
 
-export type DashboardRangeType =
-  | 'all'
-  | '7d'
-  | '30d'
-  | 'quarter'
-  | 'lastquarter'
-  | 'mtd'
-  | 'ytd'
-  | 'custom';
+export type { DashboardRangeType } from './trading/dashboard-range';
 
 export interface DashboardRangePreference {
   rangeType: DashboardRangeType;
@@ -47,11 +41,11 @@ const defaults: AppSettings = {
 };
 
 const dashboardRangeTypes = new Set<DashboardRangeType>([
-  'all',
   '7d',
   '30d',
   'quarter',
   'lastquarter',
+  'lastmonth',
   'mtd',
   'ytd',
   'custom',
@@ -60,12 +54,19 @@ const dashboardRangeTypes = new Set<DashboardRangeType>([
 function normalizeDashboardRange(value: unknown): DashboardRangePreference {
   if (!value || typeof value !== 'object') return defaults.dashboardRange;
   const candidate = value as Partial<DashboardRangePreference>;
+  const startDate = typeof candidate.startDate === 'string' ? candidate.startDate : '';
+  const endDate = typeof candidate.endDate === 'string' ? candidate.endDate : '';
+  const candidateRangeType = dashboardRangeTypes.has(candidate.rangeType as DashboardRangeType)
+    ? candidate.rangeType as DashboardRangeType
+    : defaults.dashboardRange.rangeType;
   return {
-    rangeType: dashboardRangeTypes.has(candidate.rangeType as DashboardRangeType)
-      ? candidate.rangeType as DashboardRangeType
-      : defaults.dashboardRange.rangeType,
-    startDate: typeof candidate.startDate === 'string' ? candidate.startDate : '',
-    endDate: typeof candidate.endDate === 'string' ? candidate.endDate : '',
+    // An empty custom period would be indistinguishable from the removed
+    // all-time behavior, so fall back to the dashboard default instead.
+    rangeType: candidateRangeType === 'custom' && !startDate && !endDate
+      ? defaults.dashboardRange.rangeType
+      : candidateRangeType,
+    startDate,
+    endDate,
   };
 }
 
