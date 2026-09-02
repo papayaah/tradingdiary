@@ -35,6 +35,7 @@ import {
   isDateInDashboardRange,
   resolveDashboardDateRange,
 } from '@/lib/trading/dashboard-range';
+import FlexSyncControl from '@/components/import/ibkr-flex/FlexSyncControl';
 
 function formatMinutes(minutes: number): string {
   if (minutes < 60) return `${minutes} minutes`;
@@ -274,8 +275,10 @@ export default function DashboardPage() {
           <p className="text-sm text-muted font-normal">Analyze your performance and trading patterns.</p>
         </div>
 
-        {/* Compact Time Range Selector */}
-        <div className="relative">
+        <div className="flex items-center gap-2 self-start md:self-auto">
+          <FlexSyncControl />
+          {/* Compact Time Range Selector */}
+          <div className="relative">
           <button
             type="button"
             onClick={() => setShowPicker((prev) => !prev)}
@@ -356,6 +359,7 @@ export default function DashboardPage() {
               )}
             </div>
           )}
+          </div>
         </div>
       </div>
 
@@ -413,7 +417,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <MonthlyCalendar summaries={summaries} rangeStart={range.start} rangeEnd={range.end} />
+      <MonthlyCalendar summaries={allSummaries} rangeStart={range.start} rangeEnd={range.end} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 items-stretch">
         <DailyWinLossChart summaries={summaries} />

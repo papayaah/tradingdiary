@@ -14,11 +14,11 @@ import {
 import { toast } from 'sonner';
 import { authClient } from '@/lib/auth-client';
 import { useJournalSync } from '@/components/journal/JournalSyncProvider';
+import { streamFlexSync } from '@/lib/ibkr-flex/client-sync';
 import type {
   IbkrFlexConnectionView,
   IbkrFlexSyncProgress,
   IbkrFlexSyncResult,
-  IbkrFlexSyncStreamEvent,
 } from '@/lib/ibkr-flex/types';
 
 type ConnectionResponse = {
@@ -135,46 +135,12 @@ export default function IBKRFlexConnectionPanel() {
     setWorking(true);
     setProgress({ stage: 'requesting', message: 'Starting sync…' });
     try {
-      const response = await fetch('/api/import/ibkr-flex/sync', { method: 'POST' });
-
-      // Cooldown / auth / conflict guards return a plain JSON error, not a stream.
-      const contentType = response.headers.get('content-type') ?? '';
-      if (!contentType.includes('ndjson') || !response.body) {
-        const result = (await response.json()) as ConnectionResponse;
-        throw new Error(result.error || result.sync?.error || 'The sync could not complete.');
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let final: Extract<IbkrFlexSyncStreamEvent, { type: 'result' }> | null = null;
-
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        let newline: number;
-        while ((newline = buffer.indexOf('\n')) >= 0) {
-          const line = buffer.slice(0, newline).trim();
-          buffer = buffer.slice(newline + 1);
-          if (!line) continue;
-          const event = JSON.parse(line) as IbkrFlexSyncStreamEvent;
-          if (event.type === 'progress') setProgress(event.progress);
-          else final = event;
-        }
-      }
-
-      if (!final) throw new Error('The sync ended before it finished.');
-      if ('error' in final) throw new Error(final.error);
-      if (final.connection) setConnection(final.connection);
-      if (final.sync.status !== 'success') {
-        throw new Error(final.sync.error || 'The sync could not complete.');
-      }
-
+      const { connection: next, sync } = await streamFlexSync(setProgress);
+      if (next) setConnection(next);
       pullJournalNow();
       toast.success('IBKR sync complete', {
-        description: final.sync.importedCount
-          ? `Imported ${final.sync.importedCount} new execution${final.sync.importedCount === 1 ? '' : 's'}.`
+        description: sync.importedCount
+          ? `Imported ${sync.importedCount} new execution${sync.importedCount === 1 ? '' : 's'}.`
           : 'No new executions were found.',
       });
     } catch (error) {

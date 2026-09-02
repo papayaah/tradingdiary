@@ -11,6 +11,7 @@ import {
 import { aggregateByDay, applyMarketPrices, type DailySummary, type AggregatedTrade } from '@/lib/trading/aggregator';
 import { onJournalSynced } from '@/lib/journal/sync-bus';
 import SyncStatusIndicator from '@/components/journal/SyncStatusIndicator';
+import FlexSyncControl from '@/components/import/ibkr-flex/FlexSyncControl';
 import DayGroup from '@/components/journal/DayGroup';
 import JournalTagFilter from '@/components/journal/JournalTagFilter';
 import { useAccount } from '@/contexts/AccountContext';
@@ -376,6 +377,7 @@ export default function JournalPage() {
         </div>
         <div className="flex items-center gap-2 self-start md:self-auto">
           <SyncStatusIndicator />
+          <FlexSyncControl />
           <button
             type="button"
             onClick={handleCopyLink}
