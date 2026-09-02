@@ -15,25 +15,27 @@ const geistMono = Geist_Mono({
 });
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://tradingdiary.app';
-const OG_TITLE = 'Trading Diary — Automated Trading Journal & Analytics';
+const OG_TITLE = 'Trading Diary — Log Your Trades with an AI Assistant';
 const OG_DESCRIPTION =
-  'Drop your broker statement and get instant dashboards, P&L analytics, and a real-time market scanner. Turn your trades into insights — no spreadsheets.';
+  'Drop your broker statement for instant P&L stats, giveback tracking, and an AI assistant that breaks down your entries, exits, and execution.';
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: 'Trading Diary',
+    default: 'Trading Diary — Log Your Trades with an AI Assistant',
     template: '%s · Trading Diary',
   },
   description: OG_DESCRIPTION,
   keywords: [
-    'trading journal',
-    'trade analytics',
-    'IBKR statement import',
-    'P&L dashboard',
     'trading diary',
+    'AI trading assistant',
+    'AI trade review',
+    'trade log import',
+    'P&L dashboard',
+    'profit giveback',
+    'trade leak detector',
+    'trade analytics',
     'market scanner',
-    'trade review',
   ],
   applicationName: 'Trading Diary',
   icons: {
@@ -54,7 +56,7 @@ export const metadata: Metadata = {
         url: '/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'Trading Diary — drop a broker statement, get instant dashboard insights',
+        alt: 'Trading Diary — log your trades with an AI assistant to track profit giveback and review executions',
       },
     ],
   },

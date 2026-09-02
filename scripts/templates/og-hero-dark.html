@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: 1200px;
+    height: 630px;
+    background: #080b12;
+    background-image: 
+      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99, 102, 241, 0.24), transparent),
+      radial-gradient(ellipse 60% 40% at 85% 85%, rgba(16, 185, 129, 0.12), transparent);
+    font-family: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: #e2e8f0;
+    display: flex;
+    flex-direction: column;
+    padding: 22px 30px 18px 30px;
+    overflow: hidden;
+    position: relative;
+  }
+  
+  .brand-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .brand-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .brand-title {
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .brand-tag {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: rgba(99, 102, 241, 0.18);
+    color: #a5b4fc;
+    border: 1px solid rgba(99, 102, 241, 0.35);
+    padding: 2px 8px;
+    border-radius: 9999px;
+  }
+  .brand-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .ai-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(168, 85, 247, 0.25));
+    border: 1px solid rgba(168, 85, 247, 0.45);
+    color: #c084fc;
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 9999px;
+    box-shadow: 0 0 15px rgba(168, 85, 247, 0.2);
+  }
+
+  .main-grid {
+    display: grid;
+    grid-template-columns: 520px 1fr;
+    gap: 16px;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .left-col {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .trade-card {
+    background: rgba(17, 24, 39, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 8px;
+    padding: 12px 14px;
+    box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5);
+  }
+
+  .trade-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  }
+  .symbol-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .symbol-name {
+    font-size: 16px;
+    font-weight: 800;
+    color: #ffffff;
+    font-family: 'Geist Mono', monospace;
+  }
+  .symbol-desc {
+    font-size: 10.5px;
+    color: #94a3b8;
+    max-width: 170px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .badge-long {
+    font-size: 10px;
+    font-weight: 700;
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    padding: 2px 7px;
+    border-radius: 3px;
+  }
+  .trade-pnl {
+    font-size: 16px;
+    font-weight: 700;
+    color: #f87171;
+    font-family: 'Geist Mono', monospace;
+  }
+
+  .trade-meta-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  .meta-item {
+    display: flex;
+    flex-direction: column;
+  }
+  .meta-label {
+    font-size: 8.5px;
+    text-transform: uppercase;
+    color: #64748b;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+  .meta-val {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #cbd5e1;
+    font-family: 'Geist Mono', monospace;
+    margin-top: 1px;
+  }
+
+  .chart-box {
+    background: rgba(10, 15, 29, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    padding: 8px 10px;
+    position: relative;
+    height: 230px;
+  }
+  .chart-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .chart-pills {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .chart-pill {
+    font-size: 9.5px;
+    color: #94a3b8;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    padding: 2px 6px;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .chart-pill.active {
+    background: rgba(99, 102, 241, 0.2);
+    color: #818cf8;
+    border-color: rgba(99, 102, 241, 0.4);
+  }
+  .chart-pill.replay {
+    background: rgba(99, 102, 241, 0.15);
+    color: #a5b4fc;
+    font-weight: 600;
+  }
+
+  .right-col {
+    display: flex;
+    flex-direction: column;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(99, 102, 241, 0.35);
+    box-shadow: 0 12px 30px -4px rgba(0, 0, 0, 0.6), 0 0 20px -2px rgba(99, 102, 241, 0.15);
+    border-radius: 8px;
+    padding: 14px 16px;
+    position: relative;
+  }
+
+  .stats-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .stats-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #94a3b8;
+  }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px 8px;
+    background: rgba(10, 15, 26, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 6px;
+    padding: 7px 9px;
+    margin-bottom: 8px;
+  }
+  .stat-block {
+    display: flex;
+    flex-direction: column;
+  }
+  .stat-lbl {
+    font-size: 8px;
+    text-transform: uppercase;
+    color: #64748b;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .stat-num {
+    font-size: 11px;
+    font-weight: 700;
+    color: #f1f5f9;
+    font-family: 'Geist Mono', monospace;
+    margin-top: 1px;
+  }
+
+  .ask-ai-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .ask-ai-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(99, 102, 241, 0.2);
+    border: 1px solid rgba(99, 102, 241, 0.4);
+    color: #c7d2fe;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 4px;
+  }
+
+  .ai-review-content {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    flex: 1;
+  }
+  .ai-review-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .conf-badge {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: rgba(99, 102, 241, 0.15);
+    color: #c7d2fe;
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+  .ai-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 10px;
+    color: #94a3b8;
+  }
+  .ai-action-btn {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+
+  .ai-summary {
+    font-size: 11.5px;
+    line-height: 1.4;
+    color: #e2e8f0;
+    font-weight: 400;
+  }
+
+  .insight-box {
+    background: rgba(10, 15, 26, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 5px;
+    padding: 6px 9px;
+  }
+  .insight-box-title {
+    font-size: 10px;
+    font-weight: 700;
+    color: #f8fafc;
+    margin-bottom: 2px;
+  }
+  .insight-box-desc {
+    font-size: 10.5px;
+    line-height: 1.35;
+    color: #94a3b8;
+  }
+  .insight-tags {
+    display: flex;
+    gap: 5px;
+    margin-top: 4px;
+  }
+  .insight-tag {
+    font-size: 8.5px;
+    font-family: 'Geist Mono', monospace;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #cbd5e1;
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  .insight-tag span {
+    color: #818cf8;
+    margin-right: 3px;
+  }
+
+  .takeaway-box {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.18), rgba(168, 85, 247, 0.12));
+    border: 1px solid rgba(99, 102, 241, 0.4);
+    border-radius: 5px;
+    padding: 7px 9px;
+  }
+  .takeaway-lbl {
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #c7d2fe;
+    margin-bottom: 2px;
+  }
+  .takeaway-text {
+    font-size: 11px;
+    line-height: 1.35;
+    color: #f1f5f9;
+    font-weight: 500;
+  }
+
+  .ai-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 2px;
+    font-size: 9px;
+    color: #64748b;
+  }
+</style>
+</head>
+<body>
+
+  <div class="brand-bar">
+    <div class="brand-left">
+      <svg width="24" height="24" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <g transform="translate(0 40)">
+      <path fill="#6366f1" d="M38 62C80 79 123 84 166 77C203 71 234 81 256 106C278 81 309 71 346 77C389 84 432 79 474 62C479 60 483 64 482 70C479 109 466 140 441 165C455 189 462 216 462 244C462 306 382 350 256 350C130 350 50 306 50 244C50 216 57 189 71 165C46 140 33 109 30 70C29 64 33 60 38 62Z"/>
+      <path fill="#FFFFFF" d="M214 218H298L256 294L214 218Z"/>
+      <circle cx="173" cy="207" r="82" fill="#FFFFFF"/>
+      <circle cx="339" cy="207" r="82" fill="#FFFFFF"/>
+      <g fill="#10B981">
+        <rect x="168" y="157" width="10" height="100" rx="5"/>
+        <rect x="147" y="175" width="52" height="64" rx="5"/>
+      </g>
+      <g fill="#EF4444">
+        <rect x="334" y="157" width="10" height="100" rx="5"/>
+        <rect x="313" y="175" width="52" height="64" rx="5"/>
+      </g>
+    </g>
+  </svg>
+      <div class="brand-title">
+        Trading Diary
+        <span class="brand-tag">AI Co-Pilot</span>
+      </div>
+    </div>
+    <div class="brand-right">
+      <div class="ai-badge">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+        AI Assistant in Your Corner
+      </div>
+    </div>
+  </div>
+
+  <div class="main-grid">
+    <div class="left-col">
+      <div class="trade-card">
+        <div class="trade-header">
+          <div class="symbol-group">
+            <span class="symbol-name">TTD</span>
+            <span class="symbol-desc">TRADE DESK INC</span>
+            <span class="badge-long">LONG</span>
+          </div>
+          <div class="trade-pnl">-$101.77</div>
+        </div>
+
+        <div class="trade-meta-row">
+          <div class="meta-item">
+            <span class="meta-label">Entry → Exit</span>
+            <span class="meta-val">$13.63 → $13.59</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Time</span>
+            <span class="meta-val">10:21 → 10:27</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Duration</span>
+            <span class="meta-val">5m 29s</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Quantity</span>
+            <span class="meta-val">4,000 shs</span>
+          </div>
+        </div>
+
+        <div class="chart-box">
+          <div class="chart-toolbar">
+            <div class="chart-pills">
+              <div class="chart-pill"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg> Patterns</div>
+              <div class="chart-pill">Levels</div>
+              <div class="chart-pill">Trendlines</div>
+              <div class="chart-pill replay"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg> REPLAY</div>
+            </div>
+            <div class="chart-pills">
+              <div class="chart-pill">1M</div>
+              <div class="chart-pill active">5M</div>
+              <div class="chart-pill">15M</div>
+            </div>
+          </div>
+          <svg viewBox="0 0 640 270" style="width: 100%; height: 100%;" xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="224.50000000000026" x2="585" y2="224.50000000000026" stroke="rgba(255,255,255,0.06)" stroke-dasharray="2 2" stroke-width="1"/><text x="590" y="228.00000000000026" fill="#64748b" font-size="9" font-family="Geist Mono, monospace">13.20</text><line x1="0" y1="197.49999999999986" x2="585" y2="197.49999999999986" stroke="rgba(255,255,255,0.06)" stroke-dasharray="2 2" stroke-width="1"/><text x="590" y="200.99999999999986" fill="#64748b" font-size="9" font-family="Geist Mono, monospace">13.30</text><line x1="0" y1="170.49999999999991" x2="585" y2="170.49999999999991" stroke="rgba(255,255,255,0.06)" stroke-dasharray="2 2" stroke-width="1"/><text x="590" y="173.99999999999991" fill="#64748b" font-size="9" font-family="Geist Mono, monospace">13.40</text><line x1="0" y1="143.49999999999994" x2="585" y2="143.49999999999994" stroke="rgba(255,255,255,0.06)" stroke-dasharray="2 2" stroke-width="1"/><text x="590" y="146.99999999999994" fill="#64748b" font-size="9" font-family="Geist Mono, monospace">13.50</text><line x1="0" y1="116.50000000000003" x2="585" y2="116.50000000000003" stroke="rgba(255,255,255,0.06)" stroke-dasharray="2 2" stroke-width="1"/><text x="590" y="120.00000000000003" fill="#64748b" font-size="9" font-family="Geist Mono, monospace">13.60</text><line x1="0" y1="89.5000000000001" x2="585" y2="89.5000000000001" stroke="rgba(255,255,255,0.06)" stroke-dasharray="2 2" stroke-width="1"/><text x="590" y="93.0000000000001" fill="#64748b" font-size="9" font-family="Geist Mono, monospace">13.70</text><line x1="0" y1="62.499999999999666" x2="585" y2="62.499999999999666" stroke="rgba(255,255,255,0.06)" stroke-dasharray="2 2" stroke-width="1"/><text x="590" y="65.99999999999966" fill="#64748b" font-size="9" font-family="Geist Mono, monospace">13.80</text><line x1="0" y1="35.49999999999974" x2="585" y2="35.49999999999974" stroke="rgba(255,255,255,0.06)" stroke-dasharray="2 2" stroke-width="1"/><text x="590" y="38.99999999999974" fill="#64748b" font-size="9" font-family="Geist Mono, monospace">13.90</text><line x1="0" y1="107.04999999999998" x2="585" y2="107.04999999999998" stroke="#0ea5e9" stroke-dasharray="4 4" stroke-width="1.2" opacity="0.85"/><rect x="586" y="70.69999999999982" width="50" height="16" rx="2" fill="#10b981"/><text x="591" y="82.19999999999982" fill="#ffffff" font-size="9" font-weight="600" font-family="Geist Mono, monospace">13.74</text><rect x="13" y="240" width="14" height="18" fill="rgba(239,68,68,0.35)" rx="1"/><line x1="20" y1="111.10000000000014" x2="20" y2="175.89999999999978" stroke="#ef4444" stroke-width="1.5"/><rect x="13" y="121.89999999999993" width="14" height="37.800000000000196" fill="#ef4444" rx="1"/><text x="20" y="268" fill="#64748b" font-size="8.5" font-family="Geist Mono, monospace" text-anchor="middle">09:30</text><rect x="38.90909090909091" y="234.85714285714286" width="14" height="23.14285714285714" fill="rgba(239,68,68,0.35)" rx="1"/><line x1="45.90909090909091" y1="148.89999999999986" x2="45.90909090909091" y2="197.49999999999986" stroke="#ef4444" stroke-width="1.5"/><rect x="38.90909090909091" y="159.70000000000013" width="14" height="26.999999999999943" fill="#ef4444" rx="1"/><rect x="64.81818181818181" y="227.14285714285714" width="14" height="30.857142857142858" fill="rgba(16,185,129,0.35)" rx="1"/><line x1="71.81818181818181" y1="138.10000000000008" x2="71.81818181818181" y2="197.49999999999986" stroke="#10b981" stroke-width="1.5"/><rect x="64.81818181818181" y="143.49999999999994" width="14" height="43.20000000000013" fill="#10b981" rx="1"/><rect x="90.72727272727273" y="243.85714285714286" width="14" height="14.142857142857142" fill="rgba(16,185,129,0.35)" rx="1"/><line x1="97.72727272727273" y1="127.29999999999981" x2="97.72727272727273" y2="154.29999999999978" stroke="#10b981" stroke-width="1.5"/><rect x="90.72727272727273" y="132.7000000000002" width="14" height="10.799999999999756" fill="#10b981" rx="1"/><rect x="116.63636363636364" y="246.42857142857144" width="14" height="11.57142857142857" fill="rgba(239,68,68,0.35)" rx="1"/><line x1="123.63636363636364" y1="121.89999999999993" x2="123.63636363636364" y2="148.89999999999986" stroke="#ef4444" stroke-width="1.5"/><rect x="116.63636363636364" y="132.7000000000002" width="14" height="5.399999999999892" fill="#ef4444" rx="1"/><rect x="142.54545454545456" y="249" width="14" height="9" fill="rgba(16,185,129,0.35)" rx="1"/><line x1="149.54545454545456" y1="129.99999999999977" x2="149.54545454545456" y2="148.89999999999986" stroke="#10b981" stroke-width="1.5"/><rect x="142.54545454545456" y="135.40000000000012" width="14" height="2.69999999999996" fill="#10b981" rx="1"/><rect x="168.45454545454547" y="242.57142857142858" width="14" height="15.428571428571429" fill="rgba(239,68,68,0.35)" rx="1"/><line x1="175.45454545454547" y1="127.29999999999981" x2="175.45454545454547" y2="165.10000000000002" stroke="#ef4444" stroke-width="1.5"/><rect x="168.45454545454547" y="135.40000000000012" width="14" height="16.199999999999676" fill="#ef4444" rx="1"/><text x="175.45454545454547" y="268" fill="#64748b" font-size="8.5" font-family="Geist Mono, monospace" text-anchor="middle">10:00</text><rect x="194.36363636363637" y="241.28571428571428" width="14" height="16.714285714285715" fill="rgba(239,68,68,0.35)" rx="1"/><line x1="201.36363636363637" y1="146.19999999999993" x2="201.36363636363637" y2="175.89999999999978" stroke="#ef4444" stroke-width="1.5"/><rect x="194.36363636363637" y="151.5999999999998" width="14" height="13.500000000000227" fill="#ef4444" rx="1"/><rect x="220.27272727272728" y="238.71428571428572" width="14" height="19.285714285714285" fill="rgba(16,185,129,0.35)" rx="1"/><line x1="227.27272727272728" y1="138.10000000000008" x2="227.27272727272728" y2="170.49999999999991" stroke="#10b981" stroke-width="1.5"/><rect x="220.27272727272728" y="143.49999999999994" width="14" height="21.60000000000008" fill="#10b981" rx="1"/><rect x="246.1818181818182" y="229.71428571428572" width="14" height="28.285714285714285" fill="rgba(16,185,129,0.35)" rx="1"/><line x1="253.1818181818182" y1="105.69999999999978" x2="253.1818181818182" y2="148.89999999999986" stroke="#10b981" stroke-width="1.5"/><rect x="246.1818181818182" y="111.10000000000014" width="14" height="32.39999999999981" fill="#10b981" rx="1"/><rect x="272.0909090909091" y="218.14285714285714" width="14" height="39.857142857142854" fill="rgba(16,185,129,0.35)" rx="1"/><line x1="279.0909090909091" y1="94.89999999999998" x2="279.0909090909091" y2="121.89999999999993" stroke="#10b981" stroke-width="1.5"/><rect x="272.0909090909091" y="102.9999999999998" width="14" height="8.100000000000335" fill="#10b981" rx="1"/><polygon points="279.0909090909091,129.89999999999992 273.0909090909091,141.89999999999992 285.0909090909091,141.89999999999992" fill="#10b981" stroke="#ffffff" stroke-width="1.5"/><rect x="298" y="220.71428571428572" width="14" height="37.285714285714285" fill="rgba(239,68,68,0.35)" rx="1"/><line x1="305" y1="84.09999999999971" x2="305" y2="124.59999999999988" stroke="#ef4444" stroke-width="1.5"/><rect x="298" y="102.9999999999998" width="14" height="5.39999999999992" fill="#ef4444" rx="1"/><polygon points="305,76.09999999999971 299,64.09999999999971 311,64.09999999999971" fill="#ef4444" stroke="#ffffff" stroke-width="1.5"/><rect x="323.90909090909093" y="236.14285714285714" width="14" height="21.857142857142858" fill="rgba(16,185,129,0.35)" rx="1"/><line x1="330.90909090909093" y1="78.69999999999982" x2="330.90909090909093" y2="113.80000000000008" stroke="#10b981" stroke-width="1.5"/><rect x="323.90909090909093" y="86.79999999999967" width="14" height="21.60000000000005" fill="#10b981" rx="1"/><text x="330.90909090909093" y="268" fill="#64748b" font-size="8.5" font-family="Geist Mono, monospace" text-anchor="middle">10:30</text><rect x="349.8181818181818" y="233.57142857142858" width="14" height="24.428571428571427" fill="rgba(16,185,129,0.35)" rx="1"/><line x1="356.8181818181818" y1="65.20000000000009" x2="356.8181818181818" y2="92.20000000000005" stroke="#10b981" stroke-width="1.5"/><rect x="349.8181818181818" y="73.29999999999994" width="14" height="13.49999999999973" fill="#10b981" rx="1"/><rect x="375.72727272727275" y="245.14285714285714" width="14" height="12.857142857142856" fill="rgba(16,185,129,0.35)" rx="1"/><line x1="382.72727272727275" y1="62.499999999999666" x2="382.72727272727275" y2="78.69999999999982" stroke="#10b981" stroke-width="1.5"/><rect x="375.72727272727275" y="73.29999999999994" width="14" height="2" fill="#10b981" rx="1"/><rect x="401.6363636363636" y="222" width="14" height="36" fill="rgba(16,185,129,0.35)" rx="1"/><line x1="408.6363636363636" y1="48.99999999999993" x2="408.6363636363636" y2="75.99999999999989" stroke="#10b981" stroke-width="1.5"/><rect x="401.6363636363636" y="57.09999999999978" width="14" height="16.20000000000016" fill="#10b981" rx="1"/><rect x="427.54545454545456" y="224.57142857142856" width="14" height="33.42857142857143" fill="rgba(239,68,68,0.35)" rx="1"/><line x1="434.54545454545456" y1="51.699999999999896" x2="434.54545454545456" y2="89.5000000000001" stroke="#ef4444" stroke-width="1.5"/><rect x="427.54545454545456" y="57.09999999999978" width="14" height="21.600000000000037" fill="#ef4444" rx="1"/><rect x="453.4545454545455" y="238.71428571428572" width="14" height="19.285714285714285" fill="rgba(239,68,68,0.35)" rx="1"/><line x1="460.4545454545455" y1="73.29999999999994" x2="460.4545454545455" y2="105.69999999999978" stroke="#ef4444" stroke-width="1.5"/><rect x="453.4545454545455" y="78.69999999999982" width="14" height="16.20000000000016" fill="#ef4444" rx="1"/><rect x="479.3636363636364" y="240" width="14" height="18" fill="rgba(239,68,68,0.35)" rx="1"/><line x1="486.3636363636364" y1="89.5000000000001" x2="486.3636363636364" y2="116.50000000000003" stroke="#ef4444" stroke-width="1.5"/><rect x="479.3636363636364" y="94.89999999999998" width="14" height="10.799999999999798" fill="#ef4444" rx="1"/><text x="486.3636363636364" y="268" fill="#64748b" font-size="8.5" font-family="Geist Mono, monospace" text-anchor="middle">11:00</text><rect x="505.27272727272725" y="237.42857142857144" width="14" height="20.57142857142857" fill="rgba(16,185,129,0.35)" rx="1"/><line x1="512.2727272727273" y1="84.09999999999971" x2="512.2727272727273" y2="111.10000000000014" stroke="#10b981" stroke-width="1.5"/><rect x="505.27272727272725" y="89.5000000000001" width="14" height="16.199999999999676" fill="#10b981" rx="1"/><rect x="531.1818181818182" y="234.85714285714286" width="14" height="23.14285714285714" fill="rgba(16,185,129,0.35)" rx="1"/><line x1="538.1818181818182" y1="67.90000000000006" x2="538.1818181818182" y2="94.89999999999998" stroke="#10b981" stroke-width="1.5"/><rect x="531.1818181818182" y="75.99999999999989" width="14" height="13.500000000000213" fill="#10b981" rx="1"/><rect x="557.0909090909091" y="241.28571428571428" width="14" height="16.714285714285715" fill="rgba(239,68,68,0.35)" rx="1"/><line x1="564.0909090909091" y1="70.6" x2="564.0909090909091" y2="86.79999999999967" stroke="#ef4444" stroke-width="1.5"/><rect x="557.0909090909091" y="75.99999999999989" width="14" height="2.699999999999932" fill="#ef4444" rx="1"/><text x="564.0909090909091" y="268" fill="#64748b" font-size="8.5" font-family="Geist Mono, monospace" text-anchor="middle">11:15</text><text x="8" y="252" fill="#64748b" font-size="11" font-weight="800" opacity="0.35" font-family="sans-serif">17</text></svg>
+        </div>
+      </div>
+    </div>
+
+    <div class="right-col">
+      <div class="stats-header">
+        <span class="stats-title">Trade Stats</span>
+        <span style="font-size: 8.5px; color: #64748b;">Raw Numbers</span>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-block">
+          <span class="stat-lbl">Holding <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="stat-num">5m 29s</span>
+        </div>
+        <div class="stat-block">
+          <span class="stat-lbl">Fills <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="stat-num">2</span>
+        </div>
+        <div class="stat-block">
+          <span class="stat-lbl">Net P&L <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="stat-num" style="color: #f87171;">-$101.77</span>
+        </div>
+        <div class="stat-block">
+          <span class="stat-lbl">Max Size <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="stat-num">2,000</span>
+        </div>
+        <div class="stat-block">
+          <span class="stat-lbl">Peak Profit <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="stat-num" style="color: #34d399;">+$40.00</span>
+        </div>
+        <div class="stat-block">
+          <span class="stat-lbl">Max Drawdown <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="stat-num" style="color: #f87171;">-$120.00</span>
+        </div>
+        <div class="stat-block">
+          <span class="stat-lbl">Giveback <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="stat-num">$126.00</span>
+        </div>
+        <div class="stat-block">
+          <span class="stat-lbl">Time to Peak <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="stat-num">3m 3s</span>
+        </div>
+      </div>
+
+      <div class="ask-ai-row">
+        <div class="ask-ai-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg> Ask AI Assistant</div>
+        <span style="font-size: 9.5px; color: #a5b4fc; font-weight: 500;">AI Review on this trade</span>
+      </div>
+
+      <div class="ai-review-content">
+        <div class="ai-review-top">
+          <span class="conf-badge">AI Assistant Breakdown</span>
+          <div class="ai-actions">
+            <span class="ai-action-btn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg> Save</span>
+            <span class="ai-action-btn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg> Copy</span>
+          </div>
+        </div>
+
+        <p class="ai-summary">
+          Long on <strong>TTD</strong> at <strong>$13.635</strong> on an intraday pop. Exited at <strong>$13.592</strong> for a <strong>-$101.77</strong> loss.
+        </p>
+
+        <div class="insight-box">
+          <div class="insight-box-title">Profit Giveback & Excursion</div>
+          <div class="insight-box-desc">
+            You were green by +$40.00 within 3m 3s, but held through the stall at $13.72 resistance. Price pulled back and gave back $126.00 into -$120.00 max adverse move.
+          </div>
+          <div class="insight-tags">
+            <span class="insight-tag"><span>Peak</span> +$40.00</span>
+            <span class="insight-tag"><span>Gave Back</span> $126.00 (315%)</span>
+            <span class="insight-tag"><span>Drawdown</span> -$120.00</span>
+          </div>
+        </div>
+
+        <div class="takeaway-box">
+          <div class="takeaway-lbl">Assistant Takeaway</div>
+          <div class="takeaway-text">
+            Don't let green trades turn red. When momentum stalls into resistance, take some off and trail your stop to breakeven.
+          </div>
+        </div>
+
+        <div class="ai-footer">
+          <span>Gemini 2.5 · AI Assistant</span>
+          <span>Trading Diary</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

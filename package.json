@@ -34,6 +34,7 @@
     "video:render:autoscan:light": "npx -p @remotion/cli@4.0.500 remotion render AutoScanPromoLight marketing/videos/output/auto-scan-promo-light.mp4",
     "video:render:pattern": "npx -p @remotion/cli@4.0.500 remotion render PatternPromoMain marketing/videos/output/pattern-promo.mp4",
     "video:render:pattern:light": "npx -p @remotion/cli@4.0.500 remotion render PatternPromoMainLight marketing/videos/output/pattern-promo-light.mp4",
+    "meta:generate": "node scripts/generate-meta-screenshot.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:schema:push": "drizzle-kit push",

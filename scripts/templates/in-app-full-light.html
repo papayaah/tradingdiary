@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: 1000px;
+    background: #ffffff;
+    font-family: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: #1a1a2e;
+    padding: 16px 20px;
+  }
+  
+  .table-row-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: #f8f9fa;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px 4px 0 0;
+    font-size: 13px;
+  }
+  .row-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .time-text {
+    font-size: 12px;
+    color: #6b7280;
+    font-family: 'Geist Mono', monospace;
+  }
+  .symbol-title {
+    font-weight: 700;
+    color: #111827;
+  }
+  .badge-direction {
+    font-size: 10px;
+    font-weight: 600;
+    background: #dcfce7;
+    color: #15803d;
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  .row-right {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    font-family: 'Geist Mono', monospace;
+  }
+  .pnl-loss {
+    color: #dc2626;
+    font-weight: 700;
+  }
+
+  .details-chart-wrap {
+    display: flex;
+    border-left: 1px solid #e5e7eb;
+    border-right: 1px solid #e5e7eb;
+    border-bottom: 1px solid #e5e7eb;
+    background: rgba(255,255,255,0.5);
+  }
+  
+  .details-panel {
+    width: 250px;
+    padding: 16px;
+    border-right: 1px solid #e5e7eb;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .details-pnl {
+    font-size: 24px;
+    font-weight: 700;
+    color: #dc2626;
+    font-family: 'Geist Mono', monospace;
+  }
+  .details-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .details-item {
+    display: flex;
+    justify-content: space-between;
+  }
+  .details-lbl {
+    font-size: 10px;
+    text-transform: uppercase;
+    color: #6b7280;
+    font-weight: 600;
+  }
+  .details-val {
+    font-family: 'Geist Mono', monospace;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  .chart-panel {
+    flex: 1;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+  }
+  .chart-toolbar {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .chart-btn-group {
+    display: flex;
+    gap: 4px;
+  }
+  .chart-btn {
+    font-size: 11px;
+    color: #4b5563;
+    padding: 2px 8px;
+    border: 1px solid #e5e7eb;
+    border-radius: 3px;
+    background: #ffffff;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .chart-btn.active {
+    background: #4f46e5;
+    color: #ffffff;
+    border-color: #4f46e5;
+  }
+  .chart-btn.replay {
+    background: #ede9fe;
+    color: #6d28d9;
+    border-color: #ddd6fe;
+    font-weight: 600;
+  }
+
+  .actions-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    border-left: 1px solid #e5e7eb;
+    border-right: 1px solid #e5e7eb;
+    border-bottom: 1px solid #e5e7eb;
+    background: #ffffff;
+  }
+  .action-pill {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    color: #4b5563;
+    padding: 5px 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    background: #ffffff;
+  }
+  .action-pill.active {
+    background: #eef2ff;
+    color: #4f46e5;
+    border-color: #c7d2fe;
+    font-weight: 600;
+  }
+
+  .journal-panel {
+    border-left: 1px solid #e5e7eb;
+    border-right: 1px solid #e5e7eb;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 16px;
+    background: #ffffff;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    border-radius: 0 0 4px 4px;
+  }
+
+  .stats-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    background: #f9fafb;
+    padding: 12px 14px;
+  }
+  .stats-header-bar {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .stats-card-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #111827;
+  }
+  .stats-grid-8 {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+  .stat-unit {
+    display: flex;
+    flex-direction: column;
+  }
+  .stat-unit-lbl {
+    font-size: 9.5px;
+    text-transform: uppercase;
+    color: #6b7280;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .stat-unit-val {
+    font-size: 13px;
+    font-weight: 700;
+    color: #111827;
+    font-family: 'Geist Mono', monospace;
+    margin-top: 2px;
+  }
+
+  .ask-btn-bar {
+    display: flex;
+  }
+  .ask-ai-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #eef2ff;
+    border: 1px solid #c7d2fe;
+    color: #4f46e5;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 4px;
+  }
+
+  .ai-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .ai-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .conf-tag {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    background: #f3f4f6;
+    color: #4b5563;
+    border: 1px solid #e5e7eb;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .ai-card-tools {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    color: #4b5563;
+  }
+  .ai-card-tool {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .ai-desc-text {
+    font-size: 13px;
+    line-height: 1.5;
+    color: #1f2937;
+  }
+
+  .ai-obs-box {
+    border: 1px solid #e5e7eb;
+    background: #f9fafb;
+    border-radius: 6px;
+    padding: 10px 12px;
+  }
+  .ai-obs-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #111827;
+    margin-bottom: 2px;
+  }
+  .ai-obs-detail {
+    font-size: 12px;
+    line-height: 1.45;
+    color: #4b5563;
+  }
+  .ai-obs-badges {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .ai-obs-badge {
+    font-size: 10px;
+    font-family: 'Geist Mono', monospace;
+    background: #e5e7eb;
+    color: #374151;
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+
+  .ai-section-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    color: #6b7280;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    margin-bottom: 2px;
+  }
+  .ai-section-p {
+    font-size: 12px;
+    line-height: 1.45;
+    color: #4b5563;
+  }
+
+  .ai-takeaway-block {
+    background: #eef2ff;
+    border: 1px solid #c7d2fe;
+    border-radius: 6px;
+    padding: 10px 12px;
+  }
+  .ai-takeaway-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    color: #4338ca;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }
+  .ai-takeaway-content {
+    font-size: 12px;
+    color: #1e1b4b;
+    font-weight: 500;
+    line-height: 1.4;
+  }
+
+  .ai-card-footer {
+    font-size: 10.5px;
+    color: #9ca3af;
+  }
+</style>
+</head>
+<body>
+
+  <div class="table-row-header">
+    <div class="row-left">
+      <span class="time-text">10:21 AM EDT</span>
+      <span class="symbol-title">TTD</span>
+      <span style="font-size: 11px; color: #6b7280;">TRADE DESK INC/THE - CLASS A</span>
+      <span class="badge-direction">LONG</span>
+    </div>
+    <div class="row-right">
+      <span>4,000 shs</span>
+      <span>2 fills</span>
+      <span class="pnl-loss">-$101.77</span>
+    </div>
+  </div>
+
+  <div class="details-chart-wrap">
+    <div class="details-panel">
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <span class="badge-direction">LONG</span>
+        <span style="font-size: 11px; color: #6b7280;">2026-08-28</span>
+      </div>
+      <div class="details-pnl">-$101.77</div>
+      <div class="details-grid">
+        <div class="details-item">
+          <span class="details-lbl">Entry → Exit</span>
+          <span class="details-val">$13.63 → $13.59</span>
+        </div>
+        <div class="details-item">
+          <span class="details-lbl">Time</span>
+          <span class="details-val">10:21:57 → 10:27:26</span>
+        </div>
+        <div class="details-item">
+          <span class="details-lbl">Duration</span>
+          <span class="details-val">5m 29s</span>
+        </div>
+        <div class="details-item">
+          <span class="details-lbl">Quantity</span>
+          <span class="details-val">4,000</span>
+        </div>
+      </div>
+    </div>
+    <div class="chart-panel">
+      <div class="chart-toolbar">
+        <div class="chart-btn-group">
+          <div class="chart-btn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg> Patterns</div>
+          <div class="chart-btn">Levels</div>
+          <div class="chart-btn">Trendlines</div>
+          <div class="chart-btn replay"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg> REPLAY</div>
+        </div>
+        <div class="chart-btn-group">
+          <div class="chart-btn">1M</div>
+          <div class="chart-btn active">5M</div>
+          <div class="chart-btn">10M</div>
+          <div class="chart-btn">15M</div>
+          <div class="chart-btn">1H</div>
+        </div>
+      </div>
+      <div style="height: 230px;">
+        <svg viewBox="0 0 640 270" style="width: 100%; height: 100%;" xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="224.50000000000026" x2="585" y2="224.50000000000026" stroke="rgba(0,0,0,0.06)" stroke-dasharray="2 2" stroke-width="1"/><text x="590" y="228.00000000000026" fill="#94a3b8" font-size="9" font-family="Geist Mono, monospace">13.20</text><line x1="0" y1="197.49999999999986" x2="585" y2="197.49999999999986" stroke="rgba(0,0,0,0.06)" stroke-dasharray="2 2" stroke-width="1"/><text x="590" y="200.99999999999986" fill="#94a3b8" font-size="9" font-family="Geist Mono, monospace">13.30</text><line x1="0" y1="170.49999999999991" x2="585" y2="170.49999999999991" stroke="rgba(0,0,0,0.06)" stroke-dasharray="2 2" stroke-width="1"/><text x="590" y="173.99999999999991" fill="#94a3b8" font-size="9" font-family="Geist Mono, monospace">13.40</text><line x1="0" y1="143.49999999999994" x2="585" y2="143.49999999999994" stroke="rgba(0,0,0,0.06)" stroke-dasharray="2 2" stroke-width="1"/><text x="590" y="146.99999999999994" fill="#94a3b8" font-size="9" font-family="Geist Mono, monospace">13.50</text><line x1="0" y1="116.50000000000003" x2="585" y2="116.50000000000003" stroke="rgba(0,0,0,0.06)" stroke-dasharray="2 2" stroke-width="1"/><text x="590" y="120.00000000000003" fill="#94a3b8" font-size="9" font-family="Geist Mono, monospace">13.60</text><line x1="0" y1="89.5000000000001" x2="585" y2="89.5000000000001" stroke="rgba(0,0,0,0.06)" stroke-dasharray="2 2" stroke-width="1"/><text x="590" y="93.0000000000001" fill="#94a3b8" font-size="9" font-family="Geist Mono, monospace">13.70</text><line x1="0" y1="62.499999999999666" x2="585" y2="62.499999999999666" stroke="rgba(0,0,0,0.06)" stroke-dasharray="2 2" stroke-width="1"/><text x="590" y="65.99999999999966" fill="#94a3b8" font-size="9" font-family="Geist Mono, monospace">13.80</text><line x1="0" y1="35.49999999999974" x2="585" y2="35.49999999999974" stroke="rgba(0,0,0,0.06)" stroke-dasharray="2 2" stroke-width="1"/><text x="590" y="38.99999999999974" fill="#94a3b8" font-size="9" font-family="Geist Mono, monospace">13.90</text><line x1="0" y1="107.04999999999998" x2="585" y2="107.04999999999998" stroke="#0ea5e9" stroke-dasharray="4 4" stroke-width="1.2" opacity="0.85"/><rect x="586" y="70.69999999999982" width="50" height="16" rx="2" fill="#10b981"/><text x="591" y="82.19999999999982" fill="#ffffff" font-size="9" font-weight="600" font-family="Geist Mono, monospace">13.74</text><rect x="13" y="240" width="14" height="18" fill="rgba(239,68,68,0.22)" rx="1"/><line x1="20" y1="111.10000000000014" x2="20" y2="175.89999999999978" stroke="#ef4444" stroke-width="1.5"/><rect x="13" y="121.89999999999993" width="14" height="37.800000000000196" fill="#ef4444" rx="1"/><text x="20" y="268" fill="#94a3b8" font-size="8.5" font-family="Geist Mono, monospace" text-anchor="middle">09:30</text><rect x="38.90909090909091" y="234.85714285714286" width="14" height="23.14285714285714" fill="rgba(239,68,68,0.22)" rx="1"/><line x1="45.90909090909091" y1="148.89999999999986" x2="45.90909090909091" y2="197.49999999999986" stroke="#ef4444" stroke-width="1.5"/><rect x="38.90909090909091" y="159.70000000000013" width="14" height="26.999999999999943" fill="#ef4444" rx="1"/><rect x="64.81818181818181" y="227.14285714285714" width="14" height="30.857142857142858" fill="rgba(16,185,129,0.22)" rx="1"/><line x1="71.81818181818181" y1="138.10000000000008" x2="71.81818181818181" y2="197.49999999999986" stroke="#10b981" stroke-width="1.5"/><rect x="64.81818181818181" y="143.49999999999994" width="14" height="43.20000000000013" fill="#10b981" rx="1"/><rect x="90.72727272727273" y="243.85714285714286" width="14" height="14.142857142857142" fill="rgba(16,185,129,0.22)" rx="1"/><line x1="97.72727272727273" y1="127.29999999999981" x2="97.72727272727273" y2="154.29999999999978" stroke="#10b981" stroke-width="1.5"/><rect x="90.72727272727273" y="132.7000000000002" width="14" height="10.799999999999756" fill="#10b981" rx="1"/><rect x="116.63636363636364" y="246.42857142857144" width="14" height="11.57142857142857" fill="rgba(239,68,68,0.22)" rx="1"/><line x1="123.63636363636364" y1="121.89999999999993" x2="123.63636363636364" y2="148.89999999999986" stroke="#ef4444" stroke-width="1.5"/><rect x="116.63636363636364" y="132.7000000000002" width="14" height="5.399999999999892" fill="#ef4444" rx="1"/><rect x="142.54545454545456" y="249" width="14" height="9" fill="rgba(16,185,129,0.22)" rx="1"/><line x1="149.54545454545456" y1="129.99999999999977" x2="149.54545454545456" y2="148.89999999999986" stroke="#10b981" stroke-width="1.5"/><rect x="142.54545454545456" y="135.40000000000012" width="14" height="2.69999999999996" fill="#10b981" rx="1"/><rect x="168.45454545454547" y="242.57142857142858" width="14" height="15.428571428571429" fill="rgba(239,68,68,0.22)" rx="1"/><line x1="175.45454545454547" y1="127.29999999999981" x2="175.45454545454547" y2="165.10000000000002" stroke="#ef4444" stroke-width="1.5"/><rect x="168.45454545454547" y="135.40000000000012" width="14" height="16.199999999999676" fill="#ef4444" rx="1"/><text x="175.45454545454547" y="268" fill="#94a3b8" font-size="8.5" font-family="Geist Mono, monospace" text-anchor="middle">10:00</text><rect x="194.36363636363637" y="241.28571428571428" width="14" height="16.714285714285715" fill="rgba(239,68,68,0.22)" rx="1"/><line x1="201.36363636363637" y1="146.19999999999993" x2="201.36363636363637" y2="175.89999999999978" stroke="#ef4444" stroke-width="1.5"/><rect x="194.36363636363637" y="151.5999999999998" width="14" height="13.500000000000227" fill="#ef4444" rx="1"/><rect x="220.27272727272728" y="238.71428571428572" width="14" height="19.285714285714285" fill="rgba(16,185,129,0.22)" rx="1"/><line x1="227.27272727272728" y1="138.10000000000008" x2="227.27272727272728" y2="170.49999999999991" stroke="#10b981" stroke-width="1.5"/><rect x="220.27272727272728" y="143.49999999999994" width="14" height="21.60000000000008" fill="#10b981" rx="1"/><rect x="246.1818181818182" y="229.71428571428572" width="14" height="28.285714285714285" fill="rgba(16,185,129,0.22)" rx="1"/><line x1="253.1818181818182" y1="105.69999999999978" x2="253.1818181818182" y2="148.89999999999986" stroke="#10b981" stroke-width="1.5"/><rect x="246.1818181818182" y="111.10000000000014" width="14" height="32.39999999999981" fill="#10b981" rx="1"/><rect x="272.0909090909091" y="218.14285714285714" width="14" height="39.857142857142854" fill="rgba(16,185,129,0.22)" rx="1"/><line x1="279.0909090909091" y1="94.89999999999998" x2="279.0909090909091" y2="121.89999999999993" stroke="#10b981" stroke-width="1.5"/><rect x="272.0909090909091" y="102.9999999999998" width="14" height="8.100000000000335" fill="#10b981" rx="1"/><polygon points="279.0909090909091,129.89999999999992 273.0909090909091,141.89999999999992 285.0909090909091,141.89999999999992" fill="#10b981" stroke="#ffffff" stroke-width="1.5"/><rect x="298" y="220.71428571428572" width="14" height="37.285714285714285" fill="rgba(239,68,68,0.22)" rx="1"/><line x1="305" y1="84.09999999999971" x2="305" y2="124.59999999999988" stroke="#ef4444" stroke-width="1.5"/><rect x="298" y="102.9999999999998" width="14" height="5.39999999999992" fill="#ef4444" rx="1"/><polygon points="305,76.09999999999971 299,64.09999999999971 311,64.09999999999971" fill="#ef4444" stroke="#ffffff" stroke-width="1.5"/><rect x="323.90909090909093" y="236.14285714285714" width="14" height="21.857142857142858" fill="rgba(16,185,129,0.22)" rx="1"/><line x1="330.90909090909093" y1="78.69999999999982" x2="330.90909090909093" y2="113.80000000000008" stroke="#10b981" stroke-width="1.5"/><rect x="323.90909090909093" y="86.79999999999967" width="14" height="21.60000000000005" fill="#10b981" rx="1"/><text x="330.90909090909093" y="268" fill="#94a3b8" font-size="8.5" font-family="Geist Mono, monospace" text-anchor="middle">10:30</text><rect x="349.8181818181818" y="233.57142857142858" width="14" height="24.428571428571427" fill="rgba(16,185,129,0.22)" rx="1"/><line x1="356.8181818181818" y1="65.20000000000009" x2="356.8181818181818" y2="92.20000000000005" stroke="#10b981" stroke-width="1.5"/><rect x="349.8181818181818" y="73.29999999999994" width="14" height="13.49999999999973" fill="#10b981" rx="1"/><rect x="375.72727272727275" y="245.14285714285714" width="14" height="12.857142857142856" fill="rgba(16,185,129,0.22)" rx="1"/><line x1="382.72727272727275" y1="62.499999999999666" x2="382.72727272727275" y2="78.69999999999982" stroke="#10b981" stroke-width="1.5"/><rect x="375.72727272727275" y="73.29999999999994" width="14" height="2" fill="#10b981" rx="1"/><rect x="401.6363636363636" y="222" width="14" height="36" fill="rgba(16,185,129,0.22)" rx="1"/><line x1="408.6363636363636" y1="48.99999999999993" x2="408.6363636363636" y2="75.99999999999989" stroke="#10b981" stroke-width="1.5"/><rect x="401.6363636363636" y="57.09999999999978" width="14" height="16.20000000000016" fill="#10b981" rx="1"/><rect x="427.54545454545456" y="224.57142857142856" width="14" height="33.42857142857143" fill="rgba(239,68,68,0.22)" rx="1"/><line x1="434.54545454545456" y1="51.699999999999896" x2="434.54545454545456" y2="89.5000000000001" stroke="#ef4444" stroke-width="1.5"/><rect x="427.54545454545456" y="57.09999999999978" width="14" height="21.600000000000037" fill="#ef4444" rx="1"/><rect x="453.4545454545455" y="238.71428571428572" width="14" height="19.285714285714285" fill="rgba(239,68,68,0.22)" rx="1"/><line x1="460.4545454545455" y1="73.29999999999994" x2="460.4545454545455" y2="105.69999999999978" stroke="#ef4444" stroke-width="1.5"/><rect x="453.4545454545455" y="78.69999999999982" width="14" height="16.20000000000016" fill="#ef4444" rx="1"/><rect x="479.3636363636364" y="240" width="14" height="18" fill="rgba(239,68,68,0.22)" rx="1"/><line x1="486.3636363636364" y1="89.5000000000001" x2="486.3636363636364" y2="116.50000000000003" stroke="#ef4444" stroke-width="1.5"/><rect x="479.3636363636364" y="94.89999999999998" width="14" height="10.799999999999798" fill="#ef4444" rx="1"/><text x="486.3636363636364" y="268" fill="#94a3b8" font-size="8.5" font-family="Geist Mono, monospace" text-anchor="middle">11:00</text><rect x="505.27272727272725" y="237.42857142857144" width="14" height="20.57142857142857" fill="rgba(16,185,129,0.22)" rx="1"/><line x1="512.2727272727273" y1="84.09999999999971" x2="512.2727272727273" y2="111.10000000000014" stroke="#10b981" stroke-width="1.5"/><rect x="505.27272727272725" y="89.5000000000001" width="14" height="16.199999999999676" fill="#10b981" rx="1"/><rect x="531.1818181818182" y="234.85714285714286" width="14" height="23.14285714285714" fill="rgba(16,185,129,0.22)" rx="1"/><line x1="538.1818181818182" y1="67.90000000000006" x2="538.1818181818182" y2="94.89999999999998" stroke="#10b981" stroke-width="1.5"/><rect x="531.1818181818182" y="75.99999999999989" width="14" height="13.500000000000213" fill="#10b981" rx="1"/><rect x="557.0909090909091" y="241.28571428571428" width="14" height="16.714285714285715" fill="rgba(239,68,68,0.22)" rx="1"/><line x1="564.0909090909091" y1="70.6" x2="564.0909090909091" y2="86.79999999999967" stroke="#ef4444" stroke-width="1.5"/><rect x="557.0909090909091" y="75.99999999999989" width="14" height="2.699999999999932" fill="#ef4444" rx="1"/><text x="564.0909090909091" y="268" fill="#94a3b8" font-size="8.5" font-family="Geist Mono, monospace" text-anchor="middle">11:15</text><text x="8" y="252" fill="#94a3b8" font-size="11" font-weight="800" opacity="0.35" font-family="sans-serif">17</text></svg>
+      </div>
+    </div>
+  </div>
+
+  <div class="actions-row">
+    <span style="font-size: 10px; font-weight: 700; color: #6b7280; text-transform: uppercase;">Add to trade</span>
+    <div class="action-pill"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg> Screenshot</div>
+    <div class="action-pill"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg> Tag</div>
+    <div class="action-pill"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 2v20"/></svg> Playbook</div>
+    <div class="action-pill"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg> Plan & risk</div>
+    <div class="action-pill"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg> Note</div>
+    <div class="action-pill active"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg> AI review</div>
+  </div>
+
+  <div class="journal-panel">
+    <div class="stats-card">
+      <div class="stats-header-bar">
+        <span class="stats-card-title">Objective Trade Statistics</span>
+        <span style="font-size: 10px; color: #6b7280;">Hover or tap a metric for an explanation</span>
+      </div>
+      <div class="stats-grid-8">
+        <div class="stat-unit">
+          <span class="stat-unit-lbl">Holding <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="stat-unit-val">5m 29s</span>
+        </div>
+        <div class="stat-unit">
+          <span class="stat-unit-lbl">Executions <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="stat-unit-val">2</span>
+        </div>
+        <div class="stat-unit">
+          <span class="stat-unit-lbl">Net P&L <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="stat-unit-val" style="color: #dc2626;">-$101.77</span>
+        </div>
+        <div class="stat-unit">
+          <span class="stat-unit-lbl">Max Size <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="stat-unit-val">2000</span>
+        </div>
+        <div class="stat-unit">
+          <span class="stat-unit-lbl">MFE <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="stat-unit-val" style="color: #16a34a;">$40.00 (0.1%)</span>
+        </div>
+        <div class="stat-unit">
+          <span class="stat-unit-lbl">MAE <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="stat-unit-val" style="color: #dc2626;">-$120.00 (0.4%)</span>
+        </div>
+        <div class="stat-unit">
+          <span class="stat-unit-lbl">Exit Giveback <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="stat-unit-val">$126.00 (315% of MFE)</span>
+        </div>
+        <div class="stat-unit">
+          <span class="stat-unit-lbl">Time to Peak <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <span class="stat-unit-val">3m 3s</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ask-btn-bar">
+      <div class="ask-ai-button"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg> Ask AI Assistant</div>
+    </div>
+
+    <div class="ai-card">
+      <div class="ai-card-header">
+        <span class="conf-tag">Medium Confidence</span>
+        <div class="ai-card-tools">
+          <div class="ai-card-tool"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg> Save</div>
+          <div class="ai-card-tool"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg> Copy</div>
+          <div class="ai-card-tool"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg> Dismiss</div>
+        </div>
+      </div>
+
+      <p class="ai-desc-text">
+        The LONG trade in TTD was opened at 13.635 USD with 2000 shares at Aug 28, 2026 at 10:21 AM ET and closed at 13.592 USD at Aug 28, 2026 at 10:27 AM ET, resulting in a net PnL of -101.77 USD.
+      </p>
+
+      <div class="ai-obs-box">
+        <div class="ai-obs-title">Trade Duration and Excursion</div>
+        <div class="ai-obs-detail">
+          The holding duration was 5m 29s, with the trade reaching a maximum favorable excursion of 40.00 USD (0.1%) after 3m 3s, and a maximum adverse excursion of 120.00 USD (0.4%).
+        </div>
+        <div class="ai-obs-badges">
+          <span class="ai-obs-badge">holding Duration 5m 29s</span>
+          <span class="ai-obs-badge">time To Peak 3m 3s</span>
+        </div>
+      </div>
+
+      <div class="ai-obs-box">
+        <div class="ai-obs-title">Exit Giveback</div>
+        <div class="ai-obs-detail">
+          The position gave back 126.00 USD from its peak favorable excursion upon exit.
+        </div>
+        <div class="ai-obs-badges">
+          <span class="ai-obs-badge">exit Giveback From MFE 126.00 USD</span>
+        </div>
+      </div>
+
+      <div>
+        <div class="ai-section-title">Execution</div>
+        <p class="ai-section-p">
+          The trade executed as a single entry of 2000 shares at 13.635 USD on Aug 28, 2026 at 10:21 AM ET and exited as a single block of 2000 shares at 13.592 USD on Aug 28, 2026 at 10:27 AM ET.
+        </p>
+      </div>
+
+      <div>
+        <div class="ai-section-title">Risk</div>
+        <p class="ai-section-p">
+          The maximum adverse excursion reached 120.00 USD (0.4%), and the trade closed with a net loss of 101.77 USD.
+        </p>
+      </div>
+
+      <div>
+        <div class="ai-section-title">Questions for you</div>
+        <ul style="padding-left: 16px; font-size: 12px; color: #4b5563; line-height: 1.5;">
+          <li>Was the exit at 13.592 USD triggered by a pre-planned stop-loss or a discretionary decision?</li>
+          <li>What was the initial risk plan regarding the 120.00 USD maximum adverse excursion?</li>
+        </ul>
+      </div>
+
+      <div class="ai-takeaway-block">
+        <div class="ai-takeaway-label">Takeaway</div>
+        <div class="ai-takeaway-content">
+          Evaluate whether the exit giveback from the MFE peak aligns with your trade management rules.
+        </div>
+      </div>
+
+      <div class="ai-card-footer">
+        google · gemini-2.5-flash-lite
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
