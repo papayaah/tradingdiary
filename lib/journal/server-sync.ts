@@ -84,6 +84,11 @@ export async function pushJournal(
   userId: string,
   payload: JournalPushRequest,
   onProgress?: (phase: 'executions' | 'trade_groups', done: number, total: number) => void,
+  // Broker connectors set this: account name/currency/starting balance are
+  // user-owned settings, so an automated sync must only *create* accounts, never
+  // overwrite metadata the user edited. The client's own snapshot push leaves it
+  // false so the user's edits still propagate.
+  preserveAccountMetadata = false,
 ): Promise<JournalPushResponse> {
   const PROGRESS_EVERY = 500;
   const conflicts: SyncConflict[] = [];
@@ -124,21 +129,25 @@ export async function pushJournal(
       } else {
         accountUuidByClientId.set(acc.accountId, existing[0].id);
         clientIdByUuid.set(existing[0].id, acc.accountId);
-        // Account metadata rarely changes; update in place, bump rev.
-        const nextRev = existing[0].rev + 1;
-        await tx
-          .update(tradingAccount)
-          .set({
-            name: acc.name,
-            type: acc.type,
-            currency: acc.currency,
-            address: acc.address ?? '',
-            initialBalance: acc.initialBalance,
-            rev: nextRev,
-            updatedAt: nowIso,
-          })
-          .where(eq(tradingAccount.id, existing[0].id));
-        events.push({ entity: 'account', entityId: existing[0].id, op: 'upsert', rev: nextRev });
+        // A broker sync must not clobber user-edited settings (name, base
+        // currency, starting balance). Only the user's own snapshot push updates
+        // account metadata.
+        if (!preserveAccountMetadata) {
+          const nextRev = existing[0].rev + 1;
+          await tx
+            .update(tradingAccount)
+            .set({
+              name: acc.name,
+              type: acc.type,
+              currency: acc.currency,
+              address: acc.address ?? '',
+              initialBalance: acc.initialBalance,
+              rev: nextRev,
+              updatedAt: nowIso,
+            })
+            .where(eq(tradingAccount.id, existing[0].id));
+          events.push({ entity: 'account', entityId: existing[0].id, op: 'upsert', rev: nextRev });
+        }
       }
     }
 

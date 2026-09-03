@@ -18,14 +18,13 @@ function accountClientId(brokerAccountId: string): string {
   return `ibkr-flex:${brokerAccountId || 'default'}`;
 }
 
-function mostCommonCurrency(transactions: NormalizedTransaction[]): string {
-  const counts = new Map<string, number>();
-  for (const transaction of transactions) {
-    const currency = (transaction.currency || 'USD').toUpperCase();
-    counts.set(currency, (counts.get(currency) ?? 0) + 1);
-  }
-  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'USD';
-}
+// IBKR reports settle in the account's base currency, and the per-trade FX rates
+// (FXRateToBase) convert every foreign fill into it. That base is USD for the
+// vast majority of accounts; using it as the default is also what lets the
+// converter attach the USD conversion rate (it only does so when the base is USD).
+// The user can still change the account's base currency afterwards — a sync no
+// longer overwrites it.
+const IBKR_BASE_CURRENCY = 'USD';
 
 function buildJournalPayload(transactions: NormalizedTransaction[]): JournalPushRequest {
   const byBrokerAccount = new Map<string, NormalizedTransaction[]>();
@@ -40,16 +39,15 @@ function buildJournalPayload(transactions: NormalizedTransaction[]): JournalPush
   const executions: TransactionRecord[] = [];
   for (const [brokerAccount, rows] of byBrokerAccount) {
     const clientId = accountClientId(brokerAccount);
-    const currency = mostCommonCurrency(rows);
     accounts.push({
       accountId: clientId,
       name: brokerAccount === 'default' ? 'Interactive Brokers' : `IBKR •${brokerAccount.slice(-4)}`,
       type: 'Interactive Brokers',
-      currency,
+      currency: IBKR_BASE_CURRENCY,
       address: '',
       importedAt: Date.now(),
     });
-    executions.push(...toTransactionRecords(rows, clientId, currency));
+    executions.push(...toTransactionRecords(rows, clientId, IBKR_BASE_CURRENCY));
   }
 
   return {
@@ -149,7 +147,7 @@ export async function syncIbkrFlexConnection(
           } else {
             onProgress?.({ stage: 'building', message: 'Building trades…', done, total });
           }
-        })
+        }, /* preserveAccountMetadata */ true)
       : { adoptedExecutions: 0 };
     const nextSyncAt = nextDailyFlexSync(now, Number(process.env.IBKR_FLEX_DAILY_HOUR_ET ?? 6));
     const syncedAt = new Date().toISOString();
