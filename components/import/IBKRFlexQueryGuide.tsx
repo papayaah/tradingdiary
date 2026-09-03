@@ -27,8 +27,10 @@ const STEPS: GuideStep[] = [
     title: 'Include the trade fields we recognize',
     body: (
       <>
-        Include Symbol, Description, Buy/Sell, Quantity, Trade Price, Trade Date, Trade Time,
-        Currency, IB Commission, Proceeds, Exchange, and Transaction ID or Trade ID.
+        Include Account ID, Symbol, Asset Class, Buy/Sell, Quantity, Trade Price, Trade Date,
+        Date/Time, Currency, IB Commission, Proceeds, FX Rate to Base, Open/Close Indicator,
+        Multiplier, Exchange, and Transaction ID or Trade ID. Trade Date, Proceeds, FX Rate to
+        Base, and the Open/Close Indicator are what make imported P&amp;L match IBKR&apos;s own reports.
       </>
     ),
   },

@@ -4,7 +4,7 @@ import { aggregateTradeGroupsByDay, aggregateByDay } from './aggregator';
 
 let seq = 0;
 function tx(overrides: Partial<TransactionRecord>): TransactionRecord {
-  return {
+  const base: TransactionRecord = {
     tradeId: `t${seq++}`,
     accountId: 'acct-1',
     symbol: 'AAPL',
@@ -23,6 +23,10 @@ function tx(overrides: Partial<TransactionRecord>): TransactionRecord {
     feeMultiplier: 1,
     ...overrides,
   };
+  if (overrides.totalValue === undefined) {
+    base.totalValue = Math.abs(base.quantity) * Math.abs(base.price) * base.multiplier;
+  }
+  return base;
 }
 
 describe('aggregateTradeGroupsByDay', () => {

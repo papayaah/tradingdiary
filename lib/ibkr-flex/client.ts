@@ -26,6 +26,12 @@ export interface IbkrFlexClientOptions {
   fetchImpl?: typeof fetch;
   sleep?: (milliseconds: number) => Promise<void>;
   timeoutMs?: number;
+  /**
+   * Server-side period override in days (1–365) for the Activity Flex request.
+   * Defaults to 365 (full backfill). Routine syncs pass a short window so IBKR
+   * builds and returns only recent activity instead of the whole year.
+   */
+  periodDays?: number;
   /** Reports the two slow phases the client controls: sending the initial
    * request and each poll while IBKR builds the report. */
   onProgress?: (event: { stage: 'requesting' | 'waiting'; attempt?: number }) => void;
@@ -45,10 +51,14 @@ async function requestText(
     url.searchParams.set('t', token);
     url.searchParams.set('q', query);
     url.searchParams.set('v', '3');
-    // Activity Flex supports a server-side period override up to 365 days. This
-    // ensures the first import gets the full launch history even if the saved
-    // query's display period was configured differently.
-    if (path === 'SendRequest') url.searchParams.set('p', '365');
+    // Activity Flex supports a server-side period override up to 365 days,
+    // independent of the saved query's display period. First import uses the full
+    // 365 (default); routine syncs pass a short window so IBKR returns only recent
+    // activity instead of rebuilding the whole year.
+    if (path === 'SendRequest') {
+      const period = Math.min(365, Math.max(1, Math.round(options.periodDays ?? 365)));
+      url.searchParams.set('p', String(period));
+    }
     const response = await fetchImpl(url, {
       headers: { 'User-Agent': USER_AGENT, Accept: 'text/plain, text/csv, application/xml' },
       signal: controller.signal,

@@ -399,6 +399,7 @@ export const execution = pgTable("execution", {
     orderType: text("order_type").notNull().default(''),
     date: text("date").notNull(), // YYYYMMDD (raw execution date)
     time: text("time").notNull(), // HH:MM:SS
+    tradeDate: text("trade_date"), // YYYYMMDD official trading day (IBKR TradeDate); null → use date
     currency: text("currency").notNull(),
     quantity: doublePrecision("quantity").notNull(),
     multiplier: doublePrecision("multiplier").notNull().default(1),

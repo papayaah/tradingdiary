@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { db } from '../db/server';
 import {
   tradingAccount,
@@ -58,6 +58,7 @@ function rowToTransaction(
     orderType: row.orderType,
     date: row.date,
     time: row.time,
+    tradeDate: row.tradeDate ?? undefined,
     currency: row.currency,
     quantity: row.quantity,
     multiplier: row.multiplier,
@@ -166,6 +167,7 @@ export async function pushJournal(
           orderType: t.orderType ?? '',
           date: t.date,
           time: t.time,
+          tradeDate: t.tradeDate ?? null,
           currency: t.currency,
           quantity: t.quantity,
           multiplier: t.multiplier ?? 1,
@@ -181,7 +183,41 @@ export async function pushJournal(
           fxRateProvider: t.fxRateProvider,
           updatedAt: nowIso,
         })
-        .onConflictDoNothing({ target: [execution.userId, execution.idempotencyKey] })
+        // Re-sync heals existing rows: if a re-import produces corrected values
+        // (e.g. fixed commission sign, added tradeDate/FX, derived multiplier),
+        // update them and bump rev so clients pull the fix. The setWhere guard
+        // keeps unchanged rows untouched, so steady-state syncs stay no-ops.
+        .onConflictDoUpdate({
+          target: [execution.userId, execution.idempotencyKey],
+          set: {
+            companyName: t.companyName ?? '',
+            exchanges: t.exchanges ?? '',
+            orderType: t.orderType ?? '',
+            date: t.date,
+            time: t.time,
+            tradeDate: t.tradeDate ?? null,
+            currency: t.currency,
+            quantity: t.quantity,
+            multiplier: t.multiplier ?? 1,
+            price: t.price,
+            totalValue: t.totalValue,
+            commission: t.commission ?? 0,
+            feeMultiplier: t.feeMultiplier ?? 1,
+            realizedPnL: t.realizedPnL,
+            unrealizedPnL: t.unrealizedPnL,
+            fxRateToAccount: t.fxRateToAccount,
+            fxAccountCurrency: t.fxAccountCurrency,
+            fxRateDate: t.fxRateDate,
+            fxRateProvider: t.fxRateProvider,
+            rev: sql`${execution.rev} + 1`,
+            updatedAt: nowIso,
+          },
+          setWhere: sql`${execution.commission} is distinct from ${t.commission ?? 0}
+            or ${execution.tradeDate} is distinct from ${t.tradeDate ?? null}
+            or ${execution.totalValue} is distinct from ${t.totalValue}
+            or ${execution.multiplier} is distinct from ${t.multiplier ?? 1}
+            or ${execution.fxRateToAccount} is distinct from ${t.fxRateToAccount ?? null}`,
+        })
         .returning({ id: execution.id, rev: execution.rev });
       if (inserted.length > 0) {
         adoptedExecutions += 1;

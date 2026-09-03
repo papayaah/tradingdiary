@@ -7,6 +7,7 @@ export const COLUMN_ALIASES: Record<keyof NormalizedTransaction, string[]> = {
     quantity: ['quantity', 'qty', 'shares', 'volume', 'size', 'order quantity', 'confirmed quantity', 'lots', 'filled qty'],
     price: ['price', 'executed price', 'exec price', 'avg price', 'fill price', 'average price', 'trade price'],
     time: ['time', 'execution time', 'trade time'],
+    tradeDate: ['tradedate', 'trade date', 'settlement date'],
     accountId: ['account id', 'account', 'client account id', 'clientaccountid'],
     orderId: ['order id', 'trade id', 'id', 'ref', 'reference', 'order no'],
     assetClass: ['asset class', 'asset category', 'security type'],

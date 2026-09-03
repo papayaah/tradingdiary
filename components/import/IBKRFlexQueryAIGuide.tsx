@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Check, Copy, Sparkles } from 'lucide-react';
 import BrokerExportGuide, { type GuideStep } from './BrokerExportGuide';
 
-const FLEX_AI_PROMPT = 'Create an Activity Trades report with account ID, symbol, asset class, buy/sell, quantity, trade price, date/time, currency, commission, exchange, transaction ID, trade ID and multiplier.';
+const FLEX_AI_PROMPT = 'Create an Activity Trades report with account ID, symbol, asset class, buy/sell, quantity, trade price, trade date, date/time, currency, IB commission, proceeds, FX rate to base, open/close indicator, exchange, transaction ID, trade ID and multiplier. Use CSV with column headers and keep each execution as its own row.';
 
 function CopyablePrompt() {
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
@@ -28,7 +28,7 @@ function CopyablePrompt() {
         <span className="text-[10px] text-muted" aria-live="polite">
           {copyState === 'failed'
             ? 'Copy failed. Select the prompt text manually.'
-            : `${FLEX_AI_PROMPT.length}/200 characters · Paste into IBKR Configure with AI`}
+            : `${FLEX_AI_PROMPT.length} characters · Paste into IBKR Configure with AI`}
         </span>
         <button
           type="button"
@@ -66,8 +66,11 @@ const STEPS: GuideStep[] = [
     body: (
       <>
         Confirm the generated <strong className="text-foreground">Trades</strong> section includes
-        the requested fields—including Account ID, Asset Class, IDs, and Multiplier—uses CSV with column headers, and keeps individual executions as
-        separate rows. Then save the query.
+        the requested fields—especially <strong className="text-foreground">Trade Date</strong>,{' '}
+        <strong className="text-foreground">Date/Time</strong>, <strong className="text-foreground">Proceeds</strong>,{' '}
+        <strong className="text-foreground">FX Rate to Base</strong>, and the{' '}
+        <strong className="text-foreground">Open/Close Indicator</strong> (these make P&amp;L match IBKR exactly)—uses
+        CSV with column headers, and keeps individual executions as separate rows. Then save the query.
       </>
     ),
   },

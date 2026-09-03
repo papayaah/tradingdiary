@@ -18,6 +18,20 @@ describe('retrieveFlexStatement', () => {
     expect(String(fetchImpl.mock.calls[1][0])).toContain('/GetStatement?t=12345678901234567890&q=ref-123&v=3');
   });
 
+  it('uses a short period window for incremental syncs (clamped to 1–365)', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response(success))
+      .mockResolvedValueOnce(new Response(csv));
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    await retrieveFlexStatement('12345678901234567890', '123456', { fetchImpl, sleep, periodDays: 7 });
+    expect(String(fetchImpl.mock.calls[0][0])).toContain('&p=7');
+
+    fetchImpl.mockClear().mockResolvedValueOnce(new Response(success)).mockResolvedValueOnce(new Response(csv));
+    await retrieveFlexStatement('12345678901234567890', '123456', { fetchImpl, sleep, periodDays: 999 });
+    expect(String(fetchImpl.mock.calls[0][0])).toContain('&p=365'); // clamped
+  });
+
   it('retries while IBKR is still generating error 1019', async () => {
     const generating = '<FlexStatementResponse><Status>Fail</Status><ErrorCode>1019</ErrorCode></FlexStatementResponse>';
     const fetchImpl = vi.fn()

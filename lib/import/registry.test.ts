@@ -71,7 +71,7 @@ describe('broker import registry', () => {
     expect(parsed?.brokerId).toBe('ibkr');
     expect(parsed?.format).toBe('flex-query-xml');
     expect(parsed?.transactions[0]).toMatchObject({
-      symbol: 'MSFT', side: 'BUY', date: '20260801', time: '13:45:00', commission: 1,
+      symbol: 'MSFT', side: 'BUY', date: '20260801', time: '13:45:00', commission: -1,
     });
   });
 
@@ -85,7 +85,7 @@ describe('broker import registry', () => {
     expect(parsed?.brokerId).toBe('ibkr');
     expect(parsed?.format).toBe('flex-query-csv');
     expect(parsed?.transactions[0]).toMatchObject({
-      symbol: 'AMD', side: 'SELL', date: '20260802', time: '15:10:05', commission: 1.25,
+      symbol: 'AMD', side: 'SELL', date: '20260802', time: '15:10:05', commission: -1.25,
     });
   });
 

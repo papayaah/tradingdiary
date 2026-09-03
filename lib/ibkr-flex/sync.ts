@@ -99,7 +99,17 @@ export async function syncIbkrFlexConnection(
 
   try {
     const token = decryptFlexToken(connection.encryptedToken);
+    // First import (no prior sync) pulls the full 365-day history. Routine syncs
+    // only need recent activity: the days since the last sync plus a safety
+    // buffer for weekends, settlement lag, and any missed run. Overlap is free —
+    // executions are deduplicated by their deterministic id on import.
+    const SYNC_BUFFER_DAYS = 4;
+    const lastSyncedMs = connection.lastSyncedAt ? Date.parse(connection.lastSyncedAt) : NaN;
+    const periodDays = Number.isFinite(lastSyncedMs)
+      ? Math.min(365, Math.max(SYNC_BUFFER_DAYS, Math.ceil((now.getTime() - lastSyncedMs) / 86_400_000) + SYNC_BUFFER_DAYS))
+      : 365;
     const statement = await retrieveFlexStatement(token, connection.queryId, {
+      periodDays,
       onProgress: (event) => {
         if (event.stage === 'requesting') {
           onProgress?.({ stage: 'requesting', message: 'Requesting your report from IBKR…' });

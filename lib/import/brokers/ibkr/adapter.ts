@@ -51,7 +51,13 @@ function parseFlexXml(source: BrokerImportSource): NormalizedTransaction[] {
     const price = parseBrokerNumber(trade.tradePrice || trade.price || '');
     if (!side || !symbol || !quantity || price === undefined || price === 0) continue;
 
-    const dateTime = splitBrokerDateTime(`${trade.tradeDate || trade.date || ''} ${trade.tradeTime || trade.time || ''}`);
+    // Execution timestamp (for ordering/display) — prefer the full dateTime.
+    const dateTime = splitBrokerDateTime(
+      `${trade.dateTime || trade.tradeDate || trade.date || ''} ${trade.tradeTime || trade.time || ''}`,
+    );
+    // Official trading day for attribution — IBKR's TradeDate (falls back to the
+    // execution date when absent).
+    const tradeDay = splitBrokerDateTime(`${trade.tradeDate || trade.date || ''}`);
     const commission = parseBrokerNumber(trade.ibCommission || trade.commission || '');
     const proceeds = parseBrokerNumber(trade.proceeds || '');
     transactions.push({
@@ -60,6 +66,7 @@ function parseFlexXml(source: BrokerImportSource): NormalizedTransaction[] {
       side,
       date: dateTime.date,
       time: dateTime.time,
+      tradeDate: tradeDay.date || dateTime.date,
       quantity: Math.abs(quantity),
       price: Math.abs(price),
       orderId: trade.transactionID || trade.tradeID || trade.orderID,
@@ -69,8 +76,14 @@ function parseFlexXml(source: BrokerImportSource): NormalizedTransaction[] {
       currency: trade.currency || 'USD',
       exchanges: trade.exchange || '',
       orderType: trade.orderType || undefined,
-      commission: Math.abs(commission ?? 0),
+      // Keep IBKR's sign: commissions are charges (negative), matching the app's
+      // netPnL = grossPnL + commission convention. Math.abs here double-counted
+      // fees as a *gain* and made realized P&L drift from the broker's figures.
+      commission: commission ?? 0,
       totalValue: proceeds === undefined ? undefined : Math.abs(proceeds),
+      // IBKR's own realized P&L (FIFO) — authoritative, correct even for positions
+      // opened before our import window. The aggregator prefers it over its own FIFO.
+      realizedPnL: parseBrokerNumber(trade.fifoPnlRealized || trade.realizedPnL || ''),
       fxRateToBase: parseBrokerNumber(trade.fxRateToBase || ''),
       openClose: normalizeOpenClose(trade.openCloseIndicator || trade.openClose),
     });
@@ -94,9 +107,15 @@ async function parseFlexCsv(source: BrokerImportSource) {
       'TradeDateTime',
       'Trade Date/Time',
     ]);
+    const tradeDateRaw = readValue(row, headers, ['TradeDate', 'Trade Date']);
+    // Execution timestamp (ordering/display) from DateTime; day attribution from
+    // the official TradeDate, which for overnight/foreign sessions lands on a
+    // different calendar date than the DateTime (e.g. HK/EU trades stamped the
+    // prior evening). Keeping them separate is what makes daily reports match IBKR.
     const dateTime = splitBrokerDateTime(combinedDateTime ||
-      `${readValue(row, headers, ['TradeDate', 'Trade Date'])} ${readValue(row, headers, ['TradeTime', 'Trade Time'])}`,
+      `${tradeDateRaw} ${readValue(row, headers, ['TradeTime', 'Trade Time'])}`,
     );
+    const tradeDay = splitBrokerDateTime(tradeDateRaw);
     const commission = parseBrokerNumber(readValue(row, headers, ['IBCommission', 'IB Commission', 'Commission']));
     const proceeds = parseBrokerNumber(readValue(row, headers, ['Proceeds']));
     return {
@@ -105,6 +124,7 @@ async function parseFlexCsv(source: BrokerImportSource) {
       side,
       date: dateTime.date,
       time: dateTime.time,
+      tradeDate: tradeDay.date || dateTime.date,
       quantity: Math.abs(quantity),
       price: Math.abs(price),
       orderId: readValue(row, headers, ['TransactionID', 'TradeID', 'OrderID']) || `ibkr-${dateTime.date}-${symbol}-${index}`,
@@ -114,8 +134,14 @@ async function parseFlexCsv(source: BrokerImportSource) {
       currency: readValue(row, headers, ['Currency', 'CurrencyPrimary']) || 'USD',
       exchanges: readValue(row, headers, ['Exchange']),
       orderType: readValue(row, headers, ['OrderType', 'Order Type']) || undefined,
-      commission: Math.abs(commission ?? 0),
+      // Keep IBKR's sign: commissions are charges (negative), matching the app's
+      // netPnL = grossPnL + commission convention. Math.abs here double-counted
+      // fees as a *gain* and made realized P&L drift from the broker's figures.
+      commission: commission ?? 0,
       totalValue: proceeds === undefined ? undefined : Math.abs(proceeds),
+      // IBKR's own realized P&L (FIFO) — authoritative, correct even for positions
+      // opened before our import window. The aggregator prefers it over its own FIFO.
+      realizedPnL: parseBrokerNumber(readValue(row, headers, ['FifoPnlRealized', 'RealizedPnL', 'Realized P&L', 'Realized P/L'])),
       fxRateToBase: parseBrokerNumber(readValue(row, headers, ['FXRateToBase', 'FxRateToBase', 'FX Rate To Base'])),
       openClose: normalizeOpenClose(readValue(row, headers, ['Open/CloseIndicator', 'OpenCloseIndicator', 'Open/Close'])),
     };
@@ -154,6 +180,9 @@ const adapter: BrokerAdapter = {
       side: trade.side.startsWith('BUY') ? 'BUY' : 'SELL',
       date: trade.date,
       time: trade.time,
+      // The .tlg date column is IBKR's trade date — use it directly for day
+      // attribution (no session-roll derivation needed).
+      tradeDate: trade.date,
       quantity: Math.abs(trade.quantity),
       price: Math.abs(trade.price),
       orderId: trade.tradeId,

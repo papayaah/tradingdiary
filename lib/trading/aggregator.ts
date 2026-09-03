@@ -87,6 +87,23 @@ function fxRate(t: TransactionRecord): number {
 }
 
 /**
+ * Effective cash-per-(qty×price) factor. IBKR's Flex report omits the contract
+ * multiplier (futures point value, bond percent-of-par), so `price × qty` alone
+ * mis-states P&L. Derive the true factor from the trade's own cash value:
+ * |totalValue| / (qty × price). Yields 1 for shares, the point value for futures
+ * (e.g. ¥100 for N225, HK$50 for HSI), and 0.01 for bonds — so realized P&L is in
+ * real currency and matches the broker. Falls back to the reported multiplier.
+ */
+function contractFactor(t: TransactionRecord): number {
+  const absQty = Math.abs(t.quantity);
+  const absPrice = Math.abs(t.price);
+  if (absQty > 0 && absPrice > 0 && t.totalValue) {
+    return Math.abs(t.totalValue) / (absQty * absPrice);
+  }
+  return t.multiplier || 1;
+}
+
+/**
  * Per-date accumulator for cross-day FIFO results.
  */
 interface DateAccum {
@@ -114,7 +131,11 @@ export function aggregateByDay(
   const bySymbol = new Map<string, { t: TransactionRecord; eDate: string }[]>();
 
   for (const t of transactions) {
-    const eDate = tradingDayFor(t.date, t.time, t.symbol);
+    // Attribute realized P&L to the broker's official trading day when we have it
+    // (IBKR TradeDate) — this is what makes daily totals match IBKR's own reports
+    // for overnight/foreign sessions. Otherwise derive it from the execution
+    // timestamp with the exchange session roll.
+    const eDate = t.tradeDate || tradingDayFor(t.date, t.time, t.symbol);
     const existing = bySymbol.get(t.symbol);
     if (existing) {
       existing.push({ t, eDate });
@@ -177,10 +198,15 @@ export function aggregateByDay(
       const isOpening = t.side === 'BUYTOOPEN' || t.side === 'SELLTOOPEN';
       const qty = Math.abs(t.quantity);
 
-      // If transaction has manual realized P&L, add it directly
-      if (t.realizedPnL != null) {
-        accum.realizedGross += t.realizedPnL;
-        accum.realizedGrossAccount += t.realizedPnL * fxRate(t);
+      // The broker's own realized P&L (IBKR FifoPnlRealized) is authoritative when
+      // present: it uses the true cost basis of the full account history, so it is
+      // correct even for positions opened before our import window — which our own
+      // FIFO can't reconstruct. When present we use it and skip the FIFO estimate
+      // below; commissions are still added separately (FifoPnlRealized is gross).
+      const hasReportedRealized = t.realizedPnL != null;
+      if (hasReportedRealized) {
+        accum.realizedGross += t.realizedPnL!;
+        accum.realizedGrossAccount += t.realizedPnL! * fxRate(t);
       }
 
       // Capture imported unrealized P&L
@@ -193,7 +219,7 @@ export function aggregateByDay(
         openLots.push({
           qty,
           entryPrice: Math.abs(t.price),
-          multiplier: t.multiplier || 1,
+          multiplier: contractFactor(t),
           commission: t.commission,
           commissionAccount: t.commission * fxRate(t),
         });
@@ -207,20 +233,25 @@ export function aggregateByDay(
           const lot = openLots[0];
           const matched = Math.min(remaining, lot.qty);
 
-          const isLong = t.side === 'SELLTOCLOSE';
-          const matchedGross = isLong
-            ? (closePrice - lot.entryPrice) * matched * lot.multiplier
-            : (lot.entryPrice - closePrice) * matched * lot.multiplier;
-          accum.realizedGross += matchedGross;
-          // Realized profit is recognized using the closing execution day's rate.
-          accum.realizedGrossAccount += matchedGross * fxRate(t);
+          // IBKR's FifoPnlRealized is already NET of commissions, so when it is
+          // present we neither recompute the FIFO gross nor add commissions again
+          // (that double-counted fees). We still consume lots for position tracking.
+          if (!hasReportedRealized) {
+            const isLong = t.side === 'SELLTOCLOSE';
+            const matchedGross = isLong
+              ? (closePrice - lot.entryPrice) * matched * lot.multiplier
+              : (lot.entryPrice - closePrice) * matched * lot.multiplier;
+            accum.realizedGross += matchedGross;
+            // Realized profit is recognized using the closing execution day's rate.
+            accum.realizedGrossAccount += matchedGross * fxRate(t);
 
-          // Allocate opening lot commission proportionally
-          const lotFraction = matched / (matched + (lot.qty - matched));
-          accum.realizedCommission += lot.commission * lotFraction;
-          accum.realizedCommissionAccount += lot.commissionAccount * lotFraction;
-          lot.commission -= lot.commission * lotFraction;
-          lot.commissionAccount -= lot.commissionAccount * lotFraction;
+            // Allocate opening lot commission proportionally.
+            const lotFraction = matched / (matched + (lot.qty - matched));
+            accum.realizedCommission += lot.commission * lotFraction;
+            accum.realizedCommissionAccount += lot.commissionAccount * lotFraction;
+            lot.commission -= lot.commission * lotFraction;
+            lot.commissionAccount -= lot.commissionAccount * lotFraction;
+          }
 
           lot.qty -= matched;
           remaining -= matched;
@@ -230,9 +261,12 @@ export function aggregateByDay(
           }
         }
 
-        // Add closing transaction's commission
-        accum.realizedCommission += t.commission;
-        accum.realizedCommissionAccount += t.commission * fxRate(t);
+        // Add closing transaction's commission (only when we computed gross
+        // ourselves; IBKR's reported realized already includes it).
+        if (!hasReportedRealized) {
+          accum.realizedCommission += t.commission;
+          accum.realizedCommissionAccount += t.commission * fxRate(t);
+        }
         runningPosition += (t.side === 'BUYTOCLOSE' ? qty : -qty);
       }
 

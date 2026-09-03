@@ -8,6 +8,11 @@ export interface NormalizedTransaction {
 
     // Optional
     time?: string;          // HH:MM:SS, defaults to "00:00:00"
+    tradeDate?: string;     // broker's official trading day (YYYYMMDD). For IBKR this
+                            // is TradeDate, which can differ from the execution
+                            // timestamp's date (overnight/foreign sessions). Used for
+                            // day attribution so reports match the broker; `date`/`time`
+                            // stay the true execution timestamp for ordering.
     accountId?: string;     // broker account identifier, used by server-side connectors
     orderId?: string;       // becomes tradeId, auto-generated if missing
     assetClass?: string;    // e.g. STK or FUT

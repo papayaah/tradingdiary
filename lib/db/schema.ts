@@ -20,6 +20,10 @@ export interface TransactionRecord {
   orderType: string;
   date: string;
   time: string;
+  /** Broker's official trading day (YYYYMMDD) for day attribution. May differ
+   * from `date` for overnight/foreign sessions (IBKR TradeDate). Falls back to
+   * `date` when the source doesn't distinguish them. */
+  tradeDate?: string;
   currency: string;
   quantity: number;
   multiplier: number;

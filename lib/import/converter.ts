@@ -86,6 +86,7 @@ export function toTransactionRecord(
         orderType: n.orderType || 'MARKET',
         date: dateStr,
         time,
+        tradeDate: n.tradeDate || dateStr,
         currency: n.currency || defaultCurrency,
         quantity: qty,
         multiplier,
