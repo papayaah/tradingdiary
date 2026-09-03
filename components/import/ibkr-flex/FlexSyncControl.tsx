@@ -13,7 +13,7 @@ import { fetchFlexConnection, streamFlexSync } from '@/lib/ibkr-flex/client-sync
 import type { IbkrFlexConnectionView, IbkrFlexSyncProgress } from '@/lib/ibkr-flex/types';
 
 const SECONDARY =
-  'inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-card-border bg-card-bg px-3.5 text-xs font-semibold text-foreground transition-colors hover:bg-muted-bg hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60';
+  'inline-flex py-2 items-center gap-2 whitespace-nowrap rounded-xl border border-card-border bg-card-bg px-3.5 text-xs font-semibold text-foreground transition-colors hover:bg-muted-bg hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60';
 
 function progressLabel(progress: IbkrFlexSyncProgress | null): string {
   if (!progress) return 'Syncing…';
