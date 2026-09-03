@@ -120,8 +120,22 @@ interface DateAccum {
   // Snapshot of the running position at the END of this date
   endPosition: number;
   endAvgCost: number;
-  // The first opening side seen for this symbol (across all dates)
+  // Direction of this day's trading in the symbol (derived per day).
   side: 'LONG' | 'SHORT';
+}
+
+/**
+ * Direction of a single day's trading in one symbol. Prefer the day's first
+ * opening fill (buy-to-open → long, sell-to-open → short). If the day only closes
+ * a position carried in from a prior day, infer from the first close instead
+ * (sell-to-close closes a long, buy-to-close closes a short).
+ */
+function deriveDaySide(txns: TransactionRecord[]): 'LONG' | 'SHORT' {
+  const firstOpen = txns.find((t) => t.side === 'BUYTOOPEN' || t.side === 'SELLTOOPEN');
+  if (firstOpen) return firstOpen.side === 'SELLTOOPEN' ? 'SHORT' : 'LONG';
+  const firstClose = txns.find((t) => t.side === 'SELLTOCLOSE' || t.side === 'BUYTOCLOSE');
+  if (firstClose) return firstClose.side === 'SELLTOCLOSE' ? 'LONG' : 'SHORT';
+  return 'LONG';
 }
 
 export function aggregateByDay(
@@ -159,12 +173,10 @@ export function aggregateByDay(
       return timeToMinutes(a.t.time) - timeToMinutes(b.t.time);
     });
 
-    // Determine overall side from the first opening transaction
-    const firstOpening = entries.find(
-      (e) => e.t.side === 'BUYTOOPEN' || e.t.side === 'SELLTOOPEN'
-    );
-    const side: 'LONG' | 'SHORT' =
-      firstOpening?.t.side === 'SELLTOOPEN' ? 'SHORT' : 'LONG';
+    // Side is derived PER TRADING DAY (see the trade build below), never once per
+    // symbol: a symbol shorted on one day and traded long on another must show the
+    // correct side on each day's row. A single symbol-wide side would stamp the
+    // first-ever opening's direction onto every later day.
 
     // FIFO lot queue carried across all dates
     const openLots: FIFOLot[] = [];
@@ -188,7 +200,7 @@ export function aggregateByDay(
           unrealizedPnL: undefined,
           endPosition: 0,
           endAvgCost: 0,
-          side,
+          side: 'LONG', // placeholder; set per day at trade-build time
         };
         accumsByDate.set(eDate, accum);
         allDateAccums.push(accum);
@@ -313,7 +325,7 @@ export function aggregateByDay(
       totalCommissions: acc.realizedCommissionAccount,
       netPnL,
       unrealizedPnL: acc.unrealizedPnLAccount,
-      side: acc.side,
+      side: deriveDaySide(acc.transactions),
       isOpen: Math.abs(acc.endPosition) > 0.01,
       netQuantity: acc.endPosition,
       openAvgCost: acc.endAvgCost,
