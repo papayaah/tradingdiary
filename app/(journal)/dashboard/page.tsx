@@ -3,7 +3,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { Upload, LayoutDashboard, Calendar, Sparkles, ChevronDown, Check } from 'lucide-react';
-import { aggregateByDay, type DailySummary } from '@/lib/trading/aggregator';
+import { type DailySummary } from '@/lib/trading/aggregator';
+import { getJournalSummaries, peekJournalSummaries } from '@/lib/trading/journal-summaries-cache';
 import { onJournalSynced } from '@/lib/journal/sync-bus';
 import { computeDashboard } from '@/lib/trading/dashboard';
 import { getCashFlows } from '@/lib/db/cash-flows';
@@ -21,7 +22,6 @@ import DailyPnLChart from '@/components/dashboard/DailyPnLChart';
 import ReplayTimeline from '@/components/replay/ReplayTimeline';
 import OpenPositionsCard from '@/components/dashboard/OpenPositionsCard';
 import { useAccount } from '@/contexts/AccountContext';
-import { getTransactionsByAccount } from '@/lib/db/trades';
 import { formatCurrency } from '@/lib/currency';
 import { loadDemoSampleData } from '@/lib/import/sample-loader';
 import { toast } from 'sonner';
@@ -163,18 +163,25 @@ export default function DashboardPage() {
         return;
       }
 
-      setLoading(true);
-      setEmpty(false);
-
-      const transactions = await getTransactionsByAccount(selectedAccountId);
-      setCashFlows(await getCashFlows(selectedAccountId));
-      if (transactions.length === 0) {
-        setEmpty(true);
+      // Warm cache (shared with the journal): skip the skeleton when the
+      // aggregation is already built, so navigating in is instant.
+      const warm = peekJournalSummaries(selectedAccountId);
+      if (warm) {
+        setAllSummaries(warm);
+        setEmpty(warm.length === 0);
         setLoading(false);
-        return;
+      } else {
+        setLoading(true);
+        setEmpty(false);
       }
-      const agg = aggregateByDay(transactions);
-      setAllSummaries(agg);
+
+      const [cashFlowsData, summaries] = await Promise.all([
+        getCashFlows(selectedAccountId),
+        getJournalSummaries(selectedAccountId),
+      ]);
+      setCashFlows(cashFlowsData);
+      setAllSummaries(summaries);
+      setEmpty(summaries.length === 0);
       setLoading(false);
     }
     load();
