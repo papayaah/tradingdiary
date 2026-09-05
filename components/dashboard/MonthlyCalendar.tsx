@@ -12,6 +12,10 @@ interface MonthlyCalendarProps {
   /** Selected date-range bounds ('YYYYMMDD'). */
   rangeStart?: string;
   rangeEnd?: string;
+  /** Called when the user navigates to a month, so the dashboard stats can
+   * recompute for exactly what the calendar is showing. Receives the first day
+   * of the month as 'YYYY-MM-01'. */
+  onMonthChange?: (monthStart: string) => void;
 }
 
 const DAY_HEADERS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -40,7 +44,7 @@ function formatDayLabel(d: string): string {
     : dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-export default function MonthlyCalendar({ summaries, rangeStart = '', rangeEnd = '' }: MonthlyCalendarProps) {
+export default function MonthlyCalendar({ summaries, rangeStart = '', rangeEnd = '', onMonthChange }: MonthlyCalendarProps) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const selectedSummary = useMemo(
     () => (selectedDate ? summaries.find((s) => s.date === selectedDate) ?? null : null),
@@ -100,13 +104,20 @@ export default function MonthlyCalendar({ summaries, rangeStart = '', rangeEnd =
     return null;
   }, [rangeStart, rangeEnd]);
 
-  const goToThisMonth = () => {
-    const now = new Date();
-    setViewMonth(new Date(now.getFullYear(), now.getMonth(), 1));
+  // Navigate to a month locally (immediate feedback) and tell the dashboard so
+  // the stat cards recompute for exactly this month.
+  const goToMonth = (next: Date) => {
+    setViewMonth(next);
+    onMonthChange?.(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-01`);
   };
 
-  const prevMonth = () => setViewMonth(new Date(year, month - 1, 1));
-  const nextMonth = () => setViewMonth(new Date(year, month + 1, 1));
+  const goToThisMonth = () => {
+    const now = new Date();
+    goToMonth(new Date(now.getFullYear(), now.getMonth(), 1));
+  };
+
+  const prevMonth = () => goToMonth(new Date(year, month - 1, 1));
+  const nextMonth = () => goToMonth(new Date(year, month + 1, 1));
 
 
 

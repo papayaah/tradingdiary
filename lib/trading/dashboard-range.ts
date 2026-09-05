@@ -8,7 +8,10 @@ export type DashboardRangeType =
   | 'lastmonth'
   | 'mtd'
   | 'ytd'
-  | 'custom';
+  | 'custom'
+  // A specific calendar month, driven by the dashboard calendar's navigation.
+  // The month is carried in `customStartDate` as its first day (YYYY-MM-01).
+  | 'month';
 
 export interface DashboardDateRange {
   start: string;
@@ -42,6 +45,13 @@ export function resolveDashboardDateRange(
       start: customStartDate.replaceAll('-', ''),
       end: customEndDate.replaceAll('-', ''),
     };
+  }
+
+  if (rangeType === 'month') {
+    const anchor = parseDateKey(customStartDate.replaceAll('-', '')) ?? now;
+    const monthStart = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+    const monthEnd = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
+    return { start: toDateKey(monthStart), end: toDateKey(monthEnd) };
   }
 
   // Anchor historical imports to their latest trading day so their relative

@@ -137,6 +137,12 @@ export default function DashboardPage() {
       case 'lastmonth': return 'Last Month';
       case 'mtd': return 'Month to Date';
       case 'ytd': return 'Year to Date';
+      case 'month': {
+        const d = startDate ? new Date(`${startDate}T00:00:00`) : null;
+        return d && !Number.isNaN(d.getTime())
+          ? d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+          : 'Selected Month';
+      }
       case 'custom':
         if (startDate && endDate) return `${startDate} to ${endDate}`;
         if (startDate) return `From ${startDate}`;
@@ -424,7 +430,18 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <MonthlyCalendar summaries={allSummaries} rangeStart={range.start} rangeEnd={range.end} />
+      <MonthlyCalendar
+        summaries={allSummaries}
+        rangeStart={range.start}
+        rangeEnd={range.end}
+        onMonthChange={(monthStart) => {
+          // Calendar navigation drives the stats: recompute everything for the
+          // month now showing in the calendar.
+          setRangeType('month');
+          setStartDate(monthStart);
+          setEndDate('');
+        }}
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 items-stretch">
         <DailyWinLossChart summaries={summaries} />

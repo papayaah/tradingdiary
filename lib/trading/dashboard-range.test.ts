@@ -53,6 +53,11 @@ describe('dashboard date range', () => {
     });
   });
 
+  it("resolves a specific calendar month from the anchor's first day", () => {
+    const range = resolveDashboardDateRange('month', '20260526', '2026-04-01', '', now);
+    expect(range).toEqual({ start: '20260401', end: '20260430' });
+  });
+
   it('normalizes custom dates and includes only matching summaries', () => {
     const range = resolveDashboardDateRange(
       'custom',
