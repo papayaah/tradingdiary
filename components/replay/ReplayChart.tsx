@@ -6,7 +6,6 @@ import {
     ColorType,
     CandlestickSeries,
     HistogramSeries,
-    createSeriesMarkers,
 } from 'lightweight-charts';
 import type {
     IChartApi,
@@ -17,6 +16,8 @@ import type {
 import { fetchCandles } from '@/lib/chart/fetch';
 import type { OHLCCandle } from '@/lib/chart/types';
 import type { TransactionRecord } from '@/lib/db/schema';
+import { TradeExecutionPrimitive } from '@/components/chart/SharedTradingChart';
+import type { CandleData } from '@/lib/chart/patterns';
 import { Loader2 } from 'lucide-react';
 import { timeToSeconds } from '@/lib/replay/engine';
 
@@ -62,8 +63,10 @@ export default function ReplayChart({
     const chartRef = useRef<any>(null);
     const seriesRef = useRef<any>(null);
     const volumeRef = useRef<any>(null);
-    const tradePriceSeriesRef = useRef<any>(null);
-    const markersApiRef = useRef<any>(null);
+    // In-bar execution arrows drawn at the exact fill price (same primitive the
+    // journal chart uses), replacing the old below/above-bar text markers and the
+    // separate flat trade-price series.
+    const execPrimitiveRef = useRef<TradeExecutionPrimitive | null>(null);
     const rangeSetRef = useRef<string>('');
     
     const [allCandles, setAllCandles] = useState<OHLCCandle[]>([]);
@@ -137,19 +140,12 @@ export default function ReplayChart({
         });
         volumeRef.current = volumeSeries;
 
-        const tradePriceSeries = chart.addSeries(CandlestickSeries, {
-            upColor: '#4ade80',
-            downColor: '#f87171',
-            borderVisible: false,
-            wickVisible: false,
-            lastValueVisible: false,
-            priceLineVisible: false,
-        });
-        tradePriceSeriesRef.current = tradePriceSeries;
-
-        // Create ONE markers plugin — store the returned API for atomic updates
-        const markersApi = createSeriesMarkers(candleSeries, []);
-        markersApiRef.current = markersApi;
+        // Execution arrows are drawn inside the bar at the exact fill price by a
+        // canvas primitive (candle times are real UTC epoch; formatCandleTime
+        // shifts them to the chart's ET display).
+        const execPrimitive = new TradeExecutionPrimitive((t) => (t + etOffset) as Time, isDark);
+        candleSeries.attachPrimitive(execPrimitive);
+        execPrimitiveRef.current = execPrimitive;
 
         chartRef.current = chart;
 
@@ -234,77 +230,28 @@ export default function ReplayChart({
         seriesRef.current.setData(candleData);
         volumeRef.current.setData(volumeData);
 
-        // Calculate markers for past executions
-        const visibleMarkers = transactions
-            .map(t => {
-                const [h, m, s] = t.time.split(':').map(Number);
-                const tradeTimeUtc = Math.floor(Date.UTC(year, month, day, h, m, s || 0) / 1000) - etOffset;
-                
-                // HIDE if in the future
-                if (tradeTimeUtc > currentUtcTimestamp) return null;
+        // Reveal only the fills that have happened by the current replay time, and
+        // draw them as in-bar arrows at their exact price via the shared primitive.
+        const revealed = transactions.filter((t) => {
+            const [h, m, s] = t.time.split(':').map(Number);
+            const execUtc = Math.floor(Date.UTC(year, month, day, h, m, s || 0) / 1000) - etOffset;
+            return execUtc <= currentUtcTimestamp;
+        });
 
-                // Bind to the interval bucket, not the trade time itself
-                const bucketTime = Math.floor((tradeTimeUtc - midnightEtUtc) / intervalSeconds) * intervalSeconds + midnightEtUtc;
-                if (!aggregated[bucketTime]) return null;
+        // Candles keyed by real UTC epoch (bucket start) — the base the primitive's
+        // execution matching expects; its formatCandleTime shifts to the ET display.
+        const primitiveCandles: CandleData[] = Object.values(aggregated)
+            .sort((a, b) => a.time - b.time)
+            .map((c) => ({
+                time: c.time,
+                open: c.open,
+                high: c.high,
+                low: c.low,
+                close: c.close,
+                volume: c.volume,
+            }));
 
-                const isBuy = t.side === 'BUYTOOPEN' || t.side === 'BUYTOCLOSE';
-                return {
-                    time: (bucketTime + etOffset) as Time,
-                    position: isBuy ? 'belowBar' : 'aboveBar',
-                    color: isBuy ? (isDark ? '#4ade80' : '#16a34a') : (isDark ? '#f87171' : '#dc2626'),
-                    shape: isBuy ? 'arrowUp' : 'arrowDown',
-                    text: `${isBuy ? 'B' : 'S'} ${Math.abs(t.quantity)} @ $${t.price.toFixed(2)}`,
-                };
-            })
-            .filter((m): m is any => m !== null)
-            .sort((a,b) => (a.time as number) - (b.time as number));
-
-        if (tradePriceSeriesRef.current) {
-            // Merge trades that fall on the same timestamp — a candlestick series
-            // requires strictly-ascending, unique times, so multiple fills at the
-            // same second must collapse into a single bar rather than duplicate.
-            const byTime = new Map<number, any>();
-            for (const t of transactions) {
-                const [h, m, s] = t.time.split(':').map(Number);
-                const tradeTimeUtc = Math.floor(Date.UTC(year, month, day, h, m, s || 0) / 1000) - etOffset;
-
-                if (tradeTimeUtc > currentUtcTimestamp) continue;
-
-                const time = tradeTimeUtc + etOffset;
-                const isBuy = t.side === 'BUYTOOPEN' || t.side === 'BUYTOCLOSE';
-                const color = isBuy ? '#4ade80' : '#f87171';
-
-                const existing = byTime.get(time);
-                if (existing) {
-                    // Aggregate concurrent fills into one OHLC bar.
-                    existing.high = Math.max(existing.high, t.price);
-                    existing.low = Math.min(existing.low, t.price);
-                    existing.close = t.price; // last fill wins for close/color
-                    existing.color = color;
-                    existing.borderColor = color;
-                } else {
-                    byTime.set(time, {
-                        time: time as Time,
-                        open: t.price,
-                        high: t.price,
-                        low: t.price,
-                        close: t.price,
-                        // We use colors to distinguish buy/sell since O=C
-                        color,
-                        borderColor: color,
-                    });
-                }
-            }
-            const tradePriceData = Array.from(byTime.values())
-                .sort((a, b) => (a.time as number) - (b.time as number));
-
-            tradePriceSeriesRef.current.setData(tradePriceData);
-        }
-
-        // Update the SINGLE markers plugin atomically — no new layers created
-        if (markersApiRef.current) {
-            markersApiRef.current.setMarkers(visibleMarkers);
-        }
+        execPrimitiveRef.current?.update(revealed, primitiveCandles, date, isDark);
 
     }, [currentTimeSeconds, allCandles, transactions, date, etOffset, interval, onCurrentPrice]);
 
