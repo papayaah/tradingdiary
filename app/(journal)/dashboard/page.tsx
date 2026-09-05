@@ -34,6 +34,8 @@ import {
   filterDashboardSummaries,
   isDateInDashboardRange,
   resolveDashboardDateRange,
+  shiftDashboardRange,
+  describeDashboardRange,
 } from '@/lib/trading/dashboard-range';
 import FlexSyncControl from '@/components/import/ibkr-flex/FlexSyncControl';
 
@@ -143,11 +145,17 @@ export default function DashboardPage() {
           ? d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
           : 'Selected Month';
       }
-      case 'custom':
+      case 'custom': {
+        const nice = describeDashboardRange({
+          start: startDate.replaceAll('-', ''),
+          end: endDate.replaceAll('-', ''),
+        });
+        if (nice) return nice;
         if (startDate && endDate) return `${startDate} to ${endDate}`;
         if (startDate) return `From ${startDate}`;
         if (endDate) return `Until ${endDate}`;
         return 'Custom Range';
+      }
       default: return 'Selected Range';
     }
   }, [rangeType, startDate, endDate]);
@@ -210,6 +218,39 @@ export default function DashboardPage() {
       range,
     };
   }, [allSummaries, rangeType, startDate, endDate]);
+
+  // Left/right arrows shift the whole dashboard one period at a time, matching
+  // the current range's unit (quarter→quarter, 7d→7 days, month→month, …).
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (showPicker) return;
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT')
+      ) {
+        return;
+      }
+      if (!filteredData || !filteredData.range.start || !filteredData.range.end) return;
+
+      event.preventDefault();
+      const next = shiftDashboardRange(
+        rangeType,
+        filteredData.range,
+        event.key === 'ArrowLeft' ? -1 : 1,
+      );
+      if (!next.startDate) return;
+      setRangeType(next.rangeType);
+      setStartDate(next.startDate);
+      setEndDate(next.endDate);
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [filteredData, rangeType, showPicker]);
 
   if (empty) {
     return (
