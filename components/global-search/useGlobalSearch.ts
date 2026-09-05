@@ -2,10 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useAccount } from '@/contexts/AccountContext';
-import { getAllDailyNotes, getAllTradeNotes } from '@/lib/db/notes';
-import { getTransactionsByAccount } from '@/lib/db/trades';
-import { aggregateByDay } from '@/lib/trading/aggregator';
 import { searchIndex } from '@/lib/search/search';
+import { getSearchIndex, prewarmSearchIndex } from '@/lib/search/search-index-cache';
 import type { SearchIndex } from '@/lib/search/types';
 
 const EMPTY_INDEX: SearchIndex = { trades: [], dailyNotes: [], tradeNotes: [] };
@@ -14,29 +12,23 @@ export function useGlobalSearch(query: string, enabled: boolean) {
   const { selectedAccountId, accounts } = useAccount();
   const [indexedData, setIndexedData] = useState<{ accountId: string; index: SearchIndex } | null>(null);
 
+  // Prewarm the index shortly after an account is available, on idle, so the
+  // first ⌘K is instant instead of paying for the full-history build then.
   useEffect(() => {
-    if (!enabled || !selectedAccountId) {
-      return;
-    }
+    if (!selectedAccountId) return;
+    const timer = setTimeout(() => prewarmSearchIndex(selectedAccountId), 600);
+    return () => clearTimeout(timer);
+  }, [selectedAccountId]);
+
+  // On open, get the (usually warm) index. Returns instantly when cached;
+  // otherwise builds once and every subsequent open is instant.
+  useEffect(() => {
+    if (!enabled || !selectedAccountId) return;
 
     let active = true;
-    Promise.all([
-      getTransactionsByAccount(selectedAccountId),
-      getAllDailyNotes(),
-      getAllTradeNotes(),
-    ])
-      .then(([transactions, dailyNotes, tradeNotes]) => {
-        if (!active) return;
-        const trades = aggregateByDay(transactions)
-          .flatMap((summary) => summary.trades);
-        setIndexedData({
-          accountId: selectedAccountId,
-          index: {
-            trades,
-            dailyNotes: dailyNotes.filter((note) => note.accountId === selectedAccountId),
-            tradeNotes: tradeNotes.filter((note) => note.accountId === selectedAccountId),
-          },
-        });
+    getSearchIndex(selectedAccountId)
+      .then((index) => {
+        if (active) setIndexedData({ accountId: selectedAccountId, index });
       })
       .catch(() => {
         if (active) setIndexedData(null);

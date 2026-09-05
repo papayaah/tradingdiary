@@ -9,13 +9,13 @@ import {
   setShowPnlInBaseCurrency,
 } from '@/lib/settings';
 import { aggregateByDay, applyMarketPrices, type DailySummary, type AggregatedTrade } from '@/lib/trading/aggregator';
+import { getJournalSummaries, peekJournalSummaries } from '@/lib/trading/journal-summaries-cache';
 import { onJournalSynced } from '@/lib/journal/sync-bus';
 import SyncStatusIndicator from '@/components/journal/SyncStatusIndicator';
 import FlexSyncControl from '@/components/import/ibkr-flex/FlexSyncControl';
 import DayGroup from '@/components/journal/DayGroup';
 import JournalTagFilter from '@/components/journal/JournalTagFilter';
 import { useAccount } from '@/contexts/AccountContext';
-import { getTransactionsByAccount } from '@/lib/db/trades';
 import { getAllTags } from '@/lib/db/tags';
 import { getAllTradeNotes } from '@/lib/db/notes';
 import type { TagRecord } from '@/lib/db/schema';
@@ -120,10 +120,18 @@ export default function JournalPage() {
         setSummaries([]);
         return;
       }
-      setSummaries(null); // Show loading state on switch
+      // Warm cache: reuse the already-aggregated summaries when available (e.g.
+      // navigating in from search) so the page is instant. Only show the skeleton
+      // on a genuinely cold load.
+      const warm = peekJournalSummaries(selectedAccountId);
+      if (warm) {
+        setSummaries(warm);
+      } else {
+        setSummaries(null);
+      }
       pricedScopeRef.current = ''; // new dataset → allow re-pricing
-      const transactions = await getTransactionsByAccount(selectedAccountId);
-      setSummaries(transactions.length > 0 ? aggregateByDay(transactions) : []);
+      const summaries = await getJournalSummaries(selectedAccountId);
+      setSummaries(summaries);
     }
     load();
   }, [selectedAccountId, refreshKey]);

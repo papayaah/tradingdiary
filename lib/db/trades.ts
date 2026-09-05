@@ -115,6 +115,16 @@ export async function getTransactionsByAccount(accountId: string): Promise<Trans
   return persistFxBackfill(account, transactions);
 }
 
+/**
+ * Read an account's transactions without the FX-backfill pass (which can do DB
+ * writes / rate lookups). For read-only, latency-sensitive consumers like global
+ * search: uses whatever FX rate was already stored at import time.
+ */
+export async function getTransactionsByAccountRaw(accountId: string): Promise<TransactionRecord[]> {
+  const db = await getDB();
+  return db.getAllFromIndex('transactions', 'by-accountId', accountId);
+}
+
 export async function saveManualTransaction(
   account: AccountRecord | null,
   transaction: TransactionRecord
