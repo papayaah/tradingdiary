@@ -10,7 +10,10 @@ import {
 import type { TradeAnalysisContext } from '@/lib/trading/trade-analysis';
 import type { LLMProvider } from '@/packages/ai-connect/src/types';
 import {
-  attachGuestAICookie,
+  aiAuthenticationRequiredResponse,
+  authenticateAIRequest,
+} from '@/lib/ai/auth';
+import {
   creditExhaustedBody,
   creditUsageDetails,
   hostedAIConfig,
@@ -24,6 +27,9 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   let creditGate: HostedAICreditGate | undefined;
   try {
+    const aiUser = await authenticateAIRequest(request);
+    if (!aiUser) return aiAuthenticationRequiredResponse();
+
     const config = hostedAIConfig(request);
     const { apiKey, provider, model: modelId } = config;
 
@@ -43,12 +49,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (config.hosted) {
-      creditGate = await reserveHostedAICredit(request, 'trade-review');
+      creditGate = await reserveHostedAICredit(aiUser.userId, 'trade-review');
       if (!creditGate.reservation.allowed) {
-        return attachGuestAICookie(
-          NextResponse.json(creditExhaustedBody(creditGate), { status: 429 }),
-          creditGate,
-        );
+        return NextResponse.json(creditExhaustedBody(creditGate), { status: 429 });
       }
     }
 
@@ -99,10 +102,10 @@ ${first.text}`,
         creditUsageDetails(provider, modelId, usage),
       );
       // Client falls back to the deterministic Objective Trade Statistics panel.
-      return attachGuestAICookie(NextResponse.json(
+      return NextResponse.json(
         { error: 'AI response could not be validated', fallback: true },
         { status: 422 }
-      ), creditGate);
+      );
     }
 
     // Never let the model raise the deterministic confidence ceiling.
@@ -112,7 +115,7 @@ ${first.text}`,
     }
 
     await creditGate?.reservation.complete(creditUsageDetails(provider, modelId, usage));
-    return attachGuestAICookie(NextResponse.json({
+    return NextResponse.json({
       analysis,
       provider,
       model: modelId,
@@ -125,7 +128,7 @@ ${first.text}`,
           }
         : undefined,
       credits: creditGate ? { remaining: creditGate.reservation.remaining } : undefined,
-    }), creditGate);
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Trade review failed';
     await creditGate?.reservation.release(message).catch(() => {});

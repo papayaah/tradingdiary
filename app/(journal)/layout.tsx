@@ -13,6 +13,7 @@ import { AccountProvider } from '@/contexts/AccountContext';
 import { JournalSyncProvider } from '@/components/journal/JournalSyncProvider';
 import { WelcomeProvider } from '@/components/welcome/WelcomeContext';
 import WelcomeModal from '@/components/welcome/WelcomeModal';
+import JournalAssistantBar from '@/components/assistant/JournalAssistantBar';
 
 export default function JournalLayout({
   children,
@@ -69,6 +70,7 @@ export default function JournalLayout({
                   {!isDirectReplay && <Sidebar collapsed={collapsed} onToggle={toggle} />}
                   <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
                     {!isDirectReplay && <MobileTopBar />}
+                    {!isDirectReplay && <JournalAssistantBar />}
                     <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-background pb-[calc(4rem+env(safe-area-inset-bottom))] sm:pb-0">
                       {children}
                     </main>

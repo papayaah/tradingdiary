@@ -27,7 +27,6 @@ export async function GET(request: Request) {
       requests: sql<number>`count(*)`,
       credits: sql<number>`coalesce(sum(${aiUsageEvent.creditsCharged}), 0)`,
       uniqueUsers: sql<number>`count(distinct ${aiUsageEvent.userId})`,
-      uniqueGuests: sql<number>`count(distinct case when ${aiUsageEvent.subjectType} = 'guest' then ${aiUsageEvent.subjectId} end)`,
     })
     .from(aiUsageEvent)
     .where(successful);
@@ -85,7 +84,6 @@ export async function GET(request: Request) {
       totalTokens: Number(providerUsage?.totalTokens ?? 0),
       costUsd: Number(providerUsage?.costUsd ?? 0),
       uniqueUsers: Number(summary?.uniqueUsers ?? 0),
-      uniqueGuests: Number(summary?.uniqueGuests ?? 0),
       failedRequests: Number(failed?.count ?? 0),
     },
     byAction: byAction.map((row) => ({

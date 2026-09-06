@@ -186,7 +186,6 @@ interface AIUsageData {
     totalTokens: number;
     costUsd: number;
     uniqueUsers: number;
-    uniqueGuests: number;
     failedRequests: number;
   };
   byAction: Array<{
@@ -660,7 +659,7 @@ export default function AdminDashboard() {
               <p className="mt-0.5 text-xs text-muted">Global server-funded usage and estimated Gemini cost over the last {aiUsage.days} days.</p>
             </div>
             <span className="text-xs font-semibold text-muted">
-              {aiUsage.summary.uniqueUsers} users · {aiUsage.summary.uniqueGuests} guests
+              {aiUsage.summary.uniqueUsers} signed-in users
             </span>
           </div>
 

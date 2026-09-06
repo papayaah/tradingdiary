@@ -3,7 +3,10 @@ import { createVercelAIModel } from '@/packages/ai-connect/src/services/aiServic
 import { generateText } from 'ai';
 import type { LLMProvider } from '@/packages/ai-connect/src/types';
 import {
-    attachGuestAICookie,
+    aiAuthenticationRequiredResponse,
+    authenticateAIRequest,
+} from '@/lib/ai/auth';
+import {
     creditExhaustedBody,
     creditUsageDetails,
     hostedAIConfig,
@@ -17,6 +20,9 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
     let creditGate: HostedAICreditGate | undefined;
     try {
+        const aiUser = await authenticateAIRequest(request);
+        if (!aiUser) return aiAuthenticationRequiredResponse();
+
         const config = hostedAIConfig(request);
         const { apiKey, provider, model: modelId } = config;
 
@@ -37,12 +43,9 @@ export async function POST(request: NextRequest) {
         }
 
         if (config.hosted) {
-            creditGate = await reserveHostedAICredit(request, 'map-columns');
+            creditGate = await reserveHostedAICredit(aiUser.userId, 'map-columns');
             if (!creditGate.reservation.allowed) {
-                return attachGuestAICookie(
-                    NextResponse.json(creditExhaustedBody(creditGate), { status: 429 }),
-                    creditGate,
-                );
+                return NextResponse.json(creditExhaustedBody(creditGate), { status: 429 });
             }
         }
 
@@ -100,7 +103,7 @@ Only map fields where you are confident. Return raw JSON without markdown format
             throw error;
         }
         await creditGate?.reservation.complete(creditUsageDetails(provider, modelId, result.usage));
-        return attachGuestAICookie(NextResponse.json({
+        return NextResponse.json({
             ...parsed,
             usage: {
                 promptTokens: result.usage.promptTokens,
@@ -108,7 +111,7 @@ Only map fields where you are confident. Return raw JSON without markdown format
                 totalTokens: result.usage.totalTokens
             },
             credits: creditGate ? { remaining: creditGate.reservation.remaining } : undefined,
-        }), creditGate);
+        });
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : 'Failed to map columns';
         await creditGate?.reservation.release(message).catch(() => {});

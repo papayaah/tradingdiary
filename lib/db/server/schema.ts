@@ -265,7 +265,7 @@ export const invalidSymbols = pgTable("invalid_symbols", {
 // the app, while the reusable ai-connect meter owns the reserve/settle shape.
 export const aiUsageEvent = pgTable("ai_usage_event", {
     id: uuid("id").primaryKey(),
-    subjectType: text("subject_type").notNull(), // guest | user
+    subjectType: text("subject_type").notNull(), // user (AI is authentication-only)
     subjectId: text("subject_id").notNull(),
     userId: text("user_id").references(() => user.id, { onDelete: 'set null' }),
     periodKey: text("period_key").notNull(),

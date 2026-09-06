@@ -30,6 +30,7 @@ import { normalizeDate, normalizeTime } from '@/lib/import/utils/normalizer';
 import { Link as LinkIcon, Cpu } from 'lucide-react';
 import { getProvider } from '@/packages/ai-connect/src/providers';
 import type { LLMProvider } from '@/packages/ai-connect/src/types';
+import { authClient } from '@/lib/auth-client';
 
 // Drop only exact-duplicate rows (same trade appearing in two dropped files).
 // The full composite key avoids cross-broker orderId collisions dropping
@@ -57,6 +58,8 @@ const dedupeTransactions = (txs: NormalizedTransaction[]): NormalizedTransaction
 
 export default function TradeImportWorkspace() {
   const router = useRouter();
+  const { data: session } = authClient.useSession();
+  const signedIn = Boolean(session?.user);
   const aiContext = useAIManagementContextOptional();
   const { refreshAccounts } = useAccount();
   const [accounts, setAccounts] = useState<AccountRecord[]>([]);
@@ -241,6 +244,9 @@ export default function TradeImportWorkspace() {
 
       if (processedType === 'image') {
         // If it's an image, we need vision.
+        if (!signedIn) {
+          throw new Error('Sign in to use AI-powered image import.');
+        }
         if (!activeKey && config?.type !== 'hosted-api') {
           throw new Error("API Key required for image import. Please configure it in Settings.");
         }
@@ -294,7 +300,7 @@ export default function TradeImportWorkspace() {
 
       // Image extraction already consumed one hosted AI action; map its output
       // locally so a single import gesture never spends a second product credit.
-      if (activeKey || (config?.type === 'hosted-api' && processedType !== 'image')) {
+      if (signedIn && (activeKey || (config?.type === 'hosted-api' && processedType !== 'image'))) {
         try {
           const response = await mapColumnsWithLLM(parsedHeaders, parsedRows.slice(0, 3), {
             apiKey: activeKey,

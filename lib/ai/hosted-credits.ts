@@ -1,7 +1,5 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
 import { and, eq, gt, gte, or, sql } from 'drizzle-orm';
-import type { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
+import type { NextRequest } from 'next/server';
 import { db } from '@/lib/db/server';
 import { aiUsageEvent } from '@/lib/db/server/schema';
 import {
@@ -18,7 +16,6 @@ function nonNegativeInteger(value: string | undefined, fallback: number): number
   return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : fallback;
 }
 
-export const GUEST_AI_CREDITS = nonNegativeInteger(process.env.AI_GUEST_CREDITS, 5);
 export const USER_MONTHLY_AI_CREDITS = nonNegativeInteger(process.env.AI_USER_MONTHLY_CREDITS, 50);
 export const DAILY_HOSTED_AI_CREDIT_CAP = Math.max(
   1,
@@ -29,9 +26,6 @@ export const HOSTED_AI_PRICING = {
   inputPerMillionUsd: 0.3,
   outputPerMillionUsd: 2.5,
 } as const;
-
-const GUEST_COOKIE = 'td_ai_guest';
-const GUEST_PERIOD_KEY = 'lifetime';
 
 const adapter: AICreditMeterAdapter = {
   async reserve(request) {
@@ -153,77 +147,21 @@ const adapter: AICreditMeterAdapter = {
 
 const meter = createAICreditMeter(adapter);
 
-function guestCookieSecret(): string {
-  const secret = process.env.BETTER_AUTH_SECRET || process.env.AUTH_SECRET;
-  if (secret) return secret;
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('BETTER_AUTH_SECRET is required for guest AI credits');
-  }
-  return 'trading-diary-development-guest-credit-secret';
-}
-
-function signGuestId(id: string): string {
-  return createHmac('sha256', guestCookieSecret()).update(id).digest('base64url');
-}
-
-function encodeGuestCookie(id: string): string {
-  return `${id}.${signGuestId(id)}`;
-}
-
-function decodeGuestCookie(value?: string): string | null {
-  if (!value) return null;
-  const separator = value.lastIndexOf('.');
-  if (separator <= 0) return null;
-  const id = value.slice(0, separator);
-  const signature = value.slice(separator + 1);
-  const expected = signGuestId(id);
-  if (signature.length !== expected.length) return null;
-  return timingSafeEqual(Buffer.from(signature), Buffer.from(expected)) ? id : null;
-}
-
 export interface HostedAICreditGate {
   reservation: AICreditReservation;
-  guestCookie?: string;
-  subjectType: 'guest' | 'user';
+  subjectType: 'user';
 }
 
 export async function reserveHostedAICredit(
-  request: NextRequest,
+  userId: string,
   action: string,
   credits = 1,
 ): Promise<HostedAICreditGate> {
-  const session = await auth.api.getSession({ headers: request.headers });
-  let guestCookie: string | undefined;
-  const subject = session?.user
-    ? { type: 'user' as const, id: session.user.id, userId: session.user.id }
-    : (() => {
-        const existingId = decodeGuestCookie(request.cookies.get(GUEST_COOKIE)?.value);
-        const id = existingId ?? crypto.randomUUID();
-        if (!existingId) guestCookie = encodeGuestCookie(id);
-        return { type: 'guest' as const, id };
-      })();
-  const policy = subject.type === 'user'
-    ? { allowance: USER_MONTHLY_AI_CREDITS, periodKey: calendarMonthPeriodKey() }
-    : { allowance: GUEST_AI_CREDITS, periodKey: GUEST_PERIOD_KEY };
+  const subject = { type: 'user' as const, id: userId, userId };
+  const policy = { allowance: USER_MONTHLY_AI_CREDITS, periodKey: calendarMonthPeriodKey() };
 
   const reservation = await meter.reserve({ subject, action, credits, policy });
-  return { reservation, guestCookie, subjectType: subject.type };
-}
-
-export function attachGuestAICookie<T extends NextResponse>(
-  response: T,
-  gate?: HostedAICreditGate,
-): T {
-  if (gate?.guestCookie) {
-    response.cookies.set(GUEST_COOKIE, gate.guestCookie, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 365 * 24 * 60 * 60,
-    });
-  }
-  return response;
+  return { reservation, subjectType: 'user' };
 }
 
 export function creditUsageDetails(
@@ -283,8 +221,6 @@ export function creditExhaustedBody(gate: HostedAICreditGate) {
   return {
     error: globalLimit
       ? 'Hosted AI is temporarily at its daily capacity. Please try again tomorrow.'
-      : gate.subjectType === 'guest'
-      ? `You have used all ${GUEST_AI_CREDITS} guest AI credits. Sign in for ${USER_MONTHLY_AI_CREDITS} credits each month.`
       : `You have used all ${USER_MONTHLY_AI_CREDITS} AI credits for this month.`,
     code: globalLimit ? 'AI_DAILY_CAP_REACHED' : 'AI_CREDITS_EXHAUSTED',
     allowance: gate.reservation.allowance,

@@ -20,6 +20,8 @@ import {
   tradeRef,
 } from '@/lib/db/notes';
 import type { TradeAIReviewRecord } from '@/lib/db/schema';
+import { authClient } from '@/lib/auth-client';
+import { useRouter } from 'next/navigation';
 
 interface TradeAIReviewCardProps {
   trade: AggregatedTrade;
@@ -302,6 +304,8 @@ function analysisToText(a: TradeAnalysis, currency: string): string {
 }
 
 export default function TradeAIReviewCard({ trade, accountId, currency }: TradeAIReviewCardProps) {
+  const router = useRouter();
+  const { data: session, isPending: sessionPending } = authClient.useSession();
   const groupKey = tradeRef(trade, accountId).tradeGroupKey;
   const reviewCurrency = trade.currency || currency;
   const aiContext = useAIManagementContextOptional();
@@ -316,7 +320,8 @@ export default function TradeAIReviewCard({ trade, accountId, currency }: TradeA
   const apiKey = cfg?.customLLM?.apiKey;
   const provider = cfg?.customLLM?.provider;
   const model = cfg?.customLLM?.model;
-  const hasAI = Boolean(apiKey) || cfg?.type === 'hosted-api';
+  const signedIn = Boolean(session?.user);
+  const hasAI = signedIn && (Boolean(apiKey) || cfg?.type === 'hosted-api');
 
   // Build deterministic context (for the fallback stats panel + staleness checks)
   useEffect(() => {
@@ -339,6 +344,10 @@ export default function TradeAIReviewCard({ trade, accountId, currency }: TradeA
   const freshExists = saved.some((r) => r.contextHash === currentHash);
 
   const handleAsk = useCallback(async () => {
+    if (!signedIn) {
+      router.push('/login?returnTo=%2Fjournal');
+      return;
+    }
     setLoading(true);
     setError('');
     setResult(null);
@@ -357,7 +366,7 @@ export default function TradeAIReviewCard({ trade, accountId, currency }: TradeA
     } finally {
       setLoading(false);
     }
-  }, [trade, apiKey, provider, model, aiContext]);
+  }, [trade, apiKey, provider, model, aiContext, router, signedIn]);
 
   const handleSave = useCallback(async () => {
     if (!result) return;
@@ -410,13 +419,13 @@ export default function TradeAIReviewCard({ trade, accountId, currency }: TradeA
       <div className="flex items-center gap-2">
         <button
           onClick={handleAsk}
-          disabled={loading || !hasAI || !ctx}
+          disabled={loading || sessionPending || (signedIn && !hasAI) || !ctx}
           className="inline-flex items-center gap-1.5 rounded-lg bg-accent/10 border border-accent/30 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-          {loading ? 'Reviewing…' : 'Ask AI Assistant'}
+          {loading ? 'Reviewing…' : signedIn ? 'Ask AI Assistant' : 'Sign in to use AI'}
         </button>
-        {!hasAI && (
+        {signedIn && !hasAI && (
           <span className="text-[11px] text-muted/70">Add an AI key in Settings to enable review.</span>
         )}
         {hasAI && freshExists && !result && (

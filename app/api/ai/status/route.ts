@@ -2,10 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createVercelAIModel } from '@/packages/ai-connect/src/services/aiService';
 import { generateText } from 'ai';
 import type { LLMProvider } from '@/packages/ai-connect/src/types';
+import {
+    aiAuthenticationRequiredResponse,
+    authenticateAIRequest,
+} from '@/lib/ai/auth';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+    const aiUser = await authenticateAIRequest(request);
+    if (!aiUser) return aiAuthenticationRequiredResponse();
+
     const hasGoogleKey = !!process.env.GOOGLE_GEMINI_API_KEY;
     return NextResponse.json({
         hasServerKey: hasGoogleKey || !!process.env.OPENROUTER_API_KEY,
@@ -16,6 +23,9 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
     try {
+        const aiUser = await authenticateAIRequest(request);
+        if (!aiUser) return aiAuthenticationRequiredResponse();
+
         const apiKey = request.headers.get('x-api-key');
         const provider = request.headers.get('x-provider') || 'openrouter';
         const requestedModel = request.headers.get('x-model');
