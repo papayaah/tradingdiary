@@ -46,7 +46,14 @@ function groupResults(results: SearchResult[]) {
   })).filter((section) => section.results.length > 0);
 }
 
-export default function GlobalSearch({ collapsed }: { collapsed: boolean }) {
+export default function GlobalSearch({
+  collapsed = false,
+  variant = 'sidebar',
+}: {
+  collapsed?: boolean;
+  variant?: 'sidebar' | 'mobile';
+}) {
+  const isMobile = variant === 'mobile';
   const router = useRouter();
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -75,6 +82,10 @@ export default function GlobalSearch({ collapsed }: { collapsed: boolean }) {
   }, [close, router]);
 
   useEffect(() => {
+    // Only the sidebar instance owns the ⌘K hotkey, so the mobile instance (which
+    // is always mounted, just hidden on desktop) can't double-toggle it. Phones
+    // have no hardware ⌘K anyway; the mobile search opens by tapping its icon.
+    if (isMobile) return;
     function onGlobalKeyDown(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
@@ -87,7 +98,7 @@ export default function GlobalSearch({ collapsed }: { collapsed: boolean }) {
     }
     window.addEventListener('keydown', onGlobalKeyDown);
     return () => window.removeEventListener('keydown', onGlobalKeyDown);
-  }, [close, isOpen, open]);
+  }, [close, isOpen, open, isMobile]);
 
   useEffect(() => {
     function onPointerDown(event: PointerEvent) {
@@ -112,28 +123,42 @@ export default function GlobalSearch({ collapsed }: { collapsed: boolean }) {
 
   return (
     <div ref={rootRef} className="relative z-50">
-      <button
-        type="button"
-        onClick={isOpen ? close : open}
-        className={`flex h-10 w-full items-center gap-3 rounded-lg text-sm transition-colors ${
-          isOpen
-            ? 'bg-accent/10 text-accent'
-            : 'text-muted hover:bg-sidebar-hover hover:text-foreground'
-        } ${collapsed ? 'justify-center px-0' : 'px-3'}`}
-        aria-label={isOpen ? 'Close global search' : 'Open global search'}
-        aria-expanded={isOpen}
-        title={collapsed ? 'Search (⌘K / Ctrl+K)' : undefined}
-      >
-        <Search size={18} className="shrink-0" />
-        {!collapsed && (
-          <>
-            <span className="min-w-0 flex-1 truncate text-left font-medium">Search</span>
-            <span className="flex items-center gap-0.5 rounded-md border border-sidebar-border bg-sidebar-bg px-1.5 py-0.5 text-[9px] font-semibold text-muted">
-              <span className="text-[11px]">⌘</span>K
-            </span>
-          </>
-        )}
-      </button>
+      {isMobile ? (
+        <button
+          type="button"
+          onClick={isOpen ? close : open}
+          className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
+            isOpen ? 'bg-accent/10 text-accent' : 'text-muted hover:bg-sidebar-hover hover:text-foreground'
+          }`}
+          aria-label={isOpen ? 'Close search' : 'Open search'}
+          aria-expanded={isOpen}
+        >
+          <Search size={20} className="shrink-0" />
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={isOpen ? close : open}
+          className={`flex h-10 w-full items-center gap-3 rounded-lg text-sm transition-colors ${
+            isOpen
+              ? 'bg-accent/10 text-accent'
+              : 'text-muted hover:bg-sidebar-hover hover:text-foreground'
+          } ${collapsed ? 'justify-center px-0' : 'px-3'}`}
+          aria-label={isOpen ? 'Close global search' : 'Open global search'}
+          aria-expanded={isOpen}
+          title={collapsed ? 'Search (⌘K / Ctrl+K)' : undefined}
+        >
+          <Search size={18} className="shrink-0" />
+          {!collapsed && (
+            <>
+              <span className="min-w-0 flex-1 truncate text-left font-medium">Search</span>
+              <span className="flex items-center gap-0.5 rounded-md border border-sidebar-border bg-sidebar-bg px-1.5 py-0.5 text-[9px] font-semibold text-muted">
+                <span className="text-[11px]">⌘</span>K
+              </span>
+            </>
+          )}
+        </button>
+      )}
 
       {isOpen && (
         <>
@@ -141,9 +166,11 @@ export default function GlobalSearch({ collapsed }: { collapsed: boolean }) {
 
           <div
             className={`fixed z-50 flex max-h-[min(78vh,620px)] flex-col overflow-hidden rounded-2xl border border-card-border bg-card-bg shadow-2xl ${
-              collapsed
-                ? 'left-[68px] top-16 w-[min(42rem,calc(100vw-5rem))]'
-                : 'left-[228px] top-16 w-[min(42rem,calc(100vw-15.5rem))]'
+              isMobile
+                ? 'left-3 right-3 top-[calc(env(safe-area-inset-top)+3.25rem)]'
+                : collapsed
+                  ? 'left-[68px] top-16 w-[min(42rem,calc(100vw-5rem))]'
+                  : 'left-[228px] top-16 w-[min(42rem,calc(100vw-15.5rem))]'
             }`}
           >
           <div className="border-b border-card-border p-3">

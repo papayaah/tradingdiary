@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation';
 import BrandLogo from '@/components/brand/BrandLogo';
 import AccountSwitcher from '@/components/sidebar/AccountSwitcher';
+import GlobalSearch from '@/components/global-search/GlobalSearch';
 import { useAccount } from '@/contexts/AccountContext';
 
 // Longest-prefix wins, so '/admin/engage' must be checked before '/admin'.
@@ -38,15 +39,18 @@ export default function MobileTopBar() {
         <BrandLogo className="h-8 w-8 shrink-0" />
         <span className="truncate text-base font-semibold text-foreground">{pageTitle(pathname)}</span>
       </div>
-      {accounts.length > 0 && (
-        <AccountSwitcher
-          accounts={accounts}
-          selectedAccountId={selectedAccountId}
-          onSelect={setSelectedAccountId}
-          collapsed
-          menuPlacement="bottom-end"
-        />
-      )}
+      <div className="flex items-center gap-1">
+        <GlobalSearch variant="mobile" />
+        {accounts.length > 0 && (
+          <AccountSwitcher
+            accounts={accounts}
+            selectedAccountId={selectedAccountId}
+            onSelect={setSelectedAccountId}
+            collapsed
+            menuPlacement="bottom-end"
+          />
+        )}
+      </div>
     </header>
   );
 }
