@@ -1,5 +1,9 @@
 import type { ParsedSearchQuery, SearchIndex, SearchResult } from './types';
 
+/** Max rows returned. Bounded so an ambiguous query (e.g. a single letter) can't
+ * render thousands of rows; the UI hints when results are truncated. */
+export const MAX_SEARCH_RESULTS = 50;
+
 const NAVIGATION: Omit<SearchResult, 'score'>[] = [
   { id: 'nav-dashboard', kind: 'navigation', group: 'Go to', title: 'Dashboard', subtitle: 'Performance, analytics, and calendar', href: '/dashboard' },
   { id: 'nav-journal', kind: 'navigation', group: 'Go to', title: 'Trading Journal', subtitle: 'Trades, charts, and notes', href: '/journal' },
@@ -115,6 +119,7 @@ export function searchIndex(index: SearchIndex, rawQuery: string): SearchResult[
       pnl: trade.netPnL + (trade.unrealizedPnL || 0),
       side: trade.side,
       isOpen: trade.isOpen,
+      date: trade.date,
     });
   }
 
@@ -136,6 +141,7 @@ export function searchIndex(index: SearchIndex, rawQuery: string): SearchResult[
       subtitle: excerpt(note.content || note.tags.join(', '), query.text),
       href: `/journal?date=${note.date}&symbol=${encodeURIComponent(note.symbol)}`,
       score: (score || 75) + 5,
+      date: note.date,
     });
   }
 
@@ -156,5 +162,15 @@ export function searchIndex(index: SearchIndex, rawQuery: string): SearchResult[
     });
   }
 
-  return results.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title)).slice(0, 24);
+  // Score first; then, for equal scores (e.g. every same-symbol trade), the most
+  // recent date wins so results read newest-first; title is the final tiebreak.
+  return results
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const ad = a.date ?? '';
+      const bd = b.date ?? '';
+      if (ad !== bd) return bd.localeCompare(ad);
+      return a.title.localeCompare(b.title);
+    })
+    .slice(0, MAX_SEARCH_RESULTS);
 }

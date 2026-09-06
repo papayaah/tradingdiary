@@ -52,4 +52,20 @@ describe('global search', () => {
   it('shows only navigation and actions for an empty query', () => {
     expect(searchIndex(index, '').every((result) => result.kind === 'navigation' || result.kind === 'action')).toBe(true);
   });
+
+  it('orders same-symbol trades newest-first and carries the date', () => {
+    const many = {
+      trades: [
+        trade({ date: '20260101' }),
+        trade({ date: '20260805' }),
+        trade({ date: '20260320' }),
+      ],
+      dailyNotes: [],
+      tradeNotes: [],
+    };
+    const dates = searchIndex(many, 'symbol:AAPL')
+      .filter((r) => r.kind === 'trade')
+      .map((r) => r.date);
+    expect(dates).toEqual(['20260805', '20260320', '20260101']);
+  });
 });

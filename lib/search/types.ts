@@ -15,6 +15,9 @@ export interface SearchResult {
   pnl?: number;
   side?: 'LONG' | 'SHORT';
   isOpen?: boolean;
+  /** Trading day (YYYYMMDD) for trade/note results — shown in the row and used
+   * to break score ties most-recent-first. */
+  date?: string;
 }
 
 export interface SearchIndex {

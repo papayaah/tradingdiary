@@ -17,9 +17,18 @@ import {
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/currency';
 import type { SearchResult, SearchResultGroup } from '@/lib/search/types';
+import { MAX_SEARCH_RESULTS } from '@/lib/search/search';
 import { useGlobalSearch } from './useGlobalSearch';
 
 const GROUP_ORDER: SearchResultGroup[] = ['Go to', 'Actions', 'Trades', 'Journal notes'];
+
+function formatSearchDate(yyyymmdd: string): string {
+  if (!/^\d{8}$/.test(yyyymmdd)) return '';
+  const dt = new Date(Number(yyyymmdd.slice(0, 4)), Number(yyyymmdd.slice(4, 6)) - 1, Number(yyyymmdd.slice(6, 8)));
+  return Number.isNaN(dt.getTime())
+    ? ''
+    : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
 function ResultIcon({ result }: { result: SearchResult }) {
   if (result.kind === 'trade') return <CircleDollarSign size={17} />;
@@ -195,9 +204,16 @@ export default function GlobalSearch({ collapsed }: { collapsed: boolean }) {
                         </span>
                         <span className="block truncate text-xs text-muted">{result.subtitle}</span>
                       </span>
-                      {result.pnl !== undefined ? (
-                        <span className={`shrink-0 text-xs font-bold tabular-nums ${result.pnl >= 0 ? 'text-profit' : 'text-loss'}`}>
-                          {formatCurrency(result.pnl, currency)}
+                      {result.pnl !== undefined || result.date ? (
+                        <span className="flex shrink-0 flex-col items-end gap-0.5">
+                          {result.pnl !== undefined && (
+                            <span className={`text-xs font-bold tabular-nums ${result.pnl >= 0 ? 'text-profit' : 'text-loss'}`}>
+                              {formatCurrency(result.pnl, currency)}
+                            </span>
+                          )}
+                          {result.date && (
+                            <span className="text-[10px] tabular-nums text-muted">{formatSearchDate(result.date)}</span>
+                          )}
                         </span>
                       ) : active ? <ArrowRight size={15} className="shrink-0 text-accent" /> : null}
                     </button>
@@ -215,7 +231,11 @@ export default function GlobalSearch({ collapsed }: { collapsed: boolean }) {
             )}
 
             <footer className="mt-1 flex items-center justify-between border-t border-card-border px-3 py-2 text-[10px] text-muted">
-              <span className="hidden sm:inline">Filters: symbol: · result: · side: · status: · tag: · date:</span>
+              <span className="hidden sm:inline">
+                {orderedResults.length >= MAX_SEARCH_RESULTS
+                  ? `Showing first ${MAX_SEARCH_RESULTS} — refine (e.g. symbol:U) to narrow`
+                  : 'Filters: symbol: · result: · side: · status: · tag: · date:'}
+              </span>
               <span className="ml-auto flex items-center gap-1"><CornerDownLeft size={11} /> Open</span>
             </footer>
           </div>
