@@ -53,6 +53,31 @@ describe('global search', () => {
     expect(searchIndex(index, '').every((result) => result.kind === 'navigation' || result.kind === 'action')).toBe(true);
   });
 
+  it('parses partial dates (year, month name, month+year)', () => {
+    expect(parseSearchQuery('nvda 2025')).toMatchObject({ text: 'nvda', year: '2025' });
+    expect(parseSearchQuery('nvda may')).toMatchObject({ text: 'nvda', month: '05' });
+    expect(parseSearchQuery('nvda may 2024')).toMatchObject({ text: 'nvda', month: '05', year: '2024' });
+    expect(parseSearchQuery('nvda 2024-05')).toMatchObject({ text: 'nvda', month: '05', year: '2024' });
+  });
+
+  it('filters by month across years, by month+year, and by year', () => {
+    const idx = {
+      trades: [
+        trade({ symbol: 'NVDA', companyName: 'Nvidia', date: '20240515' }),
+        trade({ symbol: 'NVDA', companyName: 'Nvidia', date: '20250520' }),
+        trade({ symbol: 'NVDA', companyName: 'Nvidia', date: '20240610' }),
+      ],
+      dailyNotes: [],
+      tradeNotes: [],
+    };
+    const dates = (q: string) =>
+      searchIndex(idx, q).filter((r) => r.kind === 'trade').map((r) => r.date).sort();
+
+    expect(dates('nvda may')).toEqual(['20240515', '20250520']); // any-year May
+    expect(dates('nvda may 2024')).toEqual(['20240515']); // May 2024 only
+    expect(dates('nvda 2024')).toEqual(['20240515', '20240610']); // all of 2024
+  });
+
   it('orders same-symbol trades newest-first and carries the date', () => {
     const many = {
       trades: [

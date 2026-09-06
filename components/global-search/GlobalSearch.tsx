@@ -188,7 +188,7 @@ export default function GlobalSearch({
                 aria-expanded="true"
                 aria-controls="global-search-results"
                 aria-activedescendant={orderedResults[safeActiveIndex] ? `search-result-${orderedResults[safeActiveIndex].id}` : undefined}
-                placeholder="Try AAPL losses, tag:revenge, or open positions"
+                placeholder="Try NVDA may 2024, AAPL losses, tag:revenge, or open positions"
                 className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted"
               />
               {isLoading ? <LoaderCircle size={16} className="animate-spin text-muted" /> : null}
@@ -260,8 +260,8 @@ export default function GlobalSearch({
             <footer className="mt-1 flex items-center justify-between border-t border-card-border px-3 py-2 text-[10px] text-muted">
               <span className="hidden sm:inline">
                 {orderedResults.length >= MAX_SEARCH_RESULTS
-                  ? `Showing first ${MAX_SEARCH_RESULTS} — refine (e.g. symbol:U) to narrow`
-                  : 'Filters: symbol: · result: · side: · status: · tag: · date:'}
+                  ? `Showing first ${MAX_SEARCH_RESULTS} — add a date to narrow (e.g. "NVDA may 2024", "NVDA 2025")`
+                  : 'Filters: symbol: · result: · side: · status: · tag: · date (e.g. may 2024)'}
               </span>
               <span className="ml-auto flex items-center gap-1"><CornerDownLeft size={11} /> Open</span>
             </footer>

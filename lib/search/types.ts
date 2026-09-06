@@ -33,5 +33,9 @@ export interface ParsedSearchQuery {
   result?: 'win' | 'loss';
   status?: 'open' | 'closed';
   tag?: string;
+  /** Exact trading day (YYYYMMDD). */
   date?: string;
+  /** Partial-date narrowing: 4-digit year and/or 2-digit month (MM). */
+  year?: string;
+  month?: string;
 }

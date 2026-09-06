@@ -23,6 +23,11 @@ function compactDate(value: string): string | undefined {
   return digits.length === 8 ? digits : undefined;
 }
 
+const MONTHS: Record<string, string> = {
+  jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+  jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+};
+
 export function parseSearchQuery(raw: string): ParsedSearchQuery {
   let working = raw.trim();
   const parsed: ParsedSearchQuery = { text: '' };
@@ -54,9 +59,33 @@ export function parseSearchQuery(raw: string): ParsedSearchQuery {
 
   working = working
     .replace(/\b(long|short|wins?|winners?|profitable|loss(es)?|losers?|losing|open positions?|closed positions?)\b/gi, ' ')
-    .replace(/\b20\d{2}[-/]?(0[1-9]|1[0-2])[-/]?([0-2]\d|3[01])\b/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+    .replace(/\b20\d{2}[-/]?(0[1-9]|1[0-2])[-/]?([0-2]\d|3[01])\b/g, ' ');
+
+  // Partial dates so "nvda 2025", "nvda may", and "nvda may 2024" all narrow.
+  if (!parsed.date) {
+    const ym = working.match(/\b((?:19|20)\d{2})[-/](0[1-9]|1[0-2])\b/);
+    if (ym) {
+      parsed.year = ym[1];
+      parsed.month = ym[2];
+      working = working.replace(ym[0], ' ');
+    }
+
+    const monthMatch = working.match(
+      /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i,
+    );
+    if (monthMatch && !parsed.month) {
+      parsed.month = MONTHS[monthMatch[1].slice(0, 3).toLowerCase()];
+      working = working.replace(monthMatch[0], ' ');
+    }
+
+    const yearMatch = working.match(/\b(19|20)\d{2}\b/);
+    if (yearMatch && !parsed.year) {
+      parsed.year = yearMatch[0];
+      working = working.replace(yearMatch[0], ' ');
+    }
+  }
+
+  working = working.replace(/\s+/g, ' ').trim();
   parsed.text = working.toLowerCase();
   return parsed;
 }
@@ -86,7 +115,13 @@ function excerpt(content: string, query: string): string {
 export function searchIndex(index: SearchIndex, rawQuery: string): SearchResult[] {
   const query = parseSearchQuery(rawQuery);
   const hasQuery = Boolean(rawQuery.trim());
-  const hasTradeFilter = Boolean(query.symbol || query.side || query.result || query.status || query.date);
+  const hasTradeFilter = Boolean(
+    query.symbol || query.side || query.result || query.status || query.date || query.year || query.month,
+  );
+  const matchesDate = (date: string): boolean =>
+    (!query.date || date === query.date) &&
+    (!query.year || date.slice(0, 4) === query.year) &&
+    (!query.month || date.slice(4, 6) === query.month);
   const results: SearchResult[] = [];
 
   for (const item of [...NAVIGATION, ...ACTIONS]) {
@@ -102,7 +137,7 @@ export function searchIndex(index: SearchIndex, rawQuery: string): SearchResult[
     if (query.result === 'loss' && trade.netPnL >= 0) continue;
     if (query.status === 'open' && !trade.isOpen) continue;
     if (query.status === 'closed' && trade.isOpen) continue;
-    if (query.date && trade.date !== query.date) continue;
+    if (!matchesDate(trade.date)) continue;
 
     const subtitle = `${trade.companyName || trade.symbol} · ${trade.side.toLowerCase()} · ${trade.executions} execution${trade.executions === 1 ? '' : 's'}`;
     let score = textScore(query.text, trade.symbol, `${subtitle} ${trade.date}`);
@@ -127,7 +162,7 @@ export function searchIndex(index: SearchIndex, rawQuery: string): SearchResult[
   for (const note of index.tradeNotes) {
     if (!hasQuery) continue;
     if (query.symbol && note.symbol.toUpperCase() !== query.symbol) continue;
-    if (query.date && note.date !== query.date) continue;
+    if (!matchesDate(note.date)) continue;
     if (!query.text && (query.side || query.result || query.status)) continue;
     if (tagFilter && !note.tags.some((tag) => tag.toLowerCase().includes(tagFilter))) continue;
     const searchable = `${note.symbol} ${note.tags.join(' ')} ${note.content}`;
@@ -147,7 +182,7 @@ export function searchIndex(index: SearchIndex, rawQuery: string): SearchResult[
 
   for (const note of index.dailyNotes) {
     if (!hasQuery) continue;
-    if (query.date && note.date !== query.date) continue;
+    if (!matchesDate(note.date)) continue;
     if (!query.text && (query.symbol || query.side || query.result || query.status)) continue;
     const score = textScore(query.text, `Notes for ${note.date}`, note.content);
     if (score === 0 || tagFilter) continue;
