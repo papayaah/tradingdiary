@@ -11,6 +11,7 @@ import { ReactEngagePromo } from './compositions/ReactEngagePromo';
 import { ComicTutorialPromo } from './compositions/ComicTutorialPromo';
 import { OwlCapybaraTradingPromo } from './compositions/OwlCapybaraTradingPromo';
 import { ReplayPromo } from './compositions/ReplayPromo';
+import { SearchPromo } from './compositions/SearchPromo';
 import { patternPromos } from './patterns';
 
 const FPS = 30;
@@ -98,6 +99,26 @@ export function VideoRoot() {
       <Composition
         id="AnalyticsPromoLight"
         component={AnalyticsPromo}
+        durationInFrames={330}
+        fps={FPS}
+        width={WIDTH}
+        height={HEIGHT}
+        defaultProps={{ themeMode: 'light' }}
+      />
+
+      {/* Search Promo */}
+      <Composition
+        id="SearchPromo"
+        component={SearchPromo}
+        durationInFrames={330}
+        fps={FPS}
+        width={WIDTH}
+        height={HEIGHT}
+        defaultProps={{ themeMode: 'dark' }}
+      />
+      <Composition
+        id="SearchPromoLight"
+        component={SearchPromo}
         durationInFrames={330}
         fps={FPS}
         width={WIDTH}

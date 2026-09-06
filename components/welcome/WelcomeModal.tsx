@@ -19,7 +19,7 @@ interface Short {
 }
 
 const SHORTS: Short[] = [
-  { key: 'analytics', base: '/analytics-promo', offsetRatio: 0.0 },
+  { key: 'search', base: '/search-promo', offsetRatio: 0.0 },
   { key: 'pattern', base: '/pattern-promo', offsetRatio: 0.25 },
   { key: 'replay', base: '/replay-promo', offsetRatio: 0.5 },
   { key: 'autoscan', base: '/auto-scan-promo', offsetRatio: 0.75 },
@@ -116,8 +116,8 @@ export default function WelcomeModal({ videoUrl }: WelcomeModalProps) {
             )}
           </div>
 
-          {/* Staggered portrait shorts grid (1/4th video offset per card) */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-card-border">
+          {/* Staggered portrait shorts grid (1 col mobile, 2 cols tablet/iPad, 4 cols desktop) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-px bg-card-border">
             {SHORTS.map((short, idx) => (
               <div
                 key={short.key}
