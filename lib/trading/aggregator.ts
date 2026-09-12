@@ -28,7 +28,19 @@ export interface AggregatedTrade {
   netQuantity: number;
   openAvgCost: number;
   unrealizedPnL?: number;
-  transactions: TransactionRecord[];
+  /** Contract multiplier (from the first execution). Promoted onto the trade so
+   * unrealized-P&L pricing works on the compact read model without raw fills. */
+  multiplier?: number;
+  /** Minutes between the first and last fill (0 for single-fill trades).
+   * Promoted so hold-time stats work without loading raw fills. */
+  holdMinutes?: number;
+  /** Ids of the executions composing this trade. The compact read model stores
+   * these instead of the full records; expand-time consumers hydrate them via
+   * loadTransactionsByIds. */
+  transactionIds?: string[];
+  /** Raw executions. Present when built in-session; omitted in the persisted
+   * compact model (hydrate lazily from transactionIds when needed). */
+  transactions?: TransactionRecord[];
 }
 
 export interface DailySummary {
@@ -69,6 +81,13 @@ function timeToMinutes(time: string): number {
   const s = parts[2] || 0;
   if (isNaN(h) || isNaN(m) || isNaN(s)) return 0;
   return h * 3600 + m * 60 + s;
+}
+
+/** Minutes spanned by a trade's fills (0 for single-fill trades). */
+function holdMinutesOf(txns: TransactionRecord[]): number {
+  if (txns.length < 2) return 0;
+  const times = txns.map((t) => timeToMinutes(t.time));
+  return Math.max(0, (Math.max(...times) - Math.min(...times)) / 60);
 }
 
 interface FIFOLot {
@@ -329,6 +348,9 @@ export function aggregateByDay(
       isOpen: Math.abs(acc.endPosition) > 0.01,
       netQuantity: acc.endPosition,
       openAvgCost: acc.endAvgCost,
+      multiplier: acc.transactions[0]?.multiplier ?? 1,
+      holdMinutes: holdMinutesOf(acc.transactions),
+      transactionIds: acc.transactions.map((t) => t.tradeId),
       transactions: acc.transactions,
     };
 
@@ -340,6 +362,21 @@ export function aggregateByDay(
     }
   }
 
+  return buildDailySummaries(byDate);
+}
+
+/**
+ * Rebuild day summaries from a flat list of (possibly compact) trades — used to
+ * recompute day headers/stats for a filtered subset (e.g. the tag filter)
+ * without touching raw transactions. Reads only scalar trade fields.
+ */
+export function buildSummariesFromTrades(trades: AggregatedTrade[]): DailySummary[] {
+  const byDate = new Map<string, AggregatedTrade[]>();
+  for (const trade of trades) {
+    const arr = byDate.get(trade.date);
+    if (arr) arr.push(trade);
+    else byDate.set(trade.date, [trade]);
+  }
   return buildDailySummaries(byDate);
 }
 
@@ -427,6 +464,9 @@ export function aggregateTradeGroupsByDay(
       isOpen: g.isOpen,
       netQuantity: g.netQuantity,
       openAvgCost: g.openAvgCost,
+      multiplier: txns[0]?.multiplier ?? 1,
+      holdMinutes: holdMinutesOf(txns),
+      transactionIds: txns.map((t) => t.tradeId),
       transactions: txns,
     };
 
@@ -477,7 +517,7 @@ export function applyMarketPrices(
 
       if (marketPrice == null) continue;
 
-      const multiplier = trade.transactions[0]?.multiplier || 1;
+      const multiplier = trade.multiplier ?? trade.transactions?.[0]?.multiplier ?? 1;
 
       const nativeUnrealized = trade.side === 'LONG'
         ? (marketPrice - trade.openAvgCost) * Math.abs(trade.netQuantity) * multiplier

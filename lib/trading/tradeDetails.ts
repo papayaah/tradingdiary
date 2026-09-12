@@ -39,7 +39,7 @@ function weightedAvgPrice(txns: TransactionRecord[]): number {
  * from the trade's own transactions — no extra data access.
  */
 export function computeTradeDetails(trade: AggregatedTrade): TradeDetails {
-  const txns = trade.transactions;
+  const txns = trade.transactions ?? [];
   const buys = txns.filter((t) => t.side === 'BUYTOOPEN' || t.side === 'BUYTOCLOSE');
   const sells = txns.filter((t) => t.side === 'SELLTOOPEN' || t.side === 'SELLTOCLOSE');
 

@@ -47,7 +47,10 @@ function timeToSeconds(time: string): number {
 }
 
 function holdTimeMinutes(trade: AggregatedTrade): number {
-  if (trade.transactions.length < 2) return 0;
+  // Prefer the precomputed scalar (present on the compact read model); fall back
+  // to raw fills when a fully-hydrated trade is passed in.
+  if (trade.holdMinutes != null) return trade.holdMinutes;
+  if (!trade.transactions || trade.transactions.length < 2) return 0;
   const times = trade.transactions.map((t) => timeToSeconds(t.time));
   const first = Math.min(...times);
   const last = Math.max(...times);

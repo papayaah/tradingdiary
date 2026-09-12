@@ -5,7 +5,7 @@ let dbPromise: Promise<IDBPDatabase<TradingDiaryDB>> | null = null;
 
 export function getDB(): Promise<IDBPDatabase<TradingDiaryDB>> {
   if (!dbPromise) {
-    dbPromise = openDB<TradingDiaryDB>('tradingdiary', 7, {
+    dbPromise = openDB<TradingDiaryDB>('tradingdiary', 8, {
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           db.createObjectStore('accounts', { keyPath: 'accountId' });
@@ -66,6 +66,16 @@ export function getDB(): Promise<IDBPDatabase<TradingDiaryDB>> {
         if (oldVersion < 7) {
           // Reusable strategies / playbooks linked to trades.
           db.createObjectStore('strategies', { keyPath: 'id' });
+        }
+
+        if (oldVersion < 8) {
+          // Materialized per-day summaries (compact read model) so dashboard and
+          // journal cold loads skip re-aggregating every execution. Keyed by
+          // [accountId, date]; rebuilt per-account on any transaction write.
+          const summaryStore = db.createObjectStore('daySummaries', {
+            keyPath: ['accountId', 'date'],
+          });
+          summaryStore.createIndex('by-accountId', 'accountId');
         }
       },
       // This tab holds an older DB version and is blocking another tab that wants

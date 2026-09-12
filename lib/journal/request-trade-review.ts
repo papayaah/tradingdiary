@@ -31,8 +31,9 @@ export async function buildTradeContext(
   trade: AggregatedTrade,
   interval = '5m'
 ): Promise<TradeAnalysisContext> {
-  const isDemoTrade = trade.transactions.length > 0
-    && trade.transactions.every((transaction) => transaction.accountId === 'U99887766');
+  const txns = trade.transactions ?? [];
+  const isDemoTrade = txns.length > 0
+    && txns.every((transaction) => transaction.accountId === 'U99887766');
   let candles: Awaited<ReturnType<typeof fetchCandles>> = [];
   if (!isDemoTrade) {
     try {

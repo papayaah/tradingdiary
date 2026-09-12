@@ -151,10 +151,10 @@ export function buildTradeAnalysisContext(
 ): TradeAnalysisContext {
   const tradeGroupId = `${trade.date}:${trade.symbol}`;
   const side = trade.side;
-  const multiplier = trade.transactions[0]?.multiplier || 1;
+  const multiplier = trade.multiplier ?? trade.transactions?.[0]?.multiplier ?? 1;
 
   // ── Normalize executions in true execution order ──
-  const execs = [...trade.transactions]
+  const execs = [...(trade.transactions ?? [])]
     .map((t) => ({
       t,
       seconds: execSeconds(t),

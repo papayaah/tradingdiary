@@ -43,7 +43,7 @@ export function useReplaySession(date?: string | null, symbol?: string | null) {
       const days = summaries.map((summary) => ({
         date: summary.date,
         formattedDate: summary.formattedDate,
-        transactions: summary.trades.flatMap((trade) => trade.transactions),
+        transactions: summary.trades.flatMap((trade) => trade.transactions ?? []),
       }));
 
       setData({ allTransactions, days });

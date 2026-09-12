@@ -1,4 +1,17 @@
 import type { DBSchema } from 'idb';
+import type { DailySummary } from '@/lib/trading/aggregator';
+
+/**
+ * A day's aggregated summary, persisted as a materialized read model so cold
+ * loads (dashboard, journal) can render stats and the calendar without
+ * re-reading every execution and re-running the FIFO aggregation. Trades here
+ * are compact — no raw `transactions`; expand-time consumers hydrate those from
+ * `transactionIds` via loadTransactionsByIds. Rebuilt per-account on any
+ * transaction write.
+ */
+export interface StoredDaySummary extends DailySummary {
+  accountId: string;
+}
 
 export interface AccountRecord {
   accountId: string;
@@ -295,6 +308,13 @@ export interface TradingDiaryDB extends DBSchema {
   importBatches: {
     key: string;
     value: ImportBatchRecord;
+    indexes: {
+      'by-accountId': string;
+    };
+  };
+  daySummaries: {
+    key: [string, string];
+    value: StoredDaySummary;
     indexes: {
       'by-accountId': string;
     };

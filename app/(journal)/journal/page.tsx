@@ -8,7 +8,7 @@ import {
   getShowPnlInBaseCurrency,
   setShowPnlInBaseCurrency,
 } from '@/lib/settings';
-import { aggregateByDay, applyMarketPrices, type DailySummary, type AggregatedTrade } from '@/lib/trading/aggregator';
+import { applyMarketPrices, buildSummariesFromTrades, type DailySummary, type AggregatedTrade } from '@/lib/trading/aggregator';
 import { getJournalSummaries, peekJournalSummaries } from '@/lib/trading/journal-summaries-cache';
 import { onJournalSynced } from '@/lib/journal/sync-bus';
 import SyncStatusIndicator from '@/components/journal/SyncStatusIndicator';
@@ -175,11 +175,10 @@ export default function JournalPage() {
     for (const [key, ids] of Object.entries(noteTagsByKey)) {
       if (ids.some((id) => sel.has(id))) matchKeys.add(key);
     }
-    const txns = summaries
+    const filteredTrades = summaries
       .flatMap((s) => s.trades)
-      .filter((t) => matchKeys.has(tradeKey(t)))
-      .flatMap((t) => t.transactions);
-    return txns.length > 0 ? aggregateByDay(txns) : [];
+      .filter((t) => matchKeys.has(tradeKey(t)));
+    return buildSummariesFromTrades(filteredTrades);
   }, [summaries, selectedTagIds, noteTagsByKey, tradeKey]);
 
   const toggleTag = useCallback((tagId: string) => {

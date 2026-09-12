@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Upload, LayoutDashboard, Calendar, Sparkles, ChevronDown, Check } from 'lucide-react';
 import { type DailySummary } from '@/lib/trading/aggregator';
 import { getJournalSummaries, peekJournalSummaries } from '@/lib/trading/journal-summaries-cache';
+import { hydrateDayTransactions } from '@/lib/trading/day-summaries-store';
 import { onJournalSynced } from '@/lib/journal/sync-bus';
 import { computeDashboard } from '@/lib/trading/dashboard';
 import { getCashFlows } from '@/lib/db/cash-flows';
@@ -12,15 +13,23 @@ import { computeAccountEquity } from '@/lib/trading/cash-flows';
 import type { CashFlowRecord } from '@/lib/db/schema';
 import { timeToSeconds, computePnLTimeline } from '@/lib/replay/engine';
 import type { TransactionRecord } from '@/lib/db/schema';
+import dynamic from 'next/dynamic';
 import MonthlyCalendar from '@/components/dashboard/MonthlyCalendar';
-import CumulativePnLChart from '@/components/dashboard/CumulativePnLChart';
-import WinLossDonut from '@/components/dashboard/WinLossDonut';
 import ComparisonBar from '@/components/dashboard/ComparisonBar';
-import LargestGainLossDonut from '@/components/dashboard/LargestGainLossDonut';
-import DailyWinLossChart from '@/components/dashboard/DailyWinLossChart';
-import DailyPnLChart from '@/components/dashboard/DailyPnLChart';
-import ReplayTimeline from '@/components/replay/ReplayTimeline';
-import OpenPositionsCard from '@/components/dashboard/OpenPositionsCard';
+
+// Charts pull in recharts (and ReplayTimeline the replay engine), none of which
+// the stat tiles or calendar above them need. Load them as separate chunks so
+// the initial dashboard paint isn't blocked on parsing them.
+const chartSkeleton = () => (
+  <div className="h-full min-h-[14rem] rounded-2xl bg-card-bg border border-card-border animate-pulse" />
+);
+const CumulativePnLChart = dynamic(() => import('@/components/dashboard/CumulativePnLChart'), { ssr: false, loading: chartSkeleton });
+const WinLossDonut = dynamic(() => import('@/components/dashboard/WinLossDonut'), { ssr: false, loading: chartSkeleton });
+const LargestGainLossDonut = dynamic(() => import('@/components/dashboard/LargestGainLossDonut'), { ssr: false, loading: chartSkeleton });
+const DailyWinLossChart = dynamic(() => import('@/components/dashboard/DailyWinLossChart'), { ssr: false, loading: chartSkeleton });
+const DailyPnLChart = dynamic(() => import('@/components/dashboard/DailyPnLChart'), { ssr: false, loading: chartSkeleton });
+const OpenPositionsCard = dynamic(() => import('@/components/dashboard/OpenPositionsCard'), { ssr: false, loading: chartSkeleton });
+const ReplayTimeline = dynamic(() => import('@/components/replay/ReplayTimeline'), { ssr: false, loading: chartSkeleton });
 import { useAccount } from '@/contexts/AccountContext';
 import { formatCurrency } from '@/lib/currency';
 import { loadDemoSampleData } from '@/lib/import/sample-loader';
@@ -61,20 +70,18 @@ interface LatestDayTimeline {
   formattedDate: string;
 }
 
-function buildLatestDayTimeline(summaries: DailySummary[]): LatestDayTimeline | null {
-  const latest = summaries[0]; // summaries are sorted newest first
-  if (!latest) return null;
-
+function buildLatestDayTimeline(
+  latest: DailySummary,
+  dayTransactions: TransactionRecord[],
+): LatestDayTimeline | null {
   // Reversal fills belong to two flat-to-flat trades, so de-duplicate them
   // before building the replay timeline.
   const transactions: TransactionRecord[] = [];
   const seenTransactionIds = new Set<string>();
-  for (const trade of latest.trades) {
-    for (const transaction of trade.transactions) {
-      if (seenTransactionIds.has(transaction.tradeId)) continue;
-      seenTransactionIds.add(transaction.tradeId);
-      transactions.push(transaction);
-    }
+  for (const transaction of dayTransactions) {
+    if (seenTransactionIds.has(transaction.tradeId)) continue;
+    seenTransactionIds.add(transaction.tradeId);
+    transactions.push(transaction);
   }
 
   const sorted = transactions.sort(
@@ -165,6 +172,7 @@ export default function DashboardPage() {
   const [empty, setEmpty] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [latestDay, setLatestDay] = useState<LatestDayTimeline | null>(null);
 
   // Reload the dashboard when a sync merged remote changes into IndexedDB.
   useEffect(() => onJournalSynced(() => setRefreshKey((k) => k + 1)), []);
@@ -218,6 +226,23 @@ export default function DashboardPage() {
       range,
     };
   }, [allSummaries, rangeType, startDate, endDate]);
+
+  // The "Latest Day Activity" replay needs the newest in-range day's raw fills.
+  // Load them lazily (the compact summaries carry only trade-level scalars) so
+  // the rest of the dashboard renders without waiting on execution data.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const latest = filteredData?.summaries[0];
+      if (!latest) {
+        if (active) setLatestDay(null);
+        return;
+      }
+      const dayTransactions = await hydrateDayTransactions(latest);
+      if (active) setLatestDay(buildLatestDayTimeline(latest, dayTransactions));
+    })();
+    return () => { active = false; };
+  }, [filteredData]);
 
   // Left/right arrows shift the whole dashboard one period at a time, matching
   // the current range's unit (quarter→quarter, 7d→7 days, month→month, …).
@@ -319,7 +344,6 @@ export default function DashboardPage() {
   const periodPnL = summaries.reduce((sum, day) => sum + day.netPnL, 0);
   const periodCashFlows = cashFlows.filter((cashFlow) => isDateInDashboardRange(cashFlow.date, range));
   const equity = computeAccountEquity(activeAccount?.initialBalance, periodCashFlows, periodPnL);
-  const latestDay = buildLatestDayTimeline(summaries);
 
   return (
     <div className="p-2 sm:p-6 space-y-4 sm:space-y-8 w-full">

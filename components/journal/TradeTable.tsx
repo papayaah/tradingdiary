@@ -12,7 +12,8 @@ import {
   tradeRef,
 } from '@/lib/db/notes';
 import { getAllTags } from '@/lib/db/tags';
-import type { TagRecord, TradeNoteRecord } from '@/lib/db/schema';
+import type { TagRecord, TradeNoteRecord, TransactionRecord } from '@/lib/db/schema';
+import { hydrateTradeTransactions } from '@/lib/trading/day-summaries-store';
 import TradeChart from './TradeChart';
 import TradeDetailsPanel from './TradeDetailsPanel';
 import ExecutionAuditPanel from './ExecutionAuditPanel';
@@ -143,6 +144,24 @@ function TradeRow({
   const [highlightedExecutionId, setHighlightedExecutionId] = useState<string | null>(null);
   const rowRef = useRef<HTMLTableRowElement>(null);
 
+  // The row's compact trade carries no raw fills — hydrate them from IndexedDB
+  // once the row is expanded, so the detail panels/chart/audit have executions.
+  const [loadedTransactions, setLoadedTransactions] = useState<TransactionRecord[] | null>(null);
+  useEffect(() => {
+    if (!isExpanded || trade.transactions) return;
+    let active = true;
+    (async () => {
+      const transactions = await hydrateTradeTransactions(trade);
+      if (active) setLoadedTransactions(transactions);
+    })();
+    return () => { active = false; };
+  }, [isExpanded, trade]);
+  const hydratedTrade: AggregatedTrade = trade.transactions
+    ? trade
+    : loadedTransactions
+      ? { ...trade, transactions: loadedTransactions }
+      : trade;
+
   useEffect(() => {
     if (!isFocused) return;
     const frame = requestAnimationFrame(() => {
@@ -254,7 +273,7 @@ function TradeRow({
             <td colSpan={9} className="p-0">
               <div className="flex flex-col lg:flex-row border-t border-card-border/50 bg-card-bg/30">
                 <TradeDetailsPanel
-                  trade={trade}
+                  trade={hydratedTrade}
                   currency={currency}
                   className="lg:w-72 shrink-0 border-b lg:border-b-0 lg:border-r border-card-border/50"
                 />
@@ -262,14 +281,14 @@ function TradeRow({
                   <TradeChart
                     symbol={trade.symbol}
                     date={trade.date}
-                    transactions={trade.transactions}
+                    transactions={hydratedTrade.transactions ?? []}
                     highlightedExecutionId={highlightedExecutionId}
                   />
                 </div>
               </div>
             </td>
           </tr>
-          {trade.transactions.length > 0 && (
+          {(hydratedTrade.transactions?.length ?? 0) > 0 && (
             <tr>
               <td colSpan={9} className="px-5 py-3 border-t border-card-border">
                 <button
@@ -286,7 +305,7 @@ function TradeRow({
                 {showAudit && (
                   <div className="mt-2 animate-in fade-in slide-in-from-top-1 duration-200">
                     <ExecutionAuditPanel
-                      transactions={trade.transactions}
+                      transactions={hydratedTrade.transactions ?? []}
                       highlightedExecutionId={highlightedExecutionId}
                       onExecutionHover={setHighlightedExecutionId}
                     />
@@ -298,7 +317,7 @@ function TradeRow({
           <tr>
             <td colSpan={9} className="px-5 py-4 border-t border-card-border">
               <TradeJournalPanel
-                trade={trade}
+                trade={hydratedTrade}
                 accountId={accountId}
                 currency={currency}
                 onChange={onJournalChange}
