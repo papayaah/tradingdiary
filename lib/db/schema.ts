@@ -6,11 +6,23 @@ import type { DailySummary } from '@/lib/trading/aggregator';
  * loads (dashboard, journal) can render stats and the calendar without
  * re-reading every execution and re-running the FIFO aggregation. Trades here
  * are compact — no raw `transactions`; expand-time consumers hydrate those from
- * `transactionIds` via loadTransactionsByIds. Rebuilt per-account on any
- * transaction write.
+ * `transactionIds` via loadTransactionsByIds. Marked invalid per-account by any
+ * source write and rebuilt on the next summary read.
  */
 export interface StoredDaySummary extends DailySummary {
   accountId: string;
+}
+
+/**
+ * Completeness marker for an account's materialized day summaries. Summary rows
+ * are trusted only while this marker exists and matches the current projection
+ * schema. Execution/account writers delete it in the same IndexedDB transaction
+ * as their source-data change; the next read then rebuilds atomically.
+ */
+export interface DaySummaryMetaRecord {
+  accountId: string;
+  schemaVersion: number;
+  builtAt: number;
 }
 
 export interface AccountRecord {
@@ -318,5 +330,9 @@ export interface TradingDiaryDB extends DBSchema {
     indexes: {
       'by-accountId': string;
     };
+  };
+  daySummaryMeta: {
+    key: string;
+    value: DaySummaryMetaRecord;
   };
 }

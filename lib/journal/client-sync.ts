@@ -4,6 +4,7 @@ import { getAccounts, getAllTransactions } from '../db/trades';
 import { getAllDailyNotes, getAllTradeNotes } from '../db/notes';
 import { getAllCashFlows } from '../db/cash-flows';
 import { getAllTags } from '../db/tags';
+import { invalidateDaySummaryAccounts } from '../db/day-summary-state';
 import type { JournalPushRequest, JournalPullResponse } from './sync-types';
 
 /**
@@ -136,6 +137,26 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
   if (!data.authenticated) return { authenticated: false, changed: false, seq: cursor };
 
   const db = await getDB();
+  const tx = db.transaction(
+    [
+      'accounts',
+      'transactions',
+      'cashFlows',
+      'tags',
+      'dailyNotes',
+      'tradeNotes',
+      'daySummaries',
+      'daySummaryMeta',
+    ],
+    'readwrite',
+  );
+  const accountStore = tx.objectStore('accounts');
+  const transactionStore = tx.objectStore('transactions');
+  const cashFlowStore = tx.objectStore('cashFlows');
+  const tagStore = tx.objectStore('tags');
+  const dailyNoteStore = tx.objectStore('dailyNotes');
+  const tradeNoteStore = tx.objectStore('tradeNotes');
+  const summaryAccountIds = new Set<string>();
 
   for (const a of data.accounts) {
     const account: AccountRecord = {
@@ -147,15 +168,17 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
       importedAt: a.importedAt,
       initialBalance: a.initialBalance,
     };
-    await db.put('accounts', account);
+    await accountStore.put(account);
+    summaryAccountIds.add(account.accountId);
   }
 
   for (const t of data.executions) {
-    await db.put('transactions', t);
+    await transactionStore.put(t);
+    summaryAccountIds.add(t.accountId);
   }
 
   for (const c of data.cashFlows) {
-    await db.put('cashFlows', {
+    await cashFlowStore.put({
       id: c.clientId,
       accountId: c.accountId,
       date: c.date,
@@ -168,7 +191,7 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
   }
 
   for (const t of data.tags) {
-    await db.put('tags', {
+    await tagStore.put({
       id: t.clientId,
       label: t.label,
       category: t.category,
@@ -179,8 +202,8 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
   }
 
   for (const n of data.dailyNotes) {
-    const existing = await db.get('dailyNotes', [n.date, n.accountId]);
-    await db.put('dailyNotes', {
+    const existing = await dailyNoteStore.get([n.date, n.accountId]);
+    await dailyNoteStore.put({
       date: n.date,
       accountId: n.accountId,
       content: n.content,
@@ -192,11 +215,11 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
   for (const n of data.tradeNotes) {
     const key = n.tradeGroupClientKey;
     if (!key) continue;
-    const existing = await db.get('tradeNotes', key);
+    const existing = await tradeNoteStore.get(key);
     // The trade-group key is "accountId symbol openedDate openedTime seq" —
     // derive display/search fields from it when we have no local record.
     const [acctId, sym, dt] = key.split(' ');
-    await db.put('tradeNotes', {
+    await tradeNoteStore.put({
       // Preserve local-only fields not synced yet (playbook link, rule checks,
       // trade plan) — a pull must never wipe them.
       ...(existing ?? {}),
@@ -222,9 +245,9 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
       byGroup.set(tt.tradeGroupClientKey, arr);
     }
     for (const [key, tagIds] of byGroup) {
-      const existing = await db.get('tradeNotes', key);
+      const existing = await tradeNoteStore.get(key);
       const [acctId, sym, dt] = key.split(' ');
-      await db.put('tradeNotes', {
+      await tradeNoteStore.put({
         ...(existing ?? {}),
         tradeGroupKey: key,
         date: existing?.date ?? dt ?? '',
@@ -242,23 +265,37 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
   for (const d of data.deletes) {
     if (d.entity === 'daily_note') {
       const [accountId, day] = d.clientKey.split(':');
-      await db.delete('dailyNotes', [day, accountId]);
+      await dailyNoteStore.delete([day, accountId]);
     } else if (d.entity === 'trade_note') {
-      await db.delete('tradeNotes', d.clientKey);
+      await tradeNoteStore.delete(d.clientKey);
     } else if (d.entity === 'cash_flow') {
-      await db.delete('cashFlows', d.clientKey);
+      await cashFlowStore.delete(d.clientKey);
     } else if (d.entity === 'tag') {
-      await db.delete('tags', d.clientKey);
+      await tagStore.delete(d.clientKey);
     } else if (d.entity === 'execution') {
       // clientKey is the execution's tradeId (transactions keyPath).
-      await db.delete('transactions', d.clientKey);
+      const existing = await transactionStore.get(d.clientKey);
+      if (existing) summaryAccountIds.add(existing.accountId);
+      await transactionStore.delete(d.clientKey);
     } else if (d.entity === 'account') {
-      await db.delete('accounts', d.clientKey);
+      await accountStore.delete(d.clientKey);
+      summaryAccountIds.add(d.clientKey);
       // Cascade: remove the account's local transactions.
-      const txns = await db.getAllFromIndex('transactions', 'by-accountId', d.clientKey);
-      for (const t of txns) await db.delete('transactions', t.tradeId);
+      const txns = await transactionStore.index('by-accountId').getAll(d.clientKey);
+      for (const t of txns) await transactionStore.delete(t.tradeId);
+      const summaryKeys = await tx
+        .objectStore('daySummaries')
+        .index('by-accountId')
+        .getAllKeys(d.clientKey);
+      for (const key of summaryKeys) await tx.objectStore('daySummaries').delete(key);
     }
   }
+
+  await invalidateDaySummaryAccounts(
+    tx.objectStore('daySummaryMeta'),
+    summaryAccountIds,
+  );
+  await tx.done;
 
   // seq only advances when the server recorded new events. A first sync
   // (cursor 0) that returned data, or a later seq, means the local store changed.

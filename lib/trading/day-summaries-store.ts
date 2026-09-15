@@ -2,14 +2,15 @@
 
 import { getDB } from '@/lib/db/database';
 import { getTransactionsByAccount } from '@/lib/db/trades';
+import { DAY_SUMMARY_SCHEMA_VERSION } from '@/lib/db/day-summary-state';
 import { aggregateByDay, type AggregatedTrade, type DailySummary } from '@/lib/trading/aggregator';
 import type { StoredDaySummary, TransactionRecord } from '@/lib/db/schema';
 
 /**
  * Materialized read model for day summaries. Aggregating an account's whole
  * history (FX backfill + cross-day FIFO) is the expensive part of loading the
- * dashboard and journal; we do it once at write time and persist the compact
- * result (no raw transactions) so cold loads and reloads just read rows.
+ * dashboard and journal; we rebuild it after source data becomes dirty and
+ * persist the compact result (no raw transactions) so later loads just read rows.
  *
  * Expand-time consumers (trade detail, replay, chart, AI review) hydrate the raw
  * executions on demand via loadTransactionsByIds using each trade's
@@ -31,28 +32,56 @@ function toStored(accountId: string, summaries: DailySummary[]): StoredDaySummar
   }));
 }
 
-async function persist(accountId: string, summaries: DailySummary[]): Promise<void> {
-  const db = await getDB();
-  const tx = db.transaction('daySummaries', 'readwrite');
-  const store = tx.objectStore('daySummaries');
-  // Replace this account's rows wholesale — cross-day FIFO means a single write
-  // can shift cost basis across days, so partial updates aren't safe.
-  const keys = await store.index('by-accountId').getAllKeys(accountId);
-  await Promise.all(keys.map((key) => store.delete(key)));
-  await Promise.all(toStored(accountId, summaries).map((row) => store.put(row)));
-  await tx.done;
+function fromStored(rows: StoredDaySummary[]): DailySummary[] {
+  return rows
+    .map((row) => {
+      const { accountId, ...summary } = row;
+      void accountId;
+      return summary;
+    })
+    .sort((a, b) => b.date.localeCompare(a.date));
 }
 
 /**
  * Rebuild an account's summaries from its executions and persist the compact
- * model. Returns the FULL summaries (transactions attached) so the caller that
- * triggered the rebuild can use them this session without re-reading.
+ * model. Returns that same compact shape so all callers consistently hydrate
+ * fills only at the point where they are needed.
  */
 export async function rebuildDaySummaries(accountId: string): Promise<DailySummary[]> {
-  const transactions = await getTransactionsByAccount(accountId);
+  // Complete any historical FX enrichment first. It may update executions and
+  // invalidate the marker, so the authoritative snapshot is read again below.
+  await getTransactionsByAccount(accountId);
+
+  const db = await getDB();
+  // Reading source executions and replacing the derived model in one transaction
+  // prevents a concurrent import/sync from slipping between snapshot and persist.
+  const tx = db.transaction(
+    ['transactions', 'daySummaries', 'daySummaryMeta'],
+    'readwrite',
+  );
+  const transactions = await tx
+    .objectStore('transactions')
+    .index('by-accountId')
+    .getAll(accountId);
   const summaries = transactions.length > 0 ? aggregateByDay(transactions) : [];
-  await persist(accountId, summaries);
-  return summaries;
+  const storedRows = toStored(accountId, summaries);
+
+  const summaryStore = tx.objectStore('daySummaries');
+  const keys = await summaryStore.index('by-accountId').getAllKeys(accountId);
+  await Promise.all([
+    ...keys.map((key) => summaryStore.delete(key)),
+    ...storedRows.map((row) => summaryStore.put(row)),
+  ]);
+  await tx.objectStore('daySummaryMeta').put({
+    accountId,
+    schemaVersion: DAY_SUMMARY_SCHEMA_VERSION,
+    builtAt: Date.now(),
+  });
+  await tx.done;
+
+  // Keep the in-memory contract compact too. A rebuild should not make every
+  // trade carry fills for the rest of the session.
+  return fromStored(storedRows);
 }
 
 /**
@@ -62,25 +91,31 @@ export async function rebuildDaySummaries(accountId: string): Promise<DailySumma
  */
 export async function readStoredDaySummaries(accountId: string): Promise<DailySummary[] | null> {
   const db = await getDB();
-  const rows = await db.getAllFromIndex('daySummaries', 'by-accountId', accountId);
-  if (rows.length === 0) return null;
-  // The extra `accountId` field is harmless to summary consumers; keep it rather
-  // than allocate a stripped copy per row.
-  return (rows as DailySummary[])
-    .slice()
-    .sort((a, b) => b.date.localeCompare(a.date));
+  const tx = db.transaction(['daySummaries', 'daySummaryMeta'], 'readonly');
+  const [meta, rows] = await Promise.all([
+    tx.objectStore('daySummaryMeta').get(accountId),
+    tx.objectStore('daySummaries').index('by-accountId').getAll(accountId),
+  ]);
+  await tx.done;
+  if (!meta || meta.schemaVersion !== DAY_SUMMARY_SCHEMA_VERSION) return null;
+  // A valid marker plus zero rows is a genuinely empty account, not a cache miss.
+  return fromStored(rows);
 }
 
 /** Drop an account's persisted summaries (or all accounts') so the next read rebuilds. */
 export async function clearStoredDaySummaries(accountId?: string): Promise<void> {
   const db = await getDB();
-  const tx = db.transaction('daySummaries', 'readwrite');
+  const tx = db.transaction(['daySummaries', 'daySummaryMeta'], 'readwrite');
   const store = tx.objectStore('daySummaries');
   if (accountId) {
     const keys = await store.index('by-accountId').getAllKeys(accountId);
     await Promise.all(keys.map((key) => store.delete(key)));
+    await tx.objectStore('daySummaryMeta').delete(accountId);
   } else {
-    await store.clear();
+    await Promise.all([
+      store.clear(),
+      tx.objectStore('daySummaryMeta').clear(),
+    ]);
   }
   await tx.done;
 }

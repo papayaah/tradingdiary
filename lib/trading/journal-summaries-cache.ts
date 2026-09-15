@@ -2,11 +2,14 @@
 
 import type { DailySummary } from '@/lib/trading/aggregator';
 import {
-  clearStoredDaySummaries,
   readStoredDaySummaries,
   rebuildDaySummaries,
 } from '@/lib/trading/day-summaries-store';
-import { onJournalChanged, onJournalSynced } from '@/lib/journal/sync-bus';
+import {
+  onJournalChanged,
+  onJournalSynced,
+  type JournalChangeDetail,
+} from '@/lib/journal/sync-bus';
 
 /**
  * Process-wide warm cache for the journal's day summaries, backed by the
@@ -16,8 +19,9 @@ import { onJournalChanged, onJournalSynced } from '@/lib/journal/sync-bus';
  * full rebuild (which also re-persists). Summaries are compact (no raw
  * transactions); expand-time consumers hydrate fills on demand.
  *
- * Invalidated on any local write or sync merge, with a generation guard so a
- * build in flight during an invalidation isn't cached.
+ * The memory layer is invalidated only for affected accounts (or after a sync
+ * merge), with a generation guard so a build in flight during an invalidation
+ * isn't cached. Durable validity lives in IndexedDB, not this event listener.
  */
 
 let cachedAccountId: string | null = null;
@@ -25,35 +29,39 @@ let cachedSummaries: DailySummary[] | null = null;
 let building: { accountId: string; promise: Promise<DailySummary[]> } | null = null;
 let generation = 0;
 let hooked = false;
-// The stale persisted read model is being dropped; the next build must await this
-// so it can't read stale rows or have its fresh rebuild wiped by a late clear.
-let clearInFlight: Promise<void> | null = null;
 
-function invalidate(): void {
+function invalidateAll(): void {
   cachedAccountId = null;
   cachedSummaries = null;
   building = null;
   generation++;
-  // The persisted read model is now stale — drop it so the next read rebuilds
-  // from executions and re-persists. The bus carries no account id, so clear all.
-  clearInFlight = clearStoredDaySummaries().catch(() => {});
+}
+
+function invalidateChangedAccounts(detail: JournalChangeDetail): void {
+  if (detail.allSummaries) {
+    invalidateAll();
+    return;
+  }
+  const affected = new Set(detail.summaryAccountIds ?? []);
+  if (affected.size === 0) return;
+  if (
+    (cachedAccountId && affected.has(cachedAccountId))
+    || (building && affected.has(building.accountId))
+  ) {
+    invalidateAll();
+  }
 }
 
 function hookInvalidation(): void {
   if (hooked) return;
   hooked = true;
-  onJournalChanged(invalidate);
-  onJournalSynced(invalidate);
+  onJournalChanged(invalidateChangedAccounts);
+  // Pulls can affect several entity types/accounts. Durable metadata decides
+  // whether a rebuild is needed; dropping only memory here is cheap and safe.
+  onJournalSynced(invalidateAll);
 }
 
 async function build(accountId: string): Promise<DailySummary[]> {
-  // Ensure any in-flight invalidation clear has settled before we read or
-  // rebuild, so we never serve stale rows or race the clear against our persist.
-  if (clearInFlight) {
-    const pending = clearInFlight;
-    await pending;
-    if (clearInFlight === pending) clearInFlight = null;
-  }
   const stored = await readStoredDaySummaries(accountId);
   if (stored) return stored;
   return rebuildDaySummaries(accountId);

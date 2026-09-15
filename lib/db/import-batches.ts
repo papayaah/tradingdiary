@@ -1,6 +1,7 @@
 import { getDB } from './database';
 import type { ImportBatchRecord } from './schema';
 import { notifyJournalChanged } from '@/lib/journal/sync-bus';
+import { invalidateDaySummaryAccounts } from './day-summary-state';
 
 /**
  * Which of a batch's executions should actually be removed on undo: only ids the
@@ -62,7 +63,10 @@ export async function undoImportBatch(id: string): Promise<{ removed: number }> 
   const batch = await db.get('importBatches', id);
   if (!batch) return { removed: 0 };
 
-  const tx = db.transaction(['transactions', 'importBatches'], 'readwrite');
+  const tx = db.transaction(
+    ['transactions', 'importBatches', 'daySummaryMeta'],
+    'readwrite',
+  );
   const txStore = tx.objectStore('transactions');
 
   const existing = new Set(
@@ -73,8 +77,16 @@ export async function undoImportBatch(id: string): Promise<{ removed: number }> 
     await txStore.delete(tradeId);
   }
   await tx.objectStore('importBatches').delete(id);
+  if (toRemove.length > 0) {
+    await invalidateDaySummaryAccounts(
+      tx.objectStore('daySummaryMeta'),
+      [batch.accountId],
+    );
+  }
   await tx.done;
 
-  if (toRemove.length > 0) notifyJournalChanged();
+  if (toRemove.length > 0) {
+    notifyJournalChanged({ summaryAccountIds: [batch.accountId] });
+  }
   return { removed: toRemove.length };
 }

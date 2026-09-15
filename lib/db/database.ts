@@ -5,7 +5,7 @@ let dbPromise: Promise<IDBPDatabase<TradingDiaryDB>> | null = null;
 
 export function getDB(): Promise<IDBPDatabase<TradingDiaryDB>> {
   if (!dbPromise) {
-    dbPromise = openDB<TradingDiaryDB>('tradingdiary', 8, {
+    dbPromise = openDB<TradingDiaryDB>('tradingdiary', 9, {
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           db.createObjectStore('accounts', { keyPath: 'accountId' });
@@ -68,14 +68,18 @@ export function getDB(): Promise<IDBPDatabase<TradingDiaryDB>> {
           db.createObjectStore('strategies', { keyPath: 'id' });
         }
 
-        if (oldVersion < 8) {
-          // Materialized per-day summaries (compact read model) so dashboard and
-          // journal cold loads skip re-aggregating every execution. Keyed by
-          // [accountId, date]; rebuilt per-account on any transaction write.
+        if (oldVersion < 9) {
+          // Pre-launch destructive reset of the derived read model. Version 9 is
+          // the first cache-coherent shape: summary rows are valid only when a
+          // matching per-account completion marker exists.
+          if (db.objectStoreNames.contains('daySummaries')) {
+            db.deleteObjectStore('daySummaries');
+          }
           const summaryStore = db.createObjectStore('daySummaries', {
             keyPath: ['accountId', 'date'],
           });
           summaryStore.createIndex('by-accountId', 'accountId');
+          db.createObjectStore('daySummaryMeta', { keyPath: 'accountId' });
         }
       },
       // This tab holds an older DB version and is blocking another tab that wants

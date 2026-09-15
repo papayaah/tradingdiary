@@ -2,6 +2,7 @@ import { getDB } from './database';
 import type { TransactionRecord, AccountRecord, PositionRecord } from './schema';
 import { enrichTransactionsWithHistoricalFx } from '@/lib/fx/enrich-transactions';
 import { notifyJournalChanged } from '@/lib/journal/sync-bus';
+import { invalidateDaySummaryAccounts } from './day-summary-state';
 
 async function persistFxBackfill(
   account: AccountRecord | undefined,
@@ -22,8 +23,9 @@ async function persistFxBackfill(
 
   const enriched = await enrichTransactionsWithHistoricalFx(transactions, target);
   const db = await getDB();
-  const tx = db.transaction('transactions', 'readwrite');
-  await Promise.all(enriched.map((transaction) => tx.store.put(transaction)));
+  const tx = db.transaction(['transactions', 'daySummaryMeta'], 'readwrite');
+  await Promise.all(enriched.map((transaction) => tx.objectStore('transactions').put(transaction)));
+  await invalidateDaySummaryAccounts(tx.objectStore('daySummaryMeta'), [account.accountId]);
   await tx.done;
   return enriched;
 }
@@ -34,7 +36,10 @@ export async function importData(
   positions: PositionRecord[]
 ) {
   const db = await getDB();
-  const tx = db.transaction(['accounts', 'transactions', 'positions'], 'readwrite');
+  const tx = db.transaction(
+    ['accounts', 'transactions', 'positions', 'daySummaryMeta'],
+    'readwrite',
+  );
 
   await tx.objectStore('accounts').put(account);
 
@@ -54,8 +59,9 @@ export async function importData(
     await posStore.add(pos);
   }
 
+  await invalidateDaySummaryAccounts(tx.objectStore('daySummaryMeta'), [account.accountId]);
   await tx.done;
-  notifyJournalChanged();
+  notifyJournalChanged({ summaryAccountIds: [account.accountId] });
 }
 
 export async function getAccounts(): Promise<AccountRecord[]> {
@@ -65,8 +71,11 @@ export async function getAccounts(): Promise<AccountRecord[]> {
 
 export async function updateAccount(account: AccountRecord) {
   const db = await getDB();
-  await db.put('accounts', account);
-  notifyJournalChanged();
+  const tx = db.transaction(['accounts', 'daySummaryMeta'], 'readwrite');
+  await tx.objectStore('accounts').put(account);
+  await invalidateDaySummaryAccounts(tx.objectStore('daySummaryMeta'), [account.accountId]);
+  await tx.done;
+  notifyJournalChanged({ summaryAccountIds: [account.accountId] });
 }
 
 export async function getAllTransactions(): Promise<TransactionRecord[]> {
@@ -130,34 +139,61 @@ export async function saveManualTransaction(
   transaction: TransactionRecord
 ) {
   const db = await getDB();
-  const stores = account ? ['accounts', 'transactions'] as const : ['transactions'] as const;
+  const stores = account
+    ? ['accounts', 'transactions', 'daySummaryMeta'] as const
+    : ['transactions', 'daySummaryMeta'] as const;
   const tx = db.transaction(stores, 'readwrite');
 
   if (account) {
     await tx.objectStore('accounts').put(account);
   }
   await tx.objectStore('transactions').put(transaction);
+  await invalidateDaySummaryAccounts(tx.objectStore('daySummaryMeta'), [transaction.accountId]);
   await tx.done;
-  notifyJournalChanged();
+  notifyJournalChanged({ summaryAccountIds: [transaction.accountId] });
 }
 
 export async function clearAllData() {
   const db = await getDB();
   const tx = db.transaction(
-    ['accounts', 'transactions', 'positions', 'dailyNotes', 'tradeNotes'],
+    [
+      'accounts',
+      'transactions',
+      'positions',
+      'dailyNotes',
+      'cashFlows',
+      'tags',
+      'strategies',
+      'tradeNotes',
+      'tradeAIReviews',
+      'importBatches',
+      'daySummaries',
+      'daySummaryMeta',
+    ],
     'readwrite'
   );
   await tx.objectStore('accounts').clear();
   await tx.objectStore('transactions').clear();
   await tx.objectStore('positions').clear();
   await tx.objectStore('dailyNotes').clear();
+  await tx.objectStore('cashFlows').clear();
+  await tx.objectStore('tags').clear();
+  await tx.objectStore('strategies').clear();
   await tx.objectStore('tradeNotes').clear();
+  await tx.objectStore('tradeAIReviews').clear();
+  await tx.objectStore('importBatches').clear();
+  await tx.objectStore('daySummaries').clear();
+  await tx.objectStore('daySummaryMeta').clear();
   await tx.done;
+  notifyJournalChanged({ allSummaries: true });
 }
 
 export async function deleteAccount(accountId: string) {
   const db = await getDB();
-  const tx = db.transaction(['accounts', 'transactions', 'positions'], 'readwrite');
+  const tx = db.transaction(
+    ['accounts', 'transactions', 'positions', 'daySummaryMeta'],
+    'readwrite',
+  );
   
   await tx.objectStore('accounts').delete(accountId);
 
@@ -175,13 +211,14 @@ export async function deleteAccount(accountId: string) {
     }
   }
 
+  await invalidateDaySummaryAccounts(tx.objectStore('daySummaryMeta'), [accountId]);
   await tx.done;
-  notifyJournalChanged();
+  notifyJournalChanged({ summaryAccountIds: [accountId] });
 }
 
 export async function deleteAccountTrades(accountId: string) {
   const db = await getDB();
-  const tx = db.transaction(['transactions', 'positions'], 'readwrite');
+  const tx = db.transaction(['transactions', 'positions', 'daySummaryMeta'], 'readwrite');
   
   const txStore = tx.objectStore('transactions');
   const accountTxns = await txStore.index('by-accountId').getAllKeys(accountId);
@@ -197,8 +234,9 @@ export async function deleteAccountTrades(accountId: string) {
     }
   }
 
+  await invalidateDaySummaryAccounts(tx.objectStore('daySummaryMeta'), [accountId]);
   await tx.done;
-  notifyJournalChanged();
+  notifyJournalChanged({ summaryAccountIds: [accountId] });
 }
 
 export async function deleteTradesByDateRange(
@@ -207,7 +245,7 @@ export async function deleteTradesByDateRange(
   accountId?: string
 ): Promise<number> {
   const db = await getDB();
-  const tx = db.transaction(['transactions', 'positions'], 'readwrite');
+  const tx = db.transaction(['transactions', 'positions', 'daySummaryMeta'], 'readwrite');
   const txStore = tx.objectStore('transactions');
   
   let txns: TransactionRecord[] = [];
@@ -222,11 +260,13 @@ export async function deleteTradesByDateRange(
   const cleanEnd = endDate.replace(/-/g, '');
 
   let count = 0;
+  const affectedAccountIds = new Set<string>();
   for (const t of txns) {
     const cleanDate = t.date.replace(/-/g, '');
     if (cleanDate >= cleanStart && cleanDate <= cleanEnd) {
       await txStore.delete(t.tradeId);
       count++;
+      affectedAccountIds.add(t.accountId);
     }
   }
 
@@ -241,7 +281,15 @@ export async function deleteTradesByDateRange(
     }
   }
 
+  if (count > 0) {
+    await invalidateDaySummaryAccounts(
+      tx.objectStore('daySummaryMeta'),
+      affectedAccountIds,
+    );
+  }
   await tx.done;
-  if (count > 0) notifyJournalChanged();
+  if (count > 0) {
+    notifyJournalChanged({ summaryAccountIds: [...affectedAccountIds] });
+  }
   return count;
 }

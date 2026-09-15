@@ -62,6 +62,7 @@ function dateKeyToInputValue(dateKey: string): string {
 }
 
 interface LatestDayTimeline {
+  date: string;
   transactions: TransactionRecord[];
   symbols: string[];
   startTime: number;
@@ -99,6 +100,7 @@ function buildLatestDayTimeline(
   }
 
   return {
+    date: latest.date,
     transactions: sorted,
     symbols: [...firstSeenBySymbol.entries()]
       .sort((a, b) => a[1] - b[1])
@@ -238,8 +240,14 @@ export default function DashboardPage() {
         if (active) setLatestDay(null);
         return;
       }
-      const dayTransactions = await hydrateDayTransactions(latest);
-      if (active) setLatestDay(buildLatestDayTimeline(latest, dayTransactions));
+      try {
+        const dayTransactions = await hydrateDayTransactions(latest);
+        if (active) setLatestDay(buildLatestDayTimeline(latest, dayTransactions));
+      } catch {
+        // Replay is supplemental; summary cards and charts remain usable if
+        // execution hydration fails.
+        if (active) setLatestDay(null);
+      }
     })();
     return () => { active = false; };
   }, [filteredData]);
@@ -549,7 +557,7 @@ export default function DashboardPage() {
       {/* Open Positions & Manual Entry Card */}
       <OpenPositionsCard onTradeAdded={() => setRefreshKey((k) => k + 1)} />
 
-      {latestDay && (
+      {latestDay && latestDay.date === summaries[0]?.date && (
         <div className="rounded-xl border border-card-border bg-card-bg p-5 shadow-sm">
           <h3 className="text-sm font-normal text-foreground mb-3 flex items-center gap-2">
             <Calendar size={14} className="text-accent" />

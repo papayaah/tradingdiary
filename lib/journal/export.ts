@@ -10,6 +10,7 @@ import type {
   StrategyRecord,
 } from '../db/schema';
 import { notifyJournalChanged } from './sync-bus';
+import { invalidateDaySummaryAccounts } from '@/lib/db/day-summary-state';
 
 /**
  * Full journal backup: export to a portable JSON file, restore from one, and
@@ -140,8 +141,8 @@ export async function restoreJournalBackup(json: string): Promise<RestoreResult>
   const hasStrategies = db.objectStoreNames.contains('strategies');
 
   const stores: Parameters<typeof db.transaction>[0] = hasStrategies
-    ? ['accounts', 'transactions', 'cashFlows', 'tags', 'dailyNotes', 'tradeNotes', 'tradeAIReviews', 'strategies']
-    : ['accounts', 'transactions', 'cashFlows', 'tags', 'dailyNotes', 'tradeNotes', 'tradeAIReviews'];
+    ? ['accounts', 'transactions', 'cashFlows', 'tags', 'dailyNotes', 'tradeNotes', 'tradeAIReviews', 'strategies', 'daySummaryMeta']
+    : ['accounts', 'transactions', 'cashFlows', 'tags', 'dailyNotes', 'tradeNotes', 'tradeAIReviews', 'daySummaryMeta'];
   const tx = db.transaction(stores, 'readwrite');
   await Promise.all([
     ...accounts.map((a) => tx.objectStore('accounts').put(a)),
@@ -153,8 +154,16 @@ export async function restoreJournalBackup(json: string): Promise<RestoreResult>
     ...reviews.map((r) => tx.objectStore('tradeAIReviews').put(r)),
     ...(hasStrategies ? strategies.map((s) => tx.objectStore('strategies').put(s)) : []),
   ]);
+  const affectedAccountIds = new Set([
+    ...accounts.map((account) => account.accountId),
+    ...transactions.map((transaction) => transaction.accountId),
+  ]);
+  await invalidateDaySummaryAccounts(
+    tx.objectStore('daySummaryMeta'),
+    affectedAccountIds,
+  );
   await tx.done;
-  notifyJournalChanged();
+  notifyJournalChanged({ summaryAccountIds: [...affectedAccountIds] });
 
   return {
     accounts: accounts.length,

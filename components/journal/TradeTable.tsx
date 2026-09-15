@@ -146,16 +146,35 @@ function TradeRow({
 
   // The row's compact trade carries no raw fills — hydrate them from IndexedDB
   // once the row is expanded, so the detail panels/chart/audit have executions.
-  const [loadedTransactions, setLoadedTransactions] = useState<TransactionRecord[] | null>(null);
+  const hydrationKey = `${rowKey}:${(trade.transactionIds ?? []).join(',')}`;
+  const [hydration, setHydration] = useState<{
+    key: string;
+    transactions?: TransactionRecord[];
+    error?: string;
+  } | null>(null);
   useEffect(() => {
     if (!isExpanded || trade.transactions) return;
     let active = true;
     (async () => {
-      const transactions = await hydrateTradeTransactions(trade);
-      if (active) setLoadedTransactions(transactions);
+      try {
+        const transactions = await hydrateTradeTransactions(trade);
+        if (active) setHydration({ key: hydrationKey, transactions });
+      } catch (error) {
+        if (active) {
+          setHydration({
+            key: hydrationKey,
+            error: error instanceof Error ? error.message : 'Could not load executions',
+          });
+        }
+      }
     })();
     return () => { active = false; };
-  }, [isExpanded, trade]);
+  }, [hydrationKey, isExpanded, trade]);
+  const loadedTransactions = hydration?.key === hydrationKey
+    ? hydration.transactions
+    : undefined;
+  const hydrationError = hydration?.key === hydrationKey ? hydration.error : undefined;
+  const hydrationPending = !trade.transactions && loadedTransactions == null && !hydrationError;
   const hydratedTrade: AggregatedTrade = trade.transactions
     ? trade
     : loadedTransactions
@@ -268,7 +287,22 @@ function TradeRow({
         </td>
       </tr>
       {isExpanded && (
-        <>
+        hydrationPending ? (
+          <tr>
+            <td colSpan={9} className="px-5 py-8 border-t border-card-border">
+              <div className="flex items-center justify-center gap-2 text-xs text-muted">
+                <Loader2 size={14} className="animate-spin" />
+                Loading trade executions…
+              </div>
+            </td>
+          </tr>
+        ) : hydrationError ? (
+          <tr>
+            <td colSpan={9} className="px-5 py-8 border-t border-card-border text-center text-xs text-loss">
+              Could not load trade executions: {hydrationError}
+            </td>
+          </tr>
+        ) : <>
           <tr>
             <td colSpan={9} className="p-0">
               <div className="flex flex-col lg:flex-row border-t border-card-border/50 bg-card-bg/30">

@@ -9,16 +9,27 @@
 const CHANGED = 'journal:changed';
 const SYNCED = 'journal:synced';
 
-/** Fire after a local write to IndexedDB (import, manual entry, note edit, …). */
-export function notifyJournalChanged(): void {
-  if (typeof window === 'undefined') return;
-  window.dispatchEvent(new CustomEvent(CHANGED));
+export interface JournalChangeDetail {
+  /** Accounts whose execution/account source data changed. Omit for notes,
+   * tags, cash flows, and other writes that cannot affect day summaries. */
+  summaryAccountIds?: string[];
+  /** Used by destructive all-data operations. */
+  allSummaries?: boolean;
 }
 
-export function onJournalChanged(cb: () => void): () => void {
+/** Fire after a local write to IndexedDB (import, manual entry, note edit, …). */
+export function notifyJournalChanged(detail: JournalChangeDetail = {}): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent<JournalChangeDetail>(CHANGED, { detail }));
+}
+
+export function onJournalChanged(cb: (detail: JournalChangeDetail) => void): () => void {
   if (typeof window === 'undefined') return () => {};
-  window.addEventListener(CHANGED, cb);
-  return () => window.removeEventListener(CHANGED, cb);
+  const listener = (event: Event) => {
+    cb((event as CustomEvent<JournalChangeDetail>).detail ?? {});
+  };
+  window.addEventListener(CHANGED, listener);
+  return () => window.removeEventListener(CHANGED, listener);
 }
 
 /** Fire after a pull merged remote changes into IndexedDB. */
