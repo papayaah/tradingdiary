@@ -1,3 +1,26 @@
+/** The timezone the broker (IBKR Flex) reports execution wall-clock times in. */
+export const BROKER_SOURCE_TIMEZONE = 'America/New_York';
+
+/**
+ * Format an absolute instant (epoch seconds) as a clock label in the given IANA
+ * timezone. Ordering is done on the raw epoch; only the label is zone-dependent,
+ * so switching zones re-labels ticks without ever reordering fills.
+ */
+export function formatInstantClock(
+  epochSeconds: number,
+  timeZone: string = BROKER_SOURCE_TIMEZONE,
+  withSeconds = false,
+): string {
+  if (!Number.isFinite(epochSeconds)) return '';
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour: 'numeric',
+    minute: '2-digit',
+    ...(withSeconds ? { second: '2-digit' } : {}),
+    hour12: true,
+  }).format(new Date(epochSeconds * 1000));
+}
+
 /** UTC offset, in seconds, for New York on the supplied YYYYMMDD date. */
 export function getETOffsetSeconds(dateStr: string): number {
   if (!dateStr || dateStr.length !== 8) return 0;

@@ -4,11 +4,12 @@ import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { Upload, PlayCircle, Info, BarChart3, CalendarDays } from 'lucide-react';
 import {
-  timeToSeconds,
-  secondsToTime,
+  executionInstant,
   findSnapshot,
   usePlaybackEngine,
 } from '@/lib/replay/engine';
+import { formatInstantClock } from '@/lib/chart/execution-time';
+import { useDisplayTimezone } from '@/lib/hooks/useDisplayTimezone';
 import { computeRoundTrips, getRoundTripState } from '@/lib/replay/round-trips';
 import ReplayTimeline from '@/components/replay/ReplayTimeline';
 import ReplayControls from '@/components/replay/ReplayControls';
@@ -30,6 +31,7 @@ export default function ReplayExperience({
   initialInterval = '1m',
   initialHeartbeat = '1m',
 }: ReplayExperienceProps) {
+  const displayTimezone = useDisplayTimezone();
   const [replayInterval, setReplayInterval] = useState(initialInterval);
   const [heartbeat, setHeartbeat] = useState(initialHeartbeat);
   const [showFloatingPanel, setShowFloatingPanel] = useState(true);
@@ -55,7 +57,7 @@ export default function ReplayExperience({
   // If replaying a specific symbol, jump to its start automatically
   useEffect(() => {
     if (symbol && dayTransactions.length > 0 && playback.currentTimeSeconds === timeRange.start) {
-      const firstTrade = timeToSeconds(dayTransactions[0].time);
+      const firstTrade = executionInstant(dayTransactions[0]);
       actions.seek(Math.max(timeRange.start, firstTrade - 120)); // Seek back 2 mins for context
     }
   }, [symbol, dayTransactions, timeRange.start, actions, playback.currentTimeSeconds]);
@@ -68,7 +70,7 @@ export default function ReplayExperience({
 
   const visibleCount = useMemo(() => {
     return dayTransactions.filter(
-      (t) => timeToSeconds(t.time) <= playback.currentTimeSeconds
+      (t) => executionInstant(t) <= playback.currentTimeSeconds
     ).length;
   }, [dayTransactions, playback.currentTimeSeconds]);
 
@@ -157,7 +159,7 @@ export default function ReplayExperience({
         visibleCount={visibleCount}
         totalCount={dayTransactions.length}
         positions={currentSnapshot?.positions ?? []}
-        currentTime={secondsToTime(playback.currentTimeSeconds)}
+        currentTime={formatInstantClock(playback.currentTimeSeconds, displayTimezone, true)}
       />
 
       {/* Replay Chart (Candlesticks) */}
@@ -231,6 +233,7 @@ export default function ReplayExperience({
           endTimeSeconds={timeRange.end}
           snapshots={snapshots}
           onSeek={actions.seek}
+          timeZone={displayTimezone}
         />
       </div>
 
@@ -248,6 +251,7 @@ export default function ReplayExperience({
           onReset={actions.reset}
           onSkipForward={actions.skipForward}
           onSkipBack={actions.skipBack}
+          timeZone={displayTimezone}
         />
       </div>
 

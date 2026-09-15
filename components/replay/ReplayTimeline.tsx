@@ -2,7 +2,8 @@
 
 import { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import type { TransactionRecord } from '@/lib/db/schema';
-import { timeToSeconds, type PnLSnapshot } from '@/lib/replay/engine';
+import { executionInstant, type PnLSnapshot } from '@/lib/replay/engine';
+import { formatInstantClock, BROKER_SOURCE_TIMEZONE } from '@/lib/chart/execution-time';
 
 const ROW_HEIGHT = 48;
 const LEFT_LABEL_WIDTH = 80;
@@ -25,6 +26,7 @@ interface ReplayTimelineProps {
   endTimeSeconds: number;
   snapshots: PnLSnapshot[];
   onSeek?: (timeSeconds: number) => void;
+  timeZone?: string;
 }
 
 export default function ReplayTimeline({
@@ -35,6 +37,7 @@ export default function ReplayTimeline({
   endTimeSeconds,
   snapshots,
   onSeek,
+  timeZone = BROKER_SOURCE_TIMEZONE,
 }: ReplayTimelineProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
@@ -92,24 +95,17 @@ export default function ReplayTimeline({
 
     const startTick = Math.ceil(startTimeSeconds / interval) * interval;
     for (let s = startTick; s <= endTimeSeconds; s += interval) {
-      const h = Math.floor(s / 3600);
-      const m = Math.floor((s % 3600) / 60);
-      const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-      const ampm = h >= 12 ? 'PM' : 'AM';
-      result.push({
-        seconds: s,
-        label: `${h12}:${String(m).padStart(2, '0')} ${ampm}`,
-      });
+      result.push({ seconds: s, label: formatInstantClock(s, timeZone) });
     }
     return result;
-  }, [startTimeSeconds, endTimeSeconds, timelineWidth, timeRange]);
+  }, [startTimeSeconds, endTimeSeconds, timelineWidth, timeRange, timeZone]);
 
   // Annotate transactions with their time in seconds
   const annotated = useMemo(
     () =>
       transactions.map((t) => ({
         ...t,
-        timeSeconds: timeToSeconds(t.time),
+        timeSeconds: executionInstant(t),
       })),
     [transactions]
   );
@@ -339,7 +335,7 @@ export default function ReplayTimeline({
               style={{ transformOrigin: `${x}px ${y}px` }}
             >
               <title>
-                {t.symbol} {t.side} {Math.abs(t.quantity)}@{t.price.toFixed(2)} {t.time}
+                {t.symbol} {t.side} {Math.abs(t.quantity)}@{t.price.toFixed(2)} {formatInstantClock(t.timeSeconds, timeZone, true)}
               </title>
             </circle>
           );

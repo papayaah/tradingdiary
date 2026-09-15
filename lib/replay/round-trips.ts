@@ -1,5 +1,5 @@
 import type { TransactionRecord } from '../db/schema';
-import { timeToSeconds } from './engine';
+import { executionInstant } from './engine';
 
 export interface RoundTripExecution {
   tradeId: string;
@@ -48,11 +48,7 @@ export function computeRoundTrips(
 ): RoundTrip[] {
   const symbolTxns = transactions
     .filter((t) => t.symbol === symbol)
-    .sort((a, b) => {
-      const dateCmp = a.date.localeCompare(b.date);
-      if (dateCmp !== 0) return dateCmp;
-      return timeToSeconds(a.time) - timeToSeconds(b.time);
-    });
+    .sort((a, b) => executionInstant(a) - executionInstant(b));
 
   if (symbolTxns.length === 0) return [];
 
@@ -71,12 +67,13 @@ export function computeRoundTrips(
     totalExitQty: number;
     totalExitCost: number;
     startTime: string;
+    startInstant: number;
   } | null = null;
 
   for (const t of symbolTxns) {
     const isOpening = t.side === 'BUYTOOPEN' || t.side === 'SELLTOOPEN';
     const qty = Math.abs(t.quantity);
-    const ts = timeToSeconds(t.time);
+    const ts = executionInstant(t);
 
     const execution: RoundTripExecution = {
       tradeId: t.tradeId,
@@ -105,6 +102,7 @@ export function computeRoundTrips(
         totalExitQty: 0,
         totalExitCost: 0,
         startTime: t.time,
+        startInstant: ts,
       };
     } else {
       currentTrip.executions.push(execution);
@@ -163,7 +161,7 @@ export function computeRoundTrips(
         side: currentTrip.side,
         startTime: currentTrip.startTime,
         endTime: t.time,
-        startTimeSeconds: timeToSeconds(currentTrip.startTime),
+        startTimeSeconds: currentTrip.startInstant,
         endTimeSeconds: ts,
         executions: currentTrip.executions,
         entryQty: currentTrip.totalEntryQty,
@@ -200,7 +198,7 @@ export function computeRoundTrips(
       side: currentTrip.side,
       startTime: currentTrip.startTime,
       endTime: null,
-      startTimeSeconds: timeToSeconds(currentTrip.startTime),
+      startTimeSeconds: currentTrip.startInstant,
       endTimeSeconds: null,
       executions: currentTrip.executions,
       entryQty: currentTrip.totalEntryQty,

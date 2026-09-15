@@ -19,7 +19,7 @@ import type { TransactionRecord } from '@/lib/db/schema';
 import { TradeExecutionPrimitive } from '@/components/chart/SharedTradingChart';
 import type { CandleData } from '@/lib/chart/patterns';
 import { Loader2 } from 'lucide-react';
-import { timeToSeconds } from '@/lib/replay/engine';
+import { executionInstant } from '@/lib/replay/engine';
 
 interface ReplayChartProps {
     symbol: string;
@@ -174,7 +174,8 @@ export default function ReplayChart({
         const month = parseInt(date.substring(4, 6)) - 1;
         const day = parseInt(date.substring(6, 8));
         const midnightEtUtc = Math.floor(Date.UTC(year, month, day, 0, 0, 0) / 1000) - etOffset;
-        const currentUtcTimestamp = midnightEtUtc + currentTimeSeconds;
+        // currentTimeSeconds is now an absolute UTC epoch (the replay playhead).
+        const currentUtcTimestamp = currentTimeSeconds;
 
         const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         
@@ -232,11 +233,9 @@ export default function ReplayChart({
 
         // Reveal only the fills that have happened by the current replay time, and
         // draw them as in-bar arrows at their exact price via the shared primitive.
-        const revealed = transactions.filter((t) => {
-            const [h, m, s] = t.time.split(':').map(Number);
-            const execUtc = Math.floor(Date.UTC(year, month, day, h, m, s || 0) / 1000) - etOffset;
-            return execUtc <= currentUtcTimestamp;
-        });
+        const revealed = transactions.filter(
+            (t) => executionInstant(t) <= currentUtcTimestamp,
+        );
 
         // Candles keyed by real UTC epoch (bucket start) — the base the primitive's
         // execution matching expects; its formatCandleTime shifts to the ET display.
@@ -263,11 +262,8 @@ export default function ReplayChart({
         const month = parseInt(date.substring(4, 6)) - 1;
         const day = parseInt(date.substring(6, 8));
 
-        // Center on trades
-        const tradeTimes = transactions.map(t => {
-            const [h, m, s] = t.time.split(':').map(Number);
-            return Math.floor(Date.UTC(year, month, day, h, m, s || 0) / 1000);
-        });
+        // Center on trades (absolute UTC epoch; +etOffset below maps to chart space).
+        const tradeTimes = transactions.map((t) => executionInstant(t));
         const minTrade = (tradeTimes.length > 0) ? Math.min(...tradeTimes) : 0;
         const maxTrade = (tradeTimes.length > 0) ? Math.max(...tradeTimes) : 0;
 

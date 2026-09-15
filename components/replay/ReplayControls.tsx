@@ -3,6 +3,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, SkipBack, SkipForward } from 'lucide-react';
 import type { PlaybackSpeed } from '@/lib/replay/engine';
+import { formatInstantClock } from '@/lib/chart/execution-time';
 
 interface ReplayControlsProps {
   isPlaying: boolean;
@@ -16,6 +17,7 @@ interface ReplayControlsProps {
   onReset: () => void;
   onSkipForward: () => void;
   onSkipBack: () => void;
+  timeZone?: string;
 }
 
 const SPEEDS: PlaybackSpeed[] = [1, 2, 5, 10];
@@ -32,6 +34,7 @@ export default function ReplayControls({
   onReset,
   onSkipForward,
   onSkipBack,
+  timeZone,
 }: ReplayControlsProps) {
   const wasPlayingRef = useRef(false);
 
@@ -127,11 +130,11 @@ export default function ReplayControls({
             />
           </div>
           <div className="flex justify-between px-1">
-            <span className="text-[10px] font-black text-muted uppercase tracking-widest">{formatTimeShort(startTimeSeconds)}</span>
+            <span className="text-[10px] font-black text-muted uppercase tracking-widest">{formatInstantClock(startTimeSeconds, timeZone)}</span>
             <span className="text-[10px] font-black text-accent uppercase tracking-widest bg-accent/5 px-2 py-0.5 rounded-md border border-accent/10">
-              {formatTimeShort(currentTimeSeconds)}
+              {formatInstantClock(currentTimeSeconds, timeZone)}
             </span>
-            <span className="text-[10px] font-black text-muted uppercase tracking-widest">{formatTimeShort(endTimeSeconds)}</span>
+            <span className="text-[10px] font-black text-muted uppercase tracking-widest">{formatInstantClock(endTimeSeconds, timeZone)}</span>
           </div>
         </div>
 
@@ -154,12 +157,4 @@ export default function ReplayControls({
       </div>
     </div>
   );
-}
-
-function formatTimeShort(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
 }

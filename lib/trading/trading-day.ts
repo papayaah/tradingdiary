@@ -38,3 +38,12 @@ export function tradingDayFor(date: string, time: string, symbol: string): strin
   }
   return date;
 }
+
+/**
+ * The day-bucket key a fill belongs to — the broker's official TradeDate when
+ * present, else the derived exchange trading day. Matches how aggregateByDay
+ * groups fills, so overnight/foreign fills land on the same day as the summary.
+ */
+export function tradingDayKey(t: { date: string; time: string; symbol: string; tradeDate?: string }): string {
+  return t.tradeDate || tradingDayFor(t.date, t.time, t.symbol);
+}

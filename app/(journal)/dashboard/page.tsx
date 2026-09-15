@@ -11,7 +11,8 @@ import { computeDashboard } from '@/lib/trading/dashboard';
 import { getCashFlows } from '@/lib/db/cash-flows';
 import { computeAccountEquity } from '@/lib/trading/cash-flows';
 import type { CashFlowRecord } from '@/lib/db/schema';
-import { timeToSeconds, computePnLTimeline } from '@/lib/replay/engine';
+import { executionInstant, computePnLTimeline } from '@/lib/replay/engine';
+import { useDisplayTimezone } from '@/lib/hooks/useDisplayTimezone';
 import type { TransactionRecord } from '@/lib/db/schema';
 import dynamic from 'next/dynamic';
 import MonthlyCalendar from '@/components/dashboard/MonthlyCalendar';
@@ -86,14 +87,14 @@ function buildLatestDayTimeline(
   }
 
   const sorted = transactions.sort(
-    (a, b) => timeToSeconds(a.time) - timeToSeconds(b.time),
+    (a, b) => executionInstant(a) - executionInstant(b),
   );
   if (sorted.length === 0) return null;
 
-  const times = sorted.map((transaction) => timeToSeconds(transaction.time));
+  const times = sorted.map((transaction) => executionInstant(transaction));
   const firstSeenBySymbol = new Map<string, number>();
   for (const transaction of sorted) {
-    const timestamp = timeToSeconds(transaction.time);
+    const timestamp = executionInstant(transaction);
     if (!firstSeenBySymbol.has(transaction.symbol)) {
       firstSeenBySymbol.set(transaction.symbol, timestamp);
     }
@@ -105,8 +106,8 @@ function buildLatestDayTimeline(
     symbols: [...firstSeenBySymbol.entries()]
       .sort((a, b) => a[1] - b[1])
       .map(([symbol]) => symbol),
-    startTime: Math.max(0, Math.min(...times) - 300),
-    endTime: Math.min(86400, Math.max(...times) + 300),
+    startTime: Math.min(...times) - 300,
+    endTime: Math.max(...times) + 300,
     snapshots: computePnLTimeline(sorted),
     formattedDate: latest.formattedDate,
   };
@@ -116,6 +117,7 @@ export default function DashboardPage() {
   const { accounts, selectedAccountId, setSelectedAccountId } = useAccount();
   const activeAccount = accounts.find(a => a.accountId === selectedAccountId);
   const baseCurrency = activeAccount?.currency || 'USD';
+  const displayTimezone = useDisplayTimezone();
 
   const [rangeType, setRangeType] = useState<DashboardRangeType>('mtd');
   const [startDate, setStartDate] = useState<string>('');
@@ -583,6 +585,7 @@ export default function DashboardPage() {
             startTimeSeconds={latestDay.startTime}
             endTimeSeconds={latestDay.endTime}
             snapshots={latestDay.snapshots}
+            timeZone={displayTimezone}
           />
         </div>
       )}

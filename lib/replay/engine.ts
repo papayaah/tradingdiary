@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { TransactionRecord } from '../db/schema';
+import { etWallClockToEpochSeconds } from '../chart/execution-time';
 
 // --- Utilities ---
 
@@ -13,6 +14,17 @@ export function timeToSeconds(time: string): number {
   const m = parts[1] || 0;
   const s = parts[2] || 0;
   return h * 3600 + m * 60 + s;
+}
+
+/**
+ * Absolute instant of a fill, in epoch seconds. The stored wall-clock is treated
+ * as the broker's report zone (ET). Using this instead of time-of-day keeps
+ * overnight fills (e.g. a Blue Ocean buy the prior evening) correctly ordered
+ * before the next morning's sells, regardless of how labels are displayed.
+ */
+export function executionInstant(t: { date: string; time: string }): number {
+  const epoch = etWallClockToEpochSeconds(t.date, t.time);
+  return epoch ?? timeToSeconds(t.time);
 }
 
 export function secondsToTime(seconds: number): string {
@@ -49,11 +61,9 @@ interface SymbolLot {
  * Uses per-symbol FIFO matching (same logic as aggregator.ts).
  */
 export function computePnLTimeline(transactions: TransactionRecord[]): PnLSnapshot[] {
-  const sorted = [...transactions].sort((a, b) => {
-    const dateCmp = a.date.localeCompare(b.date);
-    if (dateCmp !== 0) return dateCmp;
-    return timeToSeconds(a.time) - timeToSeconds(b.time);
-  });
+  const sorted = [...transactions].sort(
+    (a, b) => executionInstant(a) - executionInstant(b),
+  );
 
   const symbolLots = new Map<string, SymbolLot[]>();
   const symbolNetQty = new Map<string, number>();
@@ -136,7 +146,7 @@ export function computePnLTimeline(transactions: TransactionRecord[]): PnLSnapsh
     }
 
     snapshots.push({
-      timeSeconds: timeToSeconds(t.time),
+      timeSeconds: executionInstant(t),
       tradeIndex: i,
       cumulativeNetPnL: cumulativePnL,
       positions,

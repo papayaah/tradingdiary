@@ -2,6 +2,7 @@ import AccountSettings from '@/components/settings/AccountSettings';
 import CashFlowSettings from '@/components/settings/CashFlowSettings';
 import PushNotificationToggle from '@/components/watch/PushNotificationToggle';
 import DataManagementSettings from '@/components/settings/DataManagementSettings';
+import DisplaySettings from '@/components/settings/DisplaySettings';
 
 export default function SettingsPage() {
     return (
@@ -10,6 +11,7 @@ export default function SettingsPage() {
 
             <div className="space-y-8">
                 <AccountSettings />
+                <DisplaySettings />
                 <CashFlowSettings />
                 <DataManagementSettings />
                 <PushNotificationToggle />

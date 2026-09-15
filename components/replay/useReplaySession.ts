@@ -6,10 +6,11 @@ import { getTransactionsByAccount } from '@/lib/db/trades';
 import type { TransactionRecord } from '@/lib/db/schema';
 import {
   computePnLTimeline,
-  timeToSeconds,
+  executionInstant,
   type PnLSnapshot,
 } from '@/lib/replay/engine';
 import { aggregateByDay } from '@/lib/trading/aggregator';
+import { tradingDayKey } from '@/lib/trading/trading-day';
 
 interface ReplayDay {
   date: string;
@@ -73,14 +74,14 @@ export function useReplaySession(date?: string | null, symbol?: string | null) {
       : selectedDay.transactions;
 
     return [...transactions].sort(
-      (a, b) => timeToSeconds(a.time) - timeToSeconds(b.time),
+      (a, b) => executionInstant(a) - executionInstant(b),
     );
   }, [selectedDay, symbol]);
 
   const symbols = useMemo(() => {
     const firstTradeBySymbol = new Map<string, number>();
     for (const transaction of dayTransactions) {
-      const time = timeToSeconds(transaction.time);
+      const time = executionInstant(transaction);
       const previous = firstTradeBySymbol.get(transaction.symbol);
       if (previous === undefined || time < previous) {
         firstTradeBySymbol.set(transaction.symbol, time);
@@ -98,28 +99,24 @@ export function useReplaySession(date?: string | null, symbol?: string | null) {
       : data?.allTransactions ?? [];
 
     return [...transactions].sort(
-      (a, b) =>
-        a.date.localeCompare(b.date)
-        || timeToSeconds(a.time) - timeToSeconds(b.time),
+      (a, b) => executionInstant(a) - executionInstant(b),
     );
   }, [data, symbol]);
 
   const snapshots = useMemo(() => {
     if (!selectedDate || relevantTransactions.length === 0) return [];
 
+    // Fills of one trading day can span calendar dates and interleave (by
+    // instant) with other days' fills, so select by the day-bucket key and take
+    // the baseline as the cumulative P&L just before this day's first fill.
     const fullTimeline = computePnLTimeline(relevantTransactions);
-    const firstIndex = relevantTransactions.findIndex(
-      (transaction) => transaction.date === selectedDate,
-    );
-    if (firstIndex === -1) return [];
-
-    const baselinePnL = firstIndex > 0
-      ? computePnLTimeline(relevantTransactions.slice(0, firstIndex)).at(-1)?.cumulativeNetPnL ?? 0
-      : 0;
-
     const daySnapshots: PnLSnapshot[] = [];
-    for (let index = firstIndex; index < relevantTransactions.length; index += 1) {
-      if (relevantTransactions[index].date !== selectedDate) break;
+    let baselinePnL: number | null = null;
+    for (let index = 0; index < relevantTransactions.length; index += 1) {
+      if (tradingDayKey(relevantTransactions[index]) !== selectedDate) continue;
+      if (baselinePnL === null) {
+        baselinePnL = index > 0 ? fullTimeline[index - 1].cumulativeNetPnL : 0;
+      }
       const snapshot = fullTimeline[index];
       if (!snapshot) continue;
       daySnapshots.push({
@@ -132,10 +129,10 @@ export function useReplaySession(date?: string | null, symbol?: string | null) {
 
   const timeRange = useMemo(() => {
     if (dayTransactions.length === 0) return { start: 0, end: 0 };
-    const times = dayTransactions.map((transaction) => timeToSeconds(transaction.time));
+    const times = dayTransactions.map((transaction) => executionInstant(transaction));
     return {
-      start: Math.max(0, Math.min(...times) - 300),
-      end: Math.min(86_400, Math.max(...times) + 300),
+      start: Math.min(...times) - 300,
+      end: Math.max(...times) + 300,
     };
   }, [dayTransactions]);
 

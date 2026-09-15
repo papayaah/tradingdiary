@@ -17,6 +17,9 @@ export interface ChartOverlayPreferences {
   trendlines: boolean;
 }
 
+/** 'auto' follows the device timezone; otherwise a specific IANA zone id. */
+export type DisplayTimezone = string;
+
 export interface AppSettings {
   /** Show journal trade P&L primarily in the account's base currency. */
   showPnlInBaseCurrency: boolean;
@@ -24,6 +27,12 @@ export interface AppSettings {
   dashboardRange: DashboardRangePreference;
   /** Chart overlay toggles shared across every chart. */
   chartOverlays: ChartOverlayPreferences;
+  /**
+   * Timezone used to *display* execution times ('auto' = device zone). Ordering
+   * always uses the absolute instant, so this only changes labels, never the
+   * sequence of fills.
+   */
+  displayTimezone: DisplayTimezone;
 }
 
 const defaults: AppSettings = {
@@ -38,6 +47,7 @@ const defaults: AppSettings = {
     levels: true,
     trendlines: true,
   },
+  displayTimezone: 'auto',
 };
 
 const dashboardRangeTypes = new Set<DashboardRangeType>([
@@ -80,6 +90,18 @@ function normalizeChartOverlays(value: unknown): ChartOverlayPreferences {
   };
 }
 
+function normalizeDisplayTimezone(value: unknown): DisplayTimezone {
+  if (value === 'auto' || value == null) return 'auto';
+  if (typeof value !== 'string') return 'auto';
+  try {
+    // Reject anything the runtime can't resolve as an IANA zone.
+    new Intl.DateTimeFormat('en-US', { timeZone: value });
+    return value;
+  } catch {
+    return 'auto';
+  }
+}
+
 export function getSettings(): AppSettings {
   if (typeof window === 'undefined') return defaults;
   try {
@@ -91,6 +113,7 @@ export function getSettings(): AppSettings {
       ...stored,
       dashboardRange: normalizeDashboardRange(stored.dashboardRange),
       chartOverlays: normalizeChartOverlays(stored.chartOverlays),
+      displayTimezone: normalizeDisplayTimezone(stored.displayTimezone),
     };
   } catch {
     return defaults;
@@ -126,4 +149,27 @@ export function getChartOverlayPreferences(): ChartOverlayPreferences {
 export function setChartOverlayPreference(key: keyof ChartOverlayPreferences, value: boolean): void {
   const current = getChartOverlayPreferences();
   saveSettings({ chartOverlays: { ...current, [key]: value } });
+}
+
+export function getDisplayTimezonePreference(): DisplayTimezone {
+  return getSettings().displayTimezone;
+}
+
+export function setDisplayTimezonePreference(timezone: DisplayTimezone): void {
+  saveSettings({ displayTimezone: normalizeDisplayTimezone(timezone) });
+}
+
+/** The device's IANA timezone, or ET as a server-safe fallback. */
+export function deviceTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York';
+  } catch {
+    return 'America/New_York';
+  }
+}
+
+/** Resolve a preference ('auto' or an IANA id) to a concrete IANA zone. */
+export function resolveDisplayTimezone(preference?: DisplayTimezone): string {
+  const pref = preference ?? getDisplayTimezonePreference();
+  return !pref || pref === 'auto' ? deviceTimezone() : pref;
 }
