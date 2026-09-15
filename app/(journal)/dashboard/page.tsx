@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { Upload, LayoutDashboard, Calendar, Sparkles, ChevronDown, Check } from 'lucide-react';
 import { type DailySummary } from '@/lib/trading/aggregator';
@@ -179,11 +179,17 @@ export default function DashboardPage() {
   // Reload the dashboard when a sync merged remote changes into IndexedDB.
   useEffect(() => onJournalSynced(() => setRefreshKey((k) => k + 1)), []);
 
+  // The account whose data is currently on screen. Lets a background
+  // revalidation (sync merge) refresh in place instead of flashing the skeleton.
+  const shownAccountRef = useRef<string | null>(null);
+
   useEffect(() => {
+    let cancelled = false;
     async function load() {
       if (!selectedAccountId) {
         setEmpty(true);
         setLoading(false);
+        shownAccountRef.current = null;
         return;
       }
 
@@ -194,21 +200,28 @@ export default function DashboardPage() {
         setAllSummaries(warm);
         setEmpty(warm.length === 0);
         setLoading(false);
-      } else {
+        shownAccountRef.current = selectedAccountId;
+      } else if (shownAccountRef.current !== selectedAccountId) {
+        // Cold load or account switch — nothing trustworthy to show yet.
         setLoading(true);
         setEmpty(false);
       }
+      // Otherwise we're revalidating the account already on screen: keep the
+      // current numbers visible and let the fresh data replace them below.
 
       const [cashFlowsData, summaries] = await Promise.all([
         getCashFlows(selectedAccountId),
         getJournalSummaries(selectedAccountId),
       ]);
+      if (cancelled) return;
       setCashFlows(cashFlowsData);
       setAllSummaries(summaries);
       setEmpty(summaries.length === 0);
       setLoading(false);
+      shownAccountRef.current = selectedAccountId;
     }
     load();
+    return () => { cancelled = true; };
   }, [selectedAccountId, refreshKey]);
 
   const filteredData = useMemo(() => {

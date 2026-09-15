@@ -114,26 +114,36 @@ export default function JournalPage() {
   // positions are fetched separately (below) so the P&L/list never waits on a
   // network call. Runs once per account/refresh — date navigation does NOT
   // reload, keeping arrow-key paging instant.
+  // The account whose list is currently on screen, so a background revalidation
+  // (sync merge) refreshes in place instead of flashing the skeleton.
+  const shownAccountRef = useRef<string | null>(null);
   useEffect(() => {
+    let cancelled = false;
     async function load() {
       if (!selectedAccountId) {
         setSummaries([]);
+        shownAccountRef.current = null;
         return;
       }
       // Warm cache: reuse the already-aggregated summaries when available (e.g.
       // navigating in from search) so the page is instant. Only show the skeleton
-      // on a genuinely cold load.
+      // on a genuinely cold load or an account switch — never when merely
+      // revalidating the account already displayed.
       const warm = peekJournalSummaries(selectedAccountId);
       if (warm) {
         setSummaries(warm);
-      } else {
+        shownAccountRef.current = selectedAccountId;
+      } else if (shownAccountRef.current !== selectedAccountId) {
         setSummaries(null);
       }
       pricedScopeRef.current = ''; // new dataset → allow re-pricing
-      const summaries = await getJournalSummaries(selectedAccountId);
-      setSummaries(summaries);
+      const next = await getJournalSummaries(selectedAccountId);
+      if (cancelled) return;
+      setSummaries(next);
+      shownAccountRef.current = selectedAccountId;
     }
     load();
+    return () => { cancelled = true; };
   }, [selectedAccountId, refreshKey]);
 
   // Load tags + per-trade tag links for the tag filter. Refreshes with the
