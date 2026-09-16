@@ -17,6 +17,7 @@ import { computePortfolio, Holding } from '@/lib/trading/portfolio';
 import { formatCurrency } from '@/lib/currency';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { ManualTradePanel } from '@/components/trades/manual-entry/ManualTradePanel';
+import { getLiveQuotes } from '@/lib/market/live-quotes-client';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
 
@@ -57,24 +58,20 @@ export default function OpenPositionsCard({ onTradeAdded, initialHoldings }: Ope
       // Fetch live market quotes for open holdings
       if (computed.length > 0) {
         try {
-          const symbols = computed.map((h) => h.symbol);
-          const res = await fetch(`/api/quotes?symbols=${symbols.join(',')}`);
-          if (res.ok) {
-            const prices = await res.json();
-            computed.forEach((h) => {
-              const latestPrice = prices[h.symbol];
-              if (typeof latestPrice === 'number') {
-                h.currentPrice = latestPrice;
-                h.marketValue = latestPrice * Math.abs(h.quantity) * h.multiplier;
-                h.unrealizedPnL =
-                  h.quantity > 0
-                    ? h.marketValue - h.totalCost
-                    : h.totalCost - h.marketValue;
-                h.unrealizedPnLPercent =
-                  h.totalCost > 0 ? (h.unrealizedPnL / h.totalCost) * 100 : 0;
-              }
-            });
-          }
+          const prices = await getLiveQuotes(computed.map((holding) => holding.symbol));
+          computed.forEach((h) => {
+            const latestPrice = prices[h.symbol];
+            if (typeof latestPrice === 'number') {
+              h.currentPrice = latestPrice;
+              h.marketValue = latestPrice * Math.abs(h.quantity) * h.multiplier;
+              h.unrealizedPnL =
+                h.quantity > 0
+                  ? h.marketValue - h.totalCost
+                  : h.totalCost - h.marketValue;
+              h.unrealizedPnLPercent =
+                h.totalCost > 0 ? (h.unrealizedPnL / h.totalCost) * 100 : 0;
+            }
+          });
         } catch (err) {
           console.error('Failed to fetch prices:', err);
         }
