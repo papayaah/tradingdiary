@@ -463,6 +463,7 @@ export const tradeGroup = pgTable("trade_group", {
 }, (t) => [
     uniqueIndex("trade_group_client_uq").on(t.userId, t.clientKey),
     index("trade_group_account_idx").on(t.accountId),
+    index("trade_group_account_day_idx").on(t.accountId, t.tradingDay),
     index("trade_group_user_day_idx").on(t.userId, t.tradingDay),
     index("trade_group_user_symbol_idx").on(t.userId, t.symbol),
 ]);

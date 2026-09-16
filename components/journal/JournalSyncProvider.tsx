@@ -26,6 +26,19 @@ const JournalSyncContext = createContext<JournalSyncContextValue>({
 });
 
 const PUSH_DEBOUNCE_MS = 1500;
+const DIRTY_PREFIX = 'journal-sync-dirty:';
+
+function isJournalDirty(userId: string): boolean {
+  return localStorage.getItem(DIRTY_PREFIX + userId) === '1';
+}
+
+function markJournalDirty(userId: string): void {
+  localStorage.setItem(DIRTY_PREFIX + userId, '1');
+}
+
+function clearJournalDirty(userId: string): void {
+  localStorage.removeItem(DIRTY_PREFIX + userId);
+}
 
 export function JournalSyncProvider({ children }: { children: React.ReactNode }) {
   const { data: session } = authClient.useSession();
@@ -38,13 +51,14 @@ export function JournalSyncProvider({ children }: { children: React.ReactNode })
   // Refs guard against overlapping runs and stale closures.
   const running = useRef(false);
   const pushTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const dirtyGeneration = useRef(0);
   const userIdRef = useRef<string | null>(null);
   userIdRef.current = userId;
   // Only reconcile (propagate deletes) once this session has pulled at least
   // once, so a fresh device can't tombstone the server before merging.
   const hasPulled = useRef(false);
 
-  /** Pull remote changes, merge, then push the (now-merged) local snapshot. */
+  /** Pull remote changes. Only upload when a local mutation is pending. */
   const fullSync = useCallback(async () => {
     const uid = userIdRef.current;
     if (!uid || running.current) return;
@@ -63,8 +77,18 @@ export function JournalSyncProvider({ children }: { children: React.ReactNode })
         notifyJournalSynced();
       }
 
-      const push = await pushJournalSnapshot(hasPulled.current);
-      if (push.authenticated) setCursor(uid, push.seq);
+      // A page load used to upload the complete local journal every time. That
+      // made merely opening the dashboard scale with lifetime execution count.
+      // Persist a dirty bit instead, so full uploads happen only after an actual
+      // local edit (including one left pending by a previous browser session).
+      if (isJournalDirty(uid)) {
+        const generation = dirtyGeneration.current;
+        const push = await pushJournalSnapshot(hasPulled.current);
+        if (push.authenticated) {
+          setCursor(uid, push.seq);
+          if (dirtyGeneration.current === generation) clearJournalDirty(uid);
+        }
+      }
 
       setStatus('synced');
       setLastSyncedAt(Date.now());
@@ -99,12 +123,20 @@ export function JournalSyncProvider({ children }: { children: React.ReactNode })
   }, [refreshAccounts]);
 
   const schedulePush = useCallback(() => {
-    if (!userIdRef.current) return;
+    const scheduledUserId = userIdRef.current;
+    if (!scheduledUserId) return;
+    dirtyGeneration.current += 1;
+    markJournalDirty(scheduledUserId);
     if (pushTimer.current) clearTimeout(pushTimer.current);
-    pushTimer.current = setTimeout(() => {
+    const run = () => {
       void (async () => {
         const uid = userIdRef.current;
-        if (!uid || running.current) return;
+        if (!uid || uid !== scheduledUserId) return;
+        if (running.current) {
+          pushTimer.current = setTimeout(run, PUSH_DEBOUNCE_MS);
+          return;
+        }
+        const generation = dirtyGeneration.current;
         running.current = true;
         setStatus('syncing');
         try {
@@ -113,6 +145,7 @@ export function JournalSyncProvider({ children }: { children: React.ReactNode })
             setCursor(uid, push.seq);
             setStatus('synced');
             setLastSyncedAt(Date.now());
+            if (dirtyGeneration.current === generation) clearJournalDirty(uid);
           } else {
             setStatus('local');
           }
@@ -121,9 +154,13 @@ export function JournalSyncProvider({ children }: { children: React.ReactNode })
           setStatus('error');
         } finally {
           running.current = false;
+          if (dirtyGeneration.current !== generation && isJournalDirty(uid)) {
+            pushTimer.current = setTimeout(run, PUSH_DEBOUNCE_MS);
+          }
         }
       })();
-    }, PUSH_DEBOUNCE_MS);
+    };
+    pushTimer.current = setTimeout(run, PUSH_DEBOUNCE_MS);
   }, []);
 
   // Initial sync when a user becomes signed in.

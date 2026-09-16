@@ -3,17 +3,14 @@ import type { DaySummaryMetaRecord, StoredDaySummary } from '@/lib/db/schema';
 
 const mocks = vi.hoisted(() => ({
   getDB: vi.fn(),
-  getTransactionsByAccount: vi.fn(),
 }));
 
 vi.mock('@/lib/db/database', () => ({ getDB: mocks.getDB }));
-vi.mock('@/lib/db/trades', () => ({
-  getTransactionsByAccount: mocks.getTransactionsByAccount,
-}));
 
 import { DAY_SUMMARY_SCHEMA_VERSION } from '@/lib/db/day-summary-state';
 import {
   readStoredDaySummaries,
+  readStoredDaySummariesSnapshot,
   rebuildDaySummaries,
 } from '@/lib/trading/day-summaries-store';
 
@@ -93,6 +90,18 @@ describe('persisted day summaries', () => {
     await expect(readStoredDaySummaries('acct')).resolves.toBeNull();
   });
 
+  it('can paint existing rows while their completion marker is stale', async () => {
+    const rows = [storedDay('acct', '20260101'), storedDay('acct', '20260103')];
+    mocks.getDB.mockResolvedValue({
+      getAllFromIndex: vi.fn().mockResolvedValue(rows),
+    });
+
+    await expect(readStoredDaySummariesSnapshot('acct')).resolves.toEqual([
+      expect.objectContaining({ date: '20260103' }),
+      expect.objectContaining({ date: '20260101' }),
+    ]);
+  });
+
   it('rebuilds the source snapshot and completion marker atomically', async () => {
     const metaPut = vi.fn().mockResolvedValue(undefined);
     const transaction = vi.fn(() => ({
@@ -112,7 +121,6 @@ describe('persisted day summaries', () => {
       done: Promise.resolve(),
     }));
     mocks.getDB.mockResolvedValue({ transaction });
-    mocks.getTransactionsByAccount.mockResolvedValue([]);
 
     await expect(rebuildDaySummaries('acct')).resolves.toEqual([]);
     expect(transaction).toHaveBeenCalledWith(

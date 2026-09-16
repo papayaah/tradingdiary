@@ -1,7 +1,6 @@
 'use client';
 
 import { getDB } from '@/lib/db/database';
-import { getTransactionsByAccount } from '@/lib/db/trades';
 import { DAY_SUMMARY_SCHEMA_VERSION } from '@/lib/db/day-summary-state';
 import { aggregateByDay, type AggregatedTrade, type DailySummary } from '@/lib/trading/aggregator';
 import type { StoredDaySummary, TransactionRecord } from '@/lib/db/schema';
@@ -48,11 +47,10 @@ function fromStored(rows: StoredDaySummary[]): DailySummary[] {
  * fills only at the point where they are needed.
  */
 export async function rebuildDaySummaries(accountId: string): Promise<DailySummary[]> {
-  // Complete any historical FX enrichment first. It may update executions and
-  // invalidate the marker, so the authoritative snapshot is read again below.
-  await getTransactionsByAccount(accountId);
-
   const db = await getDB();
+  // Keep dashboard/journal reads local-only. Historical FX enrichment can make
+  // network requests and must never sit in the critical path of opening a page;
+  // imports persist the best available rates on each execution beforehand.
   // Reading source executions and replacing the derived model in one transaction
   // prevents a concurrent import/sync from slipping between snapshot and persist.
   const tx = db.transaction(
@@ -99,6 +97,18 @@ export async function readStoredDaySummaries(accountId: string): Promise<DailySu
   await tx.done;
   if (!meta || meta.schemaVersion !== DAY_SUMMARY_SCHEMA_VERSION) return null;
   // A valid marker plus zero rows is a genuinely empty account, not a cache miss.
+  return fromStored(rows);
+}
+
+/**
+ * Read existing compact rows without requiring a current completion marker.
+ * Invalidating source data deliberately leaves the old rows in place, allowing
+ * pages to paint a stale snapshot immediately while an authoritative local
+ * rebuild runs in the background.
+ */
+export async function readStoredDaySummariesSnapshot(accountId: string): Promise<DailySummary[]> {
+  const db = await getDB();
+  const rows = await db.getAllFromIndex('daySummaries', 'by-accountId', accountId);
   return fromStored(rows);
 }
 

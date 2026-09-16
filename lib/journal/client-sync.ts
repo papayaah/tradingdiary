@@ -5,6 +5,7 @@ import { getAllDailyNotes, getAllTradeNotes } from '../db/notes';
 import { getAllCashFlows } from '../db/cash-flows';
 import { getAllTags } from '../db/tags';
 import { invalidateDaySummaryAccounts } from '../db/day-summary-state';
+import { clearStoredDaySummaries } from '../trading/day-summaries-store';
 import type { JournalPushRequest, JournalPullResponse } from './sync-types';
 
 /**
@@ -137,17 +138,47 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
   if (!data.authenticated) return { authenticated: false, changed: false, seq: cursor };
 
   const db = await getDB();
+  // Executions are immutable and keyed by their stable broker/client id. On a
+  // cursor reset the server can send the full history again; writing every row
+  // (hundreds of thousands for large accounts) both wastes time and overwrites
+  // locally enriched FX fields. Read keys only, then merge genuinely new rows.
+  const [existingExecutionKeys, existingAccounts] = await Promise.all([
+    db.getAllKeys('transactions'),
+    db.getAll('accounts'),
+  ]);
+  const existingExecutionIds = new Set(existingExecutionKeys.map(String));
+  const newExecutions = data.executions.filter(
+    (execution) => !existingExecutionIds.has(execution.tradeId),
+  );
+  const existingAccountById = new Map(
+    existingAccounts.map((account) => [account.accountId, account]),
+  );
+  const summaryRelevantAccountChanges = new Set(
+    data.accounts
+      .filter((account) => {
+        const existing = existingAccountById.get(account.accountId);
+        return !existing || existing.currency !== account.currency;
+      })
+      .map((account) => account.accountId),
+  );
+  const hasSummaryDeletes = data.deletes.some(
+    (item) => item.entity === 'execution' || item.entity === 'account',
+  );
+  const needsSummaryInvalidation =
+    newExecutions.length > 0 ||
+    summaryRelevantAccountChanges.size > 0 ||
+    hasSummaryDeletes;
+  const stores = [
+    'accounts',
+    'transactions',
+    'cashFlows',
+    'tags',
+    'dailyNotes',
+    'tradeNotes',
+    ...(needsSummaryInvalidation ? ['daySummaryMeta' as const] : []),
+  ] as const;
   const tx = db.transaction(
-    [
-      'accounts',
-      'transactions',
-      'cashFlows',
-      'tags',
-      'dailyNotes',
-      'tradeNotes',
-      'daySummaries',
-      'daySummaryMeta',
-    ],
+    stores,
     'readwrite',
   );
   const accountStore = tx.objectStore('accounts');
@@ -156,7 +187,8 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
   const tagStore = tx.objectStore('tags');
   const dailyNoteStore = tx.objectStore('dailyNotes');
   const tradeNoteStore = tx.objectStore('tradeNotes');
-  const summaryAccountIds = new Set<string>();
+  const summaryAccountIds = new Set<string>(summaryRelevantAccountChanges);
+  const deletedAccountIds = new Set<string>();
 
   for (const a of data.accounts) {
     const account: AccountRecord = {
@@ -169,10 +201,9 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
       initialBalance: a.initialBalance,
     };
     await accountStore.put(account);
-    summaryAccountIds.add(account.accountId);
   }
 
-  for (const t of data.executions) {
+  for (const t of newExecutions) {
     await transactionStore.put(t);
     summaryAccountIds.add(t.accountId);
   }
@@ -280,22 +311,28 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
     } else if (d.entity === 'account') {
       await accountStore.delete(d.clientKey);
       summaryAccountIds.add(d.clientKey);
+      deletedAccountIds.add(d.clientKey);
       // Cascade: remove the account's local transactions.
       const txns = await transactionStore.index('by-accountId').getAll(d.clientKey);
       for (const t of txns) await transactionStore.delete(t.tradeId);
-      const summaryKeys = await tx
-        .objectStore('daySummaries')
-        .index('by-accountId')
-        .getAllKeys(d.clientKey);
-      for (const key of summaryKeys) await tx.objectStore('daySummaries').delete(key);
     }
   }
 
-  await invalidateDaySummaryAccounts(
-    tx.objectStore('daySummaryMeta'),
-    summaryAccountIds,
-  );
+  if (needsSummaryInvalidation) {
+    await invalidateDaySummaryAccounts(
+      tx.objectStore('daySummaryMeta'),
+      summaryAccountIds,
+    );
+  }
   await tx.done;
+
+  // Summary rows are intentionally outside the large sync transaction. Keeping
+  // that store in its scope blocked the dashboard's read-only snapshot behind a
+  // potentially large remote merge. Account deletion cleanup can safely happen
+  // afterward in its own short transaction.
+  for (const accountId of deletedAccountIds) {
+    await clearStoredDaySummaries(accountId);
+  }
 
   // seq only advances when the server recorded new events. A first sync
   // (cursor 0) that returned data, or a later seq, means the local store changed.

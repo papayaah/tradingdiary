@@ -4,7 +4,11 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { Upload, LayoutDashboard, Calendar, Sparkles, ChevronDown, Check } from 'lucide-react';
 import { type DailySummary } from '@/lib/trading/aggregator';
-import { getJournalSummaries, peekJournalSummaries } from '@/lib/trading/journal-summaries-cache';
+import {
+  getJournalSummaries,
+  getJournalSummariesSnapshot,
+  peekJournalSummaries,
+} from '@/lib/trading/journal-summaries-cache';
 import { hydrateDayTransactions } from '@/lib/trading/day-summaries-store';
 import { onJournalSynced } from '@/lib/journal/sync-bus';
 import { computeDashboard } from '@/lib/trading/dashboard';
@@ -14,23 +18,29 @@ import type { CashFlowRecord } from '@/lib/db/schema';
 import { executionInstant, computePnLTimeline } from '@/lib/replay/engine';
 import { useDisplayTimezone } from '@/lib/hooks/useDisplayTimezone';
 import type { TransactionRecord } from '@/lib/db/schema';
+import type { Holding } from '@/lib/trading/portfolio';
 import dynamic from 'next/dynamic';
 import MonthlyCalendar from '@/components/dashboard/MonthlyCalendar';
 import ComparisonBar from '@/components/dashboard/ComparisonBar';
+import {
+  DashboardWidgetLoading,
+  ProgressiveDashboardWidget,
+  useProgressiveWidgetReveal,
+} from '@/components/dashboard/ProgressiveDashboardWidget';
 
 // Charts pull in recharts (and ReplayTimeline the replay engine), none of which
 // the stat tiles or calendar above them need. Load them as separate chunks so
 // the initial dashboard paint isn't blocked on parsing them.
-const chartSkeleton = () => (
-  <div className="h-full min-h-[14rem] rounded-2xl bg-card-bg border border-card-border animate-pulse" />
-);
-const CumulativePnLChart = dynamic(() => import('@/components/dashboard/CumulativePnLChart'), { ssr: false, loading: chartSkeleton });
-const WinLossDonut = dynamic(() => import('@/components/dashboard/WinLossDonut'), { ssr: false, loading: chartSkeleton });
-const LargestGainLossDonut = dynamic(() => import('@/components/dashboard/LargestGainLossDonut'), { ssr: false, loading: chartSkeleton });
-const DailyWinLossChart = dynamic(() => import('@/components/dashboard/DailyWinLossChart'), { ssr: false, loading: chartSkeleton });
-const DailyPnLChart = dynamic(() => import('@/components/dashboard/DailyPnLChart'), { ssr: false, loading: chartSkeleton });
-const OpenPositionsCard = dynamic(() => import('@/components/dashboard/OpenPositionsCard'), { ssr: false, loading: chartSkeleton });
-const ReplayTimeline = dynamic(() => import('@/components/replay/ReplayTimeline'), { ssr: false, loading: chartSkeleton });
+const widgetLoader = (label: string) => function DashboardChunkLoading() {
+  return <DashboardWidgetLoading label={label} />;
+};
+const CumulativePnLChart = dynamic(() => import('@/components/dashboard/CumulativePnLChart'), { ssr: false, loading: widgetLoader('cumulative P&L') });
+const WinLossDonut = dynamic(() => import('@/components/dashboard/WinLossDonut'), { ssr: false, loading: widgetLoader('win/loss chart') });
+const LargestGainLossDonut = dynamic(() => import('@/components/dashboard/LargestGainLossDonut'), { ssr: false, loading: widgetLoader('largest gain and loss') });
+const DailyWinLossChart = dynamic(() => import('@/components/dashboard/DailyWinLossChart'), { ssr: false, loading: widgetLoader('daily wins and losses') });
+const DailyPnLChart = dynamic(() => import('@/components/dashboard/DailyPnLChart'), { ssr: false, loading: widgetLoader('daily P&L') });
+const OpenPositionsCard = dynamic(() => import('@/components/dashboard/OpenPositionsCard'), { ssr: false, loading: widgetLoader('open positions') });
+const ReplayTimeline = dynamic(() => import('@/components/replay/ReplayTimeline'), { ssr: false, loading: widgetLoader('latest day activity') });
 import { useAccount } from '@/contexts/AccountContext';
 import { formatCurrency } from '@/lib/currency';
 import { loadDemoSampleData } from '@/lib/import/sample-loader';
@@ -46,6 +56,7 @@ import {
   resolveDashboardDateRange,
   shiftDashboardRange,
   describeDashboardRange,
+  type DashboardDateRange,
 } from '@/lib/trading/dashboard-range';
 import FlexSyncControl from '@/components/import/ibkr-flex/FlexSyncControl';
 
@@ -70,6 +81,20 @@ interface LatestDayTimeline {
   endTime: number;
   snapshots: ReturnType<typeof computePnLTimeline>;
   formattedDate: string;
+}
+
+interface DashboardApiResponse {
+  accountId: string;
+  currency: string;
+  initialBalance: number | null;
+  range: DashboardDateRange;
+  summaries: DailySummary[];
+  cashFlows: CashFlowRecord[];
+  holdings: Holding[];
+}
+
+interface DashboardActivityApiResponse {
+  transactions: TransactionRecord[];
 }
 
 function buildLatestDayTimeline(
@@ -116,7 +141,14 @@ function buildLatestDayTimeline(
 export default function DashboardPage() {
   const { accounts, selectedAccountId, setSelectedAccountId } = useAccount();
   const activeAccount = accounts.find(a => a.accountId === selectedAccountId);
-  const baseCurrency = activeAccount?.currency || 'USD';
+  const [serverAccountDetails, setServerAccountDetails] = useState<{
+    currency: string;
+    initialBalance: number | null;
+  } | null>(null);
+  const baseCurrency = serverAccountDetails?.currency || activeAccount?.currency || 'USD';
+  const initialBalance = serverAccountDetails
+    ? serverAccountDetails.initialBalance ?? undefined
+    : activeAccount?.initialBalance;
   const displayTimezone = useDisplayTimezone();
 
   const [rangeType, setRangeType] = useState<DashboardRangeType>('mtd');
@@ -173,10 +205,17 @@ export default function DashboardPage() {
 
   const [allSummaries, setAllSummaries] = useState<DailySummary[]>([]);
   const [cashFlows, setCashFlows] = useState<CashFlowRecord[]>([]);
+  const [serverHoldings, setServerHoldings] = useState<Holding[] | undefined>(undefined);
   const [empty, setEmpty] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [dataAccountId, setDataAccountId] = useState<string | null>(null);
+  const [dataRequestKey, setDataRequestKey] = useState<string | null>(null);
+  const [loadedRange, setLoadedRange] = useState<DashboardDateRange | null>(null);
+  const [dataSource, setDataSource] = useState<'server' | 'local' | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [latestDay, setLatestDay] = useState<LatestDayTimeline | null>(null);
+  const [latestDayLoading, setLatestDayLoading] = useState(false);
 
   // Reload the dashboard when a sync merged remote changes into IndexedDB.
   useEffect(() => onJournalSynced(() => setRefreshKey((k) => k + 1)), []);
@@ -184,57 +223,169 @@ export default function DashboardPage() {
   // The account whose data is currently on screen. Lets a background
   // revalidation (sync merge) refresh in place instead of flashing the skeleton.
   const shownAccountRef = useRef<string | null>(null);
+  const requestKey = `${selectedAccountId ?? ''}:${rangeType}:${startDate}:${endDate}`;
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
+      if (!rangePreferenceLoaded) return;
       if (!selectedAccountId) {
         setEmpty(true);
         setLoading(false);
+        setLoadError(null);
+        setDataAccountId(null);
+        setDataRequestKey(null);
+        setLoadedRange(null);
+        setDataSource(null);
+        setServerHoldings(undefined);
+        setServerAccountDetails(null);
         shownAccountRef.current = null;
         return;
       }
 
-      // Warm cache (shared with the journal): skip the skeleton when the
-      // aggregation is already built, so navigating in is instant.
-      const warm = peekJournalSummaries(selectedAccountId);
-      if (warm) {
-        setAllSummaries(warm);
-        setEmpty(warm.length === 0);
-        setLoading(false);
-        shownAccountRef.current = selectedAccountId;
-      } else if (shownAccountRef.current !== selectedAccountId) {
-        // Cold load or account switch — nothing trustworthy to show yet.
-        setLoading(true);
-        setEmpty(false);
-      }
-      // Otherwise we're revalidating the account already on screen: keep the
-      // current numbers visible and let the fresh data replace them below.
+      setLoadError(null);
+      try {
+        // Signed-in dashboards read the bounded date range directly from the
+        // persisted Postgres trade-group model. This avoids syncing or scanning
+        // the account's complete execution history before the first metric.
+        const params = new URLSearchParams({
+          accountId: selectedAccountId,
+          rangeType,
+        });
+        if (startDate) params.set('startDate', startDate);
+        if (endDate) params.set('endDate', endDate);
+        const response = await fetch(`/api/dashboard?${params}`, { cache: 'no-store' });
+        if (response.ok) {
+          const dashboard = await response.json() as DashboardApiResponse;
+          if (cancelled) return;
+          setAllSummaries(dashboard.summaries);
+          setCashFlows(dashboard.cashFlows);
+          setServerHoldings(dashboard.holdings);
+          setServerAccountDetails({
+            currency: dashboard.currency,
+            initialBalance: dashboard.initialBalance,
+          });
+          setEmpty(dashboard.summaries.length === 0);
+          setLoading(false);
+          setDataAccountId(selectedAccountId);
+          setDataRequestKey(requestKey);
+          setLoadedRange(dashboard.range);
+          setDataSource('server');
+          shownAccountRef.current = selectedAccountId;
 
-      const [cashFlowsData, summaries] = await Promise.all([
-        getCashFlows(selectedAccountId),
-        getJournalSummaries(selectedAccountId),
-      ]);
-      if (cancelled) return;
-      setCashFlows(cashFlowsData);
-      setAllSummaries(summaries);
-      setEmpty(summaries.length === 0);
-      setLoading(false);
-      shownAccountRef.current = selectedAccountId;
+          const latest = dashboard.summaries[0];
+          setLatestDay(null);
+          setLatestDayLoading(Boolean(latest));
+          if (latest) {
+            const activityParams = new URLSearchParams({
+              accountId: selectedAccountId,
+              day: latest.date,
+            });
+            void fetch(`/api/dashboard/activity?${activityParams}`, { cache: 'no-store' })
+              .then(async (activityResponse) => {
+                if (!activityResponse.ok) throw new Error('Activity request failed');
+                return activityResponse.json() as Promise<DashboardActivityApiResponse>;
+              })
+              .then((activity) => {
+                if (!cancelled) {
+                  setLatestDay(buildLatestDayTimeline(latest, activity.transactions));
+                }
+              })
+              .catch(() => {
+                if (!cancelled) setLatestDay(null);
+              })
+              .finally(() => {
+                if (!cancelled) setLatestDayLoading(false);
+              });
+          }
+          return;
+        }
+        // Guests and local-only accounts retain the IndexedDB path. Other
+        // server failures are surfaced instead of silently triggering a costly
+        // full-history browser rebuild.
+        if (response.status !== 401 && response.status !== 404) {
+          const payload = await response.json().catch(() => null) as { error?: string } | null;
+          throw new Error(payload?.error || 'Dashboard data could not be loaded.');
+        }
+
+        // Start supplemental account metrics independently. They should update
+        // when ready, never hold up the trading widgets above them.
+        void getCashFlows(selectedAccountId)
+          .then((nextCashFlows) => {
+            if (!cancelled) setCashFlows(nextCashFlows);
+          })
+          .catch(() => {
+            if (!cancelled) setCashFlows([]);
+          });
+        setServerHoldings(undefined);
+        setServerAccountDetails(null);
+
+        // Warm memory is synchronous. Otherwise paint any persisted compact
+        // snapshot first, even if source changes marked it stale; the local-only
+        // authoritative rebuild below replaces it when ready.
+        const warm = peekJournalSummaries(selectedAccountId);
+        if (warm) {
+          setAllSummaries(warm);
+          setEmpty(warm.length === 0);
+          setLoading(false);
+          setDataAccountId(selectedAccountId);
+          setDataRequestKey(requestKey);
+          setLoadedRange(null);
+          setDataSource('local');
+          shownAccountRef.current = selectedAccountId;
+        } else if (shownAccountRef.current !== selectedAccountId) {
+          // Cold load or account switch — nothing trustworthy to show yet.
+          setLoading(true);
+          setEmpty(false);
+        }
+
+        if (!warm) {
+          const snapshot = await getJournalSummariesSnapshot(selectedAccountId)
+            .catch(() => [] as DailySummary[]);
+          if (cancelled) return;
+          if (snapshot.length > 0) {
+            setAllSummaries(snapshot);
+            setEmpty(false);
+            setLoading(false);
+            setDataAccountId(selectedAccountId);
+            setDataRequestKey(requestKey);
+            setLoadedRange(null);
+            setDataSource('local');
+            shownAccountRef.current = selectedAccountId;
+          }
+        }
+
+        // Authoritative validation/rebuild is local IndexedDB work and happens
+        // after the snapshot has already made the dashboard usable.
+        const summaries = await getJournalSummaries(selectedAccountId);
+        if (cancelled) return;
+        setAllSummaries(summaries);
+        setEmpty(summaries.length === 0);
+        setLoading(false);
+        setDataAccountId(selectedAccountId);
+        setDataRequestKey(requestKey);
+        setLoadedRange(null);
+        setDataSource('local');
+        shownAccountRef.current = selectedAccountId;
+      } catch (error) {
+        if (cancelled) return;
+        setLoading(false);
+        setLoadError(error instanceof Error ? error.message : 'Unable to load dashboard data.');
+      }
     }
     load();
     return () => { cancelled = true; };
-  }, [selectedAccountId, refreshKey]);
+  }, [endDate, rangePreferenceLoaded, rangeType, refreshKey, requestKey, selectedAccountId, startDate]);
 
   const filteredData = useMemo(() => {
     if (!allSummaries.length) return null;
 
-    const range = resolveDashboardDateRange(
-      rangeType,
-      allSummaries[0]?.date,
-      startDate,
-      endDate,
-    );
+    const range = loadedRange ?? resolveDashboardDateRange(
+        rangeType,
+        allSummaries[0]?.date,
+        startDate,
+        endDate,
+      );
     const filtered = filterDashboardSummaries(allSummaries, range);
 
     return {
@@ -242,7 +393,7 @@ export default function DashboardPage() {
       summaries: filtered,
       range,
     };
-  }, [allSummaries, rangeType, startDate, endDate]);
+  }, [allSummaries, rangeType, startDate, endDate, loadedRange]);
 
   // The "Latest Day Activity" replay needs the newest in-range day's raw fills.
   // Load them lazily (the compact summaries carry only trade-level scalars) so
@@ -251,10 +402,15 @@ export default function DashboardPage() {
     let active = true;
     (async () => {
       const latest = filteredData?.summaries[0];
+      if (dataSource === 'server') return;
       if (!latest) {
-        if (active) setLatestDay(null);
+        if (active) {
+          setLatestDay(null);
+          setLatestDayLoading(false);
+        }
         return;
       }
+      if (active) setLatestDayLoading(true);
       try {
         const dayTransactions = await hydrateDayTransactions(latest);
         if (active) setLatestDay(buildLatestDayTimeline(latest, dayTransactions));
@@ -262,10 +418,12 @@ export default function DashboardPage() {
         // Replay is supplemental; summary cards and charts remain usable if
         // execution hydration fails.
         if (active) setLatestDay(null);
+      } finally {
+        if (active) setLatestDayLoading(false);
       }
     })();
     return () => { active = false; };
-  }, [filteredData]);
+  }, [dataSource, filteredData]);
 
   // Left/right arrows shift the whole dashboard one period at a time, matching
   // the current range's unit (quarter→quarter, 7d→7 days, month→month, …).
@@ -300,7 +458,31 @@ export default function DashboardPage() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [filteredData, rangeType, showPicker]);
 
-  if (empty) {
+  const hasAccountMetrics = initialBalance != null || (
+    shownAccountRef.current === selectedAccountId && cashFlows.length > 0
+  );
+  const calendarWidgetOrder = hasAccountMetrics ? 8 : 4;
+  const dailyWinLossWidgetOrder = calendarWidgetOrder + 1;
+  const dailyPnLWidgetOrder = calendarWidgetOrder + 2;
+  const cumulativePnLWidgetOrder = calendarWidgetOrder + 3;
+  const winLossWidgetOrder = calendarWidgetOrder + 4;
+  const holdTimeWidgetOrder = calendarWidgetOrder + 5;
+  const averageTradeWidgetOrder = calendarWidgetOrder + 6;
+  const largestTradeWidgetOrder = calendarWidgetOrder + 7;
+  const openPositionsWidgetOrder = calendarWidgetOrder + 8;
+  const latestDayWidgetOrder = calendarWidgetOrder + 9;
+  const dataBelongsToSelectedAccount = dataAccountId === selectedAccountId;
+  const dataMatchesRequest = dataRequestKey === requestKey;
+  const dashboardReady = Boolean(
+    !loading && filteredData && selectedAccountId && dataBelongsToSelectedAccount && dataMatchesRequest,
+  );
+  const visibleWidgetCount = useProgressiveWidgetReveal(
+    latestDayWidgetOrder + 1,
+    dashboardReady ? requestKey : null,
+  );
+  const widgetIsVisible = (order: number) => visibleWidgetCount > order;
+
+  if (empty && dataBelongsToSelectedAccount && dataMatchesRequest) {
     return (
       <div className="p-2 sm:p-6 space-y-4 sm:space-y-8 w-full">
         <div>
@@ -308,7 +490,10 @@ export default function DashboardPage() {
           <p className="text-sm text-muted font-medium">Analyze your performance and trading patterns.</p>
         </div>
 
-        <OpenPositionsCard onTradeAdded={() => setRefreshKey((k) => k + 1)} />
+        <OpenPositionsCard
+          initialHoldings={serverHoldings}
+          onTradeAdded={() => setRefreshKey((k) => k + 1)}
+        />
 
         <div className="flex flex-col items-center justify-center py-12 gap-4 text-center border border-dashed border-card-border rounded-2xl bg-card-bg/50">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-muted-bg">
@@ -349,16 +534,70 @@ export default function DashboardPage() {
     );
   }
 
-  if (loading || !filteredData) {
+  if (loadError && (!dataBelongsToSelectedAccount || !dataMatchesRequest)) {
     return (
-      <div className="p-6 space-y-4">
-        <div className="h-32 rounded-xl bg-card-bg border border-card-border animate-pulse" />
-        <div className="h-80 rounded-xl bg-card-bg border border-card-border animate-pulse" />
-        <div className="grid grid-cols-3 gap-4">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-56 rounded-xl bg-card-bg border border-card-border animate-pulse" />
+      <div className="p-2 sm:p-6 space-y-4 sm:space-y-8 w-full">
+        <div>
+          <h1 className="hidden sm:block text-2xl sm:text-3xl font-normal text-foreground tracking-tight mb-1">Trading Dashboard</h1>
+          <p className="text-sm text-muted font-normal">Analyze your performance and trading patterns.</p>
+        </div>
+        <div className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-2xl border border-card-border bg-card-bg text-center">
+          <p className="text-sm font-medium text-foreground">The dashboard could not be loaded.</p>
+          <p className="max-w-md text-xs text-muted">{loadError}</p>
+          <button
+            type="button"
+            onClick={() => setRefreshKey((key) => key + 1)}
+            className="rounded-xl bg-accent px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-accent/90"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading || !filteredData || !dataBelongsToSelectedAccount || !dataMatchesRequest) {
+    return (
+      <div className="p-2 sm:p-6 space-y-4 sm:space-y-8 w-full">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-6">
+          <div>
+            <h1 className="hidden sm:block text-2xl sm:text-3xl font-normal text-foreground tracking-tight mb-1">Trading Dashboard</h1>
+            <p className="text-sm text-muted font-normal">Analyze your performance and trading patterns.</p>
+          </div>
+          <div className="flex items-center gap-2 self-start md:self-auto">
+            <FlexSyncControl />
+            <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl border border-card-border bg-card-bg/80 text-xs font-normal text-muted shadow-sm">
+              <Calendar size={14} className="text-accent" />
+              <span>{rangeLabel}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
+          {['total P&L', 'win rate', 'total trades', 'average trade'].map((label) => (
+            <DashboardWidgetLoading key={label} label={label} className="min-h-[6.5rem]" />
           ))}
         </div>
+        {hasAccountMetrics && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
+            {['account equity', 'trading return', 'net deposits', 'non-trading income'].map((label) => (
+              <DashboardWidgetLoading key={label} label={label} className="min-h-[5.5rem]" />
+            ))}
+          </div>
+        )}
+        <DashboardWidgetLoading label="trading calendar" className="min-h-[20rem]" />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+          <DashboardWidgetLoading label="daily wins and losses" />
+          <DashboardWidgetLoading label="daily P&L" />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-2 sm:gap-4">
+          <DashboardWidgetLoading label="cumulative P&L" className="min-h-[14rem] sm:col-span-2" />
+          {['win/loss chart', 'hold time comparison', 'average trade comparison', 'largest gain and loss'].map((label) => (
+            <DashboardWidgetLoading key={label} label={label} />
+          ))}
+        </div>
+        <DashboardWidgetLoading label="open positions" />
+        <DashboardWidgetLoading label="latest day activity" />
       </div>
     );
   }
@@ -366,7 +605,7 @@ export default function DashboardPage() {
   const { stats, summaries, range } = filteredData;
   const periodPnL = summaries.reduce((sum, day) => sum + day.netPnL, 0);
   const periodCashFlows = cashFlows.filter((cashFlow) => isDateInDashboardRange(cashFlow.date, range));
-  const equity = computeAccountEquity(activeAccount?.initialBalance, periodCashFlows, periodPnL);
+  const equity = computeAccountEquity(initialBalance, periodCashFlows, periodPnL);
 
   return (
     <div className="p-2 sm:p-6 space-y-4 sm:space-y-8 w-full">
@@ -485,12 +724,19 @@ export default function DashboardPage() {
                 { label: 'Total Trades', value: totalTrades, color: 'text-foreground' },
                 { label: 'Avg Trade', value: avgTrade, prefix: '$', color: avgTrade >= 0 ? 'text-profit' : 'text-loss' },
               ].map((item, i) => (
-                <div key={i} className="bg-card-bg/50 backdrop-blur-sm border border-card-border p-3 sm:p-5 rounded-2xl shadow-sm hover:shadow-md transition-all">
-                  <p className="text-xs font-normal text-muted uppercase tracking-wider mb-1">{item.label}</p>
-                  <p className={`text-2xl sm:text-3xl font-normal tabular-nums ${item.color}`}>
-                    {item.prefix}{Math.abs(item.value).toLocaleString('en-US', { minimumFractionDigits: item.prefix ? 2 : 0, maximumFractionDigits: item.prefix ? 2 : 1 })}{item.suffix}
-                  </p>
-                </div>
+                <ProgressiveDashboardWidget
+                  key={item.label}
+                  visible={widgetIsVisible(i)}
+                  label={item.label.toLowerCase()}
+                  loadingClassName="min-h-[6.5rem]"
+                >
+                  <div className="h-full bg-card-bg/50 backdrop-blur-sm border border-card-border p-3 sm:p-5 rounded-2xl shadow-sm hover:shadow-md transition-all">
+                    <p className="text-xs font-normal text-muted uppercase tracking-wider mb-1">{item.label}</p>
+                    <p className={`text-2xl sm:text-3xl font-normal tabular-nums ${item.color}`}>
+                      {item.prefix}{Math.abs(item.value).toLocaleString('en-US', { minimumFractionDigits: item.prefix ? 2 : 0, maximumFractionDigits: item.prefix ? 2 : 1 })}{item.suffix}
+                    </p>
+                  </div>
+                </ProgressiveDashboardWidget>
               ))}
             </div>
           </div>
@@ -498,7 +744,7 @@ export default function DashboardPage() {
       })()}
 
       {/* Cash-flow-aware account stats for the selected dashboard period. */}
-      {(activeAccount?.initialBalance != null || cashFlows.length > 0) && (
+      {hasAccountMetrics && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
           {[
             { label: 'Account Equity', value: formatCurrency(equity.equity, baseCurrency), color: 'text-foreground' },
@@ -510,69 +756,107 @@ export default function DashboardPage() {
             { label: 'Net Deposits', value: formatCurrency(equity.contributions, baseCurrency), color: 'text-foreground' },
             { label: 'Non-Trading Income', value: formatCurrency(equity.nonTradingIncome, baseCurrency), color: 'text-foreground' },
           ].map((item, i) => (
-            <div key={i} className="bg-card-bg/50 backdrop-blur-sm border border-card-border p-3 sm:p-4 rounded-2xl shadow-sm">
-              <p className="text-[10px] font-normal text-muted uppercase tracking-wider mb-1">{item.label}</p>
-              <p className={`text-lg sm:text-xl font-normal tabular-nums ${item.color}`}>{item.value}</p>
-            </div>
+            <ProgressiveDashboardWidget
+              key={item.label}
+              visible={widgetIsVisible(i + 4)}
+              label={item.label.toLowerCase()}
+              loadingClassName="min-h-[5.5rem]"
+            >
+              <div className="h-full bg-card-bg/50 backdrop-blur-sm border border-card-border p-3 sm:p-4 rounded-2xl shadow-sm">
+                <p className="text-[10px] font-normal text-muted uppercase tracking-wider mb-1">{item.label}</p>
+                <p className={`text-lg sm:text-xl font-normal tabular-nums ${item.color}`}>{item.value}</p>
+              </div>
+            </ProgressiveDashboardWidget>
           ))}
         </div>
       )}
 
-      <MonthlyCalendar
-        summaries={allSummaries}
-        rangeStart={range.start}
-        rangeEnd={range.end}
-        onMonthChange={(monthStart) => {
-          // Calendar navigation drives the stats: recompute everything for the
-          // month now showing in the calendar.
-          setRangeType('month');
-          setStartDate(monthStart);
-          setEndDate('');
-        }}
-      />
+      <ProgressiveDashboardWidget
+        visible={widgetIsVisible(calendarWidgetOrder)}
+        label="trading calendar"
+        loadingClassName="min-h-[20rem]"
+      >
+        <MonthlyCalendar
+          summaries={allSummaries}
+          rangeStart={range.start}
+          rangeEnd={range.end}
+          onMonthChange={(monthStart) => {
+            // Calendar navigation drives the stats: recompute everything for the
+            // month now showing in the calendar.
+            setRangeType('month');
+            setStartDate(monthStart);
+            setEndDate('');
+          }}
+        />
+      </ProgressiveDashboardWidget>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 items-stretch">
-        <DailyWinLossChart summaries={summaries} />
-        <DailyPnLChart summaries={summaries} currency={baseCurrency} />
+        <ProgressiveDashboardWidget visible={widgetIsVisible(dailyWinLossWidgetOrder)} label="daily wins and losses">
+          <DailyWinLossChart summaries={summaries} />
+        </ProgressiveDashboardWidget>
+        <ProgressiveDashboardWidget visible={widgetIsVisible(dailyPnLWidgetOrder)} label="daily P&L">
+          <DailyPnLChart summaries={summaries} currency={baseCurrency} />
+        </ProgressiveDashboardWidget>
       </div>
 
       {/* Chart + metric cards. One row on xl screens (chart spans 2 of 6);
           folds to a full-width chart with 2×2 cards on small screens. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-2 sm:gap-4 items-stretch">
-        <div className="sm:col-span-2 h-full">
+        <ProgressiveDashboardWidget
+          visible={widgetIsVisible(cumulativePnLWidgetOrder)}
+          label="cumulative P&L"
+          className="sm:col-span-2 h-full"
+        >
           <CumulativePnLChart
             data={stats.cumulativePnL}
-            initialBalance={equity.capitalBase > 0 ? equity.capitalBase : activeAccount?.initialBalance}
+            initialBalance={equity.capitalBase > 0 ? equity.capitalBase : initialBalance}
           />
-        </div>
-        <WinLossDonut
-          wins={stats.totalWins}
-          losses={stats.totalLosses}
-          title="Winning vs Losing Trades"
-        />
-        <ComparisonBar
-          title="Hold Time Winning vs Losing Trades"
-          winLabel="Winning"
-          winValue={stats.avgWinHoldMinutes}
-          lossLabel="Losing"
-          lossValue={stats.avgLossHoldMinutes}
-          formatValue={(v) => formatMinutes(Math.abs(v))}
-        />
-        <ComparisonBar
-          title="Average Winning Trade vs Losing Trade"
-          winLabel="Avg Win"
-          winValue={stats.avgWin}
-          lossLabel="Avg Loss"
-          lossValue={stats.avgLoss}
-          formatValue={(v) => formatCurrency(v, baseCurrency)}
-        />
-        <LargestGainLossDonut gain={stats.largestGain} loss={stats.largestLoss} currency={baseCurrency} />
+        </ProgressiveDashboardWidget>
+        <ProgressiveDashboardWidget visible={widgetIsVisible(winLossWidgetOrder)} label="win/loss chart">
+          <WinLossDonut
+            wins={stats.totalWins}
+            losses={stats.totalLosses}
+            title="Winning vs Losing Trades"
+          />
+        </ProgressiveDashboardWidget>
+        <ProgressiveDashboardWidget visible={widgetIsVisible(holdTimeWidgetOrder)} label="hold time comparison">
+          <ComparisonBar
+            title="Hold Time Winning vs Losing Trades"
+            winLabel="Winning"
+            winValue={stats.avgWinHoldMinutes}
+            lossLabel="Losing"
+            lossValue={stats.avgLossHoldMinutes}
+            formatValue={(v) => formatMinutes(Math.abs(v))}
+          />
+        </ProgressiveDashboardWidget>
+        <ProgressiveDashboardWidget visible={widgetIsVisible(averageTradeWidgetOrder)} label="average trade comparison">
+          <ComparisonBar
+            title="Average Winning Trade vs Losing Trade"
+            winLabel="Avg Win"
+            winValue={stats.avgWin}
+            lossLabel="Avg Loss"
+            lossValue={stats.avgLoss}
+            formatValue={(v) => formatCurrency(v, baseCurrency)}
+          />
+        </ProgressiveDashboardWidget>
+        <ProgressiveDashboardWidget visible={widgetIsVisible(largestTradeWidgetOrder)} label="largest gain and loss">
+          <LargestGainLossDonut gain={stats.largestGain} loss={stats.largestLoss} currency={baseCurrency} />
+        </ProgressiveDashboardWidget>
       </div>
 
       {/* Open Positions & Manual Entry Card */}
-      <OpenPositionsCard onTradeAdded={() => setRefreshKey((k) => k + 1)} />
+      <ProgressiveDashboardWidget visible={widgetIsVisible(openPositionsWidgetOrder)} label="open positions">
+        <OpenPositionsCard
+          initialHoldings={serverHoldings}
+          onTradeAdded={() => setRefreshKey((k) => k + 1)}
+        />
+      </ProgressiveDashboardWidget>
 
-      {latestDay && latestDay.date === summaries[0]?.date && (
+      {!widgetIsVisible(latestDayWidgetOrder) ? (
+        <DashboardWidgetLoading label="latest day activity" />
+      ) : latestDayLoading ? (
+        <DashboardWidgetLoading label="latest day activity" />
+      ) : latestDay && latestDay.date === summaries[0]?.date ? (
         <div className="rounded-xl border border-card-border bg-card-bg p-5 shadow-sm">
           <h3 className="text-sm font-normal text-foreground mb-3 flex items-center gap-2">
             <Calendar size={14} className="text-accent" />
@@ -588,7 +872,7 @@ export default function DashboardPage() {
             timeZone={displayTimezone}
           />
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

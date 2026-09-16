@@ -3,6 +3,7 @@
 import type { DailySummary } from '@/lib/trading/aggregator';
 import {
   readStoredDaySummaries,
+  readStoredDaySummariesSnapshot,
   rebuildDaySummaries,
 } from '@/lib/trading/day-summaries-store';
 import {
@@ -70,6 +71,17 @@ async function build(accountId: string): Promise<DailySummary[]> {
 /** Synchronous cache read — lets the page skip its loading skeleton when warm. */
 export function peekJournalSummaries(accountId: string): DailySummary[] | null {
   return cachedSummaries && cachedAccountId === accountId ? cachedSummaries : null;
+}
+
+/**
+ * Fast stale-while-revalidate read for initial paint. Unlike the authoritative
+ * getter below, this does not rebuild and never promotes stale rows into memory.
+ */
+export function getJournalSummariesSnapshot(accountId: string): Promise<DailySummary[]> {
+  if (cachedSummaries && cachedAccountId === accountId) {
+    return Promise.resolve(cachedSummaries);
+  }
+  return readStoredDaySummariesSnapshot(accountId);
 }
 
 /** Get the account's day summaries — instantly if warm, otherwise build once. */

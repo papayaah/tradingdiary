@@ -22,9 +22,12 @@ const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'
 
 interface OpenPositionsCardProps {
   onTradeAdded?: () => void;
+  /** Server-derived open positions avoid scanning the account's full browser
+   * execution history. Undefined preserves the local-only/guest fallback. */
+  initialHoldings?: Holding[];
 }
 
-export default function OpenPositionsCard({ onTradeAdded }: OpenPositionsCardProps) {
+export default function OpenPositionsCard({ onTradeAdded, initialHoldings }: OpenPositionsCardProps) {
   const { selectedAccountId, accounts } = useAccount();
   const activeAccount = accounts.find((a) => a.accountId === selectedAccountId);
   const currencyRegion = activeAccount?.currency || 'USD';
@@ -47,8 +50,9 @@ export default function OpenPositionsCard({ onTradeAdded }: OpenPositionsCardPro
       }
 
       setLoading(true);
-      const transactions = await getTransactionsByAccount(selectedAccountId);
-      const computed = computePortfolio(transactions);
+      const computed = initialHoldings
+        ? initialHoldings.map((holding) => ({ ...holding }))
+        : computePortfolio(await getTransactionsByAccount(selectedAccountId));
 
       // Fetch live market quotes for open holdings
       if (computed.length > 0) {
@@ -85,7 +89,7 @@ export default function OpenPositionsCard({ onTradeAdded }: OpenPositionsCardPro
     return () => {
       isSubscribed = false;
     };
-  }, [selectedAccountId, refreshKey]);
+  }, [initialHoldings, selectedAccountId, refreshKey]);
 
   const handleSaved = () => {
     setRefreshKey((k) => k + 1);

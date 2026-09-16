@@ -92,6 +92,13 @@
       "when": 1786598834505,
       "tag": "0012_new_tombstone",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1789538817291,
+      "tag": "0013_dashboard-account-day-index",
+      "breakpoints": true
     }
   ]
 }

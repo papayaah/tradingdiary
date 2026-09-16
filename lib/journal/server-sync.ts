@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../db/server';
 import {
   tradingAccount,
@@ -97,6 +97,20 @@ export async function pushJournal(
 
   await db.transaction(async (tx) => {
     const events: { entity: SyncEntity; entityId: string; op: 'upsert' | 'delete'; rev: number }[] = [];
+    const affectedExecutionScopes = new Map<
+      string,
+      { accountUuid: string; clientAccountId: string; symbol: string }
+    >();
+    const markExecutionScope = (
+      accountUuid: string,
+      clientAccountId: string,
+      symbol: string,
+    ) => {
+      affectedExecutionScopes.set(
+        `${accountUuid}\u001f${symbol}`,
+        { accountUuid, clientAccountId, symbol },
+      );
+    };
 
     // ── 1. Accounts → map clientAccountId → { uuid, clientId } ──
     const accountUuidByClientId = new Map<string, string>();
@@ -230,6 +244,7 @@ export async function pushJournal(
         .returning({ id: execution.id, rev: execution.rev });
       if (inserted.length > 0) {
         adoptedExecutions += 1;
+        markExecutionScope(accountUuid, t.accountId, t.symbol);
         events.push({ entity: 'execution', entityId: inserted[0].id, op: 'upsert', rev: inserted[0].rev });
       }
     }
@@ -246,7 +261,6 @@ export async function pushJournal(
     const doReconcile =
       payload.reconcile === true &&
       (payload.accounts.length > 0 || payload.executions.length > 0);
-    const deletedExecutionIds = new Set<string>();
     if (doReconcile) {
       const pushedAccountKeys = new Set(payload.accounts.map((a) => a.accountId));
       for (const a of accountRows) {
@@ -259,7 +273,11 @@ export async function pushJournal(
       }
     }
 
-    const allExecutions = await tx.select().from(execution).where(eq(execution.userId, userId));
+    // Reconciliation is the only path that needs a complete execution-key scan.
+    // Routine broker deltas remain bounded to the rows in the incoming report.
+    const allExecutions = doReconcile
+      ? await tx.select().from(execution).where(eq(execution.userId, userId))
+      : [];
 
     if (doReconcile) {
       const pushedExecKeys = new Set(payload.executions.map((t) => executionIdempotencyKey(t)));
@@ -268,17 +286,59 @@ export async function pushJournal(
         if (!pushedExecKeys.has(row.idempotencyKey)) {
           const nextRev = row.rev + 1;
           await tx.update(execution).set({ deletedAt: nowIso, rev: nextRev }).where(eq(execution.id, row.id));
-          deletedExecutionIds.add(row.id);
+          const clientAccountId = clientIdByUuid.get(row.accountId);
+          if (clientAccountId) {
+            markExecutionScope(row.accountId, clientAccountId, row.symbol);
+          }
           events.push({ entity: 'execution', entityId: row.id, op: 'delete', rev: nextRev });
         }
       }
     }
 
-    // ── 3. Re-derive trade groups from the remaining (non-deleted) executions ──
+    // ── 3. Re-derive only affected account+symbol streams ──
+    // Flat-to-flat grouping is independent per account and symbol. Rebuilding
+    // just those streams makes a daily Flex delta scale with the changed symbols,
+    // rather than with the user's complete execution history.
+    const scopes = [...affectedExecutionScopes.values()];
+    const affectedExecutions: (typeof execution.$inferSelect)[] = [];
+    const affectedExistingGroups: Array<{
+      id: string;
+      clientKey: string;
+      rev: number;
+    }> = [];
+    const SCOPE_CHUNK = 100;
+    for (let i = 0; i < scopes.length; i += SCOPE_CHUNK) {
+      const chunk = scopes.slice(i, i + SCOPE_CHUNK);
+      const scopeFilter = or(...chunk.map((scope) => and(
+        eq(execution.accountId, scope.accountUuid),
+        eq(execution.symbol, scope.symbol),
+      )))!;
+      affectedExecutions.push(...await tx
+        .select()
+        .from(execution)
+        .where(and(
+          eq(execution.userId, userId),
+          isNull(execution.deletedAt),
+          scopeFilter,
+        )));
+
+      const groupScopeFilter = or(...chunk.map((scope) => and(
+        eq(tradeGroup.accountId, scope.accountUuid),
+        eq(tradeGroup.symbol, scope.symbol),
+      )))!;
+      affectedExistingGroups.push(...await tx
+        .select({ id: tradeGroup.id, clientKey: tradeGroup.clientKey, rev: tradeGroup.rev })
+        .from(tradeGroup)
+        .where(and(
+          eq(tradeGroup.userId, userId),
+          isNull(tradeGroup.deletedAt),
+          groupScopeFilter,
+        )));
+    }
+
     const execIdByIdemKey = new Map<string, string>();
     const transactions: TransactionRecord[] = [];
-    for (const row of allExecutions) {
-      if (row.deletedAt || deletedExecutionIds.has(row.id)) continue;
+    for (const row of affectedExecutions) {
       const clientId = clientIdByUuid.get(row.accountId);
       if (!clientId) continue;
       execIdByIdemKey.set(row.idempotencyKey, row.id);
@@ -287,6 +347,10 @@ export async function pushJournal(
 
     const groups = splitIntoTradeGroups(transactions);
     const groupUuidByClientKey = new Map<string, string>();
+    const existingGroupByClientKey = new Map(
+      affectedExistingGroups.map((group) => [group.clientKey, group]),
+    );
+    const derivedGroupKeys = new Set(groups.map((group) => group.key));
 
     let groupsSeen = 0;
     for (const g of groups) {
@@ -298,11 +362,7 @@ export async function pushJournal(
         ?? accountRows.find((a) => a.clientAccountId === g.accountId)?.id;
       if (!accountUuid) continue;
 
-      const existing = await tx
-        .select({ id: tradeGroup.id })
-        .from(tradeGroup)
-        .where(and(eq(tradeGroup.userId, userId), eq(tradeGroup.clientKey, g.key)))
-        .limit(1);
+      const existing = existingGroupByClientKey.get(g.key);
 
       const values = {
         userId,
@@ -337,12 +397,12 @@ export async function pushJournal(
       };
 
       let groupId: string;
-      if (existing.length === 0) {
+      if (!existing) {
         const [ins] = await tx.insert(tradeGroup).values(values).returning({ id: tradeGroup.id, rev: tradeGroup.rev });
         groupId = ins.id;
         events.push({ entity: 'trade_group', entityId: groupId, op: 'upsert', rev: ins.rev });
       } else {
-        groupId = existing[0].id;
+        groupId = existing.id;
         await tx.update(tradeGroup).set(values).where(eq(tradeGroup.id, groupId));
       }
       groupUuidByClientKey.set(g.key, groupId);
@@ -359,6 +419,57 @@ export async function pushJournal(
           sliceQuantity: leg.quantity,
         }).onConflictDoNothing();
       }
+    }
+
+    // Corrections/deletions can change deterministic group boundaries. Remove
+    // obsolete derived rows so dashboard totals cannot retain stale trades.
+    for (const existing of affectedExistingGroups) {
+      if (derivedGroupKeys.has(existing.clientKey)) continue;
+      await tx.delete(tradeGroup).where(eq(tradeGroup.id, existing.id));
+      events.push({
+        entity: 'trade_group',
+        entityId: existing.id,
+        op: 'delete',
+        rev: existing.rev + 1,
+      });
+    }
+
+    // An authoritative client snapshot also reconciles removed tag joins, so it
+    // needs the lightweight identity list for every active group (never the raw
+    // executions). Broker deltas only load identities explicitly referenced by
+    // notes/tags/reviews below.
+    if (doReconcile) {
+      const activeGroups = await tx
+        .select({ id: tradeGroup.id, clientKey: tradeGroup.clientKey })
+        .from(tradeGroup)
+        .where(and(
+          eq(tradeGroup.userId, userId),
+          isNull(tradeGroup.deletedAt),
+        ));
+      for (const row of activeGroups) groupUuidByClientKey.set(row.clientKey, row.id);
+    }
+
+    // Notes, tags, and reviews can be pushed without any execution change. Load
+    // only the trade-group identities referenced by a non-authoritative delta.
+    const referencedGroupKeys = new Set([
+      ...payload.tradeNotes.map((note) => note.tradeGroupClientKey),
+      ...payload.tradeTags.map((tradeTagItem) => tradeTagItem.tradeGroupClientKey),
+      ...payload.reviews.map((review) => review.tradeGroupClientKey),
+    ]);
+    const missingReferencedKeys = [...referencedGroupKeys].filter(
+      (clientKey) => !groupUuidByClientKey.has(clientKey),
+    );
+    const KEY_CHUNK = 500;
+    for (let i = 0; i < missingReferencedKeys.length; i += KEY_CHUNK) {
+      const rows = await tx
+        .select({ id: tradeGroup.id, clientKey: tradeGroup.clientKey })
+        .from(tradeGroup)
+        .where(and(
+          eq(tradeGroup.userId, userId),
+          isNull(tradeGroup.deletedAt),
+          inArray(tradeGroup.clientKey, missingReferencedKeys.slice(i, i + KEY_CHUNK)),
+        ));
+      for (const row of rows) groupUuidByClientKey.set(row.clientKey, row.id);
     }
 
     // ── 4. Daily notes (rev-checked) ──
@@ -496,8 +607,11 @@ export async function pushJournal(
     // removals (and emptied trades) propagate, not just additions.
     if (doReconcile) {
       const groupIds = [...groupUuidByClientKey.values()];
-      if (groupIds.length > 0) {
-        await tx.delete(tradeTag).where(inArray(tradeTag.tradeGroupId, groupIds));
+      for (let i = 0; i < groupIds.length; i += KEY_CHUNK) {
+        await tx.delete(tradeTag).where(inArray(
+          tradeTag.tradeGroupId,
+          groupIds.slice(i, i + KEY_CHUNK),
+        ));
       }
     }
     for (const tt of payload.tradeTags) {
@@ -607,7 +721,18 @@ export async function pullJournal(userId: string, since: number): Promise<Journa
     };
   };
 
-  const execRows = await db.select().from(execution).where(eq(execution.userId, userId));
+  const execChangedIds = changedIds('execution');
+  const execRows = execChangedIds
+    ? execChangedIds.size > 0
+      ? await db
+          .select()
+          .from(execution)
+          .where(and(
+            eq(execution.userId, userId),
+            inArray(execution.id, [...execChangedIds]),
+          ))
+      : []
+    : await db.select().from(execution).where(eq(execution.userId, userId));
   const cashRows = await db.select().from(cashFlow).where(eq(cashFlow.userId, userId));
   const groupRows = await db.select().from(tradeGroup).where(eq(tradeGroup.userId, userId));
   const groupKeyByUuid = new Map(groupRows.map((g) => [g.id, g.clientKey]));
@@ -631,7 +756,9 @@ export async function pullJournal(userId: string, since: number): Promise<Journa
 
   // Execution tombstones only flow on delta pulls (a fresh device has nothing to
   // delete). The client removes local transactions by their tradeId (sourceTradeId).
-  const execChangedIds = changedIds('execution');
+  const execUpserts = execChangedIds
+    ? execRows.filter((row) => !row.deletedAt && execChangedIds.has(row.id))
+    : execRows.filter((row) => !row.deletedAt);
   const execDeletes = execChangedIds
     ? execRows.filter((r) => r.deletedAt && execChangedIds.has(r.id))
     : [];
@@ -653,7 +780,7 @@ export async function pullJournal(userId: string, since: number): Promise<Journa
       address: a.address, importedAt: a.importedAt ? Date.parse(a.importedAt) : 0,
       initialBalance: a.initialBalance ?? undefined, rev: a.rev,
     })),
-    executions: execRows.filter((r) => !r.deletedAt).map((r) => rowToTransaction(r, clientIdByUuid.get(r.accountId) ?? r.accountId)),
+    executions: execUpserts.map((r) => rowToTransaction(r, clientIdByUuid.get(r.accountId) ?? r.accountId)),
     cashFlows: cashPart.upserts.map((c) => ({
       clientId: c.clientId,
       accountId: clientIdByUuid.get(c.accountId) ?? c.accountId,
