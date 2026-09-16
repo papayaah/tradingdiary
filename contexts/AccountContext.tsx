@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useState, useEffect } from 'react';
 import { AccountRecord } from '@/lib/db/schema';
 import { getAccounts } from '@/lib/db/trades';
 
@@ -19,7 +19,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
 
-    const refreshAccounts = async (preferredAccountId?: string) => {
+    const refreshAccounts = useCallback(async (preferredAccountId?: string) => {
         setIsLoading(true);
         try {
             const accs = await getAccounts();
@@ -45,11 +45,11 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, []);
 
     useEffect(() => {
-        refreshAccounts();
-    }, []);
+        void refreshAccounts();
+    }, [refreshAccounts]);
 
     // Also persist choice
     useEffect(() => {

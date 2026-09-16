@@ -52,6 +52,7 @@ export function JournalSyncProvider({ children }: { children: React.ReactNode })
   const running = useRef(false);
   const pushTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const dirtyGeneration = useRef(0);
+  const initialSyncUser = useRef<string | null>(null);
   const userIdRef = useRef<string | null>(null);
   userIdRef.current = userId;
   // Only reconcile (propagate deletes) once this session has pulled at least
@@ -166,9 +167,14 @@ export function JournalSyncProvider({ children }: { children: React.ReactNode })
   // Initial sync when a user becomes signed in.
   useEffect(() => {
     if (!userId) {
+      initialSyncUser.current = null;
+      hasPulled.current = false;
       setStatus('local');
       return;
     }
+    if (initialSyncUser.current === userId) return;
+    initialSyncUser.current = userId;
+    hasPulled.current = false;
     void fullSync();
   }, [userId, fullSync]);
 
