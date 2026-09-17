@@ -733,7 +733,7 @@ export default function DashboardPage() {
                   <div className="h-full bg-card-bg/50 backdrop-blur-sm border border-card-border p-3 sm:p-5 rounded-2xl shadow-sm hover:shadow-md transition-all">
                     <p className="text-xs font-normal text-muted uppercase tracking-wider mb-1">{item.label}</p>
                     <p className={`text-2xl sm:text-3xl font-normal tabular-nums ${item.color}`}>
-                      {item.prefix}{Math.abs(item.value).toLocaleString('en-US', { minimumFractionDigits: item.prefix ? 2 : 0, maximumFractionDigits: item.prefix ? 2 : 1 })}{item.suffix}
+                      {item.value < 0 ? '-' : ''}{item.prefix}{Math.abs(item.value).toLocaleString('en-US', { minimumFractionDigits: item.prefix ? 2 : 0, maximumFractionDigits: item.prefix ? 2 : 1 })}{item.suffix}
                     </p>
                   </div>
                 </ProgressiveDashboardWidget>
