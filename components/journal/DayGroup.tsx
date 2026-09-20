@@ -38,12 +38,27 @@ export default function DayGroup({
   const activeAccount = accounts.find(a => a.accountId === accountId);
   const currency = activeAccount?.currency || 'USD';
 
+  // Open-position unrealized for the day, mirroring IBKR's Realized/Unrealized/Total
+  // statement rows. Only sum once every open trade has a quote, so a partial fetch
+  // never shows a misleadingly small "Open" figure; until then it reads as loading.
+  const openTrades = summary.trades.filter((t) => t.isOpen);
+  const hasOpenPositions = openTrades.length > 0;
+  const pricedOpenCount = openTrades.filter((t) => t.unrealizedPnL != null).length;
+  const unrealizedReady = hasOpenPositions && pricedOpenCount === openTrades.length;
+  const unrealizedPnL = unrealizedReady
+    ? openTrades.reduce((sum, t) => sum + (t.unrealizedPnL ?? 0), 0)
+    : undefined;
+  const unrealizedLoading = hasOpenPositions && !unrealizedReady && pricesLoading;
+
   return (
     <section className="rounded-2xl border border-card-border overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 bg-card-bg/50 backdrop-blur-sm mb-8">
-      <DayHeader 
-        formattedDate={summary.formattedDate} 
+      <DayHeader
+        formattedDate={summary.formattedDate}
         totalPnL={summary.totalPnL}
         currency={currency}
+        unrealizedPnL={unrealizedPnL}
+        hasOpenPositions={hasOpenPositions}
+        unrealizedLoading={unrealizedLoading}
         isNotesOpen={isNotesOpen}
         onToggleNotes={() => setIsNotesOpen(!isNotesOpen)}
         isStatsOpen={isStatsOpen}

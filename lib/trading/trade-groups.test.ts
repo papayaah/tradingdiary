@@ -122,6 +122,30 @@ describe('flat-to-flat trade groups', () => {
     expect(groups[0].nativeGrossPnL).toBeCloseTo(500);
   });
 
+  it('attributes an evening-session fill to the broker TradeDate, not the raw calendar day', () => {
+    // IBKR's overnight equity session: executed late Sunday (raw date 20260913)
+    // but stamped TradeDate 20260914 (Monday). The trade must land on Monday —
+    // never on the raw Sunday date — matching aggregateByDay and IBKR's reports.
+    const overnight = [
+      tx({ side: 'BUYTOOPEN', date: '20260913', time: '23:18:00', tradeDate: '20260914', quantity: 100, price: 50 }),
+      tx({ side: 'SELLTOCLOSE', date: '20260914', time: '08:26:00', tradeDate: '20260914', quantity: 100, price: 51 }),
+    ];
+    const [group] = splitIntoTradeGroups(overnight);
+    expect(group.tradingDay).toBe('20260914');
+    // The flat-to-flat group and aggregateByDay must agree on the day bucket so
+    // the dashboard (server groups) and journal (aggregateByDay) never diverge.
+    expect(aggregateByDay(overnight)[0].date).toBe('20260914');
+  });
+
+  it('falls back to the exchange session roll when no TradeDate is present', () => {
+    // No broker TradeDate (e.g. manual entry): a CME future filled after 18:00 ET
+    // still rolls to the next session day via tradingDayFor.
+    const [group] = splitIntoTradeGroups([
+      tx({ symbol: 'MNQZ6', companyName: 'MNQ', date: '20260913', time: '19:30:00', tradeDate: undefined, quantity: 1, price: 100, multiplier: 2 }),
+    ]);
+    expect(group.tradingDay).toBe('20260914'); // Sunday 19:30 ET → Monday session
+  });
+
   it('leaves a position still open at end of data as an open trade', () => {
     const groups = splitIntoTradeGroups([
       tx({ side: 'BUYTOOPEN', quantity: 100, price: 100 }),

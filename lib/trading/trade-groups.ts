@@ -163,7 +163,14 @@ export function splitIntoTradeGroups(
       legs: [],
       openedDate: t.date,
       openedTime: t.time,
-      tradingDay: tradingDayFor(t.date, t.time, t.symbol),
+      // Attribute the trade to the broker's official TradeDate (IBKR) when present
+      // — the same authority aggregateByDay uses — so overnight/foreign-session
+      // fills land on the exchange trading day, not their raw calendar timestamp.
+      // A stock filled in IBKR's evening session (e.g. Sun 23:xx, TradeDate Mon)
+      // would otherwise bucket onto the raw Sunday date, producing weekend cells
+      // and disagreeing with both the journal's day totals and IBKR's own reports.
+      // Fall back to the exchange session roll only when no TradeDate is available.
+      tradingDay: t.tradeDate || tradingDayFor(t.date, t.time, t.symbol),
       openLots: [],
       realizedGross: 0,
       realizedCommission: 0,
