@@ -1,6 +1,7 @@
 import type { TransactionRecord } from '../db/schema';
 import { tradingDayFor } from './trading-day';
 import { compareExecutionOrder } from './execution-order';
+import { fxRate, contractFactor, hasReportedRealized } from './pnl';
 
 /**
  * Flat-to-flat trade identity.
@@ -77,13 +78,6 @@ function timeToMinutes(time: string): number {
   return h * 3600 + m * 60 + s;
 }
 
-function fxRate(t: TransactionRecord): number {
-  const source = t.currency?.toUpperCase();
-  const target = t.fxAccountCurrency?.toUpperCase();
-  if (!source || !target || source === target) return 1;
-  return t.fxRateToAccount && t.fxRateToAccount > 0 ? t.fxRateToAccount : 1;
-}
-
 /** A FIFO lot open within a single trade group. Carries the account-currency
  * commission alongside the native commission so proportional allocation matches
  * aggregator.ts. */
@@ -107,10 +101,17 @@ interface GroupBuilder {
   openedTime: string;
   tradingDay: string;
   openLots: FIFOLot[];
+  // Self-derived gross (fallback when the broker didn't report realized P&L).
   realizedGross: number;
   realizedCommission: number;
   realizedGrossAccount: number;
   realizedCommissionAccount: number;
+  // Broker-reported realized P&L (IBKR fifoPnlRealized), already net of
+  // commissions. Preferred over the derived gross when it covers every close.
+  reportedNetNative: number;
+  reportedNetAccount: number;
+  closeChunks: number;
+  closeChunksWithReported: number;
   openQtyTotal: number;   // sum of opening leg quantities (for entry avg)
   openCostTotal: number;  // sum of opening qty*price (for entry avg)
   closeQtyTotal: number;  // sum of closing leg quantities (for exit avg)
@@ -176,6 +177,10 @@ export function splitIntoTradeGroups(
       realizedCommission: 0,
       realizedGrossAccount: 0,
       realizedCommissionAccount: 0,
+      reportedNetNative: 0,
+      reportedNetAccount: 0,
+      closeChunks: 0,
+      closeChunksWithReported: 0,
       openQtyTotal: 0,
       openCostTotal: 0,
       closeQtyTotal: 0,
@@ -192,7 +197,7 @@ export function splitIntoTradeGroups(
 
       const rate = fxRate(t);
       const price = Math.abs(t.price);
-      const multiplier = t.multiplier || 1;
+      const multiplier = contractFactor(t);
       let remaining = fullQty;
 
       while (remaining > 1e-9) {
@@ -237,6 +242,15 @@ export function splitIntoTradeGroups(
           }
           builder.realizedCommission += chunkCommission;
           builder.realizedCommissionAccount += chunkCommission * rate;
+          // Broker realized P&L is reported per fill; attribute this group's
+          // share of it (a reversal fill is split across two groups).
+          builder.closeChunks += 1;
+          if (hasReportedRealized(t)) {
+            const chunkRealized = (t.realizedPnL ?? 0) * chunkFraction;
+            builder.reportedNetNative += chunkRealized;
+            builder.reportedNetAccount += chunkRealized * rate;
+            builder.closeChunksWithReported += 1;
+          }
           builder.closeQtyTotal += chunkQty;
           builder.closeCostTotal += chunkQty * price;
           builder.legs.push({ transaction: t, quantity: chunkQty, role: 'close' });
@@ -288,10 +302,16 @@ function finalizeGroup(
   closingTx: TransactionRecord | null,
   isOpen: boolean,
 ): TradeGroup {
-  const nativeGrossPnL = b.realizedGross;
-  const nativeNetPnL = nativeGrossPnL + b.realizedCommission;
-  const grossPnL = b.realizedGrossAccount;
-  const netPnL = grossPnL + b.realizedCommissionAccount;
+  // Prefer IBKR's own realized P&L (already net of commissions, multiplier
+  // included) whenever it covers every close in this group; fall back to the
+  // self-derived FIFO gross only when the broker didn't report it. Gross is then
+  // derived from net so commissions reconcile either way (net = gross + comm,
+  // comm is negative).
+  const useReported = b.closeChunks > 0 && b.closeChunksWithReported === b.closeChunks;
+  const nativeNetPnL = useReported ? b.reportedNetNative : b.realizedGross + b.realizedCommission;
+  const netPnL = useReported ? b.reportedNetAccount : b.realizedGrossAccount + b.realizedCommissionAccount;
+  const nativeGrossPnL = nativeNetPnL - b.realizedCommission;
+  const grossPnL = netPnL - b.realizedCommissionAccount;
 
   const openRemaining = b.openLots.reduce((s, l) => s + l.qty, 0);
   const openCost = b.openLots.reduce((s, l) => s + l.qty * l.entryPrice, 0);

@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, isNull, lte, max } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { db } from '@/lib/db/server';
 import {
   cashFlow,
@@ -15,11 +15,39 @@ import {
   type DashboardDateRange,
   type DashboardRangeType,
 } from './dashboard-range';
-import {
-  buildDashboardDaySummaries,
-  type DashboardTradeGroupRow,
-} from './dashboard-summaries';
-import type { DailySummary } from './aggregator';
+import { aggregateByDay, type DailySummary } from './aggregator';
+
+/** Map a persisted execution row to the shared TransactionRecord contract. */
+function mapExecutionRow(
+  row: typeof execution.$inferSelect,
+  clientAccountId: string,
+): TransactionRecord {
+  return {
+    tradeId: row.sourceTradeId,
+    accountId: clientAccountId,
+    symbol: row.symbol,
+    companyName: row.companyName,
+    exchanges: row.exchanges,
+    side: row.side as TransactionRecord['side'],
+    orderType: row.orderType,
+    date: row.date,
+    time: row.time,
+    tradeDate: row.tradeDate ?? undefined,
+    currency: row.currency,
+    quantity: row.quantity,
+    multiplier: row.multiplier,
+    price: row.price,
+    totalValue: row.totalValue,
+    commission: row.commission,
+    feeMultiplier: row.feeMultiplier,
+    realizedPnL: row.realizedPnL ?? undefined,
+    unrealizedPnL: row.unrealizedPnL ?? undefined,
+    fxRateToAccount: row.fxRateToAccount ?? undefined,
+    fxAccountCurrency: row.fxAccountCurrency ?? undefined,
+    fxRateDate: row.fxRateDate ?? undefined,
+    fxRateProvider: (row.fxRateProvider as TransactionRecord['fxRateProvider']) ?? undefined,
+  };
+}
 
 export interface ServerDashboardRange {
   accountId: string;
@@ -53,28 +81,34 @@ export async function getServerDashboardRange(
     .limit(1);
   if (!account) return null;
 
+  // Each fill's own trading day (broker TradeDate, else the execution date). P&L
+  // is realized on the day a position is closed, so daily totals bucket by this.
+  const fillDay = sql<string>`coalesce(${execution.tradeDate}, ${execution.date})`;
+
   const [latest] = await db
-    .select({ tradingDay: max(tradeGroup.tradingDay) })
-    .from(tradeGroup)
+    .select({ latestDay: sql<string | null>`max(${fillDay})` })
+    .from(execution)
     .where(and(
-      eq(tradeGroup.userId, userId),
-      eq(tradeGroup.accountId, account.id),
-      isNull(tradeGroup.deletedAt),
+      eq(execution.userId, userId),
+      eq(execution.accountId, account.id),
+      isNull(execution.deletedAt),
     ));
 
   const range = resolveDashboardDateRange(
     request.rangeType,
-    latest?.tradingDay ?? undefined,
+    latest?.latestDay ?? undefined,
     request.startDate,
     request.endDate,
   );
-  const groupConditions = [
-    eq(tradeGroup.userId, userId),
-    eq(tradeGroup.accountId, account.id),
-    isNull(tradeGroup.deletedAt),
+  // Daily P&L is computed per fill (IBKR realized × FX, bucketed by trading day)
+  // via the same aggregateByDay the client uses — the single source of truth.
+  const execConditions = [
+    eq(execution.userId, userId),
+    eq(execution.accountId, account.id),
+    isNull(execution.deletedAt),
   ];
-  if (range.start) groupConditions.push(gte(tradeGroup.tradingDay, range.start));
-  if (range.end) groupConditions.push(lte(tradeGroup.tradingDay, range.end));
+  if (range.start) execConditions.push(gte(fillDay, range.start));
+  if (range.end) execConditions.push(lte(fillDay, range.end));
 
   const cashConditions = [
     eq(cashFlow.userId, userId),
@@ -84,36 +118,11 @@ export async function getServerDashboardRange(
   if (range.start) cashConditions.push(gte(cashFlow.date, range.start));
   if (range.end) cashConditions.push(lte(cashFlow.date, range.end));
 
-  const [groups, cashRows, openGroups] = await Promise.all([
+  const [execRows, cashRows, openGroups] = await Promise.all([
     db
-      .select({
-        clientKey: tradeGroup.clientKey,
-        symbol: tradeGroup.symbol,
-        companyName: tradeGroup.companyName,
-        currency: tradeGroup.currency,
-        accountCurrency: tradeGroup.accountCurrency,
-        side: tradeGroup.side,
-        openedDate: tradeGroup.openedDate,
-        openedTime: tradeGroup.openedTime,
-        closedDate: tradeGroup.closedDate,
-        closedTime: tradeGroup.closedTime,
-        tradingDay: tradeGroup.tradingDay,
-        volume: tradeGroup.volume,
-        grossPnL: tradeGroup.grossPnL,
-        totalCommissions: tradeGroup.totalCommissions,
-        netPnL: tradeGroup.netPnL,
-        nativeGrossPnL: tradeGroup.nativeGrossPnL,
-        nativeTotalCommissions: tradeGroup.nativeTotalCommissions,
-        nativeNetPnL: tradeGroup.nativeNetPnL,
-        isOpen: tradeGroup.isOpen,
-        netQuantity: tradeGroup.netQuantity,
-        openAvgCost: tradeGroup.openAvgCost,
-        fxRateToAccount: tradeGroup.fxRateToAccount,
-        fxRateDate: tradeGroup.fxRateDate,
-      })
-      .from(tradeGroup)
-      .where(and(...groupConditions))
-      .orderBy(asc(tradeGroup.tradingDay), asc(tradeGroup.openedTime)),
+      .select()
+      .from(execution)
+      .where(and(...execConditions)),
     db
       .select()
       .from(cashFlow)
@@ -162,12 +171,14 @@ export async function getServerDashboardRange(
     factorByGroup.set(row.groupId, derived > 0 ? derived : (row.multiplier || 1));
   }
 
+  const transactions = execRows.map((row) => mapExecutionRow(row, account.clientAccountId));
+
   return {
     accountId: account.clientAccountId,
     currency: account.currency,
     initialBalance: account.initialBalance,
     range,
-    summaries: buildDashboardDaySummaries(groups satisfies DashboardTradeGroupRow[]),
+    summaries: aggregateByDay(transactions),
     cashFlows: cashRows.map((row) => ({
       id: row.clientId,
       accountId: account.clientAccountId,
@@ -210,44 +221,18 @@ export async function getServerDashboardActivity(
     .limit(1);
   if (!account) return null;
 
+  // Match the summaries' per-fill day bucketing (broker TradeDate, else date) so
+  // the replay shows exactly the fills that make up that day's P&L.
+  const fillDay = sql<string>`coalesce(${execution.tradeDate}, ${execution.date})`;
   const rows = await db
     .select()
     .from(execution)
-    .innerJoin(tradeGroupExecution, eq(execution.id, tradeGroupExecution.executionId))
-    .innerJoin(tradeGroup, eq(tradeGroupExecution.tradeGroupId, tradeGroup.id))
     .where(and(
       eq(execution.userId, userId),
       eq(execution.accountId, account.id),
       isNull(execution.deletedAt),
-      eq(tradeGroup.tradingDay, tradingDay),
-      isNull(tradeGroup.deletedAt),
+      eq(fillDay, tradingDay),
     ));
 
-  const unique = new Map<string, typeof execution.$inferSelect>();
-  for (const joined of rows) unique.set(joined.execution.id, joined.execution);
-  return [...unique.values()].map((row) => ({
-    tradeId: row.sourceTradeId,
-    accountId: account.clientAccountId,
-    symbol: row.symbol,
-    companyName: row.companyName,
-    exchanges: row.exchanges,
-    side: row.side as TransactionRecord['side'],
-    orderType: row.orderType,
-    date: row.date,
-    time: row.time,
-    tradeDate: row.tradeDate ?? undefined,
-    currency: row.currency,
-    quantity: row.quantity,
-    multiplier: row.multiplier,
-    price: row.price,
-    totalValue: row.totalValue,
-    commission: row.commission,
-    feeMultiplier: row.feeMultiplier,
-    realizedPnL: row.realizedPnL ?? undefined,
-    unrealizedPnL: row.unrealizedPnL ?? undefined,
-    fxRateToAccount: row.fxRateToAccount ?? undefined,
-    fxAccountCurrency: row.fxAccountCurrency ?? undefined,
-    fxRateDate: row.fxRateDate ?? undefined,
-    fxRateProvider: (row.fxRateProvider as TransactionRecord['fxRateProvider']) ?? undefined,
-  }));
+  return rows.map((row) => mapExecutionRow(row, account.clientAccountId));
 }
