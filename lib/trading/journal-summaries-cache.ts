@@ -62,10 +62,29 @@ function hookInvalidation(): void {
   onJournalSynced(invalidateAll);
 }
 
-async function build(accountId: string): Promise<DailySummary[]> {
+async function buildFromLocal(accountId: string): Promise<DailySummary[]> {
   const stored = await readStoredDaySummaries(accountId);
   if (stored) return stored;
   return rebuildDaySummaries(accountId);
+}
+
+async function build(accountId: string): Promise<DailySummary[]> {
+  // Signed-in accounts read server-computed summaries so the journal, dashboard,
+  // and calendar all reflect the same single source (the broker's synced data).
+  // Guests / local-only accounts (401/404) and offline fall back to IndexedDB.
+  try {
+    const response = await fetch(
+      `/api/journal/summaries?accountId=${encodeURIComponent(accountId)}`,
+      { cache: 'no-store' },
+    );
+    if (response.ok) {
+      const data = await response.json() as { summaries?: DailySummary[] };
+      if (Array.isArray(data.summaries)) return data.summaries;
+    }
+  } catch {
+    // Network/offline — fall through to the local read model.
+  }
+  return buildFromLocal(accountId);
 }
 
 /** Synchronous cache read — lets the page skip its loading skeleton when warm. */

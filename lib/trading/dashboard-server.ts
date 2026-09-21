@@ -17,6 +17,21 @@ import {
 } from './dashboard-range';
 import { aggregateByDay, type DailySummary } from './aggregator';
 
+/**
+ * Strip raw fills from each summary. Dashboard/calendar/journal render scalar day
+ * and trade fields only; fills are fetched on demand, so this keeps payloads small.
+ */
+function compactSummaries(summaries: DailySummary[]): DailySummary[] {
+  return summaries.map((summary) => ({
+    ...summary,
+    trades: summary.trades.map((trade) => {
+      const copy = { ...trade };
+      delete copy.transactions;
+      return copy;
+    }),
+  }));
+}
+
 /** Map a persisted execution row to the shared TransactionRecord contract. */
 function mapExecutionRow(
   row: typeof execution.$inferSelect,
@@ -178,7 +193,7 @@ export async function getServerDashboardRange(
     currency: account.currency,
     initialBalance: account.initialBalance,
     range,
-    summaries: aggregateByDay(transactions),
+    summaries: compactSummaries(aggregateByDay(transactions)),
     cashFlows: cashRows.map((row) => ({
       id: row.clientId,
       accountId: account.clientAccountId,
@@ -202,6 +217,39 @@ export async function getServerDashboardRange(
       };
     }),
   };
+}
+
+/**
+ * All-history day summaries for the journal, computed server-side from the
+ * account's executions with the same aggregateByDay used everywhere else — so
+ * the journal, dashboard, and calendar are consistent by construction.
+ */
+export async function getServerJournalSummaries(
+  userId: string,
+  clientAccountId: string,
+): Promise<DailySummary[] | null> {
+  const [account] = await db
+    .select({ id: tradingAccount.id, clientAccountId: tradingAccount.clientAccountId })
+    .from(tradingAccount)
+    .where(and(
+      eq(tradingAccount.userId, userId),
+      eq(tradingAccount.clientAccountId, clientAccountId),
+      isNull(tradingAccount.deletedAt),
+    ))
+    .limit(1);
+  if (!account) return null;
+
+  const rows = await db
+    .select()
+    .from(execution)
+    .where(and(
+      eq(execution.userId, userId),
+      eq(execution.accountId, account.id),
+      isNull(execution.deletedAt),
+    ));
+
+  const transactions = rows.map((row) => mapExecutionRow(row, account.clientAccountId));
+  return compactSummaries(aggregateByDay(transactions));
 }
 
 /** Fetch only the raw fills required by the supplemental replay widget. */
