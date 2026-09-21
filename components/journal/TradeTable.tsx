@@ -46,18 +46,18 @@ export default function TradeTable({ trades, accountId, currency = 'USD', focusS
   // Focusing one trade dims the rest of the page (same interaction as Market
   // Watch). Notify the day card so it can lift above the backdrop, and let Esc
   // collapse it alongside the click-to-dismiss backdrop.
-  const isFocused = expanded !== null;
+  const anyExpanded = expanded !== null;
   useEffect(() => {
-    onFocusChange?.(isFocused);
-  }, [isFocused, onFocusChange]);
+    onFocusChange?.(anyExpanded);
+  }, [anyExpanded, onFocusChange]);
   useEffect(() => {
-    if (!isFocused) return;
+    if (!anyExpanded) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setExpanded(null);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isFocused]);
+  }, [anyExpanded]);
 
   // Tag chips for the collapsed rows: resolve each trade's tagIds to TagRecords.
   const [tagsById, setTagsById] = useState<Map<string, TagRecord>>(new Map());
@@ -81,7 +81,7 @@ export default function TradeTable({ trades, accountId, currency = 'USD', focusS
 
   return (
     <div className="bg-card-bg/20 rounded-b-2xl overflow-hidden">
-      {isFocused && (
+      {anyExpanded && (
         <FocusBackdrop label="Close trade details" onDismiss={() => setExpanded(null)} />
       )}
       <div className="overflow-x-auto overflow-y-hidden">
@@ -116,6 +116,7 @@ export default function TradeTable({ trades, accountId, currency = 'USD', focusS
                   trade={trade}
                   rowKey={key}
                   isExpanded={isExpanded}
+                  dimmed={anyExpanded && !isExpanded}
                   onToggle={toggle}
                   accountId={accountId}
                   currency={currency}
@@ -139,6 +140,7 @@ function TradeRow({
   trade,
   rowKey,
   isExpanded,
+  dimmed = false,
   onToggle,
   accountId,
   currency,
@@ -152,6 +154,7 @@ function TradeRow({
   trade: AggregatedTrade;
   rowKey: string;
   isExpanded: boolean;
+  dimmed?: boolean;
   onToggle: (key: string) => void;
   accountId: string;
   currency: string;
@@ -219,7 +222,7 @@ function TradeRow({
     <>
       <tr
         ref={rowRef}
-        className={`group border-b hover:bg-muted-bg/40 transition-all cursor-pointer ${isFocused ? 'border-accent bg-accent/10 ring-1 ring-inset ring-accent/30' : 'border-card-border/30'} ${isExpanded ? 'bg-muted-bg/30' : ''}`}
+        className={`group border-b hover:bg-muted-bg/40 transition-all cursor-pointer ${isFocused ? 'border-accent bg-accent/10 ring-1 ring-inset ring-accent/30' : 'border-card-border/30'} ${isExpanded ? 'bg-muted-bg/30' : ''} ${dimmed ? 'opacity-40 hover:opacity-100' : ''}`}
         onClick={() => onToggle(rowKey)}
       >
         <td className="px-2 py-3 text-center w-8">
