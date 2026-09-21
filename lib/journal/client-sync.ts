@@ -138,18 +138,14 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
   if (!data.authenticated) return { authenticated: false, changed: false, seq: cursor };
 
   const db = await getDB();
-  // Executions are immutable and keyed by their stable broker/client id. On a
-  // cursor reset the server can send the full history again; writing every row
-  // (hundreds of thousands for large accounts) both wastes time and overwrites
-  // locally enriched FX fields. Read keys only, then merge genuinely new rows.
-  const [existingExecutionKeys, existingAccounts] = await Promise.all([
-    db.getAllKeys('transactions'),
-    db.getAll('accounts'),
-  ]);
-  const existingExecutionIds = new Set(existingExecutionKeys.map(String));
-  const newExecutions = data.executions.filter(
-    (execution) => !existingExecutionIds.has(execution.tradeId),
-  );
+  // The server is the single source of truth for synced executions. A delta pull
+  // returns exactly the rows changed since the cursor (the full history only on a
+  // reset), each carrying the broker's authoritative FX and commissions. Upsert
+  // them all so server corrections (e.g. a healed FX rate) actually land — the
+  // old "skip ids we already have" left stale, locally-enriched FX on the client
+  // and made the journal diverge from the dashboard.
+  const existingAccounts = await db.getAll('accounts');
+  const incomingExecutions = data.executions;
   const existingAccountById = new Map(
     existingAccounts.map((account) => [account.accountId, account]),
   );
@@ -165,7 +161,7 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
     (item) => item.entity === 'execution' || item.entity === 'account',
   );
   const needsSummaryInvalidation =
-    newExecutions.length > 0 ||
+    incomingExecutions.length > 0 ||
     summaryRelevantAccountChanges.size > 0 ||
     hasSummaryDeletes;
   const stores = [
@@ -203,7 +199,7 @@ export async function pullAndMerge(cursor: number): Promise<PullResult> {
     await accountStore.put(account);
   }
 
-  for (const t of newExecutions) {
+  for (const t of incomingExecutions) {
     await transactionStore.put(t);
     summaryAccountIds.add(t.accountId);
   }
