@@ -44,8 +44,8 @@ const defaults: AppSettings = {
   },
   chartOverlays: {
     patterns: false,
-    levels: true,
-    trendlines: true,
+    levels: false,
+    trendlines: false,
   },
   displayTimezone: 'auto',
 };
