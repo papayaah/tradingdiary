@@ -53,10 +53,10 @@ export default function DayGroup({
 
   return (
     <section
-      className={`rounded-2xl border overflow-hidden transition-all duration-300 bg-card-bg/50 backdrop-blur-sm mb-8 ${
+      className={`rounded-2xl border overflow-hidden transition-all duration-300 mb-8 ${
         isTradeFocused
-          ? 'relative z-[100] border-accent/50 shadow-2xl shadow-background'
-          : 'border-card-border shadow-sm hover:shadow-md'
+          ? 'relative z-[100] bg-card-bg border-accent/50 shadow-2xl shadow-background'
+          : 'bg-card-bg/50 backdrop-blur-sm border-card-border shadow-sm hover:shadow-md'
       }`}
     >
       <DayHeader
