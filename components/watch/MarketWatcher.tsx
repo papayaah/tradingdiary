@@ -51,7 +51,7 @@ import {
 import PatternGuidePanel from './PatternGuidePanel';
 import PatternTesterSection from './PatternTesterSection';
 import ChartOverlayControls from './ChartOverlayControls';
-import FocusBackdrop from './FocusBackdrop';
+import FocusBackdrop from '@/components/ui/FocusBackdrop';
 import { formatCandlesTimespan } from '@/lib/utils/format';
 import WatchlistRow from './WatchlistRow';
 import CompactWatchlist, {

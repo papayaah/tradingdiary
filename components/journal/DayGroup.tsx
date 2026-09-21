@@ -35,6 +35,7 @@ export default function DayGroup({
   const { accounts } = useAccount();
   const [isNotesOpen, setIsNotesOpen] = useState(openNotes);
   const [isStatsOpen, setIsStatsOpen] = useState(false);
+  const [isTradeFocused, setIsTradeFocused] = useState(false);
   const activeAccount = accounts.find(a => a.accountId === accountId);
   const currency = activeAccount?.currency || 'USD';
 
@@ -51,7 +52,13 @@ export default function DayGroup({
   const unrealizedLoading = hasOpenPositions && !unrealizedReady && pricesLoading;
 
   return (
-    <section className="rounded-2xl border border-card-border overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 bg-card-bg/50 backdrop-blur-sm mb-8">
+    <section
+      className={`rounded-2xl border overflow-hidden transition-all duration-300 bg-card-bg/50 backdrop-blur-sm mb-8 ${
+        isTradeFocused
+          ? 'relative z-[100] border-accent/50 shadow-2xl shadow-background'
+          : 'border-card-border shadow-sm hover:shadow-md'
+      }`}
+    >
       <DayHeader
         formattedDate={summary.formattedDate}
         totalPnL={summary.totalPnL}
@@ -85,6 +92,7 @@ export default function DayGroup({
         focusSymbol={focusSymbol}
         showBaseCurrency={showBaseCurrency}
         pricesLoading={pricesLoading}
+        onFocusChange={setIsTradeFocused}
       />
     </section>
   );

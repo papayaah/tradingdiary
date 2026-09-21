@@ -12,7 +12,7 @@ import {
   type PatternSettings,
 } from '@/lib/scanner/patterns';
 import { InteractivePatternVisualizer } from './InteractivePatternVisualizer';
-import FocusBackdrop from './FocusBackdrop';
+import FocusBackdrop from '@/components/ui/FocusBackdrop';
 
 interface PatternGuidePanelProps {
   value: PatternId;

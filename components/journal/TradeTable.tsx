@@ -18,6 +18,7 @@ import TradeChart from './TradeChart';
 import TradeDetailsPanel from './TradeDetailsPanel';
 import ExecutionAuditPanel from './ExecutionAuditPanel';
 import TradeJournalPanel from './TradeJournalPanel';
+import FocusBackdrop from '@/components/ui/FocusBackdrop';
 
 interface TradeTableProps {
   trades: AggregatedTrade[];
@@ -26,9 +27,11 @@ interface TradeTableProps {
   focusSymbol?: string;
   showBaseCurrency?: boolean;
   pricesLoading?: boolean;
+  /** Notified when a trade is expanded/collapsed so the day card can focus. */
+  onFocusChange?: (focused: boolean) => void;
 }
 
-export default function TradeTable({ trades, accountId, currency = 'USD', focusSymbol, showBaseCurrency = false, pricesLoading = false }: TradeTableProps) {
+export default function TradeTable({ trades, accountId, currency = 'USD', focusSymbol, showBaseCurrency = false, pricesLoading = false, onFocusChange }: TradeTableProps) {
   const focusedTrade = focusSymbol
     ? trades.find((item) => item.symbol.toUpperCase() === focusSymbol.toUpperCase())
     : undefined;
@@ -39,6 +42,22 @@ export default function TradeTable({ trades, accountId, currency = 'USD', focusS
   const toggle = (key: string) => {
     setExpanded((prev) => (prev === key ? null : key));
   };
+
+  // Focusing one trade dims the rest of the page (same interaction as Market
+  // Watch). Notify the day card so it can lift above the backdrop, and let Esc
+  // collapse it alongside the click-to-dismiss backdrop.
+  const isFocused = expanded !== null;
+  useEffect(() => {
+    onFocusChange?.(isFocused);
+  }, [isFocused, onFocusChange]);
+  useEffect(() => {
+    if (!isFocused) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setExpanded(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isFocused]);
 
   // Tag chips for the collapsed rows: resolve each trade's tagIds to TagRecords.
   const [tagsById, setTagsById] = useState<Map<string, TagRecord>>(new Map());
@@ -62,6 +81,9 @@ export default function TradeTable({ trades, accountId, currency = 'USD', focusS
 
   return (
     <div className="bg-card-bg/20 rounded-b-2xl overflow-hidden">
+      {isFocused && (
+        <FocusBackdrop label="Close trade details" onDismiss={() => setExpanded(null)} />
+      )}
       <div className="overflow-x-auto overflow-y-hidden">
         <table className="w-full text-sm border-collapse">
           <thead>
