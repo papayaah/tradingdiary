@@ -17,14 +17,8 @@ function trade(overrides: Partial<JournalTradeRow> = {}): JournalTradeRow {
     symbol: 'NVDA',
     side: 'LONG',
     currency: 'USD',
-    openedDate: '20260901',
     openedTime: '09:30:00',
-    closedDate: '20260901',
-    closedTime: '10:30:00',
     tradingDay: '20260901',
-    entryAvgPrice: 100,
-    exitAvgPrice: 99,
-    maxPosition: 10,
     volume: 20,
     grossPnL: -10,
     totalCommissions: -1,
@@ -96,7 +90,7 @@ describe('runJournalAnalyticsQuery', () => {
   it('excludes open positions by default', () => {
     const result = runJournalAnalyticsQuery([
       trade({ netPnL: 10 }),
-      trade({ id: 'open', isOpen: true, closedDate: null, closedTime: null, netPnL: 1_000 }),
+      trade({ id: 'open', isOpen: true, netPnL: 1_000 }),
     ], {
       metrics: [{ operation: 'sum', field: 'netPnL', alias: 'net' }],
     }, { selectedAccount });

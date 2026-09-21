@@ -10,20 +10,14 @@ export type JournalDimension =
   | 'accountName'
   | 'accountId'
   | 'currency'
-  | 'openedDate'
   | 'openedHour'
-  | 'closedDate'
-  | 'closedHour'
   | 'isOpen';
 
 export type JournalMeasure =
   | 'netPnL'
   | 'grossPnL'
   | 'commissionsPaid'
-  | 'volume'
-  | 'maxPosition'
-  | 'entryAvgPrice'
-  | 'exitAvgPrice';
+  | 'volume';
 
 export type JournalField = JournalDimension | JournalMeasure;
 

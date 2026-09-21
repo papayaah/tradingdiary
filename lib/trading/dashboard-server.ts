@@ -33,7 +33,7 @@ function compactSummaries(summaries: DailySummary[]): DailySummary[] {
 }
 
 /** Map a persisted execution row to the shared TransactionRecord contract. */
-function mapExecutionRow(
+export function mapExecutionRow(
   row: typeof execution.$inferSelect,
   clientAccountId: string,
 ): TransactionRecord {

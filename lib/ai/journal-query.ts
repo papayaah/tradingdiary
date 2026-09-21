@@ -1,6 +1,9 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '@/lib/db/server';
-import { dailyNote, tradeGroup, tradeNote, tradingAccount } from '@/lib/db/server/schema';
+import { dailyNote, execution, tradeGroup, tradeNote, tradingAccount } from '@/lib/db/server/schema';
+import { aggregateByDay } from '@/lib/trading/aggregator';
+import { mapExecutionRow } from '@/lib/trading/dashboard-server';
+import type { TransactionRecord } from '@/lib/db/schema';
 import type {
   JournalAnalyticsQuery,
   JournalAnalyticsResult,
@@ -31,14 +34,8 @@ export interface JournalTradeRow {
   symbol: string;
   side: 'LONG' | 'SHORT';
   currency: string;
-  openedDate: string;
   openedTime: string;
-  closedDate: string | null;
-  closedTime: string | null;
   tradingDay: string;
-  entryAvgPrice: number;
-  exitAvgPrice: number;
-  maxPosition: number;
   volume: number;
   grossPnL: number;
   totalCommissions: number;
@@ -48,14 +45,13 @@ export interface JournalTradeRow {
 
 const DIMENSIONS = new Set<JournalDimension>([
   'tradingDay', 'weekday', 'month', 'symbol', 'side', 'outcome', 'accountName',
-  'accountId', 'currency', 'openedDate', 'openedHour', 'closedDate', 'closedHour', 'isOpen',
+  'accountId', 'currency', 'openedHour', 'isOpen',
 ]);
 const MEASURES = new Set<JournalMeasure>([
-  'netPnL', 'grossPnL', 'commissionsPaid', 'volume', 'maxPosition',
-  'entryAvgPrice', 'exitAvgPrice',
+  'netPnL', 'grossPnL', 'commissionsPaid', 'volume',
 ]);
 const MONEY_MEASURES = new Set<JournalMeasure>([
-  'netPnL', 'grossPnL', 'commissionsPaid', 'entryAvgPrice', 'exitAvgPrice',
+  'netPnL', 'grossPnL', 'commissionsPaid',
 ]);
 const OPERATIONS = new Set(['count', 'sum', 'average', 'min', 'max', 'win_rate', 'profit_factor']);
 const FILTER_OPERATORS = new Set([
@@ -66,39 +62,33 @@ const FILTER_OPERATORS = new Set([
 export class JournalQueryError extends Error {}
 
 export const JOURNAL_SCHEMA_CATALOG = {
-  grain: 'One row is one flat-to-flat trade (round trip). Closed trades are used by default.',
+  grain: "One row is one symbol's activity on one trading day (same grain as the journal and dashboard). Daily and per-symbol P&L therefore reconcile exactly with those screens. Closed activity is used by default.",
   dimensions: {
-    tradingDay: 'Broker-attributed trading date, YYYYMMDD. Use for questions asking which date/day.',
+    tradingDay: 'Trading date the P&L is realized on, YYYYMMDD. Use for questions asking which date/day.',
     weekday: 'Weekday name derived from tradingDay.',
     month: 'Calendar month derived from tradingDay, YYYY-MM.',
     symbol: 'Ticker symbol.',
-    side: 'LONG or SHORT.',
+    side: "The day's net direction in the symbol, LONG or SHORT.",
     outcome: 'win, loss, breakeven, or open, derived from netPnL.',
     accountName: 'User-visible trading account name.',
     accountId: 'User-visible stable account identifier.',
-    currency: 'Account currency used by P&L and price measures.',
-    openedDate: 'Position opening date, YYYYMMDD.',
-    openedHour: 'Hour of entry, 0 through 23.',
-    closedDate: 'Position closing date, YYYYMMDD, or null for open positions.',
-    closedHour: 'Hour of exit, 0 through 23, or null.',
-    isOpen: 'Whether the position is still open.',
+    currency: 'Account currency used by P&L measures.',
+    openedHour: "Hour of the day's first fill in the symbol, 0 through 23.",
+    isOpen: 'Whether the symbol still has an open position at day end.',
   },
   measures: {
     netPnL: 'Realized P&L after commissions, in account currency.',
     grossPnL: 'Realized P&L before commissions, in account currency.',
     commissionsPaid: 'Positive magnitude of commissions paid, in account currency.',
-    volume: 'Total units/contracts transacted in the round trip.',
-    maxPosition: 'Largest absolute position size during the trade.',
-    entryAvgPrice: 'Average entry price.',
-    exitAvgPrice: 'Average exit price.',
+    volume: 'Total units/contracts transacted in the symbol that day.',
   },
   metricOperations: {
-    count: 'Number of trades; field must be omitted.',
+    count: 'Number of symbol-days; field must be omitted.',
     sum: 'Sum of a measure.',
     average: 'Arithmetic average of a measure.',
     min: 'Smallest value of a measure.',
     max: 'Largest value of a measure.',
-    win_rate: 'Winning closed trades divided by all closed trades, as a percentage; field omitted.',
+    win_rate: 'Winning closed symbol-days divided by all closed symbol-days, as a percentage; field omitted.',
     profit_factor: 'Gross winning net P&L divided by absolute gross losing net P&L; field omitted.',
   },
   safeguards: [
@@ -130,10 +120,6 @@ function dimensionValue(row: JournalTradeRow, dimension: JournalDimension): Jour
       return row.isOpen ? 'open' : row.netPnL > 0 ? 'win' : row.netPnL < 0 ? 'loss' : 'breakeven';
     case 'openedHour':
       return Number.isFinite(Number(row.openedTime.slice(0, 2))) ? Number(row.openedTime.slice(0, 2)) : null;
-    case 'closedHour':
-      return row.closedTime && Number.isFinite(Number(row.closedTime.slice(0, 2)))
-        ? Number(row.closedTime.slice(0, 2))
-        : null;
     default:
       return row[dimension as keyof JournalTradeRow] as JournalPrimitive;
   }
@@ -386,35 +372,56 @@ export async function getJournalAssistantAccounts(userId: string): Promise<Journ
 }
 
 async function loadTradeRows(userId: string): Promise<JournalTradeRow[]> {
+  // Day/symbol grain via the same aggregateByDay the journal and dashboard use,
+  // so the assistant's daily, per-symbol, count, and win-rate figures reconcile
+  // exactly with those screens (one source: per-fill IBKR realized P&L × FX).
   const rows = await db.select({
-    id: tradeGroup.id,
-    clientKey: tradeGroup.clientKey,
-    accountId: tradingAccount.clientAccountId,
+    execution,
+    clientAccountId: tradingAccount.clientAccountId,
     accountName: tradingAccount.name,
-    symbol: tradeGroup.symbol,
-    side: tradeGroup.side,
-    currency: tradeGroup.accountCurrency,
-    openedDate: tradeGroup.openedDate,
-    openedTime: tradeGroup.openedTime,
-    closedDate: tradeGroup.closedDate,
-    closedTime: tradeGroup.closedTime,
-    tradingDay: tradeGroup.tradingDay,
-    entryAvgPrice: tradeGroup.entryAvgPrice,
-    exitAvgPrice: tradeGroup.exitAvgPrice,
-    maxPosition: tradeGroup.maxPosition,
-    volume: tradeGroup.volume,
-    grossPnL: tradeGroup.grossPnL,
-    totalCommissions: tradeGroup.totalCommissions,
-    netPnL: tradeGroup.netPnL,
-    isOpen: tradeGroup.isOpen,
-  }).from(tradeGroup)
-    .innerJoin(tradingAccount, eq(tradeGroup.accountId, tradingAccount.id))
+    accountCurrency: tradingAccount.currency,
+  }).from(execution)
+    .innerJoin(tradingAccount, eq(execution.accountId, tradingAccount.id))
     .where(and(
-      eq(tradeGroup.userId, userId),
-      isNull(tradeGroup.deletedAt),
+      eq(execution.userId, userId),
+      isNull(execution.deletedAt),
       isNull(tradingAccount.deletedAt),
     ));
-  return rows.map((row) => ({ ...row, side: row.side === 'SHORT' ? 'SHORT' : 'LONG' }));
+
+  // aggregateByDay groups by symbol only, so run it per account.
+  const byAccount = new Map<string, { name: string; currency: string; txns: TransactionRecord[] }>();
+  for (const row of rows) {
+    const account = byAccount.get(row.clientAccountId)
+      ?? { name: row.accountName, currency: row.accountCurrency, txns: [] };
+    account.txns.push(mapExecutionRow(row.execution, row.clientAccountId));
+    byAccount.set(row.clientAccountId, account);
+  }
+
+  const tradeRows: JournalTradeRow[] = [];
+  for (const [accountId, account] of byAccount) {
+    for (const summary of aggregateByDay(account.txns)) {
+      for (const trade of summary.trades) {
+        const key = `${accountId}:${trade.date}:${trade.symbol}`;
+        tradeRows.push({
+          id: key,
+          clientKey: key,
+          accountId,
+          accountName: account.name,
+          symbol: trade.symbol,
+          side: trade.side === 'SHORT' ? 'SHORT' : 'LONG',
+          currency: trade.accountCurrency ?? account.currency,
+          openedTime: trade.firstTradeTime,
+          tradingDay: trade.date,
+          volume: trade.volume,
+          grossPnL: trade.grossPnL,
+          totalCommissions: trade.totalCommissions,
+          netPnL: trade.netPnL,
+          isOpen: trade.isOpen,
+        });
+      }
+    }
+  }
+  return tradeRows;
 }
 
 export async function queryJournalAnalytics(args: {

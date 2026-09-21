@@ -47,7 +47,7 @@ const ANALYTICS_SCHEMA = jsonSchema<JournalAnalyticsToolQuery>({
         type: 'string',
         enum: [
           'tradingDay', 'weekday', 'month', 'symbol', 'side', 'outcome', 'accountName',
-          'accountId', 'currency', 'openedDate', 'openedHour', 'closedDate', 'closedHour', 'isOpen',
+          'accountId', 'currency', 'openedHour', 'isOpen',
         ],
       },
       description: 'Fields used to group result rows. Omit for one overall result row.',
@@ -67,10 +67,7 @@ const ANALYTICS_SCHEMA = jsonSchema<JournalAnalyticsToolQuery>({
           },
           field: {
             type: 'string',
-            enum: [
-              'netPnL', 'grossPnL', 'commissionsPaid', 'volume', 'maxPosition',
-              'entryAvgPrice', 'exitAvgPrice',
-            ],
+            enum: ['netPnL', 'grossPnL', 'commissionsPaid', 'volume'],
             description: 'Required for sum/average/min/max; omit for count/win_rate/profit_factor.',
           },
           alias: {
@@ -92,9 +89,8 @@ const ANALYTICS_SCHEMA = jsonSchema<JournalAnalyticsToolQuery>({
             type: 'string',
             enum: [
               'tradingDay', 'weekday', 'month', 'symbol', 'side', 'outcome', 'accountName',
-              'accountId', 'currency', 'openedDate', 'openedHour', 'closedDate', 'closedHour',
-              'isOpen', 'netPnL', 'grossPnL', 'commissionsPaid', 'volume', 'maxPosition',
-              'entryAvgPrice', 'exitAvgPrice',
+              'accountId', 'currency', 'openedHour', 'isOpen',
+              'netPnL', 'grossPnL', 'commissionsPaid', 'volume',
             ],
           },
           operator: {
