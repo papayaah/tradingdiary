@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   BookOpen,
+  BarChart3,
   Image as ImageIcon,
   LayoutDashboard,
   Settings,
@@ -13,6 +14,7 @@ import {
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/journal', label: 'Journal', icon: BookOpen },
+  { href: '/reports', label: 'Reports', icon: BarChart3 },
   { href: '/watch', label: 'Watch', icon: Bell },
   { href: '/media', label: 'Library', icon: ImageIcon },
   { href: '/settings', label: 'Settings', icon: Settings },

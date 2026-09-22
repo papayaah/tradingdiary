@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
   BookOpen,
+  BarChart3,
   Image as ImageIcon,
   LayoutDashboard,
   Settings,
@@ -32,6 +33,7 @@ interface SidebarProps {
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/journal', label: 'Journal', icon: BookOpen },
+  { href: '/reports', label: 'Reports', icon: BarChart3 },
   { href: '/watch', label: 'Market Watch', icon: Bell },
   { href: '/media', label: 'Library', icon: ImageIcon },
   { href: '/settings', label: 'Settings', icon: Settings },

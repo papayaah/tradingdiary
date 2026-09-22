@@ -130,10 +130,17 @@ interface DateAccum {
   companyName: string;
   date: string;
   transactions: TransactionRecord[];
+  // Self-derived gross (fallback when the broker didn't report realized P&L).
   realizedGross: number;
   realizedCommission: number;
   realizedGrossAccount: number;
   realizedCommissionAccount: number;
+  // Broker-reported realized P&L (IBKR fifoPnlRealized), already net of
+  // commissions. Preferred over the derived gross when it covers every close.
+  reportedNetNative: number;
+  reportedNetAccount: number;
+  closeCount: number;
+  closeReportedCount: number;
   unrealizedPnL?: number; // Capture imported value
   unrealizedPnLAccount?: number;
   // Snapshot of the running position at the END of this date
@@ -216,6 +223,10 @@ export function aggregateByDay(
           realizedCommission: 0,
           realizedGrossAccount: 0,
           realizedCommissionAccount: 0,
+          reportedNetNative: 0,
+          reportedNetAccount: 0,
+          closeCount: 0,
+          closeReportedCount: 0,
           unrealizedPnL: undefined,
           endPosition: 0,
           endAvgCost: 0,
@@ -230,15 +241,11 @@ export function aggregateByDay(
       const qty = Math.abs(t.quantity);
 
       // The broker's own realized P&L (IBKR FifoPnlRealized) is authoritative when
-      // present: it uses the true cost basis of the full account history, so it is
-      // correct even for positions opened before our import window — which our own
-      // FIFO can't reconstruct. When present we use it and skip the FIFO estimate
-      // below; commissions are still added separately (FifoPnlRealized is gross).
+      // present: already net of commissions, multiplier included, and correct even
+      // for positions opened before our import window. We prefer it over the FIFO
+      // estimate, but still walk the lots to derive gross (fallback) and to realize
+      // commissions so gross/commission reconcile either way.
       const hasReportedRealized = t.realizedPnL != null;
-      if (hasReportedRealized) {
-        accum.realizedGross += t.realizedPnL!;
-        accum.realizedGrossAccount += t.realizedPnL! * fxRate(t);
-      }
 
       // Capture imported unrealized P&L
       if (t.unrealizedPnL != null) {
@@ -259,30 +266,31 @@ export function aggregateByDay(
         // Closing transaction — match against open lots FIFO
         let remaining = qty;
         const closePrice = Math.abs(t.price);
+        accum.closeCount += 1;
+        if (hasReportedRealized) {
+          accum.closeReportedCount += 1;
+          accum.reportedNetNative += t.realizedPnL!;
+          accum.reportedNetAccount += t.realizedPnL! * fxRate(t);
+        }
 
         while (remaining > 0.001 && openLots.length > 0) {
           const lot = openLots[0];
           const matched = Math.min(remaining, lot.qty);
 
-          // IBKR's FifoPnlRealized is already NET of commissions, so when it is
-          // present we neither recompute the FIFO gross nor add commissions again
-          // (that double-counted fees). We still consume lots for position tracking.
-          if (!hasReportedRealized) {
-            const isLong = t.side === 'SELLTOCLOSE';
-            const matchedGross = isLong
-              ? (closePrice - lot.entryPrice) * matched * lot.multiplier
-              : (lot.entryPrice - closePrice) * matched * lot.multiplier;
-            accum.realizedGross += matchedGross;
-            // Realized profit is recognized using the closing execution day's rate.
-            accum.realizedGrossAccount += matchedGross * fxRate(t);
+          const isLong = t.side === 'SELLTOCLOSE';
+          const matchedGross = isLong
+            ? (closePrice - lot.entryPrice) * matched * lot.multiplier
+            : (lot.entryPrice - closePrice) * matched * lot.multiplier;
+          accum.realizedGross += matchedGross;
+          // Realized profit is recognized using the closing execution day's rate.
+          accum.realizedGrossAccount += matchedGross * fxRate(t);
 
-            // Allocate opening lot commission proportionally.
-            const lotFraction = matched / (matched + (lot.qty - matched));
-            accum.realizedCommission += lot.commission * lotFraction;
-            accum.realizedCommissionAccount += lot.commissionAccount * lotFraction;
-            lot.commission -= lot.commission * lotFraction;
-            lot.commissionAccount -= lot.commissionAccount * lotFraction;
-          }
+          // Allocate opening lot commission proportionally.
+          const lotFraction = matched / (matched + (lot.qty - matched));
+          accum.realizedCommission += lot.commission * lotFraction;
+          accum.realizedCommissionAccount += lot.commissionAccount * lotFraction;
+          lot.commission -= lot.commission * lotFraction;
+          lot.commissionAccount -= lot.commissionAccount * lotFraction;
 
           lot.qty -= matched;
           remaining -= matched;
@@ -292,12 +300,8 @@ export function aggregateByDay(
           }
         }
 
-        // Add closing transaction's commission (only when we computed gross
-        // ourselves; IBKR's reported realized already includes it).
-        if (!hasReportedRealized) {
-          accum.realizedCommission += t.commission;
-          accum.realizedCommissionAccount += t.commission * fxRate(t);
-        }
+        accum.realizedCommission += t.commission;
+        accum.realizedCommissionAccount += t.commission * fxRate(t);
         runningPosition += (t.side === 'BUYTOCLOSE' ? qty : -qty);
       }
 
@@ -317,10 +321,15 @@ export function aggregateByDay(
 
   for (const acc of allDateAccums) {
     const volume = acc.transactions.reduce((s, t) => s + Math.abs(t.quantity), 0);
-    const nativeGrossPnL = acc.realizedGross;
-    const nativeNetPnL = nativeGrossPnL + acc.realizedCommission;
-    const grossPnL = acc.realizedGrossAccount;
-    const netPnL = grossPnL + acc.realizedCommissionAccount;
+    // Prefer the broker's realized figure (net) when it covers every close;
+    // otherwise use the self-derived gross + commissions. Gross is derived from
+    // net so gross/commission reconcile in both paths (net = gross + commission,
+    // commission is negative).
+    const useReported = acc.closeCount > 0 && acc.closeReportedCount === acc.closeCount;
+    const nativeNetPnL = useReported ? acc.reportedNetNative : acc.realizedGross + acc.realizedCommission;
+    const netPnL = useReported ? acc.reportedNetAccount : acc.realizedGrossAccount + acc.realizedCommissionAccount;
+    const nativeGrossPnL = nativeNetPnL - acc.realizedCommission;
+    const grossPnL = netPnL - acc.realizedCommissionAccount;
     const representativeFx = [...acc.transactions]
       .reverse()
       .find((transaction) => transaction.fxRateToAccount != null);
