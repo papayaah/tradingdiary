@@ -6,16 +6,63 @@ Draft
 
 ## Last reviewed
 
-August 14, 2026
+September 22, 2026
+
+## Remaining to launch (P0)
+
+Scannable snapshot of what still gates the public debut. Details in the
+milestone sections below.
+
+- [ ] **Core report set + shared filtering engine + drill-down** (Milestone B) —
+      the single largest remaining gate; not started.
+- [ ] **Supported broker/asset matrix** — publish the honest coverage/limits
+      table; not started.
+- [~] **Finish strategy/playbook** — playbook-manager UI (rename/archive/reorder),
+      journal chip, and cross-device sync of playbooks + adherence.
+- [~] **Finish planned risk / R** — stop/target revision history, MAE/MFE as
+      first-class persisted fields, report-wide R mode, and cross-device sync of
+      the trade plan.
+- [ ] Pre-debut smoke tests: privacy/deletion/export, empty states, and mobile.
+- [ ] Two Milestone-A import refinements: raw-source-row capture in the audit
+      view, and a pre-confirm file-overlap warning.
+
+Everything else in this document is P1/P2 (fast-follow or expansion).
 
 ## Implementation progress
 
-Updated August 18, 2026. Tracks build status against the delivery milestones
+Updated September 22, 2026. Tracks build status against the delivery milestones
 below. See `flat-to-flat-trade-identity.md` and `journal-persistence-and-sync.md`.
 
 **Milestone A — Trust the data:** effectively complete. Every item is done except
 two non-corrupting import refinements (raw-source-row capture in the audit view,
 and a pre-confirm file-overlap warning), both noted inline below.
+
+**Sep 22, 2026 — P&L-accuracy hardening (single source of truth).** A review
+found that "trustworthy data" was nominal, not real, for futures/multi-currency
+accounts, and fixed it:
+
+- P&L now derives from the broker's own realized figure (IBKR `fifoPnlRealized`,
+  already net of commissions) rather than re-deriving it; the contract
+  multiplier is taken from each fill's cash value (`|totalValue|/(qty×price)`)
+  instead of the frequently-absent `Multiplier` field that defaulted to `1` and
+  mis-scaled every futures/bond trade (`lib/trading/pnl.ts`,
+  `lib/trading/trade-groups.ts`).
+- Daily P&L is summed **per fill and attributed to the day each position closes**
+  (where P&L is realized), matching IBKR's daily realized reports — replacing the
+  server's prior open-day, whole-trade-group rollup.
+- **One source, every surface.** The dashboard and calendar now read
+  server-computed day summaries; the journal reads the same server summaries
+  instead of its own browser data; the AI assistant answers from the same
+  per-day/per-symbol aggregation (`aggregateByDay`) rather than the trade-group
+  table — so daily, per-symbol, count, and win-rate figures reconcile to the
+  penny across dashboard, journal, calendar, and AI.
+- **One FX source.** The client sync now adopts the server's authoritative
+  per-fill FX on pull instead of applying its own exchange-rate-api daily rates,
+  so offline/replay figures no longer drift from the server.
+- Negative account totals now render with a minus sign (were red-only).
+
+These close latent corruption/misleading-statistics risks that would otherwise
+have been debut blockers under this document's own definition.
 
 - [x] Canonical trade identity — flat-to-flat splitter (`lib/trading/trade-groups.ts`),
       spec, and tests (reversal, overnight, open, FX, aggregator reconciliation).
