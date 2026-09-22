@@ -13,10 +13,14 @@ September 22, 2026
 Scannable snapshot of what still gates the public debut. Details in the
 milestone sections below.
 
-- [ ] **Core report set + shared filtering engine + drill-down** (Milestone B) —
-      the single largest remaining gate; not started.
+- [x] **Core report set + shared filtering engine + drill-down** (Milestone B) —
+      done. `/reports` page with net/gross P&L, win rate, profit factor,
+      expectancy, avg win/loss, payoff, max drawdown, streaks, commissions, and
+      hold time; filters (range/side/outcome/symbol); breakdowns by symbol,
+      weekday, month, entry hour, side, and outcome; drill-down to source trades.
+      Runs on the same per-fill data as the journal, so totals reconcile exactly.
 - [ ] **Supported broker/asset matrix** — publish the honest coverage/limits
-      table; not started.
+      table; not started. **← next up.**
 - [~] **Finish strategy/playbook** — playbook-manager UI (rename/archive/reorder),
       journal chip, and cross-device sync of playbooks + adherence.
 - [~] **Finish planned risk / R** — stop/target revision history, MAE/MFE as
@@ -167,7 +171,21 @@ have been debut blockers under this document's own definition.
       history (currently overwrites), MAE/MFE as first-class persisted fields,
       best-exit/EOD-exit comparisons, points/ticks display modes, report-wide R
       mode, and cross-device sync of the plan (local-only for now).
-- [ ] Core report set + shared filters + drill-down.
+- [x] Core report set + shared filters + drill-down — `/reports`
+      (`app/(journal)/reports/page.tsx`) reads the same per-fill day/symbol
+      summaries as the journal and computes metrics with a pure, unit-tested
+      library (`lib/trading/report-metrics.ts`): net/gross P&L, win rate, profit
+      factor, expectancy, avg win/loss, payoff ratio, max drawdown, win/loss
+      streaks, commissions, and hold time. Filterable by range, side, outcome,
+      and symbol; breakdown by symbol/weekday/month/entry-hour/side/outcome; each
+      breakdown row drills down to its source trades linking back to the journal.
+      Report totals reconcile to the journal to the penny (verified against real
+      data). Also fixed the shared `aggregateByDay` to separate commissions from
+      gross (was gross = net, commissions = 0 on broker trades), so gross P&L and
+      commissions are now accurate on the journal and dashboard too.
+      **Not yet (fast-follow):** tag/playbook/R-range filters, saved report views,
+      column chooser, and primary×secondary cross-analysis (`mistake tag by
+      entry-hour`) — the acceptance-criteria "answer FOMO-on-ORB" cross-tab.
 - [ ] Supported broker/asset matrix.
 
 Legend: [x] done · [~] partial · [ ] not started.
