@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { Upload, LayoutDashboard, Calendar, Sparkles, ChevronDown, Check } from 'lucide-react';
 import { type DailySummary } from '@/lib/trading/aggregator';
@@ -22,6 +22,7 @@ import type { Holding } from '@/lib/trading/portfolio';
 import dynamic from 'next/dynamic';
 import MonthlyCalendar from '@/components/dashboard/MonthlyCalendar';
 import ComparisonBar from '@/components/dashboard/ComparisonBar';
+import LatestDayActivity from '@/components/dashboard/LatestDayActivity';
 import {
   DashboardWidgetLoading,
   ProgressiveDashboardWidget,
@@ -40,7 +41,6 @@ const LargestGainLossDonut = dynamic(() => import('@/components/dashboard/Larges
 const DailyWinLossChart = dynamic(() => import('@/components/dashboard/DailyWinLossChart'), { ssr: false, loading: widgetLoader('daily wins and losses') });
 const DailyPnLChart = dynamic(() => import('@/components/dashboard/DailyPnLChart'), { ssr: false, loading: widgetLoader('daily P&L') });
 const OpenPositionsCard = dynamic(() => import('@/components/dashboard/OpenPositionsCard'), { ssr: false, loading: widgetLoader('open positions') });
-const ReplayTimeline = dynamic(() => import('@/components/replay/ReplayTimeline'), { ssr: false, loading: widgetLoader('latest day activity') });
 import { useAccount } from '@/contexts/AccountContext';
 import { formatCurrency } from '@/lib/currency';
 import { loadDemoSampleData } from '@/lib/import/sample-loader';
@@ -95,6 +95,13 @@ interface DashboardApiResponse {
 
 interface DashboardActivityApiResponse {
   transactions: TransactionRecord[];
+}
+
+const DASHBOARD_REQUEST_TIMEOUT_MS = 15_000;
+const ACTIVITY_REQUEST_TIMEOUT_MS = 10_000;
+
+function requestTimedOut(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
 }
 
 function buildLatestDayTimeline(
@@ -216,9 +223,18 @@ export default function DashboardPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [latestDay, setLatestDay] = useState<LatestDayTimeline | null>(null);
   const [latestDayLoading, setLatestDayLoading] = useState(false);
+  const forceServerRefreshRef = useRef(false);
 
-  // Reload the dashboard when a sync merged remote changes into IndexedDB.
-  useEffect(() => onJournalSynced(() => setRefreshKey((k) => k + 1)), []);
+  const refreshDashboard = useCallback(() => {
+    // A journal/Flex mutation is the only reason to bypass a still-fresh private
+    // browser response. The server validates it against the durable journal
+    // revision, so an unchanged response returns cheaply.
+    forceServerRefreshRef.current = true;
+    setRefreshKey((key) => key + 1);
+  }, []);
+
+  // Reload the dashboard when a sync merged real remote changes into IndexedDB.
+  useEffect(() => onJournalSynced(refreshDashboard), [refreshDashboard]);
 
   // The account whose data is currently on screen. Lets a background
   // revalidation (sync merge) refresh in place instead of flashing the skeleton.
@@ -227,6 +243,11 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let cancelled = false;
+    let dashboardController: AbortController | null = null;
+    let activityController: AbortController | null = null;
+    let dashboardTimeout: ReturnType<typeof setTimeout> | null = null;
+    let activityTimeout: ReturnType<typeof setTimeout> | null = null;
+
     async function load() {
       if (!rangePreferenceLoaded) return;
       if (!selectedAccountId) {
@@ -245,19 +266,63 @@ export default function DashboardPage() {
 
       setLoadError(null);
       try {
+        const changingAccount = shownAccountRef.current !== selectedAccountId;
+        if (changingAccount) {
+          setLoading(true);
+          setEmpty(false);
+          setServerHoldings(undefined);
+          setServerAccountDetails(null);
+          setLatestDay(null);
+          setLatestDayLoading(false);
+        }
+
         // Signed-in dashboards read the bounded date range directly from the
-        // persisted Postgres trade-group model. This avoids syncing or scanning
-        // the account's complete execution history before the first metric.
+        // server. In parallel, paint the compact IndexedDB snapshot immediately
+        // when this device has one; the authoritative response replaces it.
         const params = new URLSearchParams({
           accountId: selectedAccountId,
           rangeType,
         });
         if (startDate) params.set('startDate', startDate);
         if (endDate) params.set('endDate', endDate);
-        const response = await fetch(`/api/dashboard?${params}`, { cache: 'no-store' });
+        let serverApplied = false;
+        void Promise.all([
+          getJournalSummariesSnapshot(selectedAccountId).catch(() => [] as DailySummary[]),
+          getCashFlows(selectedAccountId).catch(() => [] as CashFlowRecord[]),
+        ]).then(([snapshot, localCashFlows]) => {
+          if (cancelled || serverApplied || snapshot.length === 0) return;
+          setAllSummaries(snapshot);
+          setCashFlows(localCashFlows);
+          setEmpty(false);
+          setLoading(false);
+          setDataAccountId(selectedAccountId);
+          setDataRequestKey(requestKey);
+          setLoadedRange(null);
+          setDataSource('local');
+          shownAccountRef.current = selectedAccountId;
+        });
+
+        const forceRevalidation = forceServerRefreshRef.current;
+        forceServerRefreshRef.current = false;
+        dashboardController = new AbortController();
+        dashboardTimeout = setTimeout(
+          () => dashboardController?.abort(),
+          DASHBOARD_REQUEST_TIMEOUT_MS,
+        );
+        const response = await fetch(`/api/dashboard?${params}`, {
+          // Normal revisits use the private HTTP cache. A real journal mutation
+          // revalidates immediately and receives 304 when its revision is unchanged.
+          cache: forceRevalidation ? 'no-cache' : 'default',
+          signal: dashboardController.signal,
+        });
+        if (dashboardTimeout) {
+          clearTimeout(dashboardTimeout);
+          dashboardTimeout = null;
+        }
         if (response.ok) {
           const dashboard = await response.json() as DashboardApiResponse;
           if (cancelled) return;
+          serverApplied = true;
           setAllSummaries(dashboard.summaries);
           setCashFlows(dashboard.cashFlows);
           setServerHoldings(dashboard.holdings);
@@ -281,7 +346,15 @@ export default function DashboardPage() {
               accountId: selectedAccountId,
               day: latest.date,
             });
-            void fetch(`/api/dashboard/activity?${activityParams}`, { cache: 'no-store' })
+            activityController = new AbortController();
+            activityTimeout = setTimeout(
+              () => activityController?.abort(),
+              ACTIVITY_REQUEST_TIMEOUT_MS,
+            );
+            void fetch(`/api/dashboard/activity?${activityParams}`, {
+              cache: forceRevalidation ? 'no-cache' : 'default',
+              signal: activityController.signal,
+            })
               .then(async (activityResponse) => {
                 if (!activityResponse.ok) throw new Error('Activity request failed');
                 return activityResponse.json() as Promise<DashboardActivityApiResponse>;
@@ -295,6 +368,10 @@ export default function DashboardPage() {
                 if (!cancelled) setLatestDay(null);
               })
               .finally(() => {
+                if (activityTimeout) {
+                  clearTimeout(activityTimeout);
+                  activityTimeout = null;
+                }
                 if (!cancelled) setLatestDayLoading(false);
               });
           }
@@ -368,17 +445,37 @@ export default function DashboardPage() {
         setDataSource('local');
         shownAccountRef.current = selectedAccountId;
       } catch (error) {
+        if (dashboardTimeout) {
+          clearTimeout(dashboardTimeout);
+          dashboardTimeout = null;
+        }
         if (cancelled) return;
         setLoading(false);
-        setLoadError(error instanceof Error ? error.message : 'Unable to load dashboard data.');
+        setLatestDayLoading(false);
+        setLoadError(
+          requestTimedOut(error)
+            ? 'The dashboard request took too long. Cached data is still available; try refreshing in a moment.'
+            : error instanceof Error
+              ? error.message
+              : 'Unable to load dashboard data.',
+        );
       }
     }
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      if (dashboardTimeout) clearTimeout(dashboardTimeout);
+      if (activityTimeout) clearTimeout(activityTimeout);
+      dashboardController?.abort();
+      activityController?.abort();
+    };
   }, [endDate, rangePreferenceLoaded, rangeType, refreshKey, requestKey, selectedAccountId, startDate]);
 
   const filteredData = useMemo(() => {
-    if (!allSummaries.length) return null;
+    // An authenticated account can legitimately have no executions in the
+    // selected period. Treat that as resolved zero-data, not as a perpetual
+    // loading state or a reason to remove the dashboard controls.
+    if (loading && !allSummaries.length) return null;
 
     const range = loadedRange ?? resolveDashboardDateRange(
         rangeType,
@@ -393,7 +490,7 @@ export default function DashboardPage() {
       summaries: filtered,
       range,
     };
-  }, [allSummaries, rangeType, startDate, endDate, loadedRange]);
+  }, [allSummaries, rangeType, startDate, endDate, loadedRange, loading]);
 
   // The "Latest Day Activity" replay needs the newest in-range day's raw fills.
   // Load them lazily (the compact summaries carry only trade-level scalars) so
@@ -482,7 +579,7 @@ export default function DashboardPage() {
   );
   const widgetIsVisible = (order: number) => visibleWidgetCount > order;
 
-  if (empty && dataBelongsToSelectedAccount && dataMatchesRequest) {
+  if (!selectedAccountId && empty && !loading) {
     return (
       <div className="p-2 sm:p-6 space-y-4 sm:space-y-8 w-full">
         <div>
@@ -492,7 +589,7 @@ export default function DashboardPage() {
 
         <OpenPositionsCard
           initialHoldings={serverHoldings}
-          onTradeAdded={() => setRefreshKey((k) => k + 1)}
+              onTradeAdded={refreshDashboard}
         />
 
         <div className="flex flex-col items-center justify-center py-12 gap-4 text-center border border-dashed border-card-border rounded-2xl bg-card-bg/50">
@@ -771,6 +868,24 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {summaries.length === 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-card-border bg-muted-bg px-4 py-3">
+          <div>
+            <p className="text-sm font-medium text-foreground">No trades in {rangeLabel}</p>
+            <p className="mt-0.5 text-xs text-muted">
+              Open positions remain visible below. Choose another period or import earlier executions.
+            </p>
+          </div>
+          <Link
+            href="/import"
+            className="inline-flex items-center gap-2 rounded-lg border border-card-border bg-card-bg px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-background"
+          >
+            <Upload size={14} />
+            Import trades
+          </Link>
+        </div>
+      )}
+
       <ProgressiveDashboardWidget
         visible={widgetIsVisible(calendarWidgetOrder)}
         label="trading calendar"
@@ -848,7 +963,7 @@ export default function DashboardPage() {
       <ProgressiveDashboardWidget visible={widgetIsVisible(openPositionsWidgetOrder)} label="open positions">
         <OpenPositionsCard
           initialHoldings={serverHoldings}
-          onTradeAdded={() => setRefreshKey((k) => k + 1)}
+          onTradeAdded={refreshDashboard}
         />
       </ProgressiveDashboardWidget>
 
@@ -857,21 +972,16 @@ export default function DashboardPage() {
       ) : latestDayLoading ? (
         <DashboardWidgetLoading label="latest day activity" />
       ) : latestDay && latestDay.date === summaries[0]?.date ? (
-        <div className="rounded-xl border border-card-border bg-card-bg p-5 shadow-sm">
-          <h3 className="text-sm font-normal text-foreground mb-3 flex items-center gap-2">
-            <Calendar size={14} className="text-accent" />
-            Latest Day Activity — {latestDay.formattedDate}
-          </h3>
-          <ReplayTimeline
-            transactions={latestDay.transactions}
-            symbols={latestDay.symbols}
-            currentTimeSeconds={latestDay.endTime}
-            startTimeSeconds={latestDay.startTime}
-            endTimeSeconds={latestDay.endTime}
-            snapshots={latestDay.snapshots}
-            timeZone={displayTimezone}
-          />
-        </div>
+        <LatestDayActivity
+          summary={summaries[0]}
+          transactions={latestDay.transactions}
+          symbols={latestDay.symbols}
+          startTimeSeconds={latestDay.startTime}
+          endTimeSeconds={latestDay.endTime}
+          snapshots={latestDay.snapshots}
+          currency={baseCurrency}
+          timeZone={displayTimezone}
+        />
       ) : null}
     </div>
   );

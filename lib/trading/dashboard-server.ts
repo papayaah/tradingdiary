@@ -80,6 +80,79 @@ interface DashboardRangeRequest {
   endDate?: string;
 }
 
+interface CachedDashboardRange {
+  value: ServerDashboardRange | null;
+  expiresAt: number;
+}
+
+const DASHBOARD_SERVER_CACHE_TTL_MS = 5 * 60_000;
+const DASHBOARD_SERVER_CACHE_MAX_ENTRIES = 100;
+const dashboardRangeCache = new Map<string, CachedDashboardRange>();
+const dashboardRangeBuilds = new Map<string, Promise<ServerDashboardRange | null>>();
+
+function dashboardRangeCacheKey(
+  userId: string,
+  clientAccountId: string,
+  request: DashboardRangeRequest,
+  revision: number,
+): string {
+  return JSON.stringify([
+    userId,
+    clientAccountId,
+    request.rangeType,
+    request.startDate ?? '',
+    request.endDate ?? '',
+    revision,
+  ]);
+}
+
+function rememberDashboardRange(key: string, value: ServerDashboardRange | null): void {
+  if (dashboardRangeCache.size >= DASHBOARD_SERVER_CACHE_MAX_ENTRIES) {
+    const oldestKey = dashboardRangeCache.keys().next().value as string | undefined;
+    if (oldestKey) dashboardRangeCache.delete(oldestKey);
+  }
+  dashboardRangeCache.set(key, {
+    value,
+    expiresAt: Date.now() + DASHBOARD_SERVER_CACHE_TTL_MS,
+  });
+}
+
+/**
+ * Cache an immutable account/range projection under the user's durable journal
+ * revision. A Flex import or journal edit creates a newer revision, so a stale
+ * value can never be selected after real dashboard data changes.
+ */
+export async function getCachedServerDashboardRange(
+  userId: string,
+  clientAccountId: string,
+  request: DashboardRangeRequest,
+  revision: number,
+): Promise<ServerDashboardRange | null> {
+  const key = dashboardRangeCacheKey(userId, clientAccountId, request, revision);
+  const cached = dashboardRangeCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) {
+    // Refresh insertion order so frequently used ranges survive bounded eviction.
+    dashboardRangeCache.delete(key);
+    dashboardRangeCache.set(key, cached);
+    return cached.value;
+  }
+  if (cached) dashboardRangeCache.delete(key);
+
+  const inFlight = dashboardRangeBuilds.get(key);
+  if (inFlight) return inFlight;
+
+  const build = getServerDashboardRange(userId, clientAccountId, request)
+    .then((value) => {
+      rememberDashboardRange(key, value);
+      return value;
+    })
+    .finally(() => {
+      if (dashboardRangeBuilds.get(key) === build) dashboardRangeBuilds.delete(key);
+    });
+  dashboardRangeBuilds.set(key, build);
+  return build;
+}
+
 export async function getServerDashboardRange(
   userId: string,
   clientAccountId: string,

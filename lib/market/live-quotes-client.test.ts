@@ -18,7 +18,13 @@ describe('getLiveQuotes', () => {
     const second = getLiveQuotes(['BILI', 'USD.JPY']);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock).toHaveBeenCalledWith('/api/quotes?symbols=BILI%2CUSD.JPY');
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/quotes?symbols=BILI%2CUSD.JPY',
+      expect.objectContaining({
+        cache: 'default',
+        signal: expect.any(AbortSignal),
+      }),
+    );
 
     resolveResponse(new Response(JSON.stringify({ BILI: 20, 'USD.JPY': 150 }), {
       status: 200,
@@ -27,5 +33,11 @@ describe('getLiveQuotes', () => {
 
     await expect(first).resolves.toEqual({ BILI: 20, 'USD.JPY': 150 });
     await expect(second).resolves.toEqual({ BILI: 20, 'USD.JPY': 150 });
+
+    await expect(getLiveQuotes(['BILI', 'USD.JPY'])).resolves.toEqual({
+      BILI: 20,
+      'USD.JPY': 150,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -41,6 +41,7 @@ async function fetchCurrent(symbolList: string[]) {
       const res = await fetchWithProviderQuota('Yahoo Finance', url, {
         headers: { 'User-Agent': 'Mozilla/5.0' },
         next: { revalidate: 300 },
+        signal: AbortSignal.timeout(10_000),
       });
 
       if (!res.ok) return;
@@ -57,7 +58,11 @@ async function fetchCurrent(symbolList: string[]) {
     return NextResponse.json({ error: 'Failed to fetch any quotes' }, { status: 502 });
   }
 
-  return NextResponse.json(quotes);
+  return NextResponse.json(quotes, {
+    headers: {
+      'Cache-Control': 'private, max-age=300, stale-while-revalidate=300',
+    },
+  });
 }
 
 function yyyymmddToUnix(dateStr: string): number {
@@ -88,6 +93,7 @@ async function fetchHistorical(symbolList: string[], from: string, to: string) {
       const res = await fetchWithProviderQuota('Yahoo Finance', url, {
         headers: { 'User-Agent': 'Mozilla/5.0' },
         next: { revalidate: 3600 }, // historical data rarely changes
+        signal: AbortSignal.timeout(10_000),
       });
 
       if (!res.ok) return;
