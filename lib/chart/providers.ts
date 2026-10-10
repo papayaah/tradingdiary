@@ -3,6 +3,7 @@ import type { KeyOwner } from "@/lib/metrics/provider-usage";
 import { fetchWithProviderQuota, providerCredentialScope, reserveProviderRequest } from '@/lib/market-data/provider-request-gate';
 import { parseTiingoDailyCsv, parseTiingoIntradayCsv } from './tiingo-csv';
 import { isCryptoMarketDataEnabled } from '@/lib/features/market-data';
+import { parseFuturesSymbol } from '@/lib/trading/futures-symbol';
 
 /** Compatibility hook retained around factory results. Physical request quota
  * and audit accounting now live below providers in provider-request-gate.ts so
@@ -53,19 +54,13 @@ export interface ChartProvider {
     fetchRangeCandles?(symbol: string, interval: string, days: number, endTimeMs?: number): Promise<OHLCCandle[]>;
 }
 
-// IBKR/TWS-style futures symbols: ROOT + month code + 1-2 digit year.
-// e.g. MNQU6 (Micro Nasdaq, Sep 2026), MGCQ6 (Micro Gold, Aug 2026), ESZ25.
-// Month codes: F G H J K M N Q U V X Z.
-const IBKR_FUTURES_RE = /^([A-Z]{1,4})[FGHJKMNQUVXZ]\d{1,2}$/;
-
 /**
  * Detect futures symbols across the notations we ingest:
  * Yahoo continuous (NQ=F), legacy continuous (NQ.C.0), slash-prefixed (/NQ),
  * and IBKR contract codes (MNQU6).
  */
 export function isFuturesSymbol(symbol: string): boolean {
-    const s = symbol.toUpperCase().trim();
-    return s.endsWith('=F') || s.includes('.C.0') || s.startsWith('/') || IBKR_FUTURES_RE.test(s);
+    return parseFuturesSymbol(symbol).hasFuturesNotation;
 }
 
 /**
@@ -73,11 +68,7 @@ export function isFuturesSymbol(symbol: string): boolean {
  * NQ=F -> NQ, NQ.C.0 -> NQ) so each provider can rebuild its own symbology.
  */
 export function futuresRoot(symbol: string): string {
-    let s = symbol.toUpperCase().trim();
-    if (s.startsWith('/')) s = s.slice(1);
-    s = s.replace('=F', '').replace(/\..*$/, '');
-    const m = s.match(IBKR_FUTURES_RE);
-    return m ? m[1] : s;
+    return parseFuturesSymbol(symbol).root;
 }
 
 /**
@@ -606,7 +597,12 @@ class TiingoCryptoProvider implements ChartProvider {
 export class IBKRProvider implements ChartProvider {
     name = "IBKR (CME)";
 
-    async fetchCandles(symbol: string, _date: string, interval: string): Promise<OHLCCandle[]> {
+    async fetchCandles(symbol: string, date: string, interval: string): Promise<OHLCCandle[]> {
+        if (date && /^\d{8}$/.test(date)) {
+            await reserveProviderRequest(this.name);
+            const { getIbkrClient } = await import('./ibkr-client');
+            return getIbkrClient().fetchFuturesCandlesForDate(symbol, interval, date);
+        }
         return this.fetchRecentCandles(symbol, interval);
     }
 
@@ -709,7 +705,7 @@ export class FallbackProvider implements ChartProvider {
 const IBKR_PRIMARY_FUTURES_ROOTS = new Set([
   'K200', 'HSI', 'SPI', 'SSG',
   // European index futures Yahoo can't serve reliably — IBKR is the primary.
-  'DAX', 'FDAX', 'ESTX50', 'FSTX', 'CAC40', 'FCE', 'IBEX35', 'SMI', 'FSMI',
+  'DAX', 'FDAX', 'FDXM', 'FDXS', 'MIN', 'ESTX50', 'FSTX', 'CAC40', 'FCE', 'IBEX35', 'SMI', 'FSMI',
 ]);
 
 /** The effective provider name for a fetch: the winning inner provider when it's
@@ -776,7 +772,7 @@ export function getActiveProvider(
     // Handle Futures Data Feed Selection separately
     if (isFutures) {
         // Centralized futures provider: 'yahoo' forces the keyless feed; 'auto'
-        // and 'ibkr' both use the gateway-first chain (Tiingo has no futures).
+        // uses the gateway-first chain; 'ibkr' requires the gateway directly.
         const futuresPref = userConfig?.preferredFuturesProvider
             || runtimeFuturesProvider
             || process.env.FUTURES_PROVIDER
@@ -790,6 +786,10 @@ export function getActiveProvider(
         // IBKR is only usable where the Gateway is reachable (the scanner/server
         // process), signalled by IBKR_GATEWAY_HOST / IBKR_ENABLED.
         const ibkrConfigured = Boolean(process.env.IBKR_GATEWAY_HOST) || process.env.IBKR_ENABLED === 'true';
+        if (futuresPref === 'ibkr') {
+            if (!ibkrConfigured) throw new Error('IBKR futures data requires a configured gateway.');
+            return trackProvider(new IBKRProvider(), 'owner');
+        }
 
         // Futures use the deployed gateway first and Yahoo as the only fallback.
         // effectiveProviderName() reports whichever actually served.

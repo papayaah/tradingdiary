@@ -25,4 +25,9 @@ describe('instrument details', () => {
       multiplier: 1,
     });
   });
+
+  it('recognizes the imported European contracts without equity chart shading', () => {
+    expect(getInstrumentDetails('FDXM 20261218 M')).toMatchObject({ assetClass: 'future', multiplier: 5 });
+    expect(getInstrumentDetails('MINZ6')).toMatchObject({ assetClass: 'future', multiplier: 1 });
+  });
 });

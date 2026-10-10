@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FallbackProvider, getActiveProvider, type ChartProvider } from './providers';
+import { FallbackProvider, IBKRProvider, getActiveProvider, isFuturesSymbol, type ChartProvider } from './providers';
 import type { OHLCCandle } from './types';
 
 vi.mock('@/lib/market-data/provider-request-gate', () => ({
@@ -162,6 +162,30 @@ describe('Tiingo crypto provider routing', () => {
 });
 
 describe('regional futures fallback', () => {
+  it('keeps stock tickers that overlap with futures roots on the stock feed', () => {
+    expect(isFuturesSymbol('CL')).toBe(false);
+    expect(isFuturesSymbol('ES')).toBe(false);
+    expect(getActiveProvider('CL', { preferredEquitiesProvider: 'tiingo', tiingoKey: 'test-token' }).name)
+      .toBe('Tiingo');
+  });
+
+  it('sends broker-local futures to IBKR even when Tiingo is selected for stocks', () => {
+    vi.stubEnv('IBKR_ENABLED', 'true');
+    expect(isFuturesSymbol('FDXM 20261218 M')).toBe(true);
+    const provider = getActiveProvider('FDXM 20261218 M', {
+      preferredEquitiesProvider: 'tiingo', tiingoKey: 'test-token', preferredFuturesProvider: 'ibkr',
+    });
+    expect(provider).toBeInstanceOf(IBKRProvider);
+    expect(provider).not.toBeInstanceOf(FallbackProvider);
+  });
+
+  it('reports an unavailable IBKR gateway rather than switching a broker chart to Yahoo', () => {
+    vi.stubEnv('IBKR_ENABLED', 'false');
+    vi.stubEnv('IBKR_GATEWAY_HOST', '');
+    expect(() => getActiveProvider('FDXM 20261218 M', { preferredFuturesProvider: 'ibkr' }))
+      .toThrow('requires a configured gateway');
+  });
+
   it('prioritizes deployed IBKR for futures', () => {
     vi.stubEnv('IBKR_ENABLED', 'true');
     const provider = getActiveProvider('SPI=F', undefined, 'futures');

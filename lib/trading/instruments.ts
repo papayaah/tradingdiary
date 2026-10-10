@@ -1,3 +1,5 @@
+import { parseFuturesSymbol } from './futures-symbol';
+
 export type AssetClass = 'equity' | 'future';
 
 export interface InstrumentDetails {
@@ -30,23 +32,16 @@ const FUTURES_SPECS: Record<string, FuturesSpec> = {
   MBT: { multiplier: 0.1 },
   // European index futures (IBKR-served). Point values per exchange contract spec.
   DAX: { multiplier: 25 }, FDAX: { multiplier: 25 }, // DAX 40 — €25/pt
+  FDXM: { multiplier: 5 }, FDXS: { multiplier: 1 },
+  MIN: { multiplier: 1 }, // Mini FTSE MIB — €1/pt
   ESTX50: { multiplier: 10 }, FSTX: { multiplier: 10 }, // EURO STOXX 50 — €10/pt
   CAC40: { multiplier: 10 }, FCE: { multiplier: 10 }, // CAC 40 — €10/pt
   IBEX35: { multiplier: 10 }, // IBEX 35 — €10/pt
   SMI: { multiplier: 10 }, FSMI: { multiplier: 10 }, // SMI — CHF 10/pt
 };
 
-const DATED_FUTURES_RE = /^([A-Z]{1,4})[FGHJKMNQUVXZ]\d{1,2}$/;
-
 export function getFuturesRoot(rawSymbol: string): string | null {
-  let symbol = rawSymbol.trim().toUpperCase();
-  if (!symbol) return null;
-
-  if (symbol.startsWith('/')) symbol = symbol.slice(1);
-  symbol = symbol.replace(/=F$/, '').replace(/\.C\.0$/, '');
-
-  const datedContract = symbol.match(DATED_FUTURES_RE);
-  const root = datedContract?.[1] ?? symbol;
+  const { root } = parseFuturesSymbol(rawSymbol);
   return FUTURES_SPECS[root] ? root : null;
 }
 

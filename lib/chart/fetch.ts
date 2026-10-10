@@ -15,7 +15,9 @@ export async function fetchCandles(
   const res = await fetch(`/api/chart?${params}`);
 
   if (!res.ok) {
-    throw new Error(`Chart data fetch failed: ${res.status}`);
+    const payload = await res.json().catch(() => null);
+    const message = typeof payload?.error === 'string' ? payload.error : `Chart data fetch failed: ${res.status}`;
+    throw new Error(message);
   }
 
   const data = await res.json();

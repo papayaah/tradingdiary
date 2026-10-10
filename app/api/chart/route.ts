@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getActiveProvider } from '@/lib/chart/providers';
+import { effectiveProviderName, getActiveProvider } from '@/lib/chart/providers';
 import { parseScannerControl, readScannerControl } from '@/lib/scanner/control';
 import { isCryptoMarketDataEnabled, isCryptoMarketDataSymbol } from '@/lib/features/market-data';
 
@@ -21,13 +21,15 @@ export async function GET(request: NextRequest) {
     const provider = getActiveProvider(symbol, {
       preferredEquitiesProvider: control.providers.equity,
       preferredCryptoProvider: control.providers.crypto,
-      preferredFuturesProvider: control.providers.futures,
+      // Trade/replay charts need the broker contract and historical trade day,
+      // rather than a continuous Yahoo proxy or the scanner's live feed setting.
+      preferredFuturesProvider: 'ibkr',
     });
     const candles = await provider.fetchCandles(symbol, date, interval);
 
     return NextResponse.json({ 
       candles,
-      provider: provider.name 
+      provider: effectiveProviderName(provider)
     }, {
       headers: {
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',

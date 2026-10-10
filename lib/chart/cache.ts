@@ -11,7 +11,9 @@ const DB_VERSION = 2;
 // Bump this when the candle fetch logic changes to invalidate stale cache entries.
 // v3: IBKR now fetches the requested historical DATE (previously it returned the
 // most recent session, so past-date charts were cached with wrong-day candles).
-const CACHE_VERSION = 3;
+// v4: Futures charts resolve the imported expiry and fetch the requested day
+// through IBKR, replacing recent/front-month bars cached against past dates.
+const CACHE_VERSION = 4;
 
 /**
  * The single opener for the chart cache database. All callers (chart fetch and

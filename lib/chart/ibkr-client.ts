@@ -11,6 +11,8 @@
 import { IBApi, EventName, SecType, type BarSizeSetting, type Contract } from '@stoqey/ib';
 import type { OHLCCandle } from './types';
 import { futuresRoot } from './providers';
+import { parseFuturesSymbol } from '@/lib/trading/futures-symbol';
+import { etWallClockToEpochSeconds } from './execution-time';
 
 const HOST = process.env.IBKR_GATEWAY_HOST || '127.0.0.1';
 const PORT = Number(process.env.IBKR_GATEWAY_PORT || 4001);
@@ -53,6 +55,8 @@ const BENIGN_CODES = new Set([2104, 2106, 2107, 2108, 2158, 2103, 2100, 2119, 21
 const IBKR_SYMBOL_ALIAS: Record<string, string> = {
   BTC: 'BRR', // CME Bitcoin future (symbol=BRR, localSymbol=BTCU6, tradingClass=BTC)
   FDAX: 'DAX', // EUREX DAX 40 Index Future (symbol=DAX in IBKR)
+  FDXM: 'DAX', FDXS: 'DAX',
+  MIN: 'FTMIB',
   FGBL: 'GBL', // EUREX Euro-Bund Future (symbol=GBL in IBKR)
   FSTX: 'ESTX50', // EUREX Euro Stoxx 50 Future (symbol=ESTX50 in IBKR)
   FSMI: 'SMI', // EUREX Swiss Market Index Future (symbol=SMI in IBKR)
@@ -67,6 +71,8 @@ const EXCHANGE_BY_ROOT: Record<string, string> = {
   ZC: 'CBOT', ZS: 'CBOT', ZW: 'CBOT',
   // European index futures (accept both the EUREX product code and the IBKR symbol).
   DAX: 'EUREX', FDAX: 'EUREX', // DAX 40 (Germany, EUR)
+  FDXM: 'EUREX', FDXS: 'EUREX',
+  MIN: 'IDEM',
   ESTX50: 'EUREX', FSTX: 'EUREX', // EURO STOXX 50 (Eurozone, EUR)
   SMI: 'EUREX', FSMI: 'EUREX', // SMI (Switzerland, CHF)
   IBEX35: 'MEFF', // IBEX 35 (Spain, EUR)
@@ -81,6 +87,7 @@ const EXCHANGE_BY_ROOT: Record<string, string> = {
 
 const CURRENCY_BY_ROOT: Record<string, string> = {
   DAX: 'EUR', FDAX: 'EUR',
+  FDXM: 'EUR', FDXS: 'EUR', MIN: 'EUR',
   ESTX50: 'EUR', FSTX: 'EUR',
   SMI: 'CHF', FSMI: 'CHF',
   IBEX35: 'EUR',
@@ -105,12 +112,28 @@ function exchangeForRoot(root: string): string {
   return EXCHANGE_BY_ROOT[root.toUpperCase()] || 'CME';
 }
 
-export function ibkrContractSpecForRoot(root: string): Pick<Contract, 'symbol' | 'exchange' | 'currency'> {
+const TRADING_CLASS_BY_ROOT: Record<string, string> = {
+  DAX: 'FDAX', FDAX: 'FDAX', FDXM: 'FDXM', FDXS: 'FDXS', MIN: 'MIN',
+};
+
+export function ibkrContractSpecForRoot(root: string): Pick<Contract, 'symbol' | 'exchange' | 'currency' | 'tradingClass'> {
   const normalizedRoot = root.toUpperCase();
   return {
     symbol: IBKR_SYMBOL_ALIAS[normalizedRoot] ?? normalizedRoot,
     exchange: exchangeForRoot(normalizedRoot),
     currency: CURRENCY_BY_ROOT[normalizedRoot] ?? 'USD',
+    ...(TRADING_CLASS_BY_ROOT[normalizedRoot] ? { tradingClass: TRADING_CLASS_BY_ROOT[normalizedRoot] } : {}),
+  };
+}
+
+/** A journal chart must request the actual dated FUT, including expired trades. */
+export function ibkrFuturesContractSpecForDate(symbol: string, dateStr: string): Contract {
+  const { root, contractMonth } = parseFuturesSymbol(symbol, dateStr);
+  return {
+    ...ibkrContractSpecForRoot(root),
+    secType: SecType.FUT,
+    includeExpired: true,
+    ...(contractMonth ? { lastTradeDateOrContractMonth: contractMonth } : {}),
   };
 }
 
@@ -155,13 +178,11 @@ function durationForInterval(interval: string): string {
 }
 
 /**
- * IBKR endDateTime marking the END of a YYYYMMDD trading day in US/Eastern.
- * Using the "US/Eastern" suffix lets IBKR resolve the wall-clock instant with
- * DST awareness, so a request for a past date returns THAT day's bars (with
- * duration "1 D") instead of the most recent session. Date math via Date.UTC
- * handles month/year rollover.
+ * End of the broker's New York trading day, sent using IBKR's UTC notation.
+ * An explicit US/Eastern suffix is rejected for some European contracts with
+ * error 10314; UTC works across exchanges while preserving the same instant.
  */
-function ibkrEndOfDayEastern(dateStr: string): string {
+export function ibkrEndOfDayUtc(dateStr: string): string {
   const y = parseInt(dateStr.slice(0, 4));
   const m = parseInt(dateStr.slice(4, 6)) - 1;
   const d = parseInt(dateStr.slice(6, 8));
@@ -169,7 +190,10 @@ function ibkrEndOfDayEastern(dateStr: string): string {
   const yyyy = next.getUTCFullYear();
   const mm = String(next.getUTCMonth() + 1).padStart(2, '0');
   const dd = String(next.getUTCDate()).padStart(2, '0');
-  return `${yyyy}${mm}${dd} 00:00:00 US/Eastern`;
+  const end = etWallClockToEpochSeconds(`${yyyy}${mm}${dd}`, '00:00:00');
+  if (end === null) throw new Error('IBKR: invalid historical trade date');
+  const utc = new Date(end * 1000).toISOString();
+  return `${utc.slice(0, 10).replaceAll('-', '')}-${utc.slice(11, 19)}`;
 }
 
 /** YYYYMMDD in New York, used to detect a new day (front-month rollover). */
@@ -183,6 +207,7 @@ function nyDate(): string {
 
 interface PendingDetails {
   contracts: Contract[];
+  referenceDate: string;
   resolve: (c: Contract) => void;
   reject: (e: Error) => void;
   timer: ReturnType<typeof setTimeout>;
@@ -202,6 +227,7 @@ class IbkrClient {
   private readonly historyReqs = new Map<number, PendingHistory>();
   private readonly contractCache = new Map<string, { contract: Contract; day: string }>();
   private readonly equityContractCache = new Map<string, Contract>();
+  private readonly datedContractCache = new Map<string, Contract>();
   private readonly requestTimes: number[] = [];
   private connectSeq = 0;
 
@@ -241,14 +267,13 @@ class IbkrClient {
         if (!req) return;
         clearTimeout(req.timer);
         this.detailReqs.delete(reqId);
-        const today = nyDate();
         // For a FUT request IBKR returns every listed month; pick the nearest
         // non-expired one. For a CONTFUT request it returns the single resolved
         // continuous (active/most-liquid) contract — which may not carry a
         // month field — so fall back to the first contract when none match the
         // expiry filter, rather than failing.
         const future = req.contracts
-          .filter((c) => c.lastTradeDateOrContractMonth && String(c.lastTradeDateOrContractMonth) >= today)
+          .filter((c) => c.lastTradeDateOrContractMonth && String(c.lastTradeDateOrContractMonth) >= req.referenceDate)
           .sort((a, b) => String(a.lastTradeDateOrContractMonth).localeCompare(String(b.lastTradeDateOrContractMonth)));
         const chosen = future[0] ?? req.contracts[0];
         if (!chosen) { req.reject(new Error('IBKR: no active contract')); return; }
@@ -302,7 +327,7 @@ class IbkrClient {
   }
 
   /** One reqContractDetails round-trip for an IBKR contract description. */
-  private async requestContractDetails(label: string, contract: Contract): Promise<Contract> {
+  private async requestContractDetails(label: string, contract: Contract, referenceDate = nyDate()): Promise<Contract> {
     await this.connect();
     this.takePacingSlot();
     const reqId = this.nextReqId++;
@@ -311,7 +336,7 @@ class IbkrClient {
         this.detailReqs.delete(reqId);
         reject(new Error(`IBKR contractDetails timeout for ${label}`));
       }, REQUEST_TIMEOUT_MS);
-      this.detailReqs.set(reqId, { contracts: [], resolve, reject, timer });
+      this.detailReqs.set(reqId, { contracts: [], referenceDate, resolve, reject, timer });
       this.ib!.reqContractDetails(reqId, contract);
     });
   }
@@ -353,6 +378,19 @@ class IbkrClient {
 
     const contract = await this.requestContractDetails(normalized, ibkrEquityContractSpec(normalized));
     this.equityContractCache.set(normalized, contract);
+    return contract;
+  }
+
+  private async qualifyFuturesContractForDate(symbol: string, dateStr: string): Promise<Contract> {
+    const cacheKey = `${symbol.trim().toUpperCase()}|${dateStr}`;
+    const cached = this.datedContractCache.get(cacheKey);
+    if (cached) return cached;
+    const contract = await this.requestContractDetails(
+      symbol,
+      ibkrFuturesContractSpecForDate(symbol, dateStr),
+      dateStr,
+    );
+    this.datedContractCache.set(cacheKey, contract);
     return contract;
   }
 
@@ -414,16 +452,29 @@ class IbkrClient {
     }
   }
 
+  async fetchFuturesCandlesForDate(symbol: string, interval: string, dateStr: string): Promise<OHLCCandle[]> {
+    barSizeForInterval(interval);
+    const endDateTime = ibkrEndOfDayUtc(dateStr);
+    try {
+      const contract = await this.qualifyFuturesContractForDate(symbol, dateStr);
+      return await this.fetchHistoricalCandles(contract, symbol, interval, endDateTime, '1 D');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!message.includes('pacing guard')) this.teardown();
+      throw err;
+    }
+  }
+
   /**
    * Fetch a SPECIFIC trading day's bars (YYYYMMDD, exchange-local). Used by the
    * journal/replay chart, which must show the candles for a past trade date — not
    * the most recent session. Anchors reqHistoricalData's endDateTime to the end
-   * of that ET day so IBKR returns that day rather than "now".
+   * of that ET day, expressed in UTC, so IBKR returns that day rather than "now".
    */
   async fetchEquityCandlesForDate(symbol: string, interval: string, dateStr: string): Promise<OHLCCandle[]> {
     barSizeForInterval(interval);
     const normalized = symbol.toUpperCase().trim();
-    const endDateTime = ibkrEndOfDayEastern(dateStr);
+    const endDateTime = ibkrEndOfDayUtc(dateStr);
     try {
       const contract = await this.qualifyEquityContract(normalized);
       return await this.fetchHistoricalCandles(contract, normalized, interval, endDateTime, '1 D');

@@ -223,7 +223,7 @@ export default function IBKRFlexConnectionPanel() {
               )}
             </div>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-muted">
-              Connect once to import your 365-day report now, then sync it every morning on the server.
+              Connect once to import your 365-day report now, then sync it daily at 2:10 PM Philippine time on the server.
               Repeated reports are deduplicated automatically.
             </p>
           </div>

@@ -149,7 +149,7 @@ export async function syncIbkrFlexConnection(
           }
         }, /* preserveAccountMetadata */ true)
       : { adoptedExecutions: 0 };
-    const nextSyncAt = nextDailyFlexSync(now, Number(process.env.IBKR_FLEX_DAILY_HOUR_ET ?? 6));
+    const nextSyncAt = nextDailyFlexSync(now);
     const syncedAt = new Date().toISOString();
 
     await db
@@ -178,7 +178,7 @@ export async function syncIbkrFlexConnection(
     const apiError = error instanceof IbkrFlexApiError ? error : null;
     const actionRequired = apiError?.actionRequired ?? false;
     const nextSyncAt = actionRequired
-      ? nextDailyFlexSync(now, Number(process.env.IBKR_FLEX_DAILY_HOUR_ET ?? 6))
+      ? nextDailyFlexSync(now)
       : retryAt(now, connection.consecutiveFailures + 1);
     const safeMessage = apiError?.message ?? 'The IBKR Flex sync failed unexpectedly. Try again shortly.';
     const safeCode = apiError?.code ?? 'internal';

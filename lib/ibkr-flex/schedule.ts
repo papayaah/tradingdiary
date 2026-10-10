@@ -1,8 +1,10 @@
-const EASTERN_TIME_ZONE = 'America/New_York';
+const FLEX_TIME_ZONE = 'Asia/Manila';
+const FLEX_HOUR = 14;
+const FLEX_MINUTE = 10;
 
 function zonedParts(date: Date): Record<string, number> {
   const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: EASTERN_TIME_ZONE,
+    timeZone: FLEX_TIME_ZONE,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -29,23 +31,22 @@ function offsetAt(date: Date): number {
   return representedAsUtc - date.getTime();
 }
 
-function easternLocalToUtc(year: number, month: number, day: number, hour: number): Date {
-  const guess = new Date(Date.UTC(year, month - 1, day, hour));
+function localSyncTimeToUtc(year: number, month: number, day: number): Date {
+  const guess = new Date(Date.UTC(year, month - 1, day, FLEX_HOUR, FLEX_MINUTE));
   const firstPass = new Date(guess.getTime() - offsetAt(guess));
   return new Date(guess.getTime() - offsetAt(firstPass));
 }
 
-/** Next daily Activity Flex sync, defaulting to 06:00 America/New_York. */
-export function nextDailyFlexSync(now = new Date(), hourEastern = 6): Date {
+/** Next daily Activity Flex sync at 14:10 Asia/Manila (06:10 UTC year-round). */
+export function nextDailyFlexSync(now = new Date()): Date {
   const parts = zonedParts(now);
   const localToday = Date.UTC(parts.year, parts.month - 1, parts.day);
-  const targetDay = parts.hour >= hourEastern
+  const targetDay = parts.hour * 60 + parts.minute >= FLEX_HOUR * 60 + FLEX_MINUTE
     ? new Date(localToday + 24 * 60 * 60 * 1000)
     : new Date(localToday);
-  return easternLocalToUtc(
+  return localSyncTimeToUtc(
     targetDay.getUTCFullYear(),
     targetDay.getUTCMonth() + 1,
     targetDay.getUTCDate(),
-    hourEastern,
   );
 }
