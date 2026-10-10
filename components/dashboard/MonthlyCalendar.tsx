@@ -19,6 +19,8 @@ interface MonthlyCalendarProps {
 }
 
 const DAY_HEADERS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const CALENDAR_GRID_CLASS = 'grid grid-cols-7 sm:grid-cols-[repeat(7,minmax(0,1fr))_auto] gap-px bg-card-border rounded-lg overflow-hidden border border-card-border shadow-inner';
+const DAY_HEADER_CLASS = 'min-w-0 bg-table-header-bg px-0.5 sm:px-2 py-2 text-center text-[9px] sm:text-[10px] font-normal text-muted uppercase tracking-wide sm:tracking-widest';
 
 function formatPnLShort(value: number): string {
   const abs = Math.abs(value);
@@ -295,13 +297,13 @@ function ContiguousRangeView({ startDate, endDate, dataByDate, onDayClick, selec
   }, [startDate, endDate, dataByDate]);
 
   return (
-    <div className="grid grid-cols-[repeat(7,1fr)_auto] gap-px bg-card-border rounded-lg overflow-hidden border border-card-border shadow-inner">
+    <div className={CALENDAR_GRID_CLASS}>
       {DAY_HEADERS.map((day) => (
-        <div key={day} className="bg-table-header-bg px-2 py-2 text-center text-[10px] font-normal text-muted uppercase tracking-widest">
+        <div key={day} className={DAY_HEADER_CLASS}>
           {day}
         </div>
       ))}
-      <div className="bg-table-header-bg px-3 py-2 text-center text-[10px] font-normal text-muted uppercase tracking-widest">
+      <div className="hidden sm:block bg-table-header-bg px-3 py-2 text-center text-[10px] font-normal text-muted uppercase tracking-widest">
         Week
       </div>
 
@@ -379,13 +381,13 @@ function MonthView({ year, month, dataByDate, onDayClick, selectedDate, detail }
   }, [year, month, dataByDate]);
 
   return (
-    <div className="grid grid-cols-[repeat(7,1fr)_auto] gap-px bg-card-border rounded-lg overflow-hidden border border-card-border shadow-inner">
+    <div className={CALENDAR_GRID_CLASS}>
       {DAY_HEADERS.map((day) => (
-        <div key={day} className="bg-table-header-bg px-2 py-2 text-center text-[10px] font-normal text-muted uppercase tracking-widest">
+        <div key={day} className={DAY_HEADER_CLASS}>
           {day}
         </div>
       ))}
-      <div className="bg-table-header-bg px-3 py-2 text-center text-[10px] font-normal text-muted uppercase tracking-widest">
+      <div className="hidden sm:block bg-table-header-bg px-3 py-2 text-center text-[10px] font-normal text-muted uppercase tracking-widest">
         Week
       </div>
 
@@ -423,7 +425,7 @@ interface GridDay {
 
 function DayCell({ day, showMonthLabel, onClick }: { day: GridDay; showMonthLabel?: boolean; onClick?: () => void }) {
   if (!day.isCurrentMonth) {
-    return <div className="bg-background min-h-[90px] p-2 opacity-30" />;
+    return <div className="bg-background min-h-[76px] sm:min-h-[90px] p-1 sm:p-2 opacity-30" />;
   }
 
   const hasData = day.data !== null;
@@ -439,11 +441,11 @@ function DayCell({ day, showMonthLabel, onClick }: { day: GridDay; showMonthLabe
   return (
     <div
       onClick={onClick}
-      className={`${bgClass} min-h-[95px] p-2 flex flex-col cursor-pointer transition-colors group relative`}
+      className={`${bgClass} min-w-0 min-h-[76px] sm:min-h-[95px] p-1 sm:p-2 flex flex-col cursor-pointer transition-colors group relative overflow-hidden`}
     >
       <div className="flex justify-between items-start">
         {showMonthLabel ? (
-          <span className="text-[10px] font-normal uppercase text-white bg-accent px-1.5 py-0.5 rounded shadow-xs tracking-wider">
+          <span className="text-[8px] sm:text-[10px] font-normal uppercase text-white bg-accent px-1 sm:px-1.5 py-0.5 rounded shadow-xs tracking-wide sm:tracking-wider">
             {day.monthName}
           </span>
         ) : (
@@ -456,14 +458,14 @@ function DayCell({ day, showMonthLabel, onClick }: { day: GridDay; showMonthLabe
 
       {hasData && (
         <div className="flex-1 flex flex-col items-center justify-center gap-0.5 mt-1">
-          <span className={`text-sm font-normal tabular-nums ${pnlColorClass(pnl)}`}>
+          <span className={`max-w-full truncate text-[11px] sm:text-sm font-normal tabular-nums ${pnlColorClass(pnl)}`}>
             {formatPnLShort(pnl)}
           </span>
           <div className="flex flex-col items-center leading-tight">
-            <span className="text-[9px] text-muted opacity-80 font-normal">
+            <span className="text-[8px] sm:text-[9px] text-muted opacity-80 font-normal whitespace-nowrap">
               {day.data!.tradeCount} trades
             </span>
-            <span className="text-[9px] text-muted font-normal">
+            <span className="text-[8px] sm:text-[9px] text-muted font-normal">
               {day.data!.winRate.toFixed(0)}%
             </span>
           </div>
@@ -483,7 +485,7 @@ function WeekSummary({
   days: number;
 }) {
   return (
-    <div className="bg-card-bg min-h-[90px] px-3 py-2 flex flex-col items-center justify-center w-[90px]">
+    <div className="hidden sm:flex bg-card-bg min-h-[90px] px-3 py-2 flex-col items-center justify-center w-[90px]">
       <span className="text-[10px] text-muted font-normal">Week {weekNum}</span>
       <span className={`text-sm font-normal tabular-nums ${pnlColorClass(pnl)}`}>
         {days > 0 ? formatPnLShort(pnl) : '$0'}

@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { FileSearch } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, Copy, FileSearch } from 'lucide-react';
 import type { TransactionRecord, ImportBatchRecord } from '@/lib/db/schema';
 import { findImportSources } from '@/lib/db/import-batches';
 import { getCurrencySymbol } from '@/lib/currency';
 import { compareExecutionOrder } from '@/lib/trading/execution-order';
+import { copyTableToClipboard } from '@/lib/utils/table-clipboard';
 
 interface ExecutionAuditPanelProps {
   transactions: TransactionRecord[];
@@ -81,6 +82,14 @@ export default function ExecutionAuditPanel({
   onExecutionHover,
 }: ExecutionAuditPanelProps) {
   const [sources, setSources] = useState<Map<string, ImportBatchRecord>>(new Map());
+  const tableRef = useRef<HTMLTableElement>(null);
+  const [copyState, setCopyState] = useState<'idle' | 'copying' | 'copied' | 'failed'>('idle');
+
+  useEffect(() => {
+    if (copyState !== 'copied') return;
+    const timeout = window.setTimeout(() => setCopyState('idle'), 2000);
+    return () => window.clearTimeout(timeout);
+  }, [copyState]);
 
   useEffect(() => {
     let active = true;
@@ -97,18 +106,46 @@ export default function ExecutionAuditPanel({
   const rows = useMemo(() => buildAuditRows(transactions), [transactions]);
   const importedWhen = (ms: number) => new Date(ms).toLocaleDateString();
 
+  async function copyAudit() {
+    if (!tableRef.current) return;
+    setCopyState('copying');
+    try {
+      await copyTableToClipboard(tableRef.current);
+      setCopyState('copied');
+    } catch {
+      setCopyState('failed');
+    }
+  }
+
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-1.5 text-[10px] font-bold text-muted uppercase tracking-wider">
-        <FileSearch size={12} />
-        Execution audit
-        <span className="text-muted/70 normal-case font-normal tracking-normal">
-          · {rows.length} fill{rows.length === 1 ? '' : 's'} · accumulated position &amp; source
-        </span>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-bold text-muted uppercase tracking-wider">
+          <FileSearch size={12} />
+          Execution audit
+          <span className="text-muted/70 normal-case font-normal tracking-normal">
+            · {rows.length} fill{rows.length === 1 ? '' : 's'} · accumulated position &amp; source
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={copyAudit}
+          disabled={rows.length === 0 || copyState === 'copying'}
+          title="Copy all executions and column headers as a table"
+          className="inline-flex shrink-0 items-center gap-1.5 border border-card-border bg-card-bg px-2.5 py-1.5 text-[11px] font-medium text-foreground transition-colors hover:bg-muted-bg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {copyState === 'copied' ? <Check size={12} /> : <Copy size={12} />}
+          {copyState === 'copied' ? 'Copied' : copyState === 'copying' ? 'Copying…' : 'Copy table'}
+        </button>
       </div>
+      <p role="status" className={copyState === 'failed' ? 'text-[11px] text-loss' : 'sr-only'}>
+        {copyState === 'failed'
+          ? 'Could not copy. Try again or select the table and copy manually.'
+          : copyState === 'copied' ? 'Execution audit table copied with column headers.' : ''}
+      </p>
 
       <div className="overflow-x-auto rounded-lg border border-card-border">
-        <table className="w-full min-w-[820px] text-[11px] tabular-nums border-collapse">
+        <table ref={tableRef} className="w-full min-w-[820px] text-[11px] tabular-nums border-collapse">
           <thead>
             <tr className="border-b border-card-border bg-muted-bg/40 text-muted">
               <th className="px-3 py-2 text-left font-medium uppercase tracking-wider">Time</th>
