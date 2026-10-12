@@ -2,12 +2,9 @@ import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
 import { isAdminEmail } from '@/lib/admin';
 import { headers } from 'next/headers';
-import { EngageAdminPanel } from '@reactkits.dev/react-engage/admin';
 import '@reactkits.dev/react-engage/styles.css';
-import {
-  tradingDiaryEngageTemplates,
-  tradingDiaryInitialBroadcastSubject,
-} from '@/lib/engage-admin-content';
+import { EngageAdminPanel } from '@reactkits.dev/react-engage/admin';
+import { tradingDiaryEngageTemplates, tradingDiaryInitialBroadcastSubject } from '@/lib/engage-admin-content';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -21,20 +18,17 @@ export default async function EngageAdminPage() {
   }
 
   return (
-    <div className="p-6 bg-background text-foreground min-h-screen space-y-4">
+    <div className="p-4 sm:p-6 bg-background text-foreground min-h-screen space-y-4">
       <div>
-        <h1 className="hidden sm:block text-2xl font-bold tracking-tight">Engage Suite Dashboard</h1>
+        <h1 className="text-xl font-semibold tracking-tight">Email &amp; support</h1>
         <p className="text-sm text-muted">
-          Manage support tickets, inspect bug environment metadata, edit email templates, and send newsletter broadcasts.
+          Send email, respond to support tickets, and manage newsletters.
         </p>
       </div>
 
-      <EngageAdminPanel
-        apiEndpoint="/api/engage"
-        theme="inherit"
+      <EngageAdminPanel apiEndpoint="/api/engage" theme="inherit" defaultTab="email" mailbox
         initialTemplates={tradingDiaryEngageTemplates}
-        initialBroadcastSubject={tradingDiaryInitialBroadcastSubject}
-      />
+        initialBroadcastSubject={tradingDiaryInitialBroadcastSubject} />
     </div>
   );
 }

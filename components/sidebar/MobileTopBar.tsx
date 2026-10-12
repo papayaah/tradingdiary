@@ -13,7 +13,7 @@ const TITLES: { prefix: string; label: string }[] = [
   { prefix: '/watch', label: 'Market Watch' },
   { prefix: '/media', label: 'Library' },
   { prefix: '/settings', label: 'Settings' },
-  { prefix: '/admin/engage', label: 'Engage' },
+  { prefix: '/admin/engage', label: 'Email & support' },
   { prefix: '/admin', label: 'Admin' },
   { prefix: '/import', label: 'Import' },
 ];

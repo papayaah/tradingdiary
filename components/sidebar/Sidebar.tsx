@@ -150,10 +150,10 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
                   ? 'bg-sidebar-active text-foreground font-medium'
                   : 'text-muted hover:bg-sidebar-hover hover:text-foreground'
               } ${collapsed ? 'justify-center px-0' : ''}`}
-              title={collapsed ? 'Engage Dashboard' : undefined}
+              title={collapsed ? 'Email & support' : undefined}
             >
               <LifeBuoy size={18} className="shrink-0 text-emerald-500" />
-              {!collapsed && <span>Engage Dashboard</span>}
+              {!collapsed && <span>Email &amp; support</span>}
             </Link>
           </div>
         )}

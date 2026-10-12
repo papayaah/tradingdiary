@@ -13,6 +13,7 @@ import {
     uniqueIndex,
     primaryKey,
 } from 'drizzle-orm/pg-core';
+import type { EmailAttachment, EmailDeliveryStatus } from '@reactkits.dev/react-engage/server';
 
 // ============================================================================
 // Better Auth Tables (Postgres)
@@ -348,6 +349,27 @@ export const engageBroadcasts = pgTable("engage_broadcasts", {
     recipientCount: integer("recipient_count").notNull().default(0),
     sentAt: timestamp("sent_at", { mode: 'string' }).notNull().defaultNow(),
 });
+
+export const engageEmailMessages = pgTable('engage_email_messages', {
+    id: text('id').primaryKey(),
+    ticketId: text('ticket_id').notNull().references(() => engageTickets.id, { onDelete: 'cascade' }),
+    direction: text('direction').$type<'incoming' | 'outgoing'>().notNull(),
+    status: text('status').$type<EmailDeliveryStatus>().notNull(),
+    from: text('from_email').notNull(),
+    to: text('to_email').notNull(),
+    subject: text('subject').notNull(),
+    text: text('body_text').notNull(),
+    providerMessageId: text('provider_message_id'),
+    inReplyTo: text('in_reply_to'),
+    references: jsonb('references').$type<string[]>().notNull().default([]),
+    attachments: jsonb('attachments').$type<EmailAttachment[]>().notNull().default([]),
+    error: text('error'),
+    readAt: timestamp('read_at', { mode: 'string' }),
+    createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
+}, (t) => [
+    uniqueIndex('engage_email_provider_id_uq').on(t.providerMessageId),
+    index('engage_email_ticket_created_idx').on(t.ticketId, t.createdAt),
+]);
 
 // ============================================================================
 // Journal Persistence & Sync (Postgres)
