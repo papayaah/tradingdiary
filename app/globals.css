@@ -61,6 +61,45 @@
   }
 }
 
+/* Paper / hand-drawn palette for the journal & calendar surfaces. Additive:
+   these tokens are only consumed by opted-in paper views, so the rest of the
+   app keeps the existing theme. */
+:root {
+  --paper: #f4f1e6;
+  --paper-2: #ede8d9;
+  --paper-card: #fbf9f0;
+  --ink: #2b2924;
+  --ink-soft: #6e6757;
+  --line: #403b31;
+  --line-soft: rgba(64, 59, 49, 0.3);
+  --hl-green: rgba(150, 192, 108, 0.55);
+  --hl-red: rgba(216, 120, 104, 0.52);
+  --paper-profit: #3f6b32;
+  --paper-loss: #b23a2e;
+  --today: #c9972b;
+  --dot: rgba(43, 41, 36, 0.05);
+  --paper-shadow: 3px 5px 0 rgba(43, 41, 36, 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #23211c;
+    --paper-2: #2b2822;
+    --paper-card: #2b2822;
+    --ink: #ece6d6;
+    --ink-soft: #a39c8a;
+    --line: #5c5747;
+    --line-soft: rgba(236, 230, 214, 0.24);
+    --hl-green: rgba(120, 164, 84, 0.42);
+    --hl-red: rgba(192, 96, 80, 0.46);
+    --paper-profit: #93c56f;
+    --paper-loss: #e28a7a;
+    --today: #e0b14a;
+    --dot: rgba(236, 230, 214, 0.045);
+    --paper-shadow: 3px 5px 0 rgba(0, 0, 0, 0.25);
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -79,8 +118,21 @@
   --color-accent: var(--accent);
   --color-accent-light: var(--accent-light);
   --color-focus-backdrop: var(--focus-backdrop);
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-paper-card: var(--paper-card);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
+  --color-hl-green: var(--hl-green);
+  --color-hl-red: var(--hl-red);
+  --color-paper-profit: var(--paper-profit);
+  --color-paper-loss: var(--paper-loss);
+  --color-today: var(--today);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-hand: var(--font-patrick);
 }
 
 html {

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Patrick_Hand } from "next/font/google";
 import "./globals.css";
 
 import { ClientProviders } from '@/components/providers/ClientProviders';
@@ -12,6 +12,15 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+// Hand-drawn display face for the journal/calendar surfaces. Exposed as a CSS
+// variable so only the paper-styled views opt in; the rest of the app is
+// unaffected.
+const patrickHand = Patrick_Hand({
+  variable: "--font-patrick",
+  subsets: ["latin"],
+  weight: "400",
 });
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://tradingdiary.app';
@@ -83,7 +92,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${patrickHand.variable} antialiased`}
       >
         <ClientProviders>
           {children}

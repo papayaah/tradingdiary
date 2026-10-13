@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
-import Sidebar from '@/components/sidebar/Sidebar';
+import TopNav from '@/components/topnav/TopNav';
 import BottomNav from '@/components/sidebar/BottomNav';
 import MobileTopBar from '@/components/sidebar/MobileTopBar';
 import { ReplayProvider } from '@/components/replay/ReplayProvider';
@@ -20,40 +20,22 @@ export default function JournalLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
   const [mounted, setMounted] = useState(false);
   const pathname = usePathname();
   const isDirectReplay = pathname === '/replay';
 
   useEffect(() => {
-    const frame = requestAnimationFrame(() => {
-      const isSmallScreen = window.innerWidth < 768;
-      const savedCollapsed = localStorage.getItem('sidebar-collapsed');
-      if (isSmallScreen) {
-        setCollapsed(true);
-      } else if (savedCollapsed !== null) {
-        setCollapsed(savedCollapsed === 'true');
-      }
-      setMounted(true);
-    });
+    const frame = requestAnimationFrame(() => setMounted(true));
     return () => cancelAnimationFrame(frame);
   }, []);
 
-  const toggle = () => {
-    setCollapsed((prev) => {
-      const next = !prev;
-      localStorage.setItem('sidebar-collapsed', String(next));
-      return next;
-    });
-  };
-
   if (!mounted) {
     return (
-      <div className="flex h-dvh w-full max-w-full overflow-hidden">
+      <div className="flex h-dvh w-full max-w-full flex-col overflow-hidden">
         {!isDirectReplay && (
-          <div className="hidden sm:block w-[60px] md:w-[220px] shrink-0 bg-sidebar-bg border-r border-sidebar-border" />
+          <div className="hidden h-16 shrink-0 border-b-[2.5px] border-line bg-paper sm:block" />
         )}
-        <main className="flex-1 min-w-0" />
+        <main className="min-w-0 flex-1" />
       </div>
     );
   }
@@ -66,8 +48,8 @@ export default function JournalLayout({
           <AuthOverlayProvider>
             <ReplayProvider>
               <WelcomeProvider>
-                <div className="flex h-dvh w-full max-w-full overflow-hidden">
-                  {!isDirectReplay && <Sidebar collapsed={collapsed} onToggle={toggle} />}
+                <div className="flex h-dvh w-full max-w-full flex-col overflow-hidden">
+                  {!isDirectReplay && <TopNav />}
                   <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
                     {!isDirectReplay && <MobileTopBar />}
                     {!isDirectReplay && <JournalAssistantBar />}
