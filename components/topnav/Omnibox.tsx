@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import {
   ArrowLeft,
   CircleDollarSign,
@@ -15,17 +15,14 @@ import {
   Sparkles,
   Upload,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { formatCurrency } from '@/lib/currency';
-import { authClient } from '@/lib/auth-client';
-import { useAccount } from '@/contexts/AccountContext';
-import { useAIManagementContextOptional } from '@/packages/ai-connect/src/components';
 import type { SearchResult, SearchResultGroup } from '@/lib/search/types';
-import type { JournalAssistantResponse } from '@/lib/ai/journal-assistant-contract';
-import type { LLMProvider } from '@/packages/ai-connect/src/types';
 import { useGlobalSearch } from '@/components/global-search/useGlobalSearch';
+import { useJournalAI } from '@/contexts/JournalAIContext';
+import AnswerContent from './AnswerContent';
 
 const GROUP_ORDER: SearchResultGroup[] = ['Go to', 'Actions', 'Trades', 'Journal notes'];
-const DRAFT_KEY = 'tradingdiary:assistant-draft';
 
 function ResultIcon({ result }: { result: SearchResult }) {
   if (result.kind === 'trade') return <CircleDollarSign size={16} />;
@@ -43,135 +40,63 @@ function groupResults(results: SearchResult[]) {
   })).filter((section) => section.results.length > 0);
 }
 
-type AiStatus = 'idle' | 'loading' | 'answer' | 'error';
-
 /**
- * Paper-styled unified search: instant local results as you type, and a real
- * AI answer on Enter / "Ask AI" (same `/api/ai/journal-assistant` backend the
- * journal assistant uses). The field expands on focus and the results drawer is
- * fused to its bottom edge so the two read as one shape.
+ * Paper-styled unified search: instant local results as you type, with the AI
+ * answer rendered inline in the dropdown. If the dropdown closes while an answer
+ * is in flight or shown (the user navigated away), {@link useJournalAI} floats
+ * it into a side panel so the result isn't wasted.
  */
 export default function Omnibox() {
   const router = useRouter();
-  const pathname = usePathname();
-  const { data: session, isPending: sessionPending } = authClient.useSession();
-  const { selectedAccountId } = useAccount();
-  const aiContext = useAIManagementContextOptional();
-
+  const { ask, status: aiStatus, question: aiQuestion, setDropdownOpen } = useJournalAI();
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
+  // Show the AI answer inline (vs. search results) within the open dropdown.
+  const [aiInline, setAiInline] = useState(false);
 
-  const [aiStatus, setAiStatus] = useState<AiStatus>('idle');
-  const [aiAnswer, setAiAnswer] = useState<JournalAssistantResponse | null>(null);
-  const [aiError, setAiError] = useState('');
-  const [askedQuestion, setAskedQuestion] = useState('');
-
-  const signedIn = Boolean(session?.user);
   const { results, isLoading, currency } = useGlobalSearch(query, open);
   const sections = useMemo(() => groupResults(results), [results]);
   const ordered = useMemo(() => sections.flatMap((section) => section.results), [sections]);
   const safeIndex = Math.min(activeIndex, Math.max(0, ordered.length - 1));
 
-  const resetAi = useCallback(() => {
-    setAiStatus('idle');
-    setAiAnswer(null);
-    setAiError('');
-  }, []);
+  // Tell the AI context whether the dropdown is open, so the floating panel only
+  // appears once it closes.
+  useEffect(() => {
+    setDropdownOpen(open);
+  }, [open, setDropdownOpen]);
 
   const close = useCallback(() => {
     setOpen(false);
     setQuery('');
     setActiveIndex(0);
-    resetAi();
-  }, [resetAi]);
+  }, []);
 
   const choose = useCallback((result: SearchResult) => {
     close();
     router.push(result.href);
   }, [close, router]);
 
-  const requestSignIn = useCallback((content: string) => {
-    if (content) sessionStorage.setItem(DRAFT_KEY, content);
-    router.push(`/login?returnTo=${encodeURIComponent(pathname || '/calendar')}`);
-  }, [pathname, router]);
-
-  const askAI = useCallback(async () => {
+  const askNow = useCallback(() => {
     const content = query.trim();
-    if (!content || aiStatus === 'loading' || sessionPending) return;
-    if (!signedIn) {
-      requestSignIn(content);
+    if (!content) return;
+    if (aiStatus === 'loading') {
+      setAiInline(true);
+      toast('Hang on — finishing your current question first.');
       return;
     }
-
-    setAskedQuestion(content);
-    setAiError('');
-    setAiAnswer(null);
-    setAiStatus('loading');
-
-    const config = aiContext?.config;
-    const custom = config?.type === 'custom-llm' ? config.customLLM : undefined;
-    try {
-      const response = await fetch('/api/ai/journal-assistant', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(custom?.apiKey ? { 'x-api-key': custom.apiKey } : {}),
-          ...(custom?.provider ? { 'x-provider': custom.provider } : {}),
-          ...(custom?.model ? { 'x-model': custom.model } : {}),
-        },
-        body: JSON.stringify({
-          messages: [{ role: 'user', content }],
-          selectedAccountId,
-          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        }),
-      });
-      const body = (await response.json().catch(() => ({}))) as Partial<JournalAssistantResponse> & {
-        error?: string;
-        code?: string;
-      };
-      if (response.status === 401 && body.code === 'AI_AUTHENTICATION_REQUIRED') {
-        requestSignIn(content);
-        return;
-      }
-      if (!response.ok || !body.answer || !body.grounding) {
-        throw new Error(body.error || 'The journal assistant could not answer that question.');
-      }
-      const assistantResponse = body as JournalAssistantResponse;
-      setAiAnswer(assistantResponse);
-      setAiStatus('answer');
-      if (assistantResponse.usage && aiContext?.recordUsage) {
-        aiContext.recordUsage(assistantResponse.provider as LLMProvider, assistantResponse.model, {
-          inputTokens: assistantResponse.usage.promptTokens,
-          outputTokens: assistantResponse.usage.completionTokens,
-          totalTokens: assistantResponse.usage.totalTokens,
-        });
-      }
-    } catch (caught) {
-      setAiError(caught instanceof Error ? caught.message : 'The journal assistant is unavailable.');
-      setAiStatus('error');
-    }
-  }, [query, aiStatus, sessionPending, signedIn, requestSignIn, aiContext, selectedAccountId]);
-
-  // Restore a question saved before a sign-in redirect, once signed in.
-  useEffect(() => {
-    if (!signedIn) return;
-    const draft = sessionStorage.getItem(DRAFT_KEY);
-    if (draft) {
-      sessionStorage.removeItem(DRAFT_KEY);
-      setQuery(draft);
-      setOpen(true);
-      requestAnimationFrame(() => inputRef.current?.focus());
-    }
-  }, [signedIn]);
+    ask(content);
+    setAiInline(true);
+  }, [query, ask, aiStatus]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         setOpen(true);
+        setAiInline(false);
         requestAnimationFrame(() => inputRef.current?.focus());
       } else if (event.key === 'Escape' && open) {
         inputRef.current?.blur();
@@ -201,15 +126,12 @@ export default function Omnibox() {
     } else if (event.key === 'Enter') {
       event.preventDefault();
       if (ordered[safeIndex]) choose(ordered[safeIndex]);
-      else void askAI();
+      else askNow();
     }
   }
 
-  const askLabel = query.trim()
-    ? `Ask AI: “${query.trim()}”`
-    : signedIn
-      ? 'Ask your journal a question'
-      : 'Sign in to ask about your trading';
+  const askLabel = query.trim() ? `Ask AI: “${query.trim()}”` : 'Ask your journal a question';
+  const showInlineAnswer = aiInline && aiStatus !== 'idle';
 
   return (
     <div
@@ -228,20 +150,27 @@ export default function Omnibox() {
           id="omnibox-input"
           ref={inputRef}
           value={query}
-          onFocus={() => setOpen(true)}
+          onFocus={() => {
+            setOpen(true);
+            setAiInline(false);
+          }}
           onChange={(event) => {
             setQuery(event.target.value);
-            resetAi();
             setActiveIndex(0);
             setOpen(true);
+            setAiInline(false);
           }}
           onKeyDown={onInputKeyDown}
           placeholder="Ask your journal…"
           autoComplete="off"
           className="min-w-0 flex-1 bg-transparent text-[15px] text-ink outline-none placeholder:text-ink-soft"
         />
-        {isLoading ? (
-          <LoaderCircle size={15} className="shrink-0 animate-spin text-ink-soft" />
+        {isLoading || aiStatus === 'loading' ? (
+          <LoaderCircle
+            size={15}
+            className="shrink-0 animate-spin text-ink-soft"
+            aria-label={aiStatus === 'loading' ? 'Reading your trades' : undefined}
+          />
         ) : (
           <span className="shrink-0 rounded-md border border-line-soft px-1.5 py-0.5 text-[11px] text-ink-soft">
             {'⌘'}K
@@ -254,7 +183,19 @@ export default function Omnibox() {
           className="absolute left-0 right-0 top-full z-[1] -mt-[2.5px] max-h-[70vh] overflow-x-hidden overflow-y-auto rounded-b-[18px] border-[2.5px] border-t-0 border-line bg-paper-card"
           style={{ boxShadow: 'var(--paper-shadow)' }}
         >
-          {aiStatus === 'idle' ? (
+          {showInlineAnswer ? (
+            <div className="p-4">
+              <button
+                type="button"
+                onClick={() => setAiInline(false)}
+                className="mb-3 inline-flex items-center gap-1.5 text-[12.5px] text-ink-soft hover:text-ink"
+              >
+                <ArrowLeft size={14} /> Back to results
+              </button>
+              <div className="mb-2 text-[13px] text-ink-soft">{`“${aiQuestion}”`}</div>
+              <AnswerContent />
+            </div>
+          ) : (
             <>
               {sections.map((section) => (
                 <div key={section.group} className="py-1">
@@ -300,55 +241,39 @@ export default function Omnibox() {
                 </div>
               )}
 
-              <button
-                type="button"
-                onClick={() => void askAI()}
-                className="flex w-full items-center gap-3 border-t-2 border-dashed border-line-soft px-3 py-3 text-left hover:brightness-[0.98]"
-                style={{ background: 'color-mix(in srgb, var(--paper-profit) 10%, transparent)' }}
-              >
-                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-paper-profit text-paper-card">
-                  <Sparkles size={15} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[14px] font-medium text-paper-profit">{askLabel}</span>
-                  <span className="block text-[12.5px] text-ink-soft">Grounded on your real trades</span>
-                </span>
-                <CornerDownLeft size={15} className="shrink-0 text-ink-soft" />
-              </button>
+              {aiStatus === 'loading' ? (
+                <button
+                  type="button"
+                  onClick={() => setAiInline(true)}
+                  className="flex w-full items-center gap-3 border-t-2 border-dashed border-line-soft px-3 py-3 text-left"
+                  style={{ background: 'color-mix(in srgb, var(--paper-profit) 10%, transparent)' }}
+                >
+                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-paper-2 text-ink-soft">
+                    <LoaderCircle size={15} className="animate-spin" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[14px] font-medium text-ink">Finishing your current question…</span>
+                    <span className="block text-[12.5px] text-ink-soft">One question at a time to save credits</span>
+                  </span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={askNow}
+                  className="flex w-full items-center gap-3 border-t-2 border-dashed border-line-soft px-3 py-3 text-left hover:brightness-[0.98]"
+                  style={{ background: 'color-mix(in srgb, var(--paper-profit) 10%, transparent)' }}
+                >
+                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-paper-profit text-paper-card">
+                    <Sparkles size={15} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[14px] font-medium text-paper-profit">{askLabel}</span>
+                    <span className="block text-[12.5px] text-ink-soft">Grounded on your real trades</span>
+                  </span>
+                  <CornerDownLeft size={15} className="shrink-0 text-ink-soft" />
+                </button>
+              )}
             </>
-          ) : (
-            <div className="px-4 py-4">
-              <button
-                type="button"
-                onClick={resetAi}
-                className="mb-3 inline-flex items-center gap-1.5 text-[12.5px] text-ink-soft hover:text-ink"
-              >
-                <ArrowLeft size={14} /> Back to results
-              </button>
-
-              <div className="mb-2 text-[13px] text-ink-soft">{`“${askedQuestion}”`}</div>
-
-              {aiStatus === 'loading' && (
-                <div className="flex items-center gap-2 text-[14px] text-ink-soft">
-                  <LoaderCircle size={16} className="animate-spin" /> Reading your trades…
-                </div>
-              )}
-
-              {aiStatus === 'answer' && aiAnswer && (
-                <>
-                  <div className="whitespace-pre-line text-[15px] leading-relaxed text-ink">{aiAnswer.answer}</div>
-                  <div className="mt-3 flex items-center gap-1.5 text-[12.5px] text-ink-soft">
-                    <Sparkles size={13} className="text-paper-profit" /> Grounded on your real trades
-                  </div>
-                </>
-              )}
-
-              {aiStatus === 'error' && (
-                <div className="flex items-start gap-3 rounded-[13px] border-[2.5px] border-line-soft bg-paper-2 px-4 py-3 text-[14px] text-ink">
-                  {aiError}
-                </div>
-              )}
-            </div>
           )}
         </div>
       )}

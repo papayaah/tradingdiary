@@ -14,6 +14,8 @@ import { JournalSyncProvider } from '@/components/journal/JournalSyncProvider';
 import { WelcomeProvider } from '@/components/welcome/WelcomeContext';
 import WelcomeModal from '@/components/welcome/WelcomeModal';
 import JournalAssistantBar from '@/components/assistant/JournalAssistantBar';
+import { JournalAIProvider } from '@/contexts/JournalAIContext';
+import AIAnswerPanel from '@/components/topnav/AIAnswerPanel';
 
 export default function JournalLayout({
   children,
@@ -48,6 +50,7 @@ export default function JournalLayout({
           <AuthOverlayProvider>
             <ReplayProvider>
               <WelcomeProvider>
+                <JournalAIProvider>
                 <div className="flex h-dvh w-full max-w-full flex-col overflow-hidden">
                   {!isDirectReplay && <TopNav />}
                   <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
@@ -64,8 +67,10 @@ export default function JournalLayout({
                     </main>
                   </div>
                   {!isDirectReplay && <BottomNav />}
+                  {!isDirectReplay && <AIAnswerPanel />}
                   <WelcomeModal />
                 </div>
+                </JournalAIProvider>
               </WelcomeProvider>
             </ReplayProvider>
           </AuthOverlayProvider>
