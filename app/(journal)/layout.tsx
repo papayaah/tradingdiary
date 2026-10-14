@@ -52,7 +52,13 @@ export default function JournalLayout({
                   {!isDirectReplay && <TopNav />}
                   <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
                     {!isDirectReplay && <MobileTopBar />}
-                    {!isDirectReplay && <JournalAssistantBar />}
+                    {/* Desktop asks via the top-nav omnibox; the full assistant
+                        bar stays for mobile until the mobile omnibox lands. */}
+                    {!isDirectReplay && (
+                      <div className="sm:hidden">
+                        <JournalAssistantBar />
+                      </div>
+                    )}
                     <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-background pb-[calc(4rem+env(safe-area-inset-bottom))] sm:pb-0">
                       {children}
                     </main>

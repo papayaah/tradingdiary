@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import {
-  BarChart3,
   ChevronDown,
   Image as ImageIcon,
   LifeBuoy,
@@ -15,9 +14,9 @@ import {
 import { useImport } from '@/contexts/ImportContext';
 import { useAccount } from '@/contexts/AccountContext';
 import { useWelcome } from '@/components/welcome/WelcomeContext';
-import LoginButton from '@/components/auth/LoginButton';
 import BrandLogo from '@/components/brand/BrandLogo';
 import AccountSwitcher from '@/components/sidebar/AccountSwitcher';
+import AccountUser from './AccountUser';
 import Omnibox from './Omnibox';
 
 const PRIMARY = [
@@ -101,9 +100,6 @@ export default function TopNav() {
               className="absolute left-0 top-[130%] z-50 min-w-[200px] rounded-[14px] border-[2.5px] border-line bg-paper-card p-2"
               style={{ boxShadow: 'var(--paper-shadow)' }}
             >
-              <Link href="/reports" onClick={() => setMoreOpen(false)} className={menuLink}>
-                <BarChart3 size={16} /> Reports
-              </Link>
               <Link href="/media" onClick={() => setMoreOpen(false)} className={menuLink}>
                 {isProcessing ? (
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-paper-profit border-t-transparent" />
@@ -145,17 +141,20 @@ export default function TopNav() {
 
       <Omnibox />
 
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 items-center gap-3">
         {accounts.length > 0 && (
-          <AccountSwitcher
-            accounts={accounts}
-            selectedAccountId={selectedAccountId}
-            onSelect={setSelectedAccountId}
-            collapsed={false}
-            menuPlacement="bottom-end"
-          />
+          <div className="w-[170px]">
+            <AccountSwitcher
+              accounts={accounts}
+              selectedAccountId={selectedAccountId}
+              onSelect={setSelectedAccountId}
+              collapsed={false}
+              menuPlacement="bottom-end"
+              tone="paper"
+            />
+          </div>
         )}
-        <LoginButton />
+        <AccountUser />
       </div>
     </header>
   );

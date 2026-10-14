@@ -5,7 +5,7 @@ import type { ParsedSearchQuery, SearchIndex, SearchResult } from './types';
 export const MAX_SEARCH_RESULTS = 50;
 
 const NAVIGATION: Omit<SearchResult, 'score'>[] = [
-  { id: 'nav-dashboard', kind: 'navigation', group: 'Go to', title: 'Dashboard', subtitle: 'Performance, analytics, and calendar', href: '/dashboard' },
+  { id: 'nav-calendar', kind: 'navigation', group: 'Go to', title: 'Calendar', subtitle: 'Monthly P&L overview', href: '/calendar' },
   { id: 'nav-journal', kind: 'navigation', group: 'Go to', title: 'Trading Journal', subtitle: 'Trades, charts, and notes', href: '/journal' },
   { id: 'nav-watch', kind: 'navigation', group: 'Go to', title: 'Market Watch', subtitle: 'Watchlists, scans, and alerts', href: '/watch' },
   { id: 'nav-library', kind: 'navigation', group: 'Go to', title: 'Library', subtitle: 'Screenshots and imported files', href: '/media' },

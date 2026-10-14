@@ -12,6 +12,9 @@ interface AccountSwitcherProps {
   // Where the dropdown opens from the icon button: to the right (sidebar rail)
   // or below-right (mobile top bar).
   menuPlacement?: 'right' | 'bottom-end';
+  // Visual tone for the expanded <select>. 'paper' matches the hand-drawn
+  // calendar surfaces; 'default' uses the standard app tokens.
+  tone?: 'default' | 'paper';
 }
 
 export default function AccountSwitcher({
@@ -20,6 +23,7 @@ export default function AccountSwitcher({
   onSelect,
   collapsed,
   menuPlacement = 'right',
+  tone = 'default',
 }: AccountSwitcherProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -46,13 +50,18 @@ export default function AccountSwitcher({
   }, [close, isOpen]);
 
   if (!collapsed) {
+    const paper = tone === 'paper';
     return (
       <div className="relative group">
         <select
           value={selectedAccountId || ''}
           onChange={(event) => onSelect(event.target.value)}
           aria-label="Select trading account"
-          className="w-full appearance-none rounded-lg border border-sidebar-border bg-muted-bg py-2 pl-8 pr-6 text-xs font-medium text-foreground outline-none transition-all hover:bg-sidebar-hover focus:ring-1 focus:ring-accent"
+          className={
+            paper
+              ? 'w-full cursor-pointer appearance-none rounded-[12px] border-[2px] border-line bg-paper-card py-2 pl-9 pr-8 text-[13px] text-ink outline-none transition-colors hover:bg-paper-2 focus:ring-2 focus:ring-paper-profit/30'
+              : 'w-full appearance-none rounded-lg border border-sidebar-border bg-muted-bg py-2 pl-8 pr-6 text-xs font-medium text-foreground outline-none transition-all hover:bg-sidebar-hover focus:ring-1 focus:ring-accent'
+          }
         >
           {accounts.map((account) => (
             <option key={account.accountId} value={account.accountId}>
@@ -60,8 +69,8 @@ export default function AccountSwitcher({
             </option>
           ))}
         </select>
-        <Wallet size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
-        <ChevronDown size={12} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted" />
+        <Wallet size={14} className={`pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 ${paper ? 'text-ink-soft' : 'text-muted'}`} />
+        <ChevronDown size={12} className={`pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 ${paper ? 'text-ink-soft' : 'text-muted'}`} />
       </div>
     );
   }

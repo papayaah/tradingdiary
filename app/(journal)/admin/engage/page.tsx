@@ -14,7 +14,7 @@ export default async function EngageAdminPage() {
   const session = await auth.api.getSession({ headers: reqHeaders });
 
   if (!session?.user || !isAdminEmail(session.user.email)) {
-    redirect('/dashboard');
+    redirect('/calendar');
   }
 
   return (

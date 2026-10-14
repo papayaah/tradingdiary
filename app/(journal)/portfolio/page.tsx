@@ -7,13 +7,13 @@ export default function PortfolioPage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace('/dashboard');
+    router.replace('/calendar');
   }, [router]);
 
   return (
     <div className="p-8 flex items-center justify-center min-h-[50vh]">
       <div className="animate-pulse text-sm font-medium text-muted">
-        Redirecting to Dashboard...
+        Redirecting to Calendar...
       </div>
     </div>
   );
