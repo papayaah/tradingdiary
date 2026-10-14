@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { DailySummary } from '@/lib/trading/aggregator';
@@ -12,14 +12,15 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
-type RangeKey = 'month' | '30d' | '90d' | 'ytd' | 'all';
-const RANGE_ORDER: RangeKey[] = ['month', '30d', '90d', 'ytd', 'all'];
+type RangeKey = 'month' | '30d' | '90d' | 'ytd' | 'all' | 'custom';
+const RANGE_ORDER: RangeKey[] = ['month', '30d', '90d', 'ytd', 'all', 'custom'];
 const RANGE_LABELS: Record<RangeKey, string> = {
   month: 'This month',
   '30d': 'Last 30 days',
   '90d': 'Last 90 days',
   ytd: 'Year to date',
   all: 'All time',
+  custom: 'Custom range…',
 };
 
 function pad(n: number) {
@@ -65,6 +66,14 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [range, setRange] = useState<RangeKey>('month');
   const [rangeMenuOpen, setRangeMenuOpen] = useState(false);
+  const [customStart, setCustomStart] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
+  });
+  const [customEnd, setCustomEnd] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  });
   const detailRef = useRef<HTMLDivElement>(null);
   const rangeMenuRef = useRef<HTMLDivElement>(null);
 
@@ -106,6 +115,12 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
     if (range === 'month') {
       startKey = dateKey(view.y, view.m, 1);
       endKey = dateKey(view.y, view.m, 31);
+    } else if (range === 'custom') {
+      const s = customStart.replace(/-/g, '');
+      const e = customEnd.replace(/-/g, '');
+      startKey = s || '00000000';
+      endKey = e || '99999999';
+      if (startKey > endKey) [startKey, endKey] = [endKey, startKey];
     } else {
       const now = new Date();
       endKey = dateKey(now.getFullYear(), now.getMonth(), now.getDate());
@@ -128,7 +143,7 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
       }
     }
     return { net, trades, winRate: trades > 0 ? (wins / trades) * 100 : 0 };
-  }, [range, view, summaries]);
+  }, [range, view, summaries, customStart, customEnd]);
 
   const changeMonth = (delta: number) => {
     setSelectedKey(null);
@@ -228,27 +243,55 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
     );
   };
 
+  const weekNetOf = (week: (number | null)[]) => {
+    let net = 0;
+    let has = false;
+    for (const d of week) {
+      if (d === null) continue;
+      const s = byDate.get(dateKey(view.y, view.m, d));
+      if (s) {
+        net += s.totalPnL;
+        has = true;
+      }
+    }
+    return { net, has };
+  };
+
   const renderChunk = (weekList: (number | null)[][], prefix: string) => {
     const n = weekList.length;
     return (
       <div className="relative" key={prefix}>
         <svg
           className="pointer-events-none absolute inset-0 z-0 h-full w-full"
-          viewBox={`0 0 700 ${n * 100}`}
+          viewBox={`0 0 800 ${n * 100}`}
           preserveAspectRatio="none"
           aria-hidden="true"
         >
           <g stroke="var(--line)" strokeWidth={2.2} fill="none" vectorEffect="non-scaling-stroke" filter="url(#calendar-rough)">
-            <rect x={2} y={2} width={696} height={n * 100 - 4} rx={8} />
-            {[1, 2, 3, 4, 5, 6].map((c) => <line key={`v${c}`} x1={c * 100} y1={0} x2={c * 100} y2={n * 100} />)}
+            <rect x={2} y={2} width={796} height={n * 100 - 4} rx={8} />
+            {[1, 2, 3, 4, 5, 6, 7].map((c) => <line key={`v${c}`} x1={c * 100} y1={0} x2={c * 100} y2={n * 100} />)}
             {Array.from({ length: n - 1 }, (_, i) => (
-              <line key={`h${i}`} x1={0} y1={(i + 1) * 100} x2={700} y2={(i + 1) * 100} />
+              <line key={`h${i}`} x1={0} y1={(i + 1) * 100} x2={800} y2={(i + 1) * 100} />
             ))}
           </g>
         </svg>
 
-        <div className="relative z-10 grid grid-cols-7">
-          {weekList.flat().map((d, i) => renderCell(d, `${prefix}-${i}`))}
+        <div className="relative z-10 grid grid-cols-8">
+          {weekList.map((week, wi) => {
+            const wk = weekNetOf(week);
+            return (
+              <Fragment key={`${prefix}-w${wi}`}>
+                {week.map((d, di) => renderCell(d, `${prefix}-${wi}-${di}`))}
+                <div className="flex min-h-[clamp(84px,14vw,160px)] flex-col items-center justify-center p-1 text-center">
+                  {wk.has && (
+                    <span className={`font-hand text-[clamp(0.85rem,1.7vw,1.25rem)] tabular-nums ${wk.net >= 0 ? 'text-paper-profit' : 'text-paper-loss'}`}>
+                      {shortPnL(wk.net)}
+                    </span>
+                  )}
+                </div>
+              </Fragment>
+            );
+          })}
         </div>
       </div>
     );
@@ -351,6 +394,28 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
                 ))}
               </div>
             )}
+
+            {range === 'custom' && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 font-sans">
+                <input
+                  type="date"
+                  value={customStart}
+                  max={customEnd || undefined}
+                  onChange={(event) => setCustomStart(event.target.value)}
+                  aria-label="Range start date"
+                  className="rounded-[10px] border-2 border-line bg-paper-card px-2.5 py-1 text-[13px] text-ink outline-none focus:ring-2 focus:ring-paper-profit/30"
+                />
+                <span className="text-ink-soft">→</span>
+                <input
+                  type="date"
+                  value={customEnd}
+                  min={customStart || undefined}
+                  onChange={(event) => setCustomEnd(event.target.value)}
+                  aria-label="Range end date"
+                  className="rounded-[10px] border-2 border-line bg-paper-card px-2.5 py-1 text-[13px] text-ink outline-none focus:ring-2 focus:ring-paper-profit/30"
+                />
+              </div>
+            )}
           </div>
         </div>
 
@@ -362,8 +427,9 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
       </div>
 
       {/* Weekday headers */}
-      <div className="grid grid-cols-7 pb-3 text-center font-hand text-[clamp(0.9rem,2vw,1.4rem)] text-ink">
+      <div className="grid grid-cols-8 pb-3 text-center font-hand text-[clamp(0.9rem,2vw,1.4rem)] text-ink">
         {WEEKDAYS.map((w) => <div key={w}>{w}</div>)}
+        <div className="text-ink-soft">Week</div>
       </div>
 
       {/* Grid — split at the selected week so the day detail expands in place. */}
