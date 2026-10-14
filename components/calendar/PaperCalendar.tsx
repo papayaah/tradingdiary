@@ -23,6 +23,9 @@ const RANGE_LABELS: Record<RangeKey, string> = {
   custom: 'Custom range…',
 };
 
+// Cap a contiguous range grid so "all time" can't render thousands of cells.
+const MAX_WEEKS = 80;
+
 function pad(n: number) {
   return n < 10 ? `0${n}` : `${n}`;
 }
@@ -31,12 +34,23 @@ function dateKey(y: number, m: number, d: number) {
   return `${y}${pad(m + 1)}${pad(d)}`;
 }
 
+function keyFromDate(dt: Date) {
+  return dateKey(dt.getFullYear(), dt.getMonth(), dt.getDate());
+}
+
+function parseKey(key: string) {
+  return { y: Number(key.slice(0, 4)), m: Number(key.slice(4, 6)) - 1, d: Number(key.slice(6, 8)) };
+}
+
 function longDate(key: string): string {
   if (key.length !== 8) return key;
-  const dt = new Date(Number(key.slice(0, 4)), Number(key.slice(4, 6)) - 1, Number(key.slice(6, 8)));
-  return Number.isNaN(dt.getTime())
-    ? key
-    : dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  const { y, m, d } = parseKey(key);
+  const dt = new Date(y, m, d);
+  return dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function shortDate(dt: Date): string {
+  return `${MONTHS[dt.getMonth()].slice(0, 3)} ${dt.getDate()}`;
 }
 
 function shortPnL(value: number): string {
@@ -88,50 +102,71 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
     return map;
   }, [summaries]);
 
-  const weeks = useMemo(() => {
-    const firstWeekday = new Date(view.y, view.m, 1).getDay();
-    const daysInMonth = new Date(view.y, view.m + 1, 0).getDate();
-    const flat: (number | null)[] = [];
-    for (let i = 0; i < firstWeekday; i += 1) flat.push(null);
-    for (let d = 1; d <= daysInMonth; d += 1) flat.push(d);
-    while (flat.length % 7 !== 0) flat.push(null);
-    const out: (number | null)[][] = [];
-    for (let i = 0; i < flat.length; i += 7) out.push(flat.slice(i, i + 7));
-    return out;
-  }, [view]);
-
-  const selectedWeek = useMemo(() => {
-    if (!selectedKey) return -1;
-    return weeks.findIndex((week) =>
-      week.some((d) => d !== null && dateKey(view.y, view.m, d) === selectedKey),
-    );
-  }, [weeks, selectedKey, view]);
-
-  // Summary totals for the chosen period. 'month' follows the grid; the other
-  // ranges are relative to today, mirroring the original dashboard selector.
-  const stats = useMemo(() => {
-    let startKey = '00000000';
-    let endKey = '99999999';
+  // The grid spans exactly the selected period. 'month' is a single navigable
+  // month; every other range is a contiguous span, so the grid and the summary
+  // always agree.
+  const { gridStart, gridEnd, isMonthMode, clamped } = useMemo(() => {
     if (range === 'month') {
-      startKey = dateKey(view.y, view.m, 1);
-      endKey = dateKey(view.y, view.m, 31);
-    } else if (range === 'custom') {
-      const s = customStart.replace(/-/g, '');
-      const e = customEnd.replace(/-/g, '');
-      startKey = s || '00000000';
-      endKey = e || '99999999';
-      if (startKey > endKey) [startKey, endKey] = [endKey, startKey];
-    } else {
-      const now = new Date();
-      endKey = dateKey(now.getFullYear(), now.getMonth(), now.getDate());
-      if (range === '30d' || range === '90d') {
-        const back = new Date(now);
-        back.setDate(now.getDate() - (range === '30d' ? 29 : 89));
-        startKey = dateKey(back.getFullYear(), back.getMonth(), back.getDate());
-      } else if (range === 'ytd') {
-        startKey = dateKey(now.getFullYear(), 0, 1);
-      }
+      return {
+        gridStart: new Date(view.y, view.m, 1),
+        gridEnd: new Date(view.y, view.m + 1, 0),
+        isMonthMode: true,
+        clamped: false,
+      };
     }
+    const now = new Date();
+    let start: Date;
+    let end = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    if (range === 'custom') {
+      start = customStart ? new Date(`${customStart}T00:00:00`) : new Date(view.y, view.m, 1);
+      end = customEnd ? new Date(`${customEnd}T00:00:00`) : end;
+      if (start > end) [start, end] = [end, start];
+    } else if (range === '30d' || range === '90d') {
+      start = new Date(end);
+      start.setDate(end.getDate() - (range === '30d' ? 29 : 89));
+    } else if (range === 'ytd') {
+      start = new Date(now.getFullYear(), 0, 1);
+    } else {
+      let min: string | null = null;
+      for (const s of summaries ?? []) if (min === null || s.date < min) min = s.date;
+      start = min ? new Date(Number(min.slice(0, 4)), Number(min.slice(4, 6)) - 1, Number(min.slice(6, 8))) : new Date(now.getFullYear(), 0, 1);
+    }
+    let didClamp = false;
+    if ((end.getTime() - start.getTime()) / 86_400_000 > MAX_WEEKS * 7) {
+      start = new Date(end);
+      start.setDate(end.getDate() - MAX_WEEKS * 7);
+      didClamp = true;
+    }
+    return { gridStart: start, gridEnd: end, isMonthMode: false, clamped: didClamp };
+  }, [range, view, customStart, customEnd, summaries]);
+
+  const weeks = useMemo(() => {
+    const first = new Date(gridStart);
+    first.setDate(gridStart.getDate() - gridStart.getDay());
+    const last = new Date(gridEnd);
+    last.setDate(gridEnd.getDate() + (6 - gridEnd.getDay()));
+    const out: (string | null)[][] = [];
+    const cur = new Date(first);
+    while (cur <= last && out.length < MAX_WEEKS + 1) {
+      const week: (string | null)[] = [];
+      for (let i = 0; i < 7; i += 1) {
+        const inScope = cur >= gridStart && cur <= gridEnd;
+        week.push(inScope ? keyFromDate(cur) : null);
+        cur.setDate(cur.getDate() + 1);
+      }
+      out.push(week);
+    }
+    return out;
+  }, [gridStart, gridEnd]);
+
+  const selectedWeek = useMemo(
+    () => (selectedKey ? weeks.findIndex((week) => week.includes(selectedKey)) : -1),
+    [weeks, selectedKey],
+  );
+
+  const stats = useMemo(() => {
+    const startKey = keyFromDate(gridStart);
+    const endKey = keyFromDate(gridEnd);
     let net = 0;
     let trades = 0;
     let wins = 0;
@@ -143,7 +178,7 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
       }
     }
     return { net, trades, winRate: trades > 0 ? (wins / trades) * 100 : 0 };
-  }, [range, view, summaries, customStart, customEnd]);
+  }, [gridStart, gridEnd, summaries]);
 
   const changeMonth = (delta: number) => {
     setSelectedKey(null);
@@ -153,9 +188,16 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
     });
   };
 
-  // ←/→ switch months, matching the original dashboard's keyboard navigation.
+  const pickRange = (r: RangeKey) => {
+    setSelectedKey(null);
+    setRange(r);
+    setRangeMenuOpen(false);
+  };
+
+  // ←/→ switch months — only in single-month mode.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      if (!isMonthMode) return;
       if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
       const target = event.target as HTMLElement | null;
       if (
@@ -168,15 +210,11 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
         return;
       }
       event.preventDefault();
-      setSelectedKey(null);
-      setView((prev) => {
-        const next = new Date(prev.y, prev.m + (event.key === 'ArrowLeft' ? -1 : 1), 1);
-        return { y: next.getFullYear(), m: next.getMonth() };
-      });
+      changeMonth(event.key === 'ArrowLeft' ? -1 : 1);
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [isMonthMode]);
 
   useEffect(() => {
     if (selectedKey) detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -195,9 +233,9 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
   const netSign = stats.net >= 0 ? '+' : '−';
   const netClass = stats.net >= 0 ? 'text-paper-profit' : 'text-paper-loss';
 
-  const renderCell = (d: number | null, keyId: string) => {
-    if (d === null) return <div key={keyId} className="min-h-[clamp(84px,14vw,160px)]" />;
-    const key = dateKey(view.y, view.m, d);
+  const renderCell = (key: string | null, keyId: string) => {
+    if (key === null) return <div key={keyId} className="min-h-[clamp(84px,14vw,160px)]" />;
+    const { m, d } = parseKey(key);
     const s = byDate.get(key);
     const isToday = key === todayKey;
     const win = s ? s.totalPnL >= 0 : false;
@@ -211,7 +249,7 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
         className={`relative isolate flex min-h-[clamp(84px,14vw,160px)] flex-col items-start p-2 text-left sm:p-4 ${clickable ? 'cursor-pointer' : 'cursor-default'} ${selectedKey === key ? 'bg-paper-2/60' : ''}`}
       >
         <span className={`text-[clamp(0.8rem,1.6vw,1.1rem)] ${s ? 'text-ink' : 'text-ink-soft'}`}>
-          {MONTHS[view.m].slice(0, 3)} {d}
+          {MONTHS[m].slice(0, 3)} {d}
           {isToday && <span className="ml-1 text-[0.75em] text-today">· today</span>}
         </span>
 
@@ -243,12 +281,12 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
     );
   };
 
-  const weekNetOf = (week: (number | null)[]) => {
+  const weekNetOf = (week: (string | null)[]) => {
     let net = 0;
     let has = false;
-    for (const d of week) {
-      if (d === null) continue;
-      const s = byDate.get(dateKey(view.y, view.m, d));
+    for (const key of week) {
+      if (!key) continue;
+      const s = byDate.get(key);
       if (s) {
         net += s.totalPnL;
         has = true;
@@ -257,7 +295,7 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
     return { net, has };
   };
 
-  const renderChunk = (weekList: (number | null)[][], prefix: string) => {
+  const renderChunk = (weekList: (string | null)[][], prefix: string) => {
     const n = weekList.length;
     return (
       <div className="relative" key={prefix}>
@@ -281,7 +319,7 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
             const wk = weekNetOf(week);
             return (
               <Fragment key={`${prefix}-w${wi}`}>
-                {week.map((d, di) => renderCell(d, `${prefix}-${wi}-${di}`))}
+                {week.map((key, di) => renderCell(key, `${prefix}-${wi}-${di}`))}
                 <div className="flex min-h-[clamp(84px,14vw,160px)] flex-col items-center justify-center p-1 text-center">
                   {wk.has && (
                     <span className={`font-hand text-[clamp(0.85rem,1.7vw,1.25rem)] tabular-nums ${wk.net >= 0 ? 'text-paper-profit' : 'text-paper-loss'}`}>
@@ -346,16 +384,22 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
         </filter>
       </svg>
 
-      {/* Month header */}
+      {/* Header */}
       <div className="flex flex-wrap items-center gap-x-7 gap-y-3 pb-5">
-        <h1 className="flex items-center gap-3 font-hand text-[clamp(1.9rem,4vw,2.9rem)] leading-none text-ink">
-          <button type="button" onClick={() => changeMonth(-1)} aria-label="Previous month" className="text-ink-soft hover:text-ink">
-            <ChevronLeft size={30} />
-          </button>
-          {MONTHS[view.m]} {`'${String(view.y).slice(2)}`}
-          <button type="button" onClick={() => changeMonth(1)} aria-label="Next month" className="text-ink-soft hover:text-ink">
-            <ChevronRight size={30} />
-          </button>
+        <h1 className="flex items-center gap-3 font-hand text-[clamp(1.6rem,3.6vw,2.9rem)] leading-none text-ink">
+          {isMonthMode ? (
+            <>
+              <button type="button" onClick={() => changeMonth(-1)} aria-label="Previous month" className="text-ink-soft hover:text-ink">
+                <ChevronLeft size={30} />
+              </button>
+              {MONTHS[view.m]} {`'${String(view.y).slice(2)}`}
+              <button type="button" onClick={() => changeMonth(1)} aria-label="Next month" className="text-ink-soft hover:text-ink">
+                <ChevronRight size={30} />
+              </button>
+            </>
+          ) : (
+            <span>{shortDate(gridStart)} – {shortDate(gridEnd)} {`'${String(gridEnd.getFullYear()).slice(2)}`}</span>
+          )}
         </h1>
 
         <div className="flex flex-col">
@@ -381,10 +425,7 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
                   <button
                     key={r}
                     type="button"
-                    onClick={() => {
-                      setRange(r);
-                      setRangeMenuOpen(false);
-                    }}
+                    onClick={() => pickRange(r)}
                     className={`block w-full rounded-lg px-3 py-1.5 text-left text-[0.95rem] ${
                       range === r ? 'bg-paper-2 text-ink' : 'text-ink-soft hover:bg-paper-2 hover:text-ink'
                     }`}
@@ -401,7 +442,10 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
                   type="date"
                   value={customStart}
                   max={customEnd || undefined}
-                  onChange={(event) => setCustomStart(event.target.value)}
+                  onChange={(event) => {
+                    setSelectedKey(null);
+                    setCustomStart(event.target.value);
+                  }}
                   aria-label="Range start date"
                   className="rounded-[10px] border-2 border-line bg-paper-card px-2.5 py-1 text-[13px] text-ink outline-none focus:ring-2 focus:ring-paper-profit/30"
                 />
@@ -410,11 +454,18 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
                   type="date"
                   value={customEnd}
                   min={customStart || undefined}
-                  onChange={(event) => setCustomEnd(event.target.value)}
+                  onChange={(event) => {
+                    setSelectedKey(null);
+                    setCustomEnd(event.target.value);
+                  }}
                   aria-label="Range end date"
                   className="rounded-[10px] border-2 border-line bg-paper-card px-2.5 py-1 text-[13px] text-ink outline-none focus:ring-2 focus:ring-paper-profit/30"
                 />
               </div>
+            )}
+
+            {clamped && (
+              <div className="mt-1 text-[0.8rem] text-ink-soft">Showing the most recent {MAX_WEEKS} weeks</div>
             )}
           </div>
         </div>
