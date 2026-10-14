@@ -233,11 +233,16 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
   const netSign = stats.net >= 0 ? '+' : '−';
   const netClass = stats.net >= 0 ? 'text-paper-profit' : 'text-paper-loss';
 
+  const gridStartKey = keyFromDate(gridStart);
+
   const renderCell = (key: string | null, keyId: string) => {
     if (key === null) return <div key={keyId} className="min-h-[clamp(84px,14vw,160px)]" />;
     const { m, d } = parseKey(key);
     const s = byDate.get(key);
     const isToday = key === todayKey;
+    // Mark where a new month begins (and the first visible day) so month
+    // boundaries read clearly in a contiguous multi-month grid.
+    const monthStart = d === 1 || key === gridStartKey;
     const win = s ? s.totalPnL >= 0 : false;
     const clickable = Boolean(s && s.totalTrades > 0);
     return (
@@ -249,7 +254,13 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
         className={`relative isolate flex min-h-[clamp(84px,14vw,160px)] flex-col items-start p-2 text-left sm:p-4 ${clickable ? 'cursor-pointer' : 'cursor-default'} ${selectedKey === key ? 'bg-paper-2/60' : ''}`}
       >
         <span className={`text-[clamp(0.8rem,1.6vw,1.1rem)] ${s ? 'text-ink' : 'text-ink-soft'}`}>
-          {MONTHS[m].slice(0, 3)} {d}
+          {monthStart ? (
+            <span className="inline-block rounded-[9px_7px_10px_6px] bg-ink px-2 py-[3px] font-hand text-[0.95em] uppercase leading-none text-paper-card">
+              {MONTHS[m].slice(0, 3)} {d}
+            </span>
+          ) : (
+            <>{MONTHS[m].slice(0, 3)} {d}</>
+          )}
           {isToday && <span className="ml-1 text-[0.75em] text-today">· today</span>}
         </span>
 
