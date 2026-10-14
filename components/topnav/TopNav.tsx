@@ -62,25 +62,47 @@ export default function TopNav() {
 
   return (
     <header className="relative z-40 hidden h-16 shrink-0 items-center gap-4 border-b-[2.5px] border-line bg-paper px-6 sm:flex">
+      {/* Hand-drawn scribble filter for the active-nav pen loop. */}
+      <svg width="0" height="0" aria-hidden className="absolute">
+        <filter id="nav-scribble" x="-20%" y="-35%" width="140%" height="170%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.02 0.03" numOctaves="2" seed="5" result="noise" />
+          <feDisplacementMap in="SourceGraphic" in2="noise" scale="2.4" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+      </svg>
+
       <Link href="/calendar" className="flex shrink-0 items-center gap-2">
         <BrandLogo className="h-8 w-8" priority />
         <span className="font-hand text-[20px] text-ink">Trading Diary</span>
       </Link>
 
       <nav className="flex items-center gap-1">
-        {PRIMARY.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={`border-b-2 px-3 pb-1 pt-1 text-[15px] transition-colors ${
-              isActive(item.href)
-                ? 'border-ink text-ink'
-                : 'border-transparent text-ink-soft hover:text-ink'
-            }`}
-          >
-            {item.label}
-          </Link>
-        ))}
+        {PRIMARY.map((item) => {
+          const active = isActive(item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={active ? 'page' : undefined}
+              className={`relative isolate px-3.5 py-1.5 text-[15px] transition-colors ${
+                active ? 'text-ink' : 'text-ink-soft hover:text-ink'
+              }`}
+            >
+              {item.label}
+              {active && (
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute -inset-x-[7px] -inset-y-[3px] -z-10"
+                  style={{
+                    border: '2.5px solid var(--ink)',
+                    borderRadius: '50%',
+                    transform: 'rotate(-1.5deg)',
+                    filter: 'url(#nav-scribble)',
+                  }}
+                />
+              )}
+            </Link>
+          );
+        })}
 
         <div ref={moreRef} className="relative">
           <button
