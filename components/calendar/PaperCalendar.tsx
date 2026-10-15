@@ -410,8 +410,9 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
         </filter>
       </svg>
 
-      {/* Header */}
-      <div className="flex flex-wrap items-center gap-x-7 gap-y-3 pb-5">
+      {/* Header — fixed vertical stack on phones so varying number widths can't
+          shift the layout; inline row on desktop. */}
+      <div className="flex flex-col items-start gap-3 pb-5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-7 sm:gap-y-3">
         <h1 className="flex items-center gap-3 font-hand text-[clamp(1.6rem,3.6vw,2.9rem)] leading-none text-ink">
           {isMonthMode ? (
             <>
