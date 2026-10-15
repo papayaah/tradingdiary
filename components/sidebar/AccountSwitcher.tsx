@@ -29,6 +29,7 @@ export default function AccountSwitcher({
   const [isOpen, setIsOpen] = useState(false);
   const selectedAccount = accounts.find((account) => account.accountId === selectedAccountId);
   const close = useCallback(() => setIsOpen(false), []);
+  const paper = tone === 'paper';
 
   useEffect(() => {
     if (!isOpen) return;
@@ -50,7 +51,6 @@ export default function AccountSwitcher({
   }, [close, isOpen]);
 
   if (!collapsed) {
-    const paper = tone === 'paper';
     return (
       <div className="relative group">
         <select
@@ -88,8 +88,8 @@ export default function AccountSwitcher({
           menuPlacement === 'right' ? 'h-10 w-full' : 'h-8 w-8'
         } ${
           isOpen
-            ? 'bg-accent/10 text-accent'
-            : 'text-muted hover:bg-sidebar-hover hover:text-foreground'
+            ? paper ? 'bg-paper-2 text-ink' : 'bg-accent/10 text-accent'
+            : paper ? 'text-ink-soft hover:bg-paper-2 hover:text-ink' : 'text-muted hover:bg-sidebar-hover hover:text-foreground'
         }`}
       >
         <Wallet size={17} />
@@ -99,13 +99,18 @@ export default function AccountSwitcher({
         <div
           role="menu"
           aria-label="Trading accounts"
-          className={`absolute z-50 w-72 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-2xl border border-card-border bg-card-bg p-2 shadow-2xl ${
+          className={`absolute z-50 w-72 max-w-[calc(100vw-1.5rem)] overflow-hidden p-2 ${
+            paper
+              ? 'rounded-[16px] border-[2.5px] border-line bg-paper-card'
+              : 'rounded-2xl border border-card-border bg-card-bg shadow-2xl'
+          } ${
             menuPlacement === 'right'
               ? 'left-[calc(100%+0.75rem)] top-0'
               : 'right-0 top-[calc(100%+0.5rem)]'
           }`}
+          style={paper ? { boxShadow: 'var(--paper-shadow)' } : undefined}
         >
-          <div className="px-3 pb-2 pt-1 text-[10px] font-bold uppercase tracking-widest text-muted">
+          <div className={`px-3 pb-2 pt-1 text-[10px] font-bold uppercase tracking-widest ${paper ? 'text-ink-soft' : 'text-muted'}`}>
             Switch account
           </div>
           <div className="max-h-80 space-y-1 overflow-y-auto">
@@ -122,17 +127,23 @@ export default function AccountSwitcher({
                     close();
                   }}
                   className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
-                    active ? 'bg-accent/10' : 'hover:bg-muted-bg'
+                    active
+                      ? paper ? 'bg-paper-2' : 'bg-accent/10'
+                      : paper ? 'hover:bg-paper-2' : 'hover:bg-muted-bg'
                   }`}
                 >
-                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${active ? 'bg-accent text-white' : 'bg-muted-bg text-muted'}`}>
+                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                    active
+                      ? paper ? 'bg-paper-profit text-paper-card' : 'bg-accent text-white'
+                      : paper ? 'bg-paper-2 text-ink-soft' : 'bg-muted-bg text-muted'
+                  }`}>
                     <Wallet size={16} />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold text-foreground">{account.name}</span>
-                    <span className="block truncate text-xs text-muted">{account.type} · {account.currency}</span>
+                    <span className={`block truncate text-sm font-semibold ${paper ? 'text-ink' : 'text-foreground'}`}>{account.name}</span>
+                    <span className={`block truncate text-xs ${paper ? 'text-ink-soft' : 'text-muted'}`}>{account.type} · {account.currency}</span>
                   </span>
-                  {active && <Check size={16} className="shrink-0 text-accent" />}
+                  {active && <Check size={16} className={`shrink-0 ${paper ? 'text-paper-profit' : 'text-accent'}`} />}
                 </button>
               );
             })}

@@ -136,8 +136,9 @@ export default function Omnibox() {
   return (
     <div
       ref={rootRef}
-      className="relative transition-[width] duration-200 ease-out"
-      style={{ width: open ? 520 : 320, maxWidth: '42vw', zIndex: open ? 50 : undefined }}
+      data-open={open}
+      className="relative flex-1 transition-[width] duration-200 ease-out sm:flex-none sm:w-[320px] sm:max-w-[60vw] sm:data-[open=true]:w-[520px]"
+      style={{ zIndex: open ? 50 : undefined }}
     >
       <label
         htmlFor="omnibox-input"

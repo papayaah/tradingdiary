@@ -13,7 +13,6 @@ import { AccountProvider } from '@/contexts/AccountContext';
 import { JournalSyncProvider } from '@/components/journal/JournalSyncProvider';
 import { WelcomeProvider } from '@/components/welcome/WelcomeContext';
 import WelcomeModal from '@/components/welcome/WelcomeModal';
-import JournalAssistantBar from '@/components/assistant/JournalAssistantBar';
 import { JournalAIProvider } from '@/contexts/JournalAIContext';
 import AIAnswerPanel from '@/components/topnav/AIAnswerPanel';
 
@@ -59,13 +58,6 @@ export default function JournalLayout({
                   {!isDirectReplay && <TopNav />}
                   <div className={`flex min-w-0 flex-1 flex-col overflow-hidden ${surface}`}>
                     {!isDirectReplay && <MobileTopBar />}
-                    {/* Desktop asks via the top-nav omnibox; the full assistant
-                        bar stays for mobile until the mobile omnibox lands. */}
-                    {!isDirectReplay && (
-                      <div className="sm:hidden">
-                        <JournalAssistantBar />
-                      </div>
-                    )}
                     <main
                       className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden ${surface} pb-[calc(4rem+env(safe-area-inset-bottom))] sm:pb-0`}
                       style={paperRoute ? { overscrollBehaviorY: 'contain' } : undefined}
