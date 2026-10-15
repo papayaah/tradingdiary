@@ -25,6 +25,10 @@ export default function JournalLayout({
   const [mounted, setMounted] = useState(false);
   const pathname = usePathname();
   const isDirectReplay = pathname === '/replay';
+  // Paper-themed routes get a cream scroll surface so the iOS overscroll bounce
+  // blends in instead of flashing the default white background.
+  const paperRoute = pathname === '/calendar' || pathname.startsWith('/calendar/');
+  const surface = paperRoute ? 'bg-paper' : 'bg-background';
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => setMounted(true));
@@ -53,7 +57,7 @@ export default function JournalLayout({
                 <JournalAIProvider>
                 <div className="flex h-dvh w-full max-w-full flex-col overflow-hidden">
                   {!isDirectReplay && <TopNav />}
-                  <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
+                  <div className={`flex min-w-0 flex-1 flex-col overflow-hidden ${surface}`}>
                     {!isDirectReplay && <MobileTopBar />}
                     {/* Desktop asks via the top-nav omnibox; the full assistant
                         bar stays for mobile until the mobile omnibox lands. */}
@@ -62,7 +66,10 @@ export default function JournalLayout({
                         <JournalAssistantBar />
                       </div>
                     )}
-                    <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-background pb-[calc(4rem+env(safe-area-inset-bottom))] sm:pb-0">
+                    <main
+                      className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden ${surface} pb-[calc(4rem+env(safe-area-inset-bottom))] sm:pb-0`}
+                      style={paperRoute ? { overscrollBehaviorY: 'contain' } : undefined}
+                    >
                       {children}
                     </main>
                   </div>
