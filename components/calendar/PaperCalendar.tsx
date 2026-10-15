@@ -53,6 +53,11 @@ function shortDate(dt: Date): string {
   return `${MONTHS[dt.getMonth()].slice(0, 3)} ${dt.getDate()}`;
 }
 
+function agendaLabel(key: string): string {
+  const { y, m, d } = parseKey(key);
+  return new Date(y, m, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
 function shortPnL(value: number): string {
   const abs = Math.abs(value);
   const sign = value < 0 ? '−' : '+';
@@ -162,6 +167,12 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
   const selectedWeek = useMemo(
     () => (selectedKey ? weeks.findIndex((week) => week.includes(selectedKey)) : -1),
     [weeks, selectedKey],
+  );
+
+  // Trading days in range, in order — the phone agenda list.
+  const agendaDays = useMemo(
+    () => weeks.flat().filter((k): k is string => Boolean(k) && byDate.has(k)),
+    [weeks, byDate],
   );
 
   const stats = useMemo(() => {
@@ -346,6 +357,22 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
     );
   };
 
+  const tradeRows = (summary: DailySummary) => (
+    <div className="divide-y divide-line-soft">
+      {summary.trades.map((trade, i) => (
+        <div key={trade.groupKey ?? `${trade.symbol}-${trade.firstTradeTime}-${i}`} className="flex items-center gap-3 py-2">
+          <span className="text-[0.95rem] text-ink">{trade.symbol}</span>
+          <span className="text-[0.8rem] text-ink-soft">
+            {trade.side} · {trade.executions} exec
+          </span>
+          <span className={`ml-auto font-hand text-[1.05rem] tabular-nums ${trade.netPnL >= 0 ? 'text-paper-profit' : 'text-paper-loss'}`}>
+            {formatCurrency(trade.netPnL, currency)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+
   const detailPanel = selected && selectedKey && (
     <div
       ref={detailRef}
@@ -369,19 +396,7 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
         </button>
       </div>
 
-      <div className="mt-3 divide-y divide-line-soft">
-        {selected.trades.map((trade, i) => (
-          <div key={trade.groupKey ?? `${trade.symbol}-${trade.firstTradeTime}-${i}`} className="flex items-center gap-3 py-2">
-            <span className="text-[0.95rem] text-ink">{trade.symbol}</span>
-            <span className="text-[0.8rem] text-ink-soft">
-              {trade.side} · {trade.executions} exec
-            </span>
-            <span className={`ml-auto font-hand text-[1.05rem] tabular-nums ${trade.netPnL >= 0 ? 'text-paper-profit' : 'text-paper-loss'}`}>
-              {formatCurrency(trade.netPnL, currency)}
-            </span>
-          </div>
-        ))}
-      </div>
+      <div className="mt-3">{tradeRows(selected)}</div>
     </div>
   );
 
@@ -488,22 +503,76 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
         </div>
       </div>
 
-      {/* Weekday headers */}
-      <div className="grid grid-cols-8 pb-3 text-center font-hand text-[clamp(0.9rem,2vw,1.4rem)] text-ink">
-        {WEEKDAYS.map((w) => <div key={w}>{w}</div>)}
-        <div className="text-ink-soft">Week</div>
+      {/* Desktop: the wobbly grid with weekly totals. */}
+      <div className="hidden sm:block">
+        <div className="grid grid-cols-8 pb-3 text-center font-hand text-[clamp(0.9rem,2vw,1.4rem)] text-ink">
+          {WEEKDAYS.map((w) => <div key={w}>{w}</div>)}
+          <div className="text-ink-soft">Week</div>
+        </div>
+
+        {/* Grid — split at the selected week so the day detail expands in place. */}
+        {selectedWeek >= 0 ? (
+          <>
+            {renderChunk(weeks.slice(0, selectedWeek + 1), 'top')}
+            {detailPanel}
+            {weeks.length > selectedWeek + 1 && renderChunk(weeks.slice(selectedWeek + 1), 'bottom')}
+          </>
+        ) : (
+          renderChunk(weeks, 'all')
+        )}
       </div>
 
-      {/* Grid — split at the selected week so the day detail expands in place. */}
-      {selectedWeek >= 0 ? (
-        <>
-          {renderChunk(weeks.slice(0, selectedWeek + 1), 'top')}
-          {detailPanel}
-          {weeks.length > selectedWeek + 1 && renderChunk(weeks.slice(selectedWeek + 1), 'bottom')}
-        </>
-      ) : (
-        renderChunk(weeks, 'all')
-      )}
+      {/* Phone: a day-by-day agenda; each day expands to its trades. */}
+      <div className="border-t-2 border-dashed border-line-soft sm:hidden">
+        {agendaDays.length === 0 ? (
+          <div className="py-12 text-center text-[1rem] text-ink-soft">No trades in this range.</div>
+        ) : (
+          agendaDays.map((key) => {
+            const s = byDate.get(key);
+            if (!s) return null;
+            const open = selectedKey === key;
+            const win = s.totalPnL >= 0;
+            const isToday = key === todayKey;
+            return (
+              <div key={key} className="border-b-2 border-dashed border-line-soft">
+                <button
+                  type="button"
+                  onClick={() => setSelectedKey((prev) => (prev === key ? null : key))}
+                  className="flex w-full items-center gap-3 py-4 text-left"
+                  aria-expanded={open}
+                >
+                  <ChevronRight size={16} className={`shrink-0 text-ink-soft transition-transform ${open ? 'rotate-90 text-ink' : ''}`} />
+                  <span className={`flex-1 text-[15.5px] ${isToday ? 'text-today' : 'text-ink'}`}>
+                    {agendaLabel(key)}{isToday ? ' · today' : ''}
+                  </span>
+                  <span className="whitespace-nowrap text-[13px] text-ink-soft">
+                    {s.totalTrades} trades · {Math.round(s.winRate)}%
+                  </span>
+                  <span className="relative isolate ml-1 min-w-[80px] text-right">
+                    <span
+                      className="absolute -inset-x-2 inset-y-[14%] -z-10 -rotate-[2deg]"
+                      style={{ background: win ? 'var(--hl-green)' : 'var(--hl-red)', borderRadius: HIGHLIGHT_RADIUS }}
+                    />
+                    <span className="relative font-hand text-[23px] tabular-nums text-ink">{shortPnL(s.totalPnL)}</span>
+                  </span>
+                </button>
+                {open && (
+                  <div className="pb-4 pl-7">
+                    {tradeRows(s)}
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/journal?date=${key}`)}
+                      className="mt-2 text-[0.9rem] text-paper-profit hover:underline"
+                    >
+                      Open full day →
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }
