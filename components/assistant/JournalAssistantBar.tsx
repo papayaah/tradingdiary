@@ -339,14 +339,14 @@ export default function JournalAssistantBar() {
   }
 
   return (
-    <section className="shrink-0 border-b border-card-border bg-card-bg" aria-label="Journal assistant">
+    <section className="shrink-0 border-b-2 border-line bg-paper" aria-label="Journal assistant">
       <div className="mx-auto w-full max-w-5xl px-3 py-2 sm:px-5">
         <form onSubmit={submit} className="flex items-center gap-2">
-          <div className="flex h-10 min-w-0 flex-1 items-center gap-2 border border-card-border bg-background px-3 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/10">
+          <div className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-[14px] border-2 border-line bg-paper-card px-3.5 focus-within:ring-2 focus-within:ring-paper-profit/30">
             {signedIn ? (
-              <Sparkles size={17} className="shrink-0 text-accent" />
+              <Sparkles size={17} className="shrink-0 text-paper-profit" />
             ) : (
-              <LockKeyhole size={16} className="shrink-0 text-muted" />
+              <LockKeyhole size={16} className="shrink-0 text-ink-soft" />
             )}
             <input
               value={question}
@@ -356,10 +356,10 @@ export default function JournalAssistantBar() {
               maxLength={2_000}
               placeholder={signedIn ? 'Ask your journal — “How much did I lose on NVDA?”' : 'Sign in to ask questions about your trading'}
               aria-label="Ask your trading journal"
-              className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted disabled:cursor-wait"
+              className="min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-soft disabled:cursor-wait"
             />
             {activeAccount && signedIn ? (
-              <span className="hidden max-w-36 truncate border-l border-card-border pl-2 text-[10px] font-semibold text-muted sm:block">
+              <span className="hidden max-w-36 truncate border-l-2 border-line-soft pl-2 text-[10px] font-semibold text-ink-soft sm:block">
                 {activeAccount.name}
               </span>
             ) : null}
@@ -367,7 +367,7 @@ export default function JournalAssistantBar() {
           <button
             type="submit"
             disabled={sessionPending || loading || (signedIn && !question.trim())}
-            className="inline-flex h-10 shrink-0 items-center gap-1.5 bg-accent px-3 text-xs font-bold text-white transition hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-[12px] bg-ink px-3.5 text-xs font-bold text-paper-card transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? <LoaderCircle size={15} className="animate-spin" /> : signedIn ? <ArrowRight size={15} /> : <LockKeyhole size={14} />}
             <span className="hidden sm:inline">{signedIn ? 'Ask' : 'Sign in'}</span>
@@ -376,7 +376,7 @@ export default function JournalAssistantBar() {
             <button
               type="button"
               onClick={() => setExpanded((value) => !value)}
-              className="flex h-10 w-10 shrink-0 items-center justify-center border border-card-border bg-background text-muted transition hover:text-foreground"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border-2 border-line bg-paper-card text-ink-soft transition hover:text-ink"
               aria-label={expanded ? 'Collapse assistant' : 'Expand assistant'}
             >
               {expanded ? <ChevronUp size={16} /> : <MessageSquareText size={16} />}

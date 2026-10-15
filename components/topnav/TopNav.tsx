@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import {
+  BarChart3,
   ChevronDown,
   Image as ImageIcon,
   LifeBuoy,
@@ -122,6 +123,9 @@ export default function TopNav() {
               className="absolute left-0 top-[130%] z-50 min-w-[200px] rounded-[14px] border-[2.5px] border-line bg-paper-card p-2"
               style={{ boxShadow: 'var(--paper-shadow)' }}
             >
+              <Link href="/reports" onClick={() => setMoreOpen(false)} className={menuLink}>
+                <BarChart3 size={16} /> Reports
+              </Link>
               <Link href="/media" onClick={() => setMoreOpen(false)} className={menuLink}>
                 {isProcessing ? (
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-paper-profit border-t-transparent" />
