@@ -18,7 +18,13 @@ vi.mock('@stoqey/ib', async (importOriginal) => {
     reqHistoricalData(...args: unknown[]) {
       calls.history.push(args);
       queueMicrotask(() => {
-        this.emit(actual.EventName.historicalData, args[0], '1791540000', 24000, 24010, 23990, 24005, 8);
+        const end = Date.parse(String(args[2]).replace(/^(\d{4})(\d{2})(\d{2})-/, '$1-$2-$3T') + 'Z') / 1000;
+        const times = args[4] === '1 day'
+          ? ['20261013', '20261014', '20261015']
+          : [end - 30 * 3600, end - 12 * 3600, end - 300, end].map(String);
+        for (const time of times) {
+          this.emit(actual.EventName.historicalData, args[0], time, 24000, 24010, 23990, 24005, 8);
+        }
         this.emit(actual.EventName.historicalData, args[0], 'finished', 0, 0, 0, 0, 0);
       });
     }
@@ -35,9 +41,33 @@ describe('IBKR journal futures history', () => {
       symbol: 'DAX', secType: 'FUT', exchange: 'EUREX', currency: 'EUR',
       tradingClass: 'FDXM', lastTradeDateOrContractMonth: '20261218', includeExpired: true,
     });
-    expect(calls.history[0].slice(2, 5)).toEqual(['20261010-04:00:00', '1 D', '5 mins']);
-    expect(candles).toHaveLength(1);
+    expect(calls.history[0].slice(2, 5)).toEqual(['20261010-04:00:00', '2 D', '5 mins']);
+    expect(candles.map(bar => new Date(bar.time * 1000).toISOString())).toEqual([
+      '2026-10-09T16:00:00.000Z', '2026-10-10T03:55:00.000Z',
+    ]);
     expect(candles[0].close).toBe(24005);
+  });
+
+  it('fetches Micro Silver using SI with the SIL trading class and the imported expiry', async () => {
+    const { IBKRProvider } = await import('./providers');
+    const candles = await new IBKRProvider().fetchCandles('SILZ6', '20261014', '5m');
+
+    expect(calls.contracts.at(-1)?.[1]).toMatchObject({
+      symbol: 'SI', secType: 'FUT', exchange: 'COMEX', currency: 'USD',
+      tradingClass: 'SIL', lastTradeDateOrContractMonth: '202612', includeExpired: true,
+    });
+    expect(calls.history.at(-1)?.slice(2, 5)).toEqual(['20261015-04:00:00', '2 D', '5 mins']);
+    expect(candles.map(bar => new Date(bar.time * 1000).toISOString())).toEqual([
+      '2026-10-14T16:00:00.000Z', '2026-10-15T03:55:00.000Z',
+    ]);
+  });
+
+  it('keeps daily bars on their supplied session date rather than shifting them to the prior NY day', async () => {
+    const { IBKRProvider } = await import('./providers');
+    const candles = await new IBKRProvider().fetchCandles('SILZ6', '20261014', '1d');
+    expect(candles.map(bar => new Date(bar.time * 1000).toISOString())).toEqual([
+      '2026-10-14T00:00:00.000Z',
+    ]);
   });
 });
 

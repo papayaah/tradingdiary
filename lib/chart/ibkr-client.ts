@@ -12,7 +12,7 @@ import { IBApi, EventName, SecType, type BarSizeSetting, type Contract } from '@
 import type { OHLCCandle } from './types';
 import { futuresRoot } from './providers';
 import { parseFuturesSymbol } from '@/lib/trading/futures-symbol';
-import { etWallClockToEpochSeconds } from './execution-time';
+import { BROKER_SOURCE_TIMEZONE, etWallClockToEpochSeconds } from './execution-time';
 
 const HOST = process.env.IBKR_GATEWAY_HOST || '127.0.0.1';
 const PORT = Number(process.env.IBKR_GATEWAY_PORT || 4001);
@@ -54,6 +54,7 @@ const BENIGN_CODES = new Set([2104, 2106, 2107, 2108, 2158, 2103, 2100, 2119, 21
 // e.g. CME Bitcoin futures are requested as BRR (trading class BTC), not BTC.
 const IBKR_SYMBOL_ALIAS: Record<string, string> = {
   BTC: 'BRR', // CME Bitcoin future (symbol=BRR, localSymbol=BTCU6, tradingClass=BTC)
+  SIL: 'SI', // Micro Silver shares SI's symbol; tradingClass selects the micro contract.
   FDAX: 'DAX', // EUREX DAX 40 Index Future (symbol=DAX in IBKR)
   FDXM: 'DAX', FDXS: 'DAX',
   MIN: 'FTMIB',
@@ -113,6 +114,7 @@ function exchangeForRoot(root: string): string {
 }
 
 const TRADING_CLASS_BY_ROOT: Record<string, string> = {
+  SI: 'SI', SIL: 'SIL',
   DAX: 'FDAX', FDAX: 'FDAX', FDXM: 'FDXM', FDXS: 'FDXS', MIN: 'MIN',
 };
 
@@ -196,11 +198,13 @@ export function ibkrEndOfDayUtc(dateStr: string): string {
   return `${utc.slice(0, 10).replaceAll('-', '')}-${utc.slice(11, 19)}`;
 }
 
-/** YYYYMMDD in New York, used to detect a new day (front-month rollover). */
-function nyDate(): string {
-  const p = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(new Date());
+const BROKER_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  timeZone: BROKER_SOURCE_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+});
+
+/** YYYYMMDD in the broker's execution timezone. */
+function nyDate(date = new Date()): string {
+  const p = BROKER_DATE_FORMATTER.formatToParts(date);
   const g = (t: string) => p.find((x) => x.type === t)?.value ?? '';
   return `${g('year')}${g('month')}${g('day')}`;
 }
@@ -457,7 +461,18 @@ class IbkrClient {
     const endDateTime = ibkrEndOfDayUtc(dateStr);
     try {
       const contract = await this.qualifyFuturesContractForDate(symbol, dateStr);
-      return await this.fetchHistoricalCandles(contract, symbol, interval, endDateTime, '1 D');
+      // IBKR counts futures sessions: 1 D ending at NY midnight can contain
+      // only the next session's overnight bars. Fetch both sessions, then keep
+      // the execution's calendar date so daytime fills have matching candles.
+      const bars = await this.fetchHistoricalCandles(contract, symbol, interval, endDateTime, '2 D');
+      return bars.filter((bar) => {
+        const instant = new Date(bar.time * 1000);
+        // IBKR daily bars carry a session date, parsed as UTC midnight.
+        const day = interval === '1d'
+          ? instant.toISOString().slice(0, 10).replaceAll('-', '')
+          : nyDate(instant);
+        return day === dateStr;
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (!message.includes('pacing guard')) this.teardown();

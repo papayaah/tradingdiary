@@ -13,7 +13,8 @@ const DB_VERSION = 2;
 // most recent session, so past-date charts were cached with wrong-day candles).
 // v4: Futures charts resolve the imported expiry and fetch the requested day
 // through IBKR, replacing recent/front-month bars cached against past dates.
-const CACHE_VERSION = 4;
+// v5: Include the full broker calendar date rather than a partial overnight session.
+const CACHE_VERSION = 5;
 
 /**
  * The single opener for the chart cache database. All callers (chart fetch and

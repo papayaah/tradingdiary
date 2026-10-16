@@ -4,6 +4,16 @@ import { SecType } from '@stoqey/ib';
 
 describe('IBKR futures contract routing', () => {
   it.each([
+    ['SILZ6', 'SIL'],
+    ['SIZ6', 'SI'],
+  ])('qualifies %s using the SI symbol and its own trading class', (symbol, tradingClass) => {
+    expect(ibkrFuturesContractSpecForDate(symbol, '20261014')).toEqual({
+      symbol: 'SI', exchange: 'COMEX', currency: 'USD', tradingClass,
+      secType: SecType.FUT, includeExpired: true, lastTradeDateOrContractMonth: '202612',
+    });
+  });
+
+  it.each([
     ['20261009', '20261010-04:00:00'],
     ['20260115', '20260116-05:00:00'],
     ['20260308', '20260309-04:00:00'],
