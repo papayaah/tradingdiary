@@ -361,11 +361,16 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
     <div className="divide-y divide-line-soft">
       {summary.trades.map((trade, i) => (
         <div key={trade.groupKey ?? `${trade.symbol}-${trade.firstTradeTime}-${i}`} className="flex items-center gap-3 py-2">
-          <span className="text-[0.95rem] text-ink">{trade.symbol}</span>
-          <span className="text-[0.8rem] text-ink-soft">
+          <span className="min-w-0 flex-1">
+            <span className="block text-[0.95rem] text-ink">{trade.symbol}</span>
+            {trade.companyName && (
+              <span className="block truncate text-[0.78rem] text-ink-soft">{trade.companyName}</span>
+            )}
+          </span>
+          <span className="shrink-0 whitespace-nowrap text-[0.8rem] text-ink-soft">
             {trade.side} · {trade.executions} exec
           </span>
-          <span className={`ml-auto font-hand text-[1.05rem] tabular-nums ${trade.netPnL >= 0 ? 'text-paper-profit' : 'text-paper-loss'}`}>
+          <span className={`shrink-0 font-hand text-[1.05rem] tabular-nums ${trade.netPnL >= 0 ? 'text-paper-profit' : 'text-paper-loss'}`}>
             {formatCurrency(trade.netPnL, currency)}
           </span>
         </div>

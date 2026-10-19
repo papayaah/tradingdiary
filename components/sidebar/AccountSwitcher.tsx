@@ -50,33 +50,8 @@ export default function AccountSwitcher({
     };
   }, [close, isOpen]);
 
-  if (!collapsed) {
-    return (
-      <div className="relative group">
-        <select
-          value={selectedAccountId || ''}
-          onChange={(event) => onSelect(event.target.value)}
-          aria-label="Select trading account"
-          className={
-            paper
-              ? 'w-full cursor-pointer appearance-none rounded-[12px] border-[2px] border-line bg-paper-card py-2 pl-9 pr-8 text-[13px] text-ink outline-none transition-colors hover:bg-paper-2 focus:ring-2 focus:ring-paper-profit/30'
-              : 'w-full appearance-none rounded-lg border border-sidebar-border bg-muted-bg py-2 pl-8 pr-6 text-xs font-medium text-foreground outline-none transition-all hover:bg-sidebar-hover focus:ring-1 focus:ring-accent'
-          }
-        >
-          {accounts.map((account) => (
-            <option key={account.accountId} value={account.accountId}>
-              {account.name}
-            </option>
-          ))}
-        </select>
-        <Wallet size={14} className={`pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 ${paper ? 'text-ink-soft' : 'text-muted'}`} />
-        <ChevronDown size={12} className={`pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 ${paper ? 'text-ink-soft' : 'text-muted'}`} />
-      </div>
-    );
-  }
-
   return (
-    <div ref={rootRef} className={`relative z-50 ${menuPlacement === 'right' ? 'px-2' : ''}`}>
+    <div ref={rootRef} className={`relative z-50 ${collapsed && menuPlacement === 'right' ? 'px-2' : ''}`}>
       <button
         type="button"
         onClick={() => setIsOpen((open) => !open)}
@@ -84,15 +59,27 @@ export default function AccountSwitcher({
         aria-haspopup="menu"
         aria-expanded={isOpen}
         title={selectedAccount ? `Account: ${selectedAccount.name}` : 'Switch account'}
-        className={`flex items-center justify-center rounded-lg transition-colors ${
-          menuPlacement === 'right' ? 'h-10 w-full' : 'h-8 w-8'
-        } ${
-          isOpen
-            ? paper ? 'bg-paper-2 text-ink' : 'bg-accent/10 text-accent'
-            : paper ? 'text-ink-soft hover:bg-paper-2 hover:text-ink' : 'text-muted hover:bg-sidebar-hover hover:text-foreground'
-        }`}
+        className={
+          collapsed
+            ? `flex items-center justify-center rounded-lg transition-colors ${
+                menuPlacement === 'right' ? 'h-10 w-full' : 'h-8 w-8'
+              } ${
+                isOpen
+                  ? paper ? 'bg-paper-2 text-ink' : 'bg-accent/10 text-accent'
+                  : paper ? 'text-ink-soft hover:bg-paper-2 hover:text-ink' : 'text-muted hover:bg-sidebar-hover hover:text-foreground'
+              }`
+            : paper
+              ? 'flex w-full items-center gap-2 rounded-[12px] border-[2px] border-line bg-paper-card py-2 pl-3 pr-2.5 text-[13px] text-ink transition-colors hover:bg-paper-2'
+              : 'flex w-full items-center gap-2 rounded-lg border border-sidebar-border bg-muted-bg py-2 pl-3 pr-2.5 text-xs font-medium text-foreground transition-colors hover:bg-sidebar-hover'
+        }
       >
-        <Wallet size={17} />
+        <Wallet size={collapsed ? 17 : 14} className={collapsed ? '' : `shrink-0 ${paper ? 'text-ink-soft' : 'text-muted'}`} />
+        {!collapsed && (
+          <>
+            <span className="min-w-0 flex-1 truncate text-left">{selectedAccount?.name ?? 'Select account'}</span>
+            <ChevronDown size={14} className={`shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''} ${paper ? 'text-ink-soft' : 'text-muted'}`} />
+          </>
+        )}
       </button>
 
       {isOpen && (
