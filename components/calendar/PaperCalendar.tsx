@@ -38,6 +38,10 @@ function keyFromDate(dt: Date) {
   return dateKey(dt.getFullYear(), dt.getMonth(), dt.getDate());
 }
 
+function prettyKey(key: string) {
+  return `${key.slice(0, 4)}-${key.slice(4, 6)}-${key.slice(6, 8)}`;
+}
+
 function parseKey(key: string) {
   return { y: Number(key.slice(0, 4)), m: Number(key.slice(4, 6)) - 1, d: Number(key.slice(6, 8)) };
 }
@@ -394,7 +398,7 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
         </span>
         <button
           type="button"
-          onClick={() => router.push(`/journal?date=${selectedKey}`)}
+          onClick={() => router.push(`/journal/${prettyKey(selectedKey)}`)}
           className="ml-auto text-[0.95rem] text-paper-profit hover:underline"
         >
           Open full day →
@@ -569,7 +573,7 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
                     {tradeRows(s)}
                     <button
                       type="button"
-                      onClick={() => router.push(`/journal?date=${key}`)}
+                      onClick={() => router.push(`/journal/${prettyKey(key)}`)}
                       className="mt-2 text-[0.9rem] text-paper-profit hover:underline"
                     >
                       Open full day →

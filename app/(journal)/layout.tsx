@@ -26,7 +26,10 @@ export default function JournalLayout({
   const isDirectReplay = pathname === '/replay';
   // Paper-themed routes get a cream scroll surface so the iOS overscroll bounce
   // blends in instead of flashing the default white background.
-  const paperRoute = pathname === '/calendar' || pathname.startsWith('/calendar/');
+  const paperRoute =
+    pathname === '/calendar' ||
+    pathname.startsWith('/calendar/') ||
+    (pathname.startsWith('/journal/') && pathname !== '/journal');
   const surface = paperRoute ? 'bg-paper' : 'bg-background';
 
   useEffect(() => {
