@@ -175,7 +175,7 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
 
   // Trading days in range, in order — the phone agenda list.
   const agendaDays = useMemo(
-    () => weeks.flat().filter((k): k is string => Boolean(k) && byDate.has(k)),
+    () => weeks.flat().filter((k): k is string => k !== null && byDate.has(k)),
     [weeks, byDate],
   );
 
