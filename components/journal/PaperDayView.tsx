@@ -98,11 +98,14 @@ export default function PaperDayView({ dateParam }: { dateParam: string }) {
     };
   }, [selectedAccountId, dateKey, refreshKey]);
 
-  const saveTradeNote = async (groupKey: string, trade: { groupKey?: string; date: string; symbol: string }, content: string) => {
+  const saveTradeNote = async (trade: { groupKey?: string; date: string; symbol: string }, content: string) => {
     if (!selectedAccountId) return;
-    setNoteMap((prev) => ({ ...prev, [groupKey]: content }));
+    // Use the same key the note store writes/reads under, so a trade without a
+    // groupKey (e.g. some futures) still maps to its saved note.
+    const ref = tradeRef(trade, selectedAccountId);
+    setNoteMap((prev) => ({ ...prev, [ref.tradeGroupKey]: content }));
     setEditingKey(null);
-    await saveTradeNoteContent(tradeRef(trade, selectedAccountId), content);
+    await saveTradeNoteContent(ref, content);
   };
 
   const loading = Boolean(selectedAccountId) && summary === undefined;
@@ -179,9 +182,9 @@ export default function PaperDayView({ dateParam }: { dateParam: string }) {
           <div className="mt-2">
             {loading && <div className="py-12 text-center text-ink-soft">Loading…</div>}
             {!loading && !day && <div className="py-12 text-center text-ink-soft">No trades recorded on this day.</div>}
-            {day && day.trades.map((trade, i) => {
-              const key = trade.groupKey ?? `${trade.date}:${trade.symbol}:${i}`;
-              const note = noteMap[trade.groupKey ?? ''] ?? '';
+            {day && day.trades.map((trade) => {
+              const key = trade.groupKey ?? `${trade.date}:${trade.symbol}:${selectedAccountId ?? ''}`;
+              const note = noteMap[key] ?? '';
               const win = trade.netPnL >= 0;
               return (
                 <div key={key} className="border-b-2 border-dashed border-line-soft py-3">
@@ -215,7 +218,7 @@ export default function PaperDayView({ dateParam }: { dateParam: string }) {
                       <textarea
                         autoFocus
                         defaultValue={note}
-                        onBlur={(e) => saveTradeNote(trade.groupKey ?? key, trade, e.target.value.trim())}
+                        onBlur={(e) => saveTradeNote(trade, e.target.value.trim())}
                         placeholder="Add a note…"
                         className="w-full resize-none rounded-[12px] border-2 border-line bg-paper-card px-3 py-2 font-sans text-[0.9rem] text-ink outline-none focus:ring-2 focus:ring-paper-profit/30"
                         rows={2}
