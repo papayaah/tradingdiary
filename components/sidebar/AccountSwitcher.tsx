@@ -88,7 +88,7 @@ export default function AccountSwitcher({
           aria-label="Trading accounts"
           className={`absolute z-50 w-72 max-w-[calc(100vw-1.5rem)] overflow-hidden p-2 ${
             paper
-              ? 'rounded-[16px] border-[2.5px] border-line bg-paper-card'
+              ? 'rounded-[12px] border-[2.5px] border-line bg-paper-card'
               : 'rounded-2xl border border-card-border bg-card-bg shadow-2xl'
           } ${
             menuPlacement === 'right'

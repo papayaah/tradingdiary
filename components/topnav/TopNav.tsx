@@ -120,7 +120,7 @@ export default function TopNav() {
 
           {moreOpen && (
             <div
-              className="absolute left-0 top-[130%] z-50 min-w-[200px] rounded-[14px] border-[2.5px] border-line bg-paper-card p-2"
+              className="absolute left-0 top-[130%] z-50 min-w-[200px] rounded-[12px] border-[2.5px] border-line bg-paper-card p-2"
               style={{ boxShadow: 'var(--paper-shadow)' }}
             >
               <Link href="/reports" onClick={() => setMoreOpen(false)} className={menuLink}>

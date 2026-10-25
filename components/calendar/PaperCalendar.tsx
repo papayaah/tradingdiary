@@ -299,7 +299,7 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
 
         {isToday && !s && (
           <span
-            className="pointer-events-none absolute inset-2 rounded-[16px] border-[2.5px] border-today opacity-80"
+            className="pointer-events-none absolute inset-2 rounded-[12px] border-[2.5px] border-today opacity-80"
             style={{ filter: 'url(#calendar-rough)' }}
           />
         )}
@@ -385,7 +385,7 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
   const detailPanel = selected && selectedKey && (
     <div
       ref={detailRef}
-      className="my-3 rounded-[16px] border-[2.5px] border-line bg-paper-card p-4"
+      className="my-3 rounded-[12px] border-[2.5px] border-line bg-paper-card p-4"
       style={{ boxShadow: 'var(--paper-shadow)' }}
     >
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -484,7 +484,7 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
                     setCustomStart(event.target.value);
                   }}
                   aria-label="Range start date"
-                  className="rounded-[10px] border-2 border-line bg-paper-card px-2.5 py-1 text-[13px] text-ink outline-none focus:ring-2 focus:ring-paper-profit/30"
+                  className="rounded-[12px] border-2 border-line bg-paper-card px-2.5 py-1 text-[13px] text-ink outline-none focus:ring-2 focus:ring-paper-profit/30"
                 />
                 <span className="text-ink-soft">→</span>
                 <input
@@ -496,7 +496,7 @@ export default function PaperCalendar({ summaries, currency }: PaperCalendarProp
                     setCustomEnd(event.target.value);
                   }}
                   aria-label="Range end date"
-                  className="rounded-[10px] border-2 border-line bg-paper-card px-2.5 py-1 text-[13px] text-ink outline-none focus:ring-2 focus:ring-paper-profit/30"
+                  className="rounded-[12px] border-2 border-line bg-paper-card px-2.5 py-1 text-[13px] text-ink outline-none focus:ring-2 focus:ring-paper-profit/30"
                 />
               </div>
             )}

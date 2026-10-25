@@ -83,7 +83,7 @@ export default function AccountUser() {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 min-w-[220px] rounded-[14px] border-[2.5px] border-line bg-paper-card p-2"
+          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 min-w-[220px] rounded-[12px] border-[2.5px] border-line bg-paper-card p-2"
           style={{ boxShadow: 'var(--paper-shadow)' }}
         >
           <div className="px-3 py-2">

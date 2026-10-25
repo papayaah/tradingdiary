@@ -199,7 +199,7 @@ export default function PaperDayView({ dateParam }: { dateParam: string }) {
                         defaultValue={note}
                         onBlur={(e) => saveTradeNote(trade.groupKey ?? key, trade, e.target.value.trim())}
                         placeholder="Add a note…"
-                        className="w-full resize-none rounded-[10px] border-2 border-line bg-paper-card px-3 py-2 font-sans text-[0.9rem] text-ink outline-none focus:ring-2 focus:ring-paper-profit/30"
+                        className="w-full resize-none rounded-[12px] border-2 border-line bg-paper-card px-3 py-2 font-sans text-[0.9rem] text-ink outline-none focus:ring-2 focus:ring-paper-profit/30"
                         rows={2}
                       />
                     ) : note ? (
@@ -223,7 +223,7 @@ export default function PaperDayView({ dateParam }: { dateParam: string }) {
               onChange={(e) => setDailyNote(e.target.value)}
               onBlur={(e) => selectedAccountId && saveDailyNote(dateKey, selectedAccountId, e.target.value)}
               placeholder="How did the day go? Plan, mistakes, lessons…"
-              className="min-h-[220px] w-full resize-y rounded-[14px] border-[2.5px] border-line bg-paper-card px-4 py-3 font-sans text-[0.95rem] leading-relaxed text-ink outline-none focus:ring-2 focus:ring-paper-profit/30"
+              className="min-h-[220px] w-full resize-y rounded-[12px] border-[2.5px] border-line bg-paper-card px-4 py-3 font-sans text-[0.95rem] leading-relaxed text-ink outline-none focus:ring-2 focus:ring-paper-profit/30"
             />
           </div>
         )}

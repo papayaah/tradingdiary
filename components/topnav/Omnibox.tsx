@@ -143,7 +143,7 @@ export default function Omnibox() {
       <label
         htmlFor="omnibox-input"
         className={`relative z-[2] flex cursor-text items-center gap-2.5 border-[2.5px] border-line bg-paper-card px-3.5 py-2 ${
-          open ? 'rounded-t-[20px]' : 'rounded-[20px]'
+          open ? 'rounded-t-[12px]' : 'rounded-[12px]'
         }`}
       >
         <Search size={17} className="shrink-0 text-ink-soft" />
@@ -181,7 +181,7 @@ export default function Omnibox() {
 
       {open && (
         <div
-          className="absolute left-0 right-0 top-full z-[1] -mt-[2.5px] max-h-[70vh] overflow-x-hidden overflow-y-auto rounded-b-[18px] border-[2.5px] border-t-0 border-line bg-paper-card"
+          className="absolute left-0 right-0 top-full z-[1] -mt-[2.5px] max-h-[70vh] overflow-x-hidden overflow-y-auto rounded-b-[12px] border-[2.5px] border-t-0 border-line bg-paper-card"
           style={{ boxShadow: 'var(--paper-shadow)' }}
         >
           {showInlineAnswer ? (

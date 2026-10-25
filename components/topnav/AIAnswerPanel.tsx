@@ -54,7 +54,7 @@ export default function AIAnswerPanel() {
   return (
     <aside
       className="fixed z-[60] flex flex-col border-[2.5px] border-line bg-paper-card
-        inset-x-3 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] max-h-[72vh] rounded-[18px]
+        inset-x-3 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] max-h-[72vh] rounded-[12px]
         sm:inset-x-auto sm:bottom-4 sm:right-4 sm:top-20 sm:max-h-none sm:w-[min(400px,calc(100vw-2rem))]
         animate-in fade-in slide-in-from-bottom-3 duration-200 sm:slide-in-from-right-3"
       style={{
