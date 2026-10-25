@@ -56,6 +56,24 @@ export default function PaperDayView({ dateParam }: { dateParam: string }) {
 
   useEffect(() => onJournalSynced(() => setRefreshKey((k) => k + 1)), []);
 
+  // ←/→ navigate to the previous/next day, unless typing in a note field.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      router.push(`/journal/${shiftPretty(dateParam, event.key === 'ArrowLeft' ? -1 : 1)}`);
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [dateParam, router]);
+
   useEffect(() => {
     if (!selectedAccountId) return;
     let active = true;
