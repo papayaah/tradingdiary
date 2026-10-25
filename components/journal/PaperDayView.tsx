@@ -10,6 +10,7 @@ import { onJournalSynced } from '@/lib/journal/sync-bus';
 import { getDailyNote, saveDailyNote, getAllTradeNotes, saveTradeNoteContent, tradeRef } from '@/lib/db/notes';
 import { exchangeTimeLabel } from '@/lib/trading/exchange-time';
 import { formatCurrency } from '@/lib/currency';
+import PaperTradeDetail from './PaperTradeDetail';
 import type { DailySummary } from '@/lib/trading/aggregator';
 
 const HIGHLIGHT_RADIUS = '42% 58% 54% 46% / 62% 48% 60% 44%';
@@ -50,7 +51,7 @@ export default function PaperDayView({ dateParam }: { dateParam: string }) {
   const [summary, setSummary] = useState<DailySummary | null | undefined>(undefined);
   const [dailyNote, setDailyNote] = useState('');
   const [noteMap, setNoteMap] = useState<Record<string, string>>({});
-  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [tab, setTab] = useState<'trades' | 'notes'>('trades');
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -104,7 +105,6 @@ export default function PaperDayView({ dateParam }: { dateParam: string }) {
     // groupKey (e.g. some futures) still maps to its saved note.
     const ref = tradeRef(trade, selectedAccountId);
     setNoteMap((prev) => ({ ...prev, [ref.tradeGroupKey]: content }));
-    setEditingKey(null);
     await saveTradeNoteContent(ref, content);
   };
 
@@ -184,12 +184,18 @@ export default function PaperDayView({ dateParam }: { dateParam: string }) {
             {!loading && !day && <div className="py-12 text-center text-ink-soft">No trades recorded on this day.</div>}
             {day && day.trades.map((trade) => {
               const key = trade.groupKey ?? `${trade.date}:${trade.symbol}:${selectedAccountId ?? ''}`;
-              const note = noteMap[key] ?? '';
+              const open = expandedKey === key;
               const win = trade.netPnL >= 0;
               return (
-                <div key={key} className="border-b-2 border-dashed border-line-soft py-3">
-                  <div className="flex items-start gap-3">
-                    <span className="w-[76px] shrink-0 text-[0.9rem] text-ink-soft">{fmtTime(trade.firstTradeTime)}</span>
+                <div key={key} className="border-b-2 border-dashed border-line-soft">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedKey(open ? null : key)}
+                    className="flex w-full items-start gap-3 py-3 text-left"
+                    aria-expanded={open}
+                  >
+                    <ChevronRight size={16} className={`mt-0.5 shrink-0 text-ink-soft transition-transform ${open ? 'rotate-90 text-ink' : ''}`} />
+                    <span className="w-[66px] shrink-0 text-[0.9rem] text-ink-soft">{fmtTime(trade.firstTradeTime)}</span>
                     <div className="min-w-0 flex-1">
                       <span className="text-[1rem] text-ink">{trade.symbol}</span>
                       <span className="ml-2 text-[0.85rem] text-ink-soft">{trade.side === 'LONG' ? 'Long' : 'Short'}</span>
@@ -211,28 +217,16 @@ export default function PaperDayView({ dateParam }: { dateParam: string }) {
                         <span className="relative font-hand text-[1.1rem] tabular-nums text-ink">{formatCurrency(trade.netPnL, currency)}</span>
                       </span>
                     )}
-                  </div>
+                  </button>
 
-                  <div className="mt-1 pl-[88px]">
-                    {editingKey === key ? (
-                      <textarea
-                        autoFocus
-                        defaultValue={note}
-                        onBlur={(e) => saveTradeNote(trade, e.target.value.trim())}
-                        placeholder="Add a note…"
-                        className="w-full resize-none rounded-[12px] border-2 border-line bg-paper-card px-3 py-2 font-sans text-[0.9rem] text-ink outline-none focus:ring-2 focus:ring-paper-profit/30"
-                        rows={2}
-                      />
-                    ) : note ? (
-                      <button type="button" onClick={() => setEditingKey(key)} className="text-left text-[0.9rem] text-ink hover:opacity-80">
-                        {note}
-                      </button>
-                    ) : (
-                      <button type="button" onClick={() => setEditingKey(key)} className="text-[0.9rem] text-ink-soft hover:text-ink">
-                        + Add note
-                      </button>
-                    )}
-                  </div>
+                  {open && (
+                    <PaperTradeDetail
+                      trade={trade}
+                      currency={currency}
+                      note={noteMap[key] ?? ''}
+                      onSaveNote={(content) => saveTradeNote(trade, content)}
+                    />
+                  )}
                 </div>
               );
             })}
