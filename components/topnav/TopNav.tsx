@@ -169,19 +169,26 @@ export default function TopNav() {
       <Omnibox />
 
       <div className="flex shrink-0 items-center gap-3">
-        <FlexSyncControl tone="paper" compact />
-        {accounts.length > 0 && (
-          <div className="w-[170px]">
-            <AccountSwitcher
-              accounts={accounts}
-              selectedAccountId={selectedAccountId}
-              onSelect={setSelectedAccountId}
-              collapsed={false}
-              menuPlacement="bottom-end"
-              tone="paper"
-            />
-          </div>
-        )}
+        {/* Sync + account share one bordered control; each half stays clickable. */}
+        <div className="flex items-center gap-0.5 rounded-[12px] border-2 border-line bg-paper-card p-0.5">
+          <FlexSyncControl tone="paper" bare />
+          {accounts.length > 0 && (
+            <>
+              <span className="h-5 w-px shrink-0 bg-line-soft" />
+              <div className="w-[150px]">
+                <AccountSwitcher
+                  accounts={accounts}
+                  selectedAccountId={selectedAccountId}
+                  onSelect={setSelectedAccountId}
+                  collapsed={false}
+                  menuPlacement="bottom-end"
+                  tone="paper"
+                  bare
+                />
+              </div>
+            </>
+          )}
+        </div>
         <AccountUser />
       </div>
     </header>

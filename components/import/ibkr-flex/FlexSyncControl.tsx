@@ -29,9 +29,12 @@ function progressLabel(progress: IbkrFlexSyncProgress | null): string {
 export default function FlexSyncControl({
   tone = 'default',
   compact = false,
+  bare = false,
 }: {
   tone?: 'default' | 'paper';
   compact?: boolean;
+  // Icon-only, no border/background — for embedding inside a shared container.
+  bare?: boolean;
 } = {}) {
   const { syncNow: pullJournalNow } = useJournalSync();
   const [connection, setConnection] = useState<IbkrFlexConnectionView | null>(null);
@@ -85,16 +88,21 @@ export default function FlexSyncControl({
   // Avoid a flash of the wrong state before the connection status loads.
   if (!loaded) return null;
 
-  const base = tone === 'paper' ? PAPER_BASE : SECONDARY;
-  const cls = `${base} ${compact ? 'h-9 w-9' : 'py-2 px-3.5 text-xs'}`;
-  const iconSize = compact ? 16 : 14;
+  const base = bare
+    ? 'inline-flex items-center justify-center text-ink-soft transition-colors hover:bg-paper-2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-60'
+    : tone === 'paper'
+      ? PAPER_BASE
+      : SECONDARY;
+  const cls = bare ? `${base} h-9 w-9 rounded-[10px]` : `${base} ${compact ? 'h-9 w-9' : 'py-2 px-3.5 text-xs'}`;
+  const iconOnly = compact || bare;
+  const iconSize = iconOnly ? 16 : 14;
 
   // Not connected → send them to set up a broker / upload a statement.
   if (!connection?.connected) {
     return (
-      <Link href="/import" className={cls} title="Connect IBKR or upload a statement">
+      <Link href="/import" className={cls} title="Connect IBKR or upload a statement" aria-label="Import trades">
         <Upload size={iconSize} />
-        {!compact && 'Import trades'}
+        {!iconOnly && 'Import trades'}
       </Link>
     );
   }
@@ -109,7 +117,7 @@ export default function FlexSyncControl({
       aria-label="Sync IBKR"
     >
       <RefreshCw size={iconSize} className={working ? 'animate-spin' : undefined} />
-      {!compact && (working ? progressLabel(progress) : 'Sync IBKR')}
+      {!iconOnly && (working ? progressLabel(progress) : 'Sync IBKR')}
     </button>
   );
 }

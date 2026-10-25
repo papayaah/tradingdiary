@@ -15,6 +15,9 @@ interface AccountSwitcherProps {
   // Visual tone for the expanded <select>. 'paper' matches the hand-drawn
   // calendar surfaces; 'default' uses the standard app tokens.
   tone?: 'default' | 'paper';
+  // Drop the pill's own border/background so it can sit inside a shared
+  // container (e.g. grouped with the sync button).
+  bare?: boolean;
 }
 
 export default function AccountSwitcher({
@@ -24,6 +27,7 @@ export default function AccountSwitcher({
   collapsed,
   menuPlacement = 'right',
   tone = 'default',
+  bare = false,
 }: AccountSwitcherProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -68,9 +72,11 @@ export default function AccountSwitcher({
                   ? paper ? 'bg-paper-2 text-ink' : 'bg-accent/10 text-accent'
                   : paper ? 'text-ink-soft hover:bg-paper-2 hover:text-ink' : 'text-muted hover:bg-sidebar-hover hover:text-foreground'
               }`
-            : paper
-              ? 'flex w-full items-center gap-2 rounded-[12px] border-[2px] border-line bg-paper-card py-2 pl-3 pr-2.5 text-[13px] text-ink transition-colors hover:bg-paper-2'
-              : 'flex w-full items-center gap-2 rounded-lg border border-sidebar-border bg-muted-bg py-2 pl-3 pr-2.5 text-xs font-medium text-foreground transition-colors hover:bg-sidebar-hover'
+            : bare
+              ? 'flex w-full items-center gap-2 rounded-[10px] py-2 pl-2.5 pr-2 text-[13px] text-ink transition-colors hover:bg-paper-2'
+              : paper
+                ? 'flex w-full items-center gap-2 rounded-[12px] border-[2px] border-line bg-paper-card py-2 pl-3 pr-2.5 text-[13px] text-ink transition-colors hover:bg-paper-2'
+                : 'flex w-full items-center gap-2 rounded-lg border border-sidebar-border bg-muted-bg py-2 pl-3 pr-2.5 text-xs font-medium text-foreground transition-colors hover:bg-sidebar-hover'
         }
       >
         <Wallet size={collapsed ? 17 : 14} className={collapsed ? '' : `shrink-0 ${paper ? 'text-ink-soft' : 'text-muted'}`} />
