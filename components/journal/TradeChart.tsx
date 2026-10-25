@@ -16,6 +16,8 @@ interface TradeChartProps {
   transactions: TransactionRecord[];
   highlightedExecutionId?: string | null;
   interval?: string;
+  // When false, the chart is a fixed snapshot — no pan/zoom.
+  interactive?: boolean;
 }
 
 const INTERVALS = ['1m', '5m', '10m', '15m', '1h'] as const;
@@ -26,6 +28,7 @@ export default function TradeChart({
   transactions,
   highlightedExecutionId = null,
   interval: defaultInterval = '5m',
+  interactive = true,
 }: TradeChartProps) {
   const { openReplay } = useReplay();
   const [loading, setLoading] = useState(true);
@@ -96,6 +99,7 @@ export default function TradeChart({
         interval={interval}
         onIntervalChange={(iv) => setInterval(iv)}
         availableIntervals={INTERVALS}
+        interactive={interactive}
         height={360}
         showVolume={true}
         showExtendedHoursShading={showExtendedHoursShading}

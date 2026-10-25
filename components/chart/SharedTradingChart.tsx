@@ -59,6 +59,8 @@ export interface SharedTradingChartProps {
   availableIntervals?: readonly string[];
   height?: number;
   showVolume?: boolean;
+  // When false, the chart is a fixed snapshot — no pan/zoom/scroll.
+  interactive?: boolean;
   showExtendedHoursShading?: boolean;
   autoPatternsEnabled?: boolean;
   onTogglePatterns?: () => void;
@@ -346,6 +348,7 @@ export default function SharedTradingChart({
   availableIntervals = DEFAULT_INTERVALS,
   height = 380,
   showVolume = true,
+  interactive = true,
   showExtendedHoursShading = false,
   autoPatternsEnabled = false,
   onTogglePatterns,
@@ -740,12 +743,12 @@ export default function SharedTradingChart({
         // There is never meaningful future data to reveal by overscrolling.
         fixRightEdge: true,
       },
-      handleScale: {
+      handleScale: interactive && {
         axisPressedMouseMove: { time: true, price: true },
         mouseWheel: true,
         pinch: true,
       },
-      handleScroll: {
+      handleScroll: interactive && {
         pressedMouseMove: true,
         mouseWheel: true,
         horzTouchDrag: true,
@@ -856,7 +859,7 @@ export default function SharedTradingChart({
       priceLinesRef.current = [];
       patternSeriesRef.current = [];
     };
-  }, [symbol, interval, height, showVolume, isDaily, isDark, canLoadOlderHistory]);
+  }, [symbol, interval, height, showVolume, isDaily, isDark, canLoadOlderHistory, interactive]);
 
   // ── Effect B1: push candle/volume DATA + position the view ──────────────────
   // Runs only when candle data changes — not on pattern/overlay changes — so
