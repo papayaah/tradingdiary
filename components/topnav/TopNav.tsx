@@ -17,6 +17,7 @@ import { useAccount } from '@/contexts/AccountContext';
 import { useWelcome } from '@/components/welcome/WelcomeContext';
 import BrandLogo from '@/components/brand/BrandLogo';
 import AccountSwitcher from '@/components/sidebar/AccountSwitcher';
+import FlexSyncControl from '@/components/import/ibkr-flex/FlexSyncControl';
 import AccountUser from './AccountUser';
 import Omnibox from './Omnibox';
 
@@ -168,6 +169,7 @@ export default function TopNav() {
       <Omnibox />
 
       <div className="flex shrink-0 items-center gap-3">
+        <FlexSyncControl tone="paper" compact />
         {accounts.length > 0 && (
           <div className="w-[170px]">
             <AccountSwitcher

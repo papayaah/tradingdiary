@@ -15,6 +15,9 @@ import type { IbkrFlexConnectionView, IbkrFlexSyncProgress } from '@/lib/ibkr-fl
 const SECONDARY =
   'inline-flex py-2 items-center gap-2 whitespace-nowrap rounded-xl border border-card-border bg-card-bg px-3.5 text-xs font-semibold text-foreground transition-colors hover:bg-muted-bg hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60';
 
+const PAPER_BASE =
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[12px] border-2 border-line bg-paper-card font-semibold text-ink transition-colors hover:bg-paper-2 disabled:cursor-not-allowed disabled:opacity-60';
+
 function progressLabel(progress: IbkrFlexSyncProgress | null): string {
   if (!progress) return 'Syncing…';
   if (progress.done != null && progress.total != null) {
@@ -23,7 +26,13 @@ function progressLabel(progress: IbkrFlexSyncProgress | null): string {
   return progress.message || 'Syncing…';
 }
 
-export default function FlexSyncControl() {
+export default function FlexSyncControl({
+  tone = 'default',
+  compact = false,
+}: {
+  tone?: 'default' | 'paper';
+  compact?: boolean;
+} = {}) {
   const { syncNow: pullJournalNow } = useJournalSync();
   const [connection, setConnection] = useState<IbkrFlexConnectionView | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -76,12 +85,16 @@ export default function FlexSyncControl() {
   // Avoid a flash of the wrong state before the connection status loads.
   if (!loaded) return null;
 
+  const base = tone === 'paper' ? PAPER_BASE : SECONDARY;
+  const cls = `${base} ${compact ? 'h-9 w-9' : 'py-2 px-3.5 text-xs'}`;
+  const iconSize = compact ? 16 : 14;
+
   // Not connected → send them to set up a broker / upload a statement.
   if (!connection?.connected) {
     return (
-      <Link href="/import" className={SECONDARY} title="Connect IBKR or upload a statement">
-        <Upload size={14} />
-        Import trades
+      <Link href="/import" className={cls} title="Connect IBKR or upload a statement">
+        <Upload size={iconSize} />
+        {!compact && 'Import trades'}
       </Link>
     );
   }
@@ -91,11 +104,12 @@ export default function FlexSyncControl() {
       type="button"
       onClick={() => void handleSync()}
       disabled={working}
-      className={SECONDARY}
+      className={cls}
       title="Fetch new trades from IBKR now"
+      aria-label="Sync IBKR"
     >
-      <RefreshCw size={14} className={working ? 'animate-spin' : undefined} />
-      {working ? progressLabel(progress) : 'Sync IBKR'}
+      <RefreshCw size={iconSize} className={working ? 'animate-spin' : undefined} />
+      {!compact && (working ? progressLabel(progress) : 'Sync IBKR')}
     </button>
   );
 }

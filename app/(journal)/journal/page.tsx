@@ -8,7 +8,6 @@ import { applyMarketPrices, type DailySummary } from '@/lib/trading/aggregator';
 import { getJournalSummaries, peekJournalSummaries } from '@/lib/trading/journal-summaries-cache';
 import { onJournalSynced } from '@/lib/journal/sync-bus';
 import SyncStatusIndicator from '@/components/journal/SyncStatusIndicator';
-import FlexSyncControl from '@/components/import/ibkr-flex/FlexSyncControl';
 import PaperJournalList from '@/components/journal/PaperJournalList';
 import { useAccount } from '@/contexts/AccountContext';
 import { ManualTradePanel } from '@/components/trades/manual-entry/ManualTradePanel';
@@ -202,7 +201,6 @@ export default function JournalPage() {
           <h1 className="font-hand text-[clamp(1.9rem,4vw,2.6rem)] leading-none text-ink">Trading Journal</h1>
           <div className="flex items-center gap-2">
             <SyncStatusIndicator />
-            <FlexSyncControl />
             <button
               type="button"
               onClick={() => (manualEntryVisible ? closeManualEntry() : setShowManualEntry(true))}
@@ -223,7 +221,7 @@ export default function JournalPage() {
               </button>
               {menuOpen && (
                 <div
-                  className="absolute right-0 top-[120%] z-30 min-w-[196px] rounded-[14px] border-[2.5px] border-line bg-paper-card p-2"
+                  className="absolute right-0 top-[120%] z-30 min-w-[196px] rounded-[12px] border-[2.5px] border-line bg-paper-card p-2"
                   style={{ boxShadow: 'var(--paper-shadow)' }}
                 >
                   <button type="button" onClick={() => { setMenuOpen(false); handleCopyLink(); }} className={menuItem}>
