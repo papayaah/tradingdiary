@@ -29,7 +29,8 @@ export default function JournalLayout({
   const paperRoute =
     pathname === '/calendar' ||
     pathname.startsWith('/calendar/') ||
-    (pathname.startsWith('/journal/') && pathname !== '/journal');
+    pathname === '/journal' ||
+    pathname.startsWith('/journal/');
   const surface = paperRoute ? 'bg-paper' : 'bg-background';
 
   useEffect(() => {
