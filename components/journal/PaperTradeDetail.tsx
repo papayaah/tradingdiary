@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import TradeChart from './TradeChart';
+import PaperTradeChart from '@/components/chart/PaperTradeChart';
 import { loadTransactionsByIds } from '@/lib/trading/day-summaries-store';
 import { formatCurrency } from '@/lib/currency';
 import type { AggregatedTrade } from '@/lib/trading/aggregator';
@@ -91,12 +91,12 @@ export default function PaperTradeDetail({ trade, currency, note, onSaveNote }: 
           fill can highlight it on the chart. */}
       <div className="mt-3 grid gap-4 lg:grid-cols-[1fr_300px]">
         <div className="min-w-0 overflow-hidden rounded-[12px] border-[2.5px] border-line bg-paper-card">
-          <TradeChart
+          <PaperTradeChart
             symbol={trade.symbol}
             date={trade.date}
             transactions={fills}
             highlightedExecutionId={highlightedId}
-            interactive={false}
+            onHover={setHighlightedId}
           />
         </div>
 
@@ -115,7 +115,7 @@ export default function PaperTradeDetail({ trade, currency, note, onSaveNote }: 
                   key={fill.tradeId}
                   onMouseEnter={() => setHighlightedId(fill.tradeId)}
                   onMouseLeave={() => setHighlightedId(null)}
-                  className="flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-paper-2"
+                  className={`flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors ${highlightedId === fill.tradeId ? 'bg-paper-2' : 'hover:bg-paper-2'}`}
                 >
                   <span className="w-[62px] shrink-0 text-[0.8rem] text-ink-soft">{fmtTime(fill.time)}</span>
                   <span className="flex-1 truncate text-[0.82rem] text-ink">{sideLabel(fill.side)}</span>
